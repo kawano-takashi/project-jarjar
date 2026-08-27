@@ -1,0 +1,4 @@
+interface:
+  display_name: "Godot GDScript Guard"
+  short_description: "Prevent Python-style GDScript mistakes"
+  default_prompt: "Use $godot-gdscript-guard to implement Godot 4.7 GDScript without Python syntax drift."
