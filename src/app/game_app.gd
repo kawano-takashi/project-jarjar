@@ -7,6 +7,7 @@ const RunStateFactoryScript = preload("res://src/core/run_state_factory.gd")
 const SeedServiceScript = preload("res://src/core/seed_service.gd")
 const TITLE_SCENE: PackedScene = preload("res://scenes/ui/title_screen.tscn")
 const ARENA_SCENE: PackedScene = preload("res://scenes/gameplay/arena_combat.tscn")
+const REWARD_REVEAL_SCENE: PackedScene = preload("res://scenes/ui/reward_reveal_screen.tscn")
 
 var _launch_valid: bool = false
 var _launch: Dictionary = {}
@@ -139,9 +140,28 @@ func _show_combat_arena(paused: bool) -> void:
 	var arena := ARENA_SCENE.instantiate() as ArenaPresenter
 	_active_screen = arena
 	add_child(arena)
+	arena.phase_changed.connect(_on_combat_phase_changed)
 	arena.initialize(combat_simulation)
 	arena.set_simulation_paused(paused)
 	_logical_phase = GameTypes.RunPhase.COMBAT
+
+
+func _show_reward_reveal(evidence_mode: String = "") -> void:
+	if run_state == null or run_state.phase != GameTypes.RunPhase.REWARD_REVEAL:
+		return
+	_clear_active_screen()
+	var reward_screen := REWARD_REVEAL_SCENE.instantiate() as RewardRevealScreen
+	_active_screen = reward_screen
+	reward_screen.initialize(run_state)
+	if not evidence_mode.is_empty():
+		reward_screen.set_evidence_mode(evidence_mode)
+	add_child(reward_screen)
+	_logical_phase = GameTypes.RunPhase.REWARD_REVEAL
+
+
+func _on_combat_phase_changed(phase: GameTypes.RunPhase) -> void:
+	if phase == GameTypes.RunPhase.REWARD_REVEAL:
+		_show_reward_reveal.call_deferred()
 
 
 func _start_qa_mode(scenario_id: String) -> void:
@@ -157,7 +177,10 @@ func _start_qa_mode(scenario_id: String) -> void:
 		return
 	run_state = result["state"] as RunState
 	combat_simulation = result["simulation"] as CombatSimulation
-	_show_combat_arena(false)
+	if run_state.phase == GameTypes.RunPhase.REWARD_REVEAL:
+		_show_reward_reveal()
+	else:
+		_show_combat_arena(false)
 
 
 func _start_evidence_mode(evidence_id: String) -> void:
@@ -189,6 +212,31 @@ func _start_evidence_mode(evidence_id: String) -> void:
 			run_state.wave_kills = 299
 			run_state.non_boss_spawned = 299
 			run_state.boss_defeated = false
+		"gate_04:chest_absorb":
+			combat_simulation.evidence_caption = "獲得済み宝箱  •  0.25秒で自動吸収"
+			for chest_index in range(5):
+				var chest_position := Vector2(
+					-2.5 + float(chest_index) * 1.25,
+					0.3 + (-0.5 if chest_index % 2 == 0 else 0.5),
+				)
+				combat_simulation.loot_service.acquire_fixed_chests(
+					1,
+					chest_position,
+					run_state.physics_tick,
+				)
+			combat_simulation.chest_visual_pool.advance(0.12)
+		"gate_04:epic_prealert", "gate_04:reward_grid":
+			var factory_script: Variant = load("res://src/debug/qa_scenario_factory.gd")
+			var result: Dictionary = factory_script.build("reward_controls", _definition_catalog)
+			if not result.get("valid", false):
+				print("EVIDENCE_CAPTURE_FAILED reason=reward_fixture")
+				get_tree().quit(1)
+				return
+			run_state = result["state"] as RunState
+			combat_simulation = result["simulation"] as CombatSimulation
+			_show_reward_reveal(evidence_id.trim_prefix("gate_04:"))
+			_attach_evidence_capture()
+			return
 		_:
 			_show_title()
 			_attach_evidence_capture()

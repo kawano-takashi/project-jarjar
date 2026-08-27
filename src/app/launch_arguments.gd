@@ -14,6 +14,9 @@ const EVIDENCE_SCENARIOS: Array[String] = [
 	"gate_03:arena_combat",
 	"gate_03:weapon_shapes",
 	"gate_03:boss_gate",
+	"gate_04:chest_absorb",
+	"gate_04:epic_prealert",
+	"gate_04:reward_grid",
 ]
 const QA_SCENARIOS: Array[String] = [
 	"weapon_bow",
@@ -22,6 +25,7 @@ const QA_SCENARIOS: Array[String] = [
 	"pre_quota_death",
 	"pre_quota_timeout",
 	"post_quota_death",
+	"reward_controls",
 ]
 
 const DEBUG_OPTIONS: Array[String] = [

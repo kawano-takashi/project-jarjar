@@ -6,13 +6,17 @@ const UNIT_SCRIPT_PATHS: Array[String] = [
 	"res://tests/unit/project_contract_test.gd",
 	"res://tests/unit/gate_02_domain_test.gd",
 	"res://tests/unit/gate_03_combat_core_test.gd",
+	"res://tests/unit/gate_04_loot_domain_test.gd",
 ]
 const SCENARIO_SCRIPT_PATHS: Array[String] = [
 	"res://tests/scenario/gate_03_combat_scenario_test.gd",
 	"res://tests/scenario/gate_03_lifecycle_contract_test.gd",
+	"res://tests/scenario/gate_04_combat_loot_scenario_test.gd",
+	"res://tests/scenario/gate_04_reward_ui_scenario_test.gd",
 ]
 const SIMULATION_SCRIPT_PATHS: Array[String] = [
 	"res://tests/simulation/gate_03_wave_simulation_test.gd",
+	"res://tests/simulation/gate_04_loot_simulation_test.gd",
 ]
 
 

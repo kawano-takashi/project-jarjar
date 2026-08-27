@@ -14,14 +14,18 @@ var player_position: Vector2 = Vector2.ZERO
 var enemy_system: EnemySystem = EnemySystem.new()
 var projectile_pool: ProjectilePool = ProjectilePool.new()
 var vfx_pool: VfxPool = VfxPool.new()
+var chest_visual_pool: ChestVisualPool = ChestVisualPool.new()
 var event_router: CombatEventRouter = CombatEventRouter.new()
 var weapon_system: WeaponSystem = WeaponSystem.new()
+var loot_service: LootService = LootService.new()
 
 var freeze_enemy_ai: bool = false
 var freeze_enemy_timers: bool = false
 var freeze_normal_spawn: bool = false
 var freeze_countdown: bool = false
 var evidence_caption: String = ""
+
+var _pending_deaths: Array[Dictionary] = []
 
 
 func initialize(
@@ -35,7 +39,10 @@ func initialize(
 	player_position = Vector2.ZERO
 	projectile_pool.clear()
 	vfx_pool.clear()
+	chest_visual_pool = ChestVisualPool.new()
 	event_router = CombatEventRouter.new()
+	loot_service = LootService.new()
+	loot_service.initialize(state, catalog, chest_visual_pool)
 	var stats: Dictionary = StatCalculator.aggregate_affixes(state.equipped)
 	state.max_hp = StatCalculator.effective_max_hp(stats)
 	state.current_hp = state.max_hp
@@ -71,6 +78,8 @@ func begin_wave(wave_number: int, rng_source: Variant = null) -> bool:
 	player_position = Vector2.ZERO
 	projectile_pool.clear()
 	vfx_pool.clear()
+	chest_visual_pool.clear()
+	loot_service.initialize(state, catalog, chest_visual_pool)
 	enemy_system = EnemySystem.new()
 	enemy_system.initialize(state, catalog, wave, rng_source)
 	weapon_system = WeaponSystem.new()
@@ -83,6 +92,7 @@ func step(move_input: Vector2, delta: float) -> CombatSnapshot:
 		return build_snapshot()
 	state.physics_tick += 1
 	var current_tick: int = state.physics_tick
+	_pending_deaths.clear()
 	var enemy_snapshot: Array[int] = enemy_system.snapshot_ids()
 	var projectile_snapshot: Array[Vector2i] = projectile_pool.snapshot_active()
 
@@ -98,6 +108,7 @@ func step(move_input: Vector2, delta: float) -> CombatSnapshot:
 		_rebuild_uniform_grid(enemy_snapshot, current_tick)
 	weapon_system.move_snapshot_projectiles(projectile_snapshot, delta, current_tick)
 	vfx_pool.advance(delta, current_tick)
+	chest_visual_pool.advance(delta)
 	if not freeze_normal_spawn:
 		enemy_system.accrue_spawn_credit(delta)
 
@@ -151,14 +162,20 @@ func step(move_input: Vector2, delta: float) -> CombatSnapshot:
 			projectile_pool,
 		)
 
+	_process_pending_loot(current_tick)
+	if not state.wave_cleared and RunStateMachine.quota_reached(state, wave):
+		loot_service.ensure_guarantee_fallback(player_position, current_tick)
+
 	var player_dead: bool = state.current_hp <= 0.0
 	if freeze_countdown:
 		_latch_quota_without_countdown()
 	else:
 		RunStateMachine.resolve_combat_tick(state, wave, player_dead, delta)
-	if state.phase == GameTypes.RunPhase.FAILED:
-		state.unopened_rewards.clear()
-		state.wave_chests = 0
+	if state.phase == GameTypes.RunPhase.REWARD_REVEAL:
+		chest_visual_pool.absorb_all()
+	elif state.phase == GameTypes.RunPhase.FAILED:
+		chest_visual_pool.clear()
+		loot_service.discard_current_wave_rewards()
 	if (
 		state.phase == GameTypes.RunPhase.COMBAT
 		and not player_dead
@@ -200,12 +217,14 @@ func build_snapshot() -> CombatSnapshot:
 			Basis.IDENTITY.scaled(Vector3(vfx.scale_m, 1.0, vfx.scale_m)),
 			Vector3(vfx.position.x, 0.12, vfx.position.y),
 		))
+	var chest_transforms: Array[Transform3D] = chest_visual_pool.transforms()
 	return CombatSnapshot.new(
 		player_position,
 		enemy_transforms,
 		projectile_transforms,
 		vfx_transforms,
 		_build_hud_values(),
+		chest_transforms,
 	)
 
 
@@ -275,6 +294,11 @@ func _apply_enemy_hit_records(records: Array[Dictionary]) -> void:
 
 func _record_enemy_death(enemy: EnemyEntity) -> void:
 	var already_cleared: bool = state.wave_cleared
+	_pending_deaths.append({
+		"entity_id": enemy.entity_id,
+		"enemy_type": enemy.enemy_type,
+		"position": enemy.position,
+	})
 	enemy_system.enemy_store.remove(enemy.entity_id)
 	state.wave_kills += 1
 	state.total_kills += 1
@@ -288,6 +312,23 @@ func _record_enemy_death(enemy: EnemyEntity) -> void:
 			state.boss_defeated = true
 		_:
 			state.normal_kills += 1
+
+
+func _process_pending_loot(current_tick: int) -> void:
+	_pending_deaths.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+		return int(left["entity_id"]) < int(right["entity_id"])
+	)
+	for death: Dictionary in _pending_deaths:
+		var enemy_type: GameTypes.EnemyType = death["enemy_type"]
+		var position: Vector2 = death["position"]
+		match enemy_type:
+			GameTypes.EnemyType.ELITE:
+				loot_service.acquire_fixed_chests(3, position, current_tick)
+			GameTypes.EnemyType.BOSS:
+				loot_service.acquire_fixed_chests(8, position, current_tick)
+			_:
+				loot_service.try_normal_drop(position, current_tick)
+	_pending_deaths.clear()
 
 
 func _apply_player_damage_records(records: Array[Dictionary]) -> void:
@@ -363,6 +404,7 @@ func _build_hud_values() -> Dictionary:
 		"active_enemy": enemy_system.enemy_store.active_count(),
 		"active_projectile": projectile_pool.active_count(),
 		"active_vfx": vfx_pool.active_count(),
+		"active_chest": chest_visual_pool.active_count(),
 		"enemy_pool_overflow": enemy_system.enemy_store.overflow_count,
 		"projectile_pool_overflow": projectile_pool.overflow_count,
 		"vfx_pool_overflow": vfx_pool.overflow_count,

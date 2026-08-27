@@ -1,0 +1,218 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://src/ui/settings_overlay.gd" id="1_settings"]
+
+[sub_resource type="StyleBoxFlat" id="OverlayPanel"]
+content_margin_left = 34.0
+content_margin_top = 28.0
+content_margin_right = 34.0
+content_margin_bottom = 28.0
+bg_color = Color(0.035, 0.047, 0.065, 0.98)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(0.31, 0.72, 0.63, 1)
+corner_radius_top_left = 14
+corner_radius_top_right = 14
+corner_radius_bottom_right = 14
+corner_radius_bottom_left = 14
+
+[sub_resource type="StyleBoxFlat" id="FocusStyle"]
+bg_color = Color(0.12, 0.19, 0.22, 0.9)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(1, 0.72, 0.28, 1)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[node name="SettingsOverlay" type="Control"]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+z_index = 100
+script = ExtResource("1_settings")
+
+[node name="Dim" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+color = Color(0, 0, 0, 0.78)
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 1
+
+[node name="Panel" type="PanelContainer" parent="Center"]
+custom_minimum_size = Vector2(760, 850)
+layout_mode = 2
+theme_override_styles/panel = SubResource("OverlayPanel")
+
+[node name="Content" type="VBoxContainer" parent="Center/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 18
+
+[node name="Heading" type="Label" parent="Center/Panel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 1, 0.96, 1)
+theme_override_font_sizes/font_size = 36
+text = "設定"
+horizontal_alignment = 1
+
+[node name="Hint" type="Label" parent="Center/Panel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.65, 0.74, 0.78, 1)
+theme_override_font_sizes/font_size = 18
+text = "方向キー／左スティック：移動・調整　A／Enter：決定　B／Esc：閉じる"
+horizontal_alignment = 1
+
+[node name="MasterRow" type="HBoxContainer" parent="Center/Panel/Content"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Label" type="Label" parent="Center/Panel/Content/MasterRow"]
+custom_minimum_size = Vector2(210, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "マスター音量"
+
+[node name="SettingsMaster" type="HSlider" parent="Center/Panel/Content/MasterRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(390, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 2
+max_value = 100.0
+step = 1.0
+value = 100.0
+
+[node name="MasterValue" type="Label" parent="Center/Panel/Content/MasterRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(60, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "100"
+horizontal_alignment = 2
+
+[node name="MusicRow" type="HBoxContainer" parent="Center/Panel/Content"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Label" type="Label" parent="Center/Panel/Content/MusicRow"]
+custom_minimum_size = Vector2(210, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "音楽音量"
+
+[node name="SettingsMusic" type="HSlider" parent="Center/Panel/Content/MusicRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(390, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 2
+max_value = 100.0
+step = 1.0
+value = 80.0
+
+[node name="MusicValue" type="Label" parent="Center/Panel/Content/MusicRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(60, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "80"
+horizontal_alignment = 2
+
+[node name="SfxRow" type="HBoxContainer" parent="Center/Panel/Content"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Label" type="Label" parent="Center/Panel/Content/SfxRow"]
+custom_minimum_size = Vector2(210, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "効果音音量"
+
+[node name="SettingsSfx" type="HSlider" parent="Center/Panel/Content/SfxRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(390, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 2
+max_value = 100.0
+step = 1.0
+value = 90.0
+
+[node name="SfxValue" type="Label" parent="Center/Panel/Content/SfxRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(60, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "90"
+horizontal_alignment = 2
+
+[node name="Rule" type="HSeparator" parent="Center/Panel/Content"]
+layout_mode = 2
+
+[node name="SettingsReduceMotion" type="CheckButton" parent="Center/Panel/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 58)
+layout_mode = 2
+focus_mode = 2
+theme_override_font_sizes/font_size = 22
+theme_override_styles/focus = SubResource("FocusStyle")
+text = "Reduce Motion（位置の震動を抑える）"
+
+[node name="SettingsReduceFlashes" type="CheckButton" parent="Center/Panel/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 58)
+layout_mode = 2
+focus_mode = 2
+theme_override_font_sizes/font_size = 22
+theme_override_styles/focus = SubResource("FocusStyle")
+text = "Reduce Flashes（段階点灯を抑える）"
+
+[node name="SettingsVibration" type="CheckButton" parent="Center/Panel/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 58)
+layout_mode = 2
+focus_mode = 2
+button_pressed = true
+theme_override_font_sizes/font_size = 22
+theme_override_styles/focus = SubResource("FocusStyle")
+text = "コントローラー振動"
+
+[node name="SettingsTutorialAgain" type="Button" parent="Center/Panel/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 58)
+layout_mode = 2
+focus_mode = 2
+theme_override_font_sizes/font_size = 22
+theme_override_styles/focus = SubResource("FocusStyle")
+text = "チュートリアルを再表示"
+
+[node name="SettingsClose" type="Button" parent="Center/Panel/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 62)
+layout_mode = 2
+focus_mode = 2
+theme_override_font_sizes/font_size = 24
+theme_override_styles/focus = SubResource("FocusStyle")
+text = "閉じる　A／Enter"

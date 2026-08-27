@@ -405,22 +405,24 @@ func _test_multimesh_only_runtime_entities(assertions: Variant, context: Diction
 	var arena := packed.instantiate() as ArenaPresenter
 	var scene_node_count: int = _count_nodes(arena)
 	var scene_node3d_count: int = _count_descendant_node3d(arena)
-	assertions.expect_equal(12, scene_node3d_count, "arena has only fixed static Node3D descendants")
+	assertions.expect_equal(13, scene_node3d_count, "arena has only fixed pooled/static Node3D descendants")
 	arena.initialize(simulation)
 	arena.set_simulation_paused(true)
 	var tree: SceneTree = context["tree"] as SceneTree
 	tree.root.add_child(arena)
 	await tree.process_frame
 	assertions.expect_equal(scene_node_count, _count_nodes(arena), "runtime entities add no Node of any name")
-	assertions.expect_equal(12, _count_descendant_node3d(arena), "runtime entities add no Node3D of any name")
-	assertions.expect_equal(3, _count_descendant_type(arena, MultiMeshInstance3D), "arena uses exactly three MultiMesh renderers")
+	assertions.expect_equal(13, _count_descendant_node3d(arena), "runtime entities add no Node3D of any name")
+	assertions.expect_equal(4, _count_descendant_type(arena, MultiMeshInstance3D), "arena uses four pooled MultiMesh renderers after chest display is added")
 	assertions.expect_equal(6, _count_descendant_type(arena, MeshInstance3D), "arena retains only six static MeshInstance3D nodes")
 	var enemy_instances := arena.get_node("EnemyInstances") as MultiMeshInstance3D
 	var projectile_instances := arena.get_node("ProjectileInstances") as MultiMeshInstance3D
 	var vfx_instances := arena.get_node("VfxInstances") as MultiMeshInstance3D
+	var chest_instances := arena.get_node("ChestInstances") as MultiMeshInstance3D
 	assertions.expect_equal(64, enemy_instances.multimesh.visible_instance_count, "64 logical enemies render in one MultiMesh")
 	assertions.expect_equal(64, projectile_instances.multimesh.visible_instance_count, "64 logical projectiles render in one MultiMesh")
 	assertions.expect_equal(8, vfx_instances.multimesh.visible_instance_count, "8 logical VFX render in one MultiMesh")
+	assertions.expect_equal(0, chest_instances.multimesh.visible_instance_count, "no chest fixture renders before acquisition")
 	tree.root.remove_child(arena)
 	arena.free()
 

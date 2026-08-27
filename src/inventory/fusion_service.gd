@@ -4,6 +4,7 @@ extends RefCounted
 
 const DefinitionCatalogScript := preload("res://src/core/definition_catalog.gd")
 const ItemFactoryScript := preload("res://src/loot/item_factory.gd")
+const UniqueSelectorScript := preload("res://src/loot/unique_selector.gd")
 const UNIQUE_CHANCE: float = 0.04
 const SLOT_IDS: Array[StringName] = [
 	&"body", &"feet", &"hands", &"head", &"main_weapon", &"sub_weapon",
@@ -92,11 +93,7 @@ static func fuse(
 	var output_slot: GameTypes.EquipmentSlot = GameTypes.EquipmentSlot.MAIN_WEAPON
 	var output_weapon_type: GameTypes.MainWeaponType = GameTypes.MainWeaponType.UNCLASSIFIED
 	if fusion_rng.randf() < UNIQUE_CHANCE:
-		var unique_ids: Array[StringName] = catalog.unique_ids()
-		var unique_weights := PackedFloat64Array()
-		unique_weights.resize(unique_ids.size())
-		unique_weights.fill(1.0)
-		output_unique_id = WeightedSelector.select(fusion_rng, unique_ids, unique_weights)
+		output_unique_id = UniqueSelectorScript.select_won(fusion_rng)
 		var unique_definition: UniqueDefinition = catalog.unique(output_unique_id)
 		if unique_definition == null:
 			return _fusion_failure(&"catalog", drop_serial)

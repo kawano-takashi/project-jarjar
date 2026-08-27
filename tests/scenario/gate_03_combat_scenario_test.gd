@@ -102,9 +102,11 @@ func _test_camera_arena_and_input(assertions: Variant) -> void:
 	var enemy_multimesh := (arena.get_node("EnemyInstances") as MultiMeshInstance3D).multimesh
 	var projectile_multimesh := (arena.get_node("ProjectileInstances") as MultiMeshInstance3D).multimesh
 	var vfx_multimesh := (arena.get_node("VfxInstances") as MultiMeshInstance3D).multimesh
+	var chest_multimesh := (arena.get_node("ChestInstances") as MultiMeshInstance3D).multimesh
 	assertions.expect_equal(768, enemy_multimesh.instance_count, "enemy MultiMesh capacity")
 	assertions.expect_equal(4096, projectile_multimesh.instance_count, "projectile MultiMesh capacity")
 	assertions.expect_equal(4096, vfx_multimesh.instance_count, "VFX MultiMesh capacity")
+	assertions.expect_equal(128, chest_multimesh.instance_count, "chest MultiMesh capacity")
 	for forbidden_action: String in ["attack", "aim", "skill", "dash"]:
 		assertions.expect_false(InputMap.has_action(forbidden_action), "no %s input action" % forbidden_action)
 	arena.free()
@@ -804,8 +806,12 @@ func _test_qa_scenarios(assertions: Variant) -> void:
 		assertions.expect_false(bool(result.get("tutorial_active", true)), "%s tutorial inactive" % scenario_id)
 		assertions.expect_true(bool(result.get("rng_unchanged", false)), "%s mutable RNG unchanged" % scenario_id)
 		var state: RunState = result["state"] as RunState
-		assertions.expect_equal(GameTypes.RunPhase.COMBAT, state.phase, "%s starts COMBAT" % scenario_id)
-		assertions.expect_equal(1, state.wave_number, "%s starts W1" % scenario_id)
+		if scenario_id == "reward_controls":
+			assertions.expect_equal(GameTypes.RunPhase.REWARD_REVEAL, state.phase, "reward_controls starts REWARD_REVEAL")
+			assertions.expect_equal(3, state.wave_number, "reward_controls starts W3")
+		else:
+			assertions.expect_equal(GameTypes.RunPhase.COMBAT, state.phase, "%s starts COMBAT" % scenario_id)
+			assertions.expect_equal(1, state.wave_number, "%s starts W1" % scenario_id)
 	assertions.expect_false(QaScenarioFactory.build("unknown", catalog).get("valid", true), "unknown QA ID rejected")
 	for weapon_id: String in ["weapon_bow", "weapon_staff", "weapon_sword"]:
 		var weapon_result: Dictionary = QaScenarioFactory.build(weapon_id, catalog)

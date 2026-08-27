@@ -1,0 +1,311 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://src/ui/reward_reveal_screen.gd" id="1_reward"]
+[ext_resource type="PackedScene" path="res://scenes/ui/settings_overlay.tscn" id="2_settings"]
+
+[sub_resource type="StyleBoxFlat" id="HeaderPanel"]
+content_margin_left = 24.0
+content_margin_top = 16.0
+content_margin_right = 24.0
+content_margin_bottom = 16.0
+bg_color = Color(0.035, 0.047, 0.063, 0.96)
+border_width_bottom = 2
+border_color = Color(0.27, 0.65, 0.56, 1)
+
+[sub_resource type="StyleBoxFlat" id="ListPanel"]
+content_margin_left = 18.0
+content_margin_top = 18.0
+content_margin_right = 18.0
+content_margin_bottom = 18.0
+bg_color = Color(0.028, 0.038, 0.052, 0.94)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.22, 0.35, 0.41, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="FocusStyle"]
+bg_color = Color(0.08, 0.12, 0.15, 0.9)
+border_width_left = 4
+border_width_top = 4
+border_width_right = 4
+border_width_bottom = 4
+border_color = Color(1, 0.72, 0.28, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="ButtonStyle"]
+content_margin_left = 22.0
+content_margin_top = 14.0
+content_margin_right = 22.0
+content_margin_bottom = 14.0
+bg_color = Color(0.11, 0.15, 0.18, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.31, 0.43, 0.48, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[node name="RewardRevealScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_reward")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.018, 0.026, 0.038, 1)
+
+[node name="TopGlow" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 8.0
+grow_horizontal = 2
+mouse_filter = 2
+color = Color(0.29, 0.72, 0.61, 1)
+
+[node name="RootMargin" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 42.0
+offset_top = 30.0
+offset_right = -42.0
+offset_bottom = -30.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Content" type="VBoxContainer" parent="RootMargin"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Header" type="PanelContainer" parent="RootMargin/Content"]
+layout_mode = 2
+theme_override_styles/panel = SubResource("HeaderPanel")
+
+[node name="Row" type="HBoxContainer" parent="RootMargin/Content/Header"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="RootMargin/Content/Header/Row"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.92, 1, 0.97, 1)
+theme_override_font_sizes/font_size = 34
+text = "報酬開封"
+
+[node name="UnopenedCount" type="Label" parent="RootMargin/Content/Header/Row"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.79, 0.3, 1)
+theme_override_font_sizes/font_size = 28
+text = "未開封箱　0"
+vertical_alignment = 1
+
+[node name="PrealertBanner" type="Label" parent="RootMargin/Content"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 62)
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.78, 0.25, 1)
+theme_override_colors/font_shadow_color = Color(0.28, 0.04, 0.32, 1)
+theme_override_constants/shadow_offset_x = 3
+theme_override_constants/shadow_offset_y = 3
+theme_override_font_sizes/font_size = 34
+text = "高レア予告　EPIC以上"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="PrealertTargets" type="HBoxContainer" parent="RootMargin/Content"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 100)
+layout_mode = 2
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="Body" type="HBoxContainer" parent="RootMargin/Content"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 22
+
+[node name="CurrentColumn" type="VBoxContainer" parent="RootMargin/Content/Body"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="Heading" type="Label" parent="RootMargin/Content/Body/CurrentColumn"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.56, 0.76, 0.78, 1)
+theme_override_font_sizes/font_size = 22
+text = "現在カード"
+
+[node name="RewardSpeedProxy" type="Control" parent="RootMargin/Content/Body/CurrentColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(760, 430)
+layout_mode = 2
+size_flags_vertical = 3
+focus_mode = 2
+mouse_filter = 0
+tooltip_text = "A／Enterまたはマウス左を0.25秒長押しすると4倍開封"
+
+[node name="CurrentCardFrame" type="CenterContainer" parent="RootMargin/Content/Body/CurrentColumn/RewardSpeedProxy"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_bottom = -84.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="CurrentCardMotion" type="Control" parent="RootMargin/Content/Body/CurrentColumn/RewardSpeedProxy/CurrentCardFrame"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(760, 340)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="CurrentCard" type="PanelContainer" parent="RootMargin/Content/Body/CurrentColumn/RewardSpeedProxy/CurrentCardFrame/CurrentCardMotion"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Margin" type="MarginContainer" parent="RootMargin/Content/Body/CurrentColumn/RewardSpeedProxy/CurrentCardFrame/CurrentCardMotion/CurrentCard"]
+layout_mode = 2
+theme_override_constants/margin_left = 36
+theme_override_constants/margin_top = 32
+theme_override_constants/margin_right = 36
+theme_override_constants/margin_bottom = 32
+
+[node name="Content" type="VBoxContainer" parent="RootMargin/Content/Body/CurrentColumn/RewardSpeedProxy/CurrentCardFrame/CurrentCardMotion/CurrentCard/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 22
+alignment = 1
+
+[node name="CurrentRarity" type="Label" parent="RootMargin/Content/Body/CurrentColumn/RewardSpeedProxy/CurrentCardFrame/CurrentCardMotion/CurrentCard/Margin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.81, 0.36, 1)
+theme_override_font_sizes/font_size = 40
+text = "未公開"
+horizontal_alignment = 1
+
+[node name="CurrentName" type="Label" parent="RootMargin/Content/Body/CurrentColumn/RewardSpeedProxy/CurrentCardFrame/CurrentCardMotion/CurrentCard/Margin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.94, 0.96, 0.95, 1)
+theme_override_font_sizes/font_size = 32
+text = "箱を開封しています"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="CurrentDetails" type="Label" parent="RootMargin/Content/Body/CurrentColumn/RewardSpeedProxy/CurrentCardFrame/CurrentCardMotion/CurrentCard/Margin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.65, 0.72, 0.76, 1)
+theme_override_font_sizes/font_size = 19
+text = "内容は箱獲得時に確定済み"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="SpeedPanel" type="PanelContainer" parent="RootMargin/Content/Body/CurrentColumn/RewardSpeedProxy"]
+layout_mode = 1
+anchors_preset = 12
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -76.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("ButtonStyle")
+
+[node name="SpeedLabel" type="Label" parent="RootMargin/Content/Body/CurrentColumn/RewardSpeedProxy/SpeedPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+theme_override_font_sizes/font_size = 22
+text = "長押し4倍　A／Enter またはマウス左"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="AcquiredPanel" type="PanelContainer" parent="RootMargin/Content/Body"]
+custom_minimum_size = Vector2(510, 0)
+layout_mode = 2
+theme_override_styles/panel = SubResource("ListPanel")
+
+[node name="Content" type="VBoxContainer" parent="RootMargin/Content/Body/AcquiredPanel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Heading" type="Label" parent="RootMargin/Content/Body/AcquiredPanel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.56, 0.76, 0.78, 1)
+theme_override_font_sizes/font_size = 22
+text = "獲得一覧"
+
+[node name="Scroll" type="ScrollContainer" parent="RootMargin/Content/Body/AcquiredPanel/Content"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="AcquiredList" type="VBoxContainer" parent="RootMargin/Content/Body/AcquiredPanel/Content/Scroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 9
+
+[node name="Controls" type="HBoxContainer" parent="RootMargin/Content"]
+layout_mode = 2
+theme_override_constants/separation = 18
+
+[node name="Spacer" type="Control" parent="RootMargin/Content/Controls"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+
+[node name="RewardOpenAll" type="Button" parent="RootMargin/Content/Controls"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(310, 76)
+layout_mode = 2
+focus_mode = 2
+theme_override_font_sizes/font_size = 22
+theme_override_styles/normal = SubResource("ButtonStyle")
+theme_override_styles/focus = SubResource("FocusStyle")
+text = "すべて開ける\nY／F"
+
+[node name="RewardSettings" type="Button" parent="RootMargin/Content/Controls"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(280, 76)
+layout_mode = 2
+focus_mode = 2
+theme_override_font_sizes/font_size = 22
+theme_override_styles/normal = SubResource("ButtonStyle")
+theme_override_styles/focus = SubResource("FocusStyle")
+text = "設定\nA／Enter"
+
+[node name="SettingsOverlay" parent="." instance=ExtResource("2_settings")]
+unique_name_in_owner = true

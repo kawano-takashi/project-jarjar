@@ -19,6 +19,12 @@ func _ready() -> void:
 			_capture_combat.bind("weapon_shapes").call_deferred()
 		"gate_03:boss_gate":
 			_capture_combat.bind("boss_gate").call_deferred()
+		"gate_04:chest_absorb":
+			_capture_gate_four.bind("chest_absorb").call_deferred()
+		"gate_04:epic_prealert":
+			_capture_gate_four.bind("epic_prealert").call_deferred()
+		"gate_04:reward_grid":
+			_capture_gate_four.bind("reward_grid").call_deferred()
 		_:
 			print("EVIDENCE_ARGUMENT_REJECTED name=--evidence")
 			get_tree().quit(2)
@@ -40,6 +46,11 @@ func _capture_logic_diagnostics() -> void:
 	_right_text.text = diagnostics["right_text"]
 	_diagnostics_layer.visible = true
 	await _capture_png("gate-02", "logic_diagnostics")
+
+
+func _capture_gate_four(scenario_name: String) -> void:
+	_diagnostics_layer.visible = false
+	await _capture_png("gate-04", scenario_name)
 
 
 func _capture_png(gate_directory: String, scenario_name: String) -> void:

@@ -2,6 +2,9 @@ class_name ArenaPresenter
 extends Node3D
 
 
+signal phase_changed(phase: GameTypes.RunPhase)
+
+
 const CAMERA_TARGET_X_LIMIT: float = 9.0
 const CAMERA_TARGET_Z_LIMIT: float = 4.5
 const CAMERA_FOLLOW_TAU_SECONDS: float = 0.18
@@ -12,6 +15,7 @@ const CAMERA_OFFSET: Vector3 = Vector3(8.912187, 18.0, 8.912187)
 @onready var _enemy_instances: MultiMeshInstance3D = %EnemyInstances
 @onready var _projectile_instances: MultiMeshInstance3D = %ProjectileInstances
 @onready var _vfx_instances: MultiMeshInstance3D = %VfxInstances
+@onready var _chest_instances: MultiMeshInstance3D = %ChestInstances
 @onready var _combat_hud: CombatHud = %CombatHUD
 
 var _simulation: CombatSimulation = null
@@ -46,6 +50,7 @@ func _physics_process(delta: float) -> void:
 	if _simulation == null:
 		return
 	var snapshot: CombatSnapshot
+	var previous_phase: GameTypes.RunPhase = _simulation.state.phase
 	if _simulation_paused:
 		snapshot = _simulation.build_snapshot()
 	else:
@@ -58,6 +63,8 @@ func _physics_process(delta: float) -> void:
 		)
 		snapshot = _simulation.step(move_input, delta)
 	_apply_snapshot(snapshot, delta)
+	if _simulation.state.phase != previous_phase:
+		phase_changed.emit(_simulation.state.phase)
 
 
 func _apply_snapshot(snapshot: CombatSnapshot, delta: float) -> void:
@@ -71,6 +78,7 @@ func _apply_snapshot(snapshot: CombatSnapshot, delta: float) -> void:
 	_copy_transform_prefix(snapshot.enemy_transforms, _enemy_instances)
 	_copy_transform_prefix(snapshot.projectile_transforms, _projectile_instances)
 	_copy_transform_prefix(snapshot.vfx_transforms, _vfx_instances)
+	_copy_transform_prefix(snapshot.chest_transforms, _chest_instances)
 	_combat_hud.update_from_snapshot(snapshot)
 	_update_camera(snapshot.player_position, delta)
 

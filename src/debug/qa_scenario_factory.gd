@@ -11,6 +11,7 @@ const VALID_IDS: Array[String] = [
 	"pre_quota_death",
 	"pre_quota_timeout",
 	"post_quota_death",
+	"reward_controls",
 ]
 
 
@@ -81,6 +82,8 @@ static func build(scenario_id: String, catalog: DefinitionCatalog) -> Dictionary
 				"qa-reward-post-death",
 				"qa-item-post-death",
 			)
+		"reward_controls":
+			fixture_valid = _build_reward_controls_fixture(state, catalog)
 	var rng_unchanged: bool = _rng_states_match(
 		state,
 		combat_rng_state,
@@ -245,6 +248,92 @@ static func _make_affix(affix_id: StringName, value: float) -> AffixRoll:
 	affix.affix_id = affix_id
 	affix.value = value
 	return affix
+
+
+static func _build_reward_controls_fixture(
+	state: RunState,
+	catalog: DefinitionCatalog,
+) -> bool:
+	state.wave_number = 3
+	state.phase = GameTypes.RunPhase.REWARD_REVEAL
+	state.wave_cleared = true
+	state.unopened_rewards.clear()
+	var fixtures: Array[Dictionary] = [
+		{
+			"reward_id": "qa-reward-common-bow",
+			"item_id": "qa-item-common-bow",
+			"slot": GameTypes.EquipmentSlot.MAIN_WEAPON,
+			"weapon_type": GameTypes.MainWeaponType.BOW,
+			"rarity": GameTypes.Rarity.COMMON,
+			"affixes": [_make_affix(&"max_hp", 10.0)],
+		},
+		{
+			"reward_id": "qa-reward-rare-body",
+			"item_id": "qa-item-rare-body",
+			"slot": GameTypes.EquipmentSlot.BODY,
+			"weapon_type": GameTypes.MainWeaponType.UNCLASSIFIED,
+			"rarity": GameTypes.Rarity.RARE,
+			"affixes": [
+				_make_affix(&"max_hp", 18.0),
+				_make_affix(&"damage_reduction_pct", 9.0),
+			],
+		},
+		{
+			"reward_id": "qa-reward-epic-hands",
+			"item_id": "qa-item-epic-hands",
+			"slot": GameTypes.EquipmentSlot.HANDS,
+			"weapon_type": GameTypes.MainWeaponType.UNCLASSIFIED,
+			"rarity": GameTypes.Rarity.EPIC,
+			"affixes": [
+				_make_affix(&"damage_pct", 24.0),
+				_make_affix(&"attack_speed_pct", 24.0),
+				_make_affix(&"area_pct", 30.0),
+			],
+		},
+		{
+			"reward_id": "qa-reward-legendary-feet",
+			"item_id": "qa-item-legendary-feet",
+			"slot": GameTypes.EquipmentSlot.FEET,
+			"weapon_type": GameTypes.MainWeaponType.UNCLASSIFIED,
+			"rarity": GameTypes.Rarity.LEGENDARY,
+			"affixes": [
+				_make_affix(&"move_speed_pct", 25.0),
+				_make_affix(&"max_hp", 50.0),
+				_make_affix(&"damage_reduction_pct", 25.0),
+				_make_affix(&"skill_power_pct", 50.0),
+			],
+		},
+	]
+	for index: int in fixtures.size():
+		var fixture: Dictionary = fixtures[index]
+		var affixes: Array[AffixRoll] = []
+		for value: Variant in fixture["affixes"]:
+			affixes.append(value as AffixRoll)
+		var item: ItemInstance = QaItemBuilderScript.build(
+			catalog,
+			String(fixture["item_id"]),
+			fixture["slot"],
+			fixture["rarity"],
+			fixture["weapon_type"],
+			affixes,
+			&"",
+			false,
+		)
+		if item == null:
+			return false
+		var reward := RewardRoll.new()
+		reward.reward_id = String(fixture["reward_id"])
+		reward.wave_number = 3
+		reward.acquired_tick = index
+		reward.is_guaranteed_main_weapon = false
+		reward.kind = GameTypes.RewardKind.EQUIPMENT
+		reward.equipment = item
+		reward.skill_id = &""
+		reward.rarity_for_presentation = int(fixture["rarity"])
+		reward.revealed = false
+		state.unopened_rewards.append(reward)
+	state.wave_chests = state.unopened_rewards.size()
+	return true
 
 
 static func _rng_states_match(

@@ -1,4 +1,4 @@
-[gd_scene load_steps=19 format=3]
+[gd_scene load_steps=22 format=3]
 
 [ext_resource type="Script" path="res://src/gameplay/arena_presenter.gd" id="1_presenter"]
 [ext_resource type="PackedScene" path="res://scenes/ui/combat_hud.tscn" id="2_hud"]
@@ -87,6 +87,21 @@ mesh = SubResource("VfxMesh")
 instance_count = 4096
 visible_instance_count = 0
 
+[sub_resource type="StandardMaterial3D" id="ChestMaterial"]
+albedo_color = Color(0.86, 0.58, 0.2, 1)
+metallic = 0.18
+roughness = 0.42
+
+[sub_resource type="BoxMesh" id="ChestMesh"]
+material = SubResource("ChestMaterial")
+size = Vector3(0.7, 0.48, 0.5)
+
+[sub_resource type="MultiMesh" id="ChestMultiMesh"]
+transform_format = 1
+mesh = SubResource("ChestMesh")
+instance_count = 128
+visible_instance_count = 0
+
 [node name="ArenaCombat" type="Node3D"]
 script = ExtResource("1_presenter")
 
@@ -126,6 +141,10 @@ multimesh = SubResource("ProjectileMultiMesh")
 [node name="VfxInstances" type="MultiMeshInstance3D" parent="."]
 unique_name_in_owner = true
 multimesh = SubResource("VfxMultiMesh")
+
+[node name="ChestInstances" type="MultiMeshInstance3D" parent="."]
+unique_name_in_owner = true
+multimesh = SubResource("ChestMultiMesh")
 
 [node name="KeyLight" type="DirectionalLight3D" parent="."]
 rotation_degrees = Vector3(-58, -35, 0)
