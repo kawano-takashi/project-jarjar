@@ -1,0 +1,8 @@
+.codex/
+.godot/
+tools/
+build/
+artifacts/
+work/
+*.log
+.godot/export_credentials.cfg

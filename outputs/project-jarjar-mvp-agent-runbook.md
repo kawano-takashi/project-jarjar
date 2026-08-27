@@ -1,6 +1,6 @@
 # Project JARJAR（仮題）— MVP コーディングエージェント作業手順書
 
-文書版: 1.1  
+文書版: 1.3
 対象: Windows PC / Steam 向けローカル・シングルプレイ MVP  
 実装基盤: Godot 4.7.2-stable Standard / GDScript / Compatibility renderer
 
@@ -18,9 +18,11 @@ MVP の完成条件は、Windows x86_64 の Release ビルドで、タイトル�
 
 - コーディングエージェントに割り当てられた作業ディレクトリそのものをリポジトリルートとする。入れ子のプロジェクトディレクトリは作らない。
 - project.godot、src、scenes、data、tests はリポジトリルート直下へ置く。
-- 開始時点では Godot 4.7-stable が PATH 上にあり、Git 2.47.1 以上が使用でき、Git リポジトリはまだ初期化されていない。
+- 文書版1.3の開始時点ではStandard版の`godot.exe` 4.7.2-stableがPATH上にあり、Git 2.47.1 以上が使用でき、2.1の採用repositoryが存在する。engineはdownloadせず、PATHから`Application`として解決したexact `godot.exe`だけを使う。`godot-mono`、`godot-mono.exe`、alias、function、script、別名binaryは使わない。
 - ローカルのコーディング支援用として`.codex/skills/godot-gdscript-guard/`が存在してよい。許可内容は6.2のexact whitelistだけとし、他の`.codex`内容は想定外として停止する。`.codex`は製品sourceではなくGit管理外とする。
-- outputs/project-jarjar-game-proposal.md と本書は、ゲート1の初回コミットへ含める。
+- outputs/project-jarjar-game-proposal.md と本書の文書版1.1までは採用anchorに含まれる。本書の文書版1.2と1.3の変更はGate 1基準commitへ含める。
+- 文書版1.2では、既存repositoryのroot commit `8922cbbdfdcc601a6d913bab0f491583440a568f`（subject `init commit`）を採用anchorとして例外的に受け入れる。object formatはsha1、branchは`main`、remoteは`origin` 1件だけ、fetch/push URLはいずれも`https://github.com/kawano-takashi/project-jarjar.git`へ固定する。このanchorはGate 1の基準commitではなく、amend、rebase、削除、pushを行わない。
+- 採用anchorのtreeは6.2記載の`.codex` 4fileと`outputs` 2fileだけに固定する。anchorで追跡済みの`.codex`は履歴上の既知例外だが、Gate 1の全必須検証成功後にだけ`git rm --cached`相当で現行indexから外し、Gate 1候補HEADでは追跡0件にする。作業tree上のfileは削除しない。
 - 実装開始前に、必ず本書と outputs/project-jarjar-game-proposal.md を最後まで読む。両者が食い違う場合は本書の内部契約を実装上の正とし、食い違いを人間へ報告して停止する。
 
 ### 2.2 禁止事項
@@ -37,9 +39,9 @@ MVP の完成条件は、Windows x86_64 の Release ビルドで、タイトル�
 
 ### 2.3 変更とコミットの規律
 
-各工程の開始時に git status --short --branch を記録する。ゲート1では `git init --object-format=sha1 -b main` を実行し、commit hashを40文字へ固定する。各工程では、その工程に必要な変更だけを行い、すべての必須検証が成功した後に初回の基準コミットを1つ作る。人間の承認前に修正依頼を受けた場合だけ、後述する追補コミットを追加する。各コミット後の git status --short は空でなければならない。
+各工程の開始時に git status --short --branch を記録する。文書版1.2のGate 1では新しい`git init`を行わず、2.1の採用anchorを6.2の固定監査で受け入れる。各工程では、その工程に必要な変更だけを行い、すべての必須検証が成功した後に初回の基準コミットを1つ作る。人間の承認前に修正依頼を受けた場合だけ、後述する追補コミットを追加する。各コミット後の git status --short は空でなければならない。
 
-- Gate 1の初回preflightで既存の`.git`、想定外の追跡候補、またはremote相当の既存repository状態が見つかった場合は上書きせず、状態を報告して停止する。`git init`は本書どおりの空の非Git作業領域でだけ実行する。Gate 2以降を新規開始するときは逆に`.git`が存在し、object formatがsha1、branchが`main`、remoteが0件、開始時working treeがclean、HEADが直前Gateの承認済み40文字HEADであることを要求し、満たさなければ停止する。同一Gateの明示再開時だけ2.3末尾の再開規則を適用する。
+- 全Gateでremote集合は`origin` 1件だけ、fetch/push URLは2.1の固定URLが各1件だけ、upstreamは`origin/main`、`refs/remotes/origin/main`は採用anchorに固定する。remote追加・削除・URL変更・fetch・pull・pushは行わない。Gate 2以降を新規開始するときは`.git`が存在し、object formatがsha1、branchが`main`、この固定origin、開始時working treeがclean、HEADが直前Gateの承認済み40文字HEADであることを要求し、満たさなければ停止する。同一Gateの明示再開時だけ2.3末尾の再開規則を適用する。
 - `git config --get user.name` と `git config --get user.email` のどちらかが空なら、globalまたはlocal設定を勝手に変更せず、人間へ設定を依頼して停止する。
 - `git commit --amend`、rebase、push、force push、タグ作成は行わない。
 
@@ -54,11 +56,13 @@ MVP の完成条件は、Windows x86_64 の Release ビルドで、タイトル�
 
 承認前のレビュー修正に使う追補コミットメッセージは `fix: address Gate N review` に固定し、Nを対象Gate番号へ置換する。複数回の修正でも同じ文字列を使い、amendはしない。検証失敗時はコミットしない。原因、再現コマンド、関連ログの絶対パスを報告して停止する。
 
-同じ工程を再開できるのは、人間が本項の固定文言で明示した場合だけとする。Gate 1が`git init`より前に停止した場合は、人間が「Gate 1の修正を再開」と指示し、原因を解消した後に初回preflightから再実行する。`git init`後かつGate 1基準コミット前に停止した場合も同じ文言を使い、初回preflightと`git init`を再実行せず6.2の無コミット再開監査を使う。
+人間の「この既存repositoryを採用するようにしてください。」は、文書版1.2への契約変更、6.2の採用監査、Gate 1継続だけを許可する一回限りの明示指示として扱う。以後、同じ工程を再開できるのは、人間が本項の固定文言で明示した場合だけとする。文書版1.2のGate 1が基準コミット前に停止した場合は、人間が「Gate 1の修正を再開」と指示し、採用anchorとremoteを変更せず6.2の再開監査を使う。空作業領域向け初回preflightと`git init`は実行しない。
 
-Gate 2〜6が基準コミット前に停止した場合は、人間が「Gate Nの修正を再開 H」と指示する。Nは対象番号、Hは直前Gateの承認済み40文字HEADである。再開時はbranch=`main`、remote=0件、`git rev-parse HEAD`がHと完全一致し、H以後のcommitがなく、working treeがcleanまたは中断前からの当該Gate変更だけを含むことを確認する。別Gateの変更、未知の生成物、別HEADがあれば停止する。合格時は未コミット成果を削除せず、最初に失敗した、または完了を証明できないコマンドから続ける。Gate 6の人間プレイテスト待ちはこの経路のまま基準コミット前に停止し、集計再開指示だけは「Gate 6のプレイテスト集計を再開 H」に固定する。
+人間の「今 PATH に登録されている godot が 4.7.2 stable だからダウンロード必要ないよ！」は、文書版1.3への環境契約変更、既存`tools/godot`の削除、PATH上のexact Standard `godot.exe`採用、既に公式archive SHA照合済みのWindows Export Template 4file再利用、Gate 1継続だけを許可する一回限りの明示指示として扱う。engineとtemplate archiveを再downloadせず、共有`%APPDATA%`のExport Templatesを使わない。文書版1.3のGate 1を再開するときも採用anchorと固定originを維持し、6.2の再開監査を使う。
 
-基準コミット作成後から承認までのHEADを「候補HEAD」と呼ぶ。候補HEADの報告後に修正依頼を受けた場合は、人間が「Gate Nの修正を再開 H」と指示する。ここでHは最後に報告した40文字の候補HEADである。再開時にbranch=`main`、remote=0件、`git rev-parse HEAD`がHと完全一致することを確認する。Gate 2〜6では直前の承認済みHEADが祖先であり、その後のsubjectが対象Gateの基準message 1件と`fix: address Gate N review`だけであることも確認する。Gate 1には直前承認済みHEADがないため、root commitのsubjectが`chore: bootstrap Godot 4.7.2 project`であり、その後のsubjectが`fix: address Gate 1 review`だけであることを確認する。working treeはclean、または中断前からの当該Gate修正だけを含む状態でなければ停止する。修正後は当該Gateの全必須検証を再実行し、成功時だけ `fix: address Gate N review` で新しい追補コミットを作り、新しい候補HEADとして再報告する。候補コミット作成後・報告前に中断した場合もHへその候補HEADを指定して再開し、全検証を再実行して既存HEADを報告する。変更がないのに空コミットを作らない。Gateの承認は、直前の承認済みHEADより後にある当該Gateの基準コミットと全追補コミットを、現在の候補HEADまで一括して承認する。Gate 1ではrootから候補HEADまでを承認する。次Gateはその承認済みHEADからだけ開始できる。
+Gate 2〜6が基準コミット前に停止した場合は、人間が「Gate Nの修正を再開 H」と指示する。Nは対象番号、Hは直前Gateの承認済み40文字HEADである。再開時はbranch=`main`、2.1の固定origin、`git rev-parse HEAD`がHと完全一致し、H以後のcommitがなく、working treeがcleanまたは中断前からの当該Gate変更だけを含むことを確認する。別Gateの変更、未知の生成物、別HEADがあれば停止する。合格時は未コミット成果を削除せず、最初に失敗した、または完了を証明できないコマンドから続ける。Gate 6の人間プレイテスト待ちはこの経路のまま基準コミット前に停止し、集計再開指示だけは「Gate 6のプレイテスト集計を再開 H」に固定する。
+
+基準コミット作成後から承認までのHEADを「候補HEAD」と呼ぶ。候補HEADの報告後に修正依頼を受けた場合は、人間が「Gate Nの修正を再開 H」と指示する。ここでHは最後に報告した40文字の候補HEADである。再開時にbranch=`main`、2.1の固定origin、`git rev-parse HEAD`がHと完全一致することを確認する。Gate 2〜6では直前の承認済みHEADが祖先であり、その後のsubjectが対象Gateの基準message 1件と`fix: address Gate N review`だけであることも確認する。Gate 1では採用anchorが祖先であり、その直後のsubjectが`chore: bootstrap Godot 4.7.2 project` 1件、その後のsubjectが`fix: address Gate 1 review`だけであることを確認する。working treeはclean、または中断前からの当該Gate修正だけを含む状態でなければ停止する。修正後は当該Gateの全必須検証を再実行し、成功時だけ `fix: address Gate N review` で新しい追補コミットを作り、新しい候補HEADとして再報告する。候補コミット作成後・報告前に中断した場合もHへその候補HEADを指定して再開し、全検証を再実行して既存HEADを報告する。変更がないのに空コミットを作らない。Gateの承認は、直前の承認済みHEADより後にある当該Gateの基準コミットと全追補コミットを、現在の候補HEADまで一括して承認する。Gate 1では採用anchorより後のGate 1基準commitと全追補commitだけを承認する。次Gateはその承認済みHEADからだけ開始できる。
 
 ### 2.4 人間承認ゲート
 
@@ -69,7 +73,7 @@ Gate 2〜6が基準コミット前に停止した場合は、人間が「Gate N�
 3. 実行した検証コマンド、終了コード、合格件数
 4. 合格条件のチェックリスト
 5. PNG スクリーンショットの絶対パス
-6. 直前の承認済みHEAD以後に作った当該Gateの全コミット hash と、現在の候補HEAD。Gate 1はroot commitから列挙する
+6. 直前の承認済みHEAD以後に作った当該Gateの全コミット hash と、現在の候補HEAD。Gate 1は採用anchorを別記し、その直後のGate 1基準commitから列挙する
 7. git status --short の結果
 8. 既知の問題。問題がなければ「なし」と明記
 9. 「次工程は未着手。人間の明示承認を待つ」と明記
@@ -533,7 +537,7 @@ outputs/
 docs/
 ~~~
 
-.codex、tools、build、artifacts、work、.godot は Git ignore 対象。data、scenes、src、tests、outputs、docs、project.godot、export_presets.cfg、.godot-version、.gitattributes、.gitignore、README.md は追跡対象。
+.codex、tools、build、artifacts、work、.godot は Git ignore 対象。data、scenes、src、tests、outputs、docs、project.godot、export_presets.cfg、.godot-version、.gitattributes、.gitignore、README.md は追跡対象。採用anchorで追跡済みの`.codex` 4fileは履歴を書き換えず、Gate 1の必須検証成功後に行う最終の明示ステージでだけindexから除去する。
 
 `.gitattributes`は次へ固定する。
 
@@ -786,24 +790,34 @@ TITLEの「開始」は4.5で新seedを作り、下記と同じRunState factory�
 
 ### 5.1 Godot 4.7.2 の固定
 
-現在の PATH 上の Godot 4.7-stable は使用しない。ゲート1で公式 4.7.2-stable Standard win64 と同版 Export Templates を`tools/godot`配下へ配置する。`tools/godot/_sc_`を置くself-contained modeとし、共有`%APPDATA%`を変更しない。URL と公式Release assetのSHA-256は次に固定する。
+文書版1.3ではengineをdownloadせず、PATHから`Get-Command godot.exe -CommandType Application`で解決した先頭のexact `godot.exe`だけを使う。解決結果がない、leaf名がcase-insensitiveで`godot.exe`ではない、`godot-mono`を選択している、または`--version`が`4.7.2.stable.official`で始まらない場合は停止する。`tools/godot`は存在してはならず、`_sc_`とself-contained engineを作らない。HOME、home、CODEX_HOMEは変更しない。
 
-| asset | URL | SHA-256 |
-|---|---|---|
-| Standard win64 zip | `https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_win64.exe.zip` | `731980f9608d61333e5baf54a2ef17210acc7a538446c0cb9969f002aca1e953` |
-| Export Templates | `https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_export_templates.tpz` | `f298490b8d44d934be425a5a65a51bf15f422428b229a06a6e11d9ffea248011` |
+Windows Export Templatesは、文書版1.3への変更前に公式4.7.2-stable archive全体の固定SHAを照合して抽出済みの次の4fileだけを、Git管理外の`tools/export_templates/4.7.2.stable`で再利用する。archiveやengineを再downloadしない。使用直前に各fileのSHA-256を大文字小文字を無視して固定値と照合し、不足、余分なfile、hash不一致なら停止する。共有`%APPDATA%\Godot\export_templates`は読まず、書かず、exportにも使わない。
 
-CLIは標準出力と標準エラーを取得できるconsole wrapperへ固定する。セッションごとに次で実行ファイルを指定する。HOME、home、CODEX_HOME は変更しない。
+| file | SHA-256 |
+|---|---|
+| `windows_debug_x86_64_console.exe` | `5514C7645EE897A01F540D3CF22EDE5BADF92394521A08BFAB66A54D7369E6E6` |
+| `windows_debug_x86_64.exe` | `51498B72B3A237F882EBD7D1787F06A4BC1EAF0572DAAB93837ADCFD3CFDC107` |
+| `windows_release_x86_64_console.exe` | `52BDCAE9068E8D23B840E5C63B0C1798FFE2CB66144E5C4BC7AF11FB8C8600DF` |
+| `windows_release_x86_64.exe` | `D34D36F3BE1A6C49C56525AE86469B92E4F417DDF0B43CF00DD80C385C4B0562` |
+
+`export_presets.cfg`のcustom templateはDebug=`res://tools/export_templates/4.7.2.stable/windows_debug_x86_64.exe`、Release=`res://tools/export_templates/4.7.2.stable/windows_release_x86_64.exe`へ固定する。console templateは`debug/export_console_wrapper=2`が同directoryの対応する`_console.exe`を使うため、4fileすべてのhashを必須とする。
+
+セッションごとに次でPATH applicationを固定する。
 
 ~~~powershell
-$env:JARJAR_GODOT = (Resolve-Path -LiteralPath ".\tools\godot\Godot_v4.7.2-stable_win64_console.exe").Path
+$jarjarGodotCommand = Get-Command -Name "godot.exe" -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($null -eq $jarjarGodotCommand) { throw "PATH上にApplication godot.exeが存在しない" }
+$env:JARJAR_GODOT = [System.IO.Path]::GetFullPath($jarjarGodotCommand.Source)
+if (-not [string]::Equals([System.IO.Path]::GetFileName($env:JARJAR_GODOT), "godot.exe", [System.StringComparison]::OrdinalIgnoreCase)) { throw "exact godot.exe以外は禁止" }
+if ($env:JARJAR_GODOT -match '(?i)godot-mono') { throw "godot-monoは禁止" }
 $jarjarGodotVersion = (& $env:JARJAR_GODOT --version).Trim()
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $jarjarGodotVersion
 if (-not $jarjarGodotVersion.StartsWith("4.7.2.stable.official")) { throw ("Godot version mismatch: " + $jarjarGodotVersion) }
 ~~~
 
-バージョン出力は 4.7.2.stable.official で始まること。完全一致するまで実装へ進まない。
+バージョン出力は 4.7.2.stable.official で始まること。PATH application、Standard版、versionのすべてが一致するまで実装へ進まない。
 
 ### 5.2 標準検証
 
@@ -978,7 +992,7 @@ Gate 3で3 weapon IDと3 failure ID、Gate 4で`reward_controls`、Gate 5で残�
 
 ### 5.5 設定データの隔離
 
-project.godotは`application/config/use_custom_user_dir=true`、`application/config/custom_user_dir_name="ProjectJARJAR"`へ固定し、Windows Releaseの設定ファイルを`%APPDATA%\ProjectJARJAR\settings.cfg`だけに限定する。SettingsStoreは自動初期化せず、4.1の引数検証後にだけ明示初期化する。通常Releaseは`initialize_for_game(user://settings.cfg)`、Debug/test main sceneは`--settings-path=<絶対cfg path>`を受け、解決後pathがrepositoryの`artifacts/gate-NN/test-user/`配下である場合だけ`initialize_for_game()`へ依存注入する。Release smokeは`initialize_ephemeral()`だけを使い、pack auditは未初期化のまま実行する。値欠落、相対path、範囲外pathは初期化と全file I/Oより前に終了コード2。Releaseはこの引数を終了コード2で拒否する。独自runner、evidence、QA scenario、performance、debug exported smokeというfile-backedの全自動Debug/test起動は専用の空`--settings-path`を必須とし、実ユーザーのsettings.cfgを読書きしない。引数なしの通常debugはuser://settings.cfgを使い、Release smokeとpack auditはsettings pathを渡さない明示例外とする。各file-backed自動プロセスの起動直前に、解決済みcfg pathが当該`artifacts/gate-NN/test-user/`直下または子孫であることをcase-insensitive比較で再検証し、そのcfgファイル1件だけが存在すれば`Remove-Item -LiteralPath ... -Force`で削除する。親directoryや他fileは削除しない。test runner起動時には`initialize_for_runner()`がGate共通の`test-user/runner/settings.cfg`をbootstrap設定先として使用する。各testは開始前に`SettingsStore.use_test_path(<test_nameの絶対cfg path>)`を1回呼び、同じ範囲検証に成功した後だけ`artifacts/gate-NN/test-user/<test_name>/settings.cfg`へ切り替え、その単一fileを削除して既定値を再読込する。各testの成功・失敗・例外にかかわらず`finally`で`SettingsStore.restore_runner_bootstrap_path()`を1回呼んでbootstrap pathの既定値へ戻し、test間で設定値を共有しない。`use_test_path()`とrestoreは`initialized=true`かつ`runner_safe_mode=true`の時だけ使用できる。範囲外pathなら切替えもI/Oもせず当該testを失敗させるため、同Gate再実行でも実ユーザー設定へ触れず常に既定値から始める。
+project.godotは`application/config/use_custom_user_dir=true`、`application/config/custom_user_dir_name="ProjectJARJAR"`へ固定し、Windows Releaseの設定ファイルを`%APPDATA%\ProjectJARJAR\settings.cfg`だけに限定する。SettingsStoreは自動初期化せず、4.1の引数検証後にだけ明示初期化する。通常Releaseは`initialize_for_game(user://settings.cfg)`、Debug/test main sceneは`--settings-path=<絶対cfg path>`を受け、解決後pathがrepositoryの`artifacts/gate-NN/test-user/`配下である場合だけ`initialize_for_game()`へ依存注入する。`NN`は`01`から`06`だけを許可し、SettingsStore、LaunchArguments、test runnerのGate共通validatorは`gate-01`へhard-codeせず同じ6 rootを受理し、`00`、`07`、桁不一致、repository外、別basenameを拒否する。Gate 1 testではfile I/Oを行わないparser/path testとしてGate 2 rootの受理とGate 7 rootの拒否も固定する。Release smokeは`initialize_ephemeral()`だけを使い、pack auditは未初期化のまま実行する。値欠落、相対path、範囲外pathは初期化と全file I/Oより前に終了コード2。Releaseはこの引数を終了コード2で拒否する。独自runner、evidence、QA scenario、performance、debug exported smokeというfile-backedの全自動Debug/test起動は専用の空`--settings-path`を必須とし、実ユーザーのsettings.cfgを読書きしない。引数なしの通常debugはuser://settings.cfgを使い、Release smokeとpack auditはsettings pathを渡さない明示例外とする。各file-backed自動プロセスの起動直前に、解決済みcfg pathが当該`artifacts/gate-NN/test-user/`直下または子孫であることをcase-insensitive比較で再検証し、そのcfgファイル1件だけが存在すれば`Remove-Item -LiteralPath ... -Force`で削除する。親directoryや他fileは削除しない。test runner起動時には`initialize_for_runner()`がGate共通の`test-user/runner/settings.cfg`をbootstrap設定先として使用する。各testは開始前に`SettingsStore.use_test_path(<test_name>の絶対cfg path)`を1回呼び、同じ範囲検証に成功した後だけ`artifacts/gate-NN/test-user/<test_name>/settings.cfg`へ切り替え、その単一fileを削除して既定値を再読込する。各testの成功・失敗・例外にかかわらず`finally`で`SettingsStore.restore_runner_bootstrap_path()`を1回呼んでbootstrap pathの既定値へ戻し、test間で設定値を共有しない。`use_test_path()`とrestoreは`initialized=true`かつ`runner_safe_mode=true`の時だけ使用できる。範囲外pathなら切替えもI/Oもせず当該testを失敗させるため、同Gate再実行でも実ユーザー設定へ触れず常に既定値から始める。
 
 Gate 1で`tests/run_with_clean_settings.ps1`を作る。引数は`-Executable`、`-Arguments`、`-Label`、`-ExpectedExitCodes`、`-WorkingDirectory`の5つとし、ExpectedExitCodesの既定値は`@(0)`、他4つは必須とする。Argumentsの宣言は`[Parameter(Mandatory=$true)][AllowEmptyCollection()][string[]]$Arguments`へ固定し、通常起動で渡す空配列も受理する。対象設定を上記のsettings.cfg 1ファイル、logを`artifacts/gate-06/tests.txt`へ固定する。ExecutableとWorkingDirectoryは既存の絶対pathへ解決する。実行前に既存ファイルがあれば`artifacts/gate-06/user-settings-backup-<UTC yyyyMMddTHHmmssZ>-<32桁GUID>/settings.cfg`へコピーし、そのSHA-256を記録してから元ファイルだけを除去する。さらに実行前後で`%APPDATA%\ProjectJARJAR`配下の全fileからroot直下のexact path `%APPDATA%\ProjectJARJAR\settings.cfg`だけを除外し、root相対pathを`/`区切り・ordinal昇順に並べた値と各fileのSHA-256をmemory上のmanifestにする。pathやhash自体はlogへ出さず件数と一致／不一致だけを記録し、追加・削除・内容変更が1件でもあれば失敗する。rootがなければ空manifestとする。外側の`try/finally`で設定復元を保証し、内側の`try/finally`でWorkingDirectoryへPush-Locationして必ずPopする。その中で`process_log.ps1`の`Invoke-JarjarLoggedProcess`へ固定LogPathと4つのprocess parameterを渡して指定プロセスを待機実行する。終了後は既存ファイルがあった場合にbackupから復元してSHA-256一致を検証し、なかった場合はQA中に作られたsettings.cfgだけを除去する。親ディレクトリの再帰削除、他ファイルの移動、backupの上書きを禁止する。native終了値がExpectedExitCodes内、設定復元成功、非settings manifest一致のすべてを満たせばwrapper自身は明示的に`exit 0`、検証・実行・復元失敗は`exit 1`、wrapper引数不正は`exit 2`とする。Releaseのsmoke、pack audit、QA引数拒否、最終E2E、各tester起動を含む全自動・手動検証起動は必ずこのscriptを通す。
 
@@ -991,11 +1005,11 @@ Windows exportでは`debug/export_console_wrapper=2`によりDebugとReleaseの�
 ~~~text
 Project JARJAR の工程1だけを実行してください。リポジトリルートの outputs/project-jarjar-mvp-agent-runbook.md と outputs/project-jarjar-game-proposal.md を最後まで読み、本書を内部契約の正としてください。次工程には進まないでください。
 
-開始状態を確認し、既存の.gitや想定外のファイルがない場合だけ`git init --object-format=sha1 -b main`を実行してください。6.2のexact whitelistと一致する`.codex/skills/godot-gdscript-guard/`だけは既知のローカル支援fileとして許可し、Git管理外としてください。git user.name / user.emailが未設定なら変更せず、人間へ報告して停止してください。公式 Godot 4.7.2-stable Standard win64 と同版 Export Templates を、本書の固定URLから取得し、固定SHA-256照合後だけ導入してください。Godot 本体、`_sc_`、`editor_data/export_templates/4.7.2.stable`はすべて tools/godot 配下へ置き、tools はGit管理外とします。共有`%APPDATA%`と既存の PATH 上の4.7-stableは使用しません。
+開始状態は6.2の採用repository監査で確認し、新しい`git init`は実行しないでください。採用anchor、main、sha1、固定origin、anchor tree、working treeを完全検証し、不一致なら停止してください。6.2のexact whitelistと一致する`.codex/skills/godot-gdscript-guard/`だけは既知のローカル支援fileとして許可し、Gate 1の全必須検証成功後にだけ現行indexから外してGit管理外にしてください。git user.name / user.emailが未設定なら変更せず、人間へ報告して停止してください。engineはdownloadせず、PATHからApplicationとして解決したexact Standard `godot.exe`だけを使用し、`godot-mono`を拒否してversionが`4.7.2.stable.official`で始まることを確認してください。`tools/godot`は削除済みかつ不存在を必須とします。既に公式archive SHA照合済みのWindows Export Templates 4fileだけを`tools/export_templates/4.7.2.stable`で再利用し、本書5.1のper-file SHA-256を毎回照合してください。export presetのDebug/Release custom templateは同directoryのGUI templateへ固定し、toolsはGit管理外とします。共有`%APPDATA%`のExport Templatesは使用しません。
 
 project.godot を作成し、Compatibility renderer、60Hz physics、1920×1080論理解像度、1280×720の初期ウィンドウ、canvas_items stretch、`use_custom_user_dir=true`、`custom_user_dir_name="ProjectJARJAR"`、`debug/file_logging/enable_file_logging=false`、`debug/file_logging/enable_file_logging.pc=false`、`rendering/shader_compiler/shader_cache/enabled=false`を設定してください。InputMapへ move_up=W/Up/左スティックY負、move_down=S/Down/左スティックY正、move_left=A/Left/左スティックX負、move_right=D/Right/左スティックX正、ui_up=Up/方向パッド上/左スティックY負、ui_down=Down/方向パッド下/左スティックY正、ui_left=Left/方向パッド左/左スティックX負、ui_right=Right/方向パッド右/左スティックX正、ui_accept=Enter/ゲームパッドA、ui_cancel=Escape/ゲームパッドB、item_lock=L/ゲームパッドX、reward_open_all=F/ゲームパッドY を登録してください。InputMapの追加actionはこれら以外に作らないでください。
 
-本書のディレクトリ構成、.godot-version、.gitattributes、.gitignore、README.md、project.godot、export_presets.cfg を作ってください。.godot-versionの内容は4.7.2-stableです。.gitignoreには .codex/、.godot/、tools/、build/、artifacts/、work/、*.log、.godot/export_credentials.cfg を含めます。export preset名は Windows Desktop、対象はx86_64、出力は build/windows/ProjectJARJAR.exe、`binary_format/embed_pck=false`、`debug/export_console_wrapper=2`とし、ProjectJARJAR.pckを必ず分離生成します。値2はDebugとReleaseの双方で`ProjectJARJAR.console.exe`を生成する指定です。Release presetの除外filterへ tests/*、src/debug/*、scenes/debug/*、outputs/*、docs/* を登録してください。
+本書のディレクトリ構成、.godot-version、.gitattributes、.gitignore、README.md、project.godot、export_presets.cfg を作ってください。.godot-versionの内容は4.7.2-stableです。.gitignoreには .codex/、.godot/、tools/、build/、artifacts/、work/、*.log、.godot/export_credentials.cfg を含めます。export preset名は Windows Desktop、対象はx86_64、出力は build/windows/ProjectJARJAR.exe、`binary_format/embed_pck=false`、`debug/export_console_wrapper=2`とし、ProjectJARJAR.pckを必ず分離生成します。値2はDebugとReleaseの双方で`ProjectJARJAR.console.exe`を生成する指定です。custom templateはDebug=`res://tools/export_templates/4.7.2.stable/windows_debug_x86_64.exe`、Release=`res://tools/export_templates/4.7.2.stable/windows_release_x86_64.exe`へ固定します。Release presetの除外filterへ tests/*、src/debug/*、scenes/debug/*、outputs/*、docs/* を登録してください。
 
 SettingsStoreを唯一のAutoloadとして作り、`_enter_tree()`と`_ready()`ではfile I/Oを行わないでください。通常起動ではGameAppの引数検証成功後にだけ`initialize_for_game()`を呼び、user://settings.cfgへ master_volume=1.0、music_volume=0.8、sfx_volume=0.9、reduce_motion=false、reduce_flashes=false、controller_vibration=true、tutorial_seen=false を保存・読込できるようにしてください。存在しない設定ファイルはこの既定値で作ります。ランやスコアは保存しません。4.1どおり、`--script res://tests/test_runner.gd`でもSettingsStoreはAutoloadされる前提で`initialize_for_runner()`、runner safe mode、`active_settings_path`、`use_test_path()`、`restore_runner_bootstrap_path()`を実装してください。Release smokeだけは`initialize_ephemeral()`の既定値を使い、pack auditは未初期化のままとし、runnerと両保守modeでは実ユーザーのuser://settings.cfgを一度も開かないでください。
 
@@ -1003,24 +1017,150 @@ Main sceneはGameApp root 1 Nodeだけで作り、GameAppの`_enter_tree()`が�
 
 外部アドオンを使わないtests/test_runner.gd、最小のassertion helper、本書5.2どおりのtests/process_log.ps1とtests/run_gate_checks.ps1、本書5.5どおりのtests/run_with_clean_settings.ps1を作り、unit/smoke_bootstrap_test.gdでSettingsStore既定値、test path隔離、runner起動時にもSettingsStore Autoloadが存在すること、runner_safe_mode=true、active_settings_path一致、test別path切替えとbootstrap復帰、BOOT→TITLE、TITLEの初期focusと4方向neighbor、両file logging設定=false、shader cache設定=falseを含むプロジェクト設定、検証scriptの不正GateNumber／Suite拒否を検証してください。実ユーザーsettings.cfgの存在・長さ・SHA-256・更新日時不変、不正runner引数のI/O前終了2、不正Debug mainの子Node / RunState / 指定cfg 0件・終了2は`run_gate_checks.ps1`の別process integrationとして検証してください。enumは工程2で実装します。src/debug/evidence_capture.gdとdebug evidence sceneを作り、--evidence=gate_01:bootstrapで artifacts/gate-01/bootstrap.png を自動生成して終了させてください。
 
-Godot import、全テスト、エディタ起動終了、Windows debug exportを順に実行してください。すべて成功した後だけ、追跡対象を明示してステージし、コミットメッセージ chore: bootstrap Godot 4.7.2 project でコミットしてください。コミット後のgit statusは空にしてください。
+Godot import、全テスト、エディタ起動終了、Windows debug exportを順に実行してください。すべて成功した後だけ、`.codex` 4fileのindex除去を含む追跡対象を明示してステージし、コミットメッセージ chore: bootstrap Godot 4.7.2 project で採用anchorの子commitを作ってください。作業tree上の`.codex` fileは削除せず、pushもしません。コミット後のgit statusは空にしてください。
 
 最後に、本書2.4の形式で結果、テスト、PNG絶対パス、commit hash、clean statusを報告し、「次工程は未着手。人間の明示承認を待つ」と書いて停止してください。
 ~~~
 
 ### 6.2 必須検証と合格条件
 
-工程冒頭、ファイル作成より前に次を実行する。既存の`.git`があれば必ず停止し、このコードを迂回して初期化しない。
+文書版1.3の採用repositoryでは、工程冒頭、製品file作成より前に次を実行する。この監査は採用anchorの既存`.git`を受け入れる唯一の経路であり、新しい`git init`、履歴変更、remote変更、network操作を行わない。契約変更を同じ未コミットGate 1変更として続行する場合だけ、working treeは本書1fileの変更を許可する。
+
+~~~powershell
+$jarjarAnchor = "8922cbbdfdcc601a6d913bab0f491583440a568f"
+$jarjarOriginUrl = "https://github.com/kawano-takashi/project-jarjar.git"
+$jarjarGitName = git config --get user.name 2>$null
+$jarjarGitEmail = git config --get user.email 2>$null
+if ([string]::IsNullOrWhiteSpace($jarjarGitName) -or [string]::IsNullOrWhiteSpace($jarjarGitEmail)) { throw "Git author未設定。人間による設定が必要" }
+if (-not (Test-Path -LiteralPath ".\.git" -PathType Container)) { throw "採用repositoryの.gitが存在しない" }
+$jarjarRepoRoot = [System.IO.Path]::GetFullPath(((git rev-parse --show-toplevel) | Select-Object -First 1).Trim())
+if ($LASTEXITCODE -ne 0 -or -not [string]::Equals($jarjarRepoRoot, [System.IO.Path]::GetFullPath((Get-Location).Path), [System.StringComparison]::OrdinalIgnoreCase)) { throw "採用repository root不一致" }
+$jarjarBranch = (git branch --show-current).Trim()
+if ($LASTEXITCODE -ne 0 -or $jarjarBranch -ne "main") { throw ("採用branch不一致: " + $jarjarBranch) }
+$jarjarObjectFormat = (git rev-parse --show-object-format).Trim()
+if ($LASTEXITCODE -ne 0 -or $jarjarObjectFormat -ne "sha1") { throw ("採用object format不一致: " + $jarjarObjectFormat) }
+$jarjarHead = (git rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or $jarjarHead -ne $jarjarAnchor) { throw ("採用HEAD不一致: " + $jarjarHead) }
+$jarjarCommitCount = [int]((git rev-list --count HEAD).Trim())
+if ($LASTEXITCODE -ne 0 -or $jarjarCommitCount -ne 1) { throw ("採用commit count不一致: " + $jarjarCommitCount) }
+$jarjarAnchorLine = ((git rev-list --parents -n 1 $jarjarAnchor) | Select-Object -First 1).Trim()
+if ($LASTEXITCODE -ne 0 -or $jarjarAnchorLine -ne $jarjarAnchor) { throw "採用anchorはroot commitでなければならない" }
+$jarjarAnchorSubject = (git show -s --format=%s $jarjarAnchor).Trim()
+if ($LASTEXITCODE -ne 0 -or $jarjarAnchorSubject -ne "init commit") { throw ("採用anchor subject不一致: " + $jarjarAnchorSubject) }
+$jarjarRemotes = @(git remote)
+if ($LASTEXITCODE -ne 0 -or $jarjarRemotes.Count -ne 1 -or $jarjarRemotes[0] -cne "origin") { throw "採用remote集合不一致" }
+$jarjarFetchUrls = @(git remote get-url --all origin)
+if ($LASTEXITCODE -ne 0 -or $jarjarFetchUrls.Count -ne 1 -or $jarjarFetchUrls[0] -cne $jarjarOriginUrl) { throw "採用origin fetch URL不一致" }
+$jarjarPushUrls = @(git remote get-url --push --all origin)
+if ($LASTEXITCODE -ne 0 -or $jarjarPushUrls.Count -ne 1 -or $jarjarPushUrls[0] -cne $jarjarOriginUrl) { throw "採用origin push URL不一致" }
+$jarjarUpstream = (git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}').Trim()
+if ($LASTEXITCODE -ne 0 -or $jarjarUpstream -cne "origin/main") { throw "採用upstream不一致" }
+$jarjarOriginMain = (git rev-parse --verify refs/remotes/origin/main).Trim()
+if ($LASTEXITCODE -ne 0 -or $jarjarOriginMain -cne $jarjarAnchor) { throw "採用origin/main不一致" }
+$jarjarExpectedAnchorFiles = @(
+    ".codex/skills/godot-gdscript-guard/SKILL.md",
+    ".codex/skills/godot-gdscript-guard/agents/openai.yaml",
+    ".codex/skills/godot-gdscript-guard/references/gdscript_python_differences.md",
+    ".codex/skills/godot-gdscript-guard/scripts/gdscript_guard.py",
+    "outputs/project-jarjar-game-proposal.md",
+    "outputs/project-jarjar-mvp-agent-runbook.md"
+)
+$jarjarActualAnchorFiles = @(git ls-tree -r --name-only $jarjarAnchor)
+$jarjarAnchorTreeDiff = @(Compare-Object -ReferenceObject $jarjarExpectedAnchorFiles -DifferenceObject $jarjarActualAnchorFiles)
+if ($LASTEXITCODE -ne 0 -or $jarjarAnchorTreeDiff.Count -gt 0) { throw "採用anchor tree不一致" }
+git diff --quiet $jarjarAnchor -- .codex
+if ($LASTEXITCODE -ne 0) { throw "採用anchor以後に.codex内容が変更されている" }
+$jarjarExpectedCodexEntries = @(
+    "dir:skills",
+    "dir:skills/godot-gdscript-guard",
+    "dir:skills/godot-gdscript-guard/agents",
+    "dir:skills/godot-gdscript-guard/references",
+    "dir:skills/godot-gdscript-guard/scripts",
+    "file:skills/godot-gdscript-guard/SKILL.md",
+    "file:skills/godot-gdscript-guard/agents/openai.yaml",
+    "file:skills/godot-gdscript-guard/references/gdscript_python_differences.md",
+    "file:skills/godot-gdscript-guard/scripts/gdscript_guard.py"
+)
+$jarjarCodexRoot = (Resolve-Path -LiteralPath ".\.codex").Path
+$jarjarActualCodexEntries = @(Get-ChildItem -LiteralPath ".\.codex" -Force -Recurse | ForEach-Object {
+    $jarjarKind = if ($_.PSIsContainer) { "dir:" } else { "file:" }
+    $jarjarKind + $_.FullName.Substring($jarjarCodexRoot.Length + 1).Replace("\", "/")
+})
+if (@(Compare-Object -ReferenceObject $jarjarExpectedCodexEntries -DifferenceObject $jarjarActualCodexEntries).Count -gt 0) { throw "採用.codex filesystem不一致" }
+$jarjarOutputRoot = (Resolve-Path -LiteralPath ".\outputs").Path
+$jarjarActualOutputs = @(Get-ChildItem -LiteralPath ".\outputs" -Force -Recurse | Where-Object { -not $_.PSIsContainer } | ForEach-Object { $_.FullName.Substring($jarjarOutputRoot.Length + 1).Replace("\", "/") })
+if (@(Compare-Object -ReferenceObject @("project-jarjar-game-proposal.md", "project-jarjar-mvp-agent-runbook.md") -DifferenceObject $jarjarActualOutputs).Count -gt 0) { throw "採用outputs filesystem不一致" }
+git diff --quiet $jarjarAnchor -- outputs/project-jarjar-game-proposal.md
+if ($LASTEXITCODE -ne 0) { throw "game proposalはanchorから変更してはならない" }
+$jarjarStatus = @(git status --porcelain=v1 -uall)
+$jarjarAllowedContractStatus = " M outputs/project-jarjar-mvp-agent-runbook.md"
+if ($jarjarStatus.Count -gt 1 -or ($jarjarStatus.Count -eq 1 -and $jarjarStatus[0] -cne $jarjarAllowedContractStatus)) { throw ("採用時working tree不一致: " + ($jarjarStatus -join "; ")) }
+git status --short --branch
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+~~~
+
+文書版1.3では空の非Git作業領域向けpreflightと`git init`を廃止し、上記の採用監査だけを使用する。採用監査合格後、engineをdownloadせず、PATH Godotと既存4 templateを次のblockで検証する。
+
+~~~powershell
+$jarjarGodotCommand = Get-Command -Name "godot.exe" -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($null -eq $jarjarGodotCommand) { throw "PATH上にApplication godot.exeが存在しない" }
+$env:JARJAR_GODOT = [System.IO.Path]::GetFullPath($jarjarGodotCommand.Source)
+if (-not [string]::Equals([System.IO.Path]::GetFileName($env:JARJAR_GODOT), "godot.exe", [System.StringComparison]::OrdinalIgnoreCase)) { throw "exact godot.exe以外は禁止" }
+if ($env:JARJAR_GODOT -match '(?i)godot-mono') { throw "godot-monoは禁止" }
+$jarjarGodotVersion = (& $env:JARJAR_GODOT --version).Trim()
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$jarjarGodotVersion
+if (-not $jarjarGodotVersion.StartsWith("4.7.2.stable.official")) { throw ("Godot version mismatch: " + $jarjarGodotVersion) }
+if (Test-Path -LiteralPath ".\tools\godot") { throw "tools/godotは文書版1.3で禁止" }
+$templateDestination = [System.IO.Path]::GetFullPath(".\tools\export_templates\4.7.2.stable")
+if (-not (Test-Path -LiteralPath $templateDestination -PathType Container)) { throw "固定Export Templates directoryが存在しない" }
+$expectedTemplateSha = [ordered]@{
+    "windows_debug_x86_64_console.exe" = "5514C7645EE897A01F540D3CF22EDE5BADF92394521A08BFAB66A54D7369E6E6"
+    "windows_debug_x86_64.exe" = "51498B72B3A237F882EBD7D1787F06A4BC1EAF0572DAAB93837ADCFD3CFDC107"
+    "windows_release_x86_64_console.exe" = "52BDCAE9068E8D23B840E5C63B0C1798FFE2CB66144E5C4BC7AF11FB8C8600DF"
+    "windows_release_x86_64.exe" = "D34D36F3BE1A6C49C56525AE86469B92E4F417DDF0B43CF00DD80C385C4B0562"
+}
+$actualTemplateFiles = @(Get-ChildItem -LiteralPath $templateDestination -File | Select-Object -ExpandProperty Name)
+if (@(Compare-Object -ReferenceObject @($expectedTemplateSha.Keys) -DifferenceObject $actualTemplateFiles).Count -gt 0) { throw "Export Templates file集合不一致" }
+foreach ($templateName in $expectedTemplateSha.Keys) {
+    $templatePath = Join-Path $templateDestination $templateName
+    $actualSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $templatePath).Hash
+    if (-not [string]::Equals($actualSha, $expectedTemplateSha[$templateName], [System.StringComparison]::OrdinalIgnoreCase)) { throw ("Export Template SHA-256 mismatch: " + $templateName + " " + $actualSha) }
+}
+~~~
+
+採用repositoryのGate 1基準commit前に停止した場合だけ、人間が「Gate 1の修正を再開」と明示してから次の再開監査を実行する。採用監査、anchor commit、remoteを変更せず、空作業領域向け初回preflightと`git init`は実行しない。
 
 ~~~powershell
 $jarjarGitName = git config --get user.name 2>$null
 $jarjarGitEmail = git config --get user.email 2>$null
 if ([string]::IsNullOrWhiteSpace($jarjarGitName) -or [string]::IsNullOrWhiteSpace($jarjarGitEmail)) { throw "Git author未設定。人間による設定が必要" }
-$jarjarExistingRepo = git rev-parse --show-toplevel 2>$null
-if ($LASTEXITCODE -eq 0) { throw ("現在または親ディレクトリの既存Git repositoryを検出したため停止: " + (($jarjarExistingRepo | Select-Object -First 1).Trim())) }
-if (Test-Path -LiteralPath ".\.git") { throw "既存の.gitを検出したため停止" }
-$jarjarUnexpected = @(Get-ChildItem -Force | Where-Object { $_.Name -notin @(".codex", "outputs", "work") })
-if ($jarjarUnexpected.Count -gt 0) { throw ("git init前の想定外ファイル: " + ($jarjarUnexpected.Name -join ", ")) }
+if (-not (Test-Path -LiteralPath ".\.git")) { throw "再開対象の.gitが存在しない" }
+$jarjarRepoRootRaw = git rev-parse --show-toplevel 2>$null
+if ($LASTEXITCODE -ne 0) { throw "Gate 1対象repositoryを解決できない" }
+$jarjarRepoRoot = [System.IO.Path]::GetFullPath(($jarjarRepoRootRaw | Select-Object -First 1).Trim())
+$jarjarExpectedRoot = [System.IO.Path]::GetFullPath((Get-Location).Path)
+if (-not [string]::Equals($jarjarRepoRoot, $jarjarExpectedRoot, [System.StringComparison]::OrdinalIgnoreCase)) { throw "現在ディレクトリがGate 1対象repositoryではない" }
+$jarjarBranch = (git branch --show-current 2>$null).Trim()
+if ($LASTEXITCODE -ne 0 -or $jarjarBranch -ne "main") { throw ("Gate 1再開時のbranch不一致: " + $jarjarBranch) }
+$jarjarObjectFormat = (git rev-parse --show-object-format 2>$null).Trim()
+if ($LASTEXITCODE -ne 0 -or $jarjarObjectFormat -ne "sha1") { throw ("Gate 1再開時のobject format不一致: " + $jarjarObjectFormat) }
+$jarjarAnchor = "8922cbbdfdcc601a6d913bab0f491583440a568f"
+$jarjarHead = (git rev-parse HEAD 2>$null).Trim()
+if ($LASTEXITCODE -ne 0 -or $jarjarHead -ne $jarjarAnchor) { throw ("Gate 1再開時の採用HEAD不一致: " + $jarjarHead) }
+$jarjarCommitCount = [int]((git rev-list --count HEAD 2>$null).Trim())
+if ($LASTEXITCODE -ne 0 -or $jarjarCommitCount -ne 1) { throw ("Gate 1再開時のcommit count不一致: " + $jarjarCommitCount) }
+$jarjarRemotes = @(git remote 2>$null)
+if ($LASTEXITCODE -ne 0 -or $jarjarRemotes.Count -ne 1 -or $jarjarRemotes[0] -cne "origin") { throw "Gate 1再開時のremote集合不一致" }
+$jarjarOriginUrl = "https://github.com/kawano-takashi/project-jarjar.git"
+$jarjarFetchUrls = @(git remote get-url --all origin 2>$null)
+if ($LASTEXITCODE -ne 0 -or $jarjarFetchUrls.Count -ne 1 -or $jarjarFetchUrls[0] -cne $jarjarOriginUrl) { throw "Gate 1再開時のorigin fetch URL不一致" }
+$jarjarPushUrls = @(git remote get-url --push --all origin 2>$null)
+if ($LASTEXITCODE -ne 0 -or $jarjarPushUrls.Count -ne 1 -or $jarjarPushUrls[0] -cne $jarjarOriginUrl) { throw "Gate 1再開時のorigin push URL不一致" }
+$jarjarUpstream = (git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}').Trim()
+if ($LASTEXITCODE -ne 0 -or $jarjarUpstream -cne "origin/main") { throw "Gate 1再開時のupstream不一致" }
+$jarjarOriginMain = (git rev-parse --verify refs/remotes/origin/main).Trim()
+if ($LASTEXITCODE -ne 0 -or $jarjarOriginMain -cne $jarjarAnchor) { throw "Gate 1再開時のorigin/main不一致" }
 $jarjarExpectedCodexEntries = @(
     "dir:skills",
     "dir:skills/godot-gdscript-guard",
@@ -1043,113 +1183,31 @@ if (Test-Path -LiteralPath ".\.codex") {
     if ($jarjarCodexDiff.Count -gt 0) { throw ".codexは固定のgodot-gdscript-guard支援fileだけでなければならない" }
 }
 $jarjarExpectedOutputs = @("project-jarjar-game-proposal.md", "project-jarjar-mvp-agent-runbook.md")
-$jarjarActualOutputFiles = @(Get-ChildItem -LiteralPath ".\outputs" -File -Recurse | ForEach-Object { $_.FullName.Substring((Resolve-Path -LiteralPath ".\outputs").Path.Length + 1).Replace("\", "/") })
-$jarjarOutputDirs = @(Get-ChildItem -LiteralPath ".\outputs" -Directory -Recurse)
-$jarjarOutputDiff = @(Compare-Object -ReferenceObject $jarjarExpectedOutputs -DifferenceObject $jarjarActualOutputFiles)
-if ($jarjarOutputDirs.Count -gt 0 -or $jarjarOutputDiff.Count -gt 0) { throw "outputsは指定Markdown 2件だけでなければならない" }
-git init --object-format=sha1 -b main
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-$jarjarObjectFormat = (git rev-parse --show-object-format).Trim()
-if ($LASTEXITCODE -ne 0 -or $jarjarObjectFormat -ne "sha1") { throw ("Git object format mismatch: " + $jarjarObjectFormat) }
-
-$jarjarTemp = New-Item -ItemType Directory -Path (Join-Path $env:TEMP ("jarjar-bootstrap-" + [guid]::NewGuid().ToString("N")))
-$engineZip = Join-Path $jarjarTemp.FullName "Godot_v4.7.2-stable_win64.exe.zip"
-$templateTpz = Join-Path $jarjarTemp.FullName "Godot_v4.7.2-stable_export_templates.tpz"
-$engineDir = Join-Path (Get-Location) "tools\godot"
-New-Item -ItemType Directory -Force -Path $engineDir | Out-Null
-Invoke-WebRequest -Uri "https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_win64.exe.zip" -OutFile $engineZip -ErrorAction Stop
-Invoke-WebRequest -Uri "https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_export_templates.tpz" -OutFile $templateTpz -ErrorAction Stop
-$expectedEngineSha = "731980f9608d61333e5baf54a2ef17210acc7a538446c0cb9969f002aca1e953"
-$expectedTemplateSha = "f298490b8d44d934be425a5a65a51bf15f422428b229a06a6e11d9ffea248011"
-$actualEngineSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $engineZip).Hash.ToLowerInvariant()
-$actualTemplateSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $templateTpz).Hash.ToLowerInvariant()
-if ($actualEngineSha -ne $expectedEngineSha) { throw ("Godot engine SHA-256 mismatch: " + $actualEngineSha) }
-if ($actualTemplateSha -ne $expectedTemplateSha) { throw ("Godot templates SHA-256 mismatch: " + $actualTemplateSha) }
-Expand-Archive -LiteralPath $engineZip -DestinationPath $engineDir -Force -ErrorAction Stop
-New-Item -ItemType File -Force -Path (Join-Path $engineDir "_sc_") | Out-Null
-
-$templateZip = Join-Path $jarjarTemp.FullName "Godot_v4.7.2-stable_export_templates.zip"
-$templateExtract = Join-Path $jarjarTemp.FullName "templates-extracted"
-Copy-Item -LiteralPath $templateTpz -Destination $templateZip -Force
-New-Item -ItemType Directory -Force -Path $templateExtract | Out-Null
-Expand-Archive -LiteralPath $templateZip -DestinationPath $templateExtract -Force -ErrorAction Stop
-$templateDestination = Join-Path $engineDir "editor_data\export_templates\4.7.2.stable"
-$requiredTemplates = @("windows_debug_x86_64.exe", "windows_debug_x86_64_console.exe", "windows_release_x86_64.exe", "windows_release_x86_64_console.exe")
-if (Test-Path -LiteralPath $templateDestination) {
-    $invalidTemplates = @()
-    foreach ($templateName in $requiredTemplates) {
-        $sourceTemplate = Join-Path $templateExtract ("templates\" + $templateName)
-        $installedTemplate = Join-Path $templateDestination $templateName
-        if (-not (Test-Path -LiteralPath $sourceTemplate) -or -not (Test-Path -LiteralPath $installedTemplate)) {
-            $invalidTemplates += $templateName
-            continue
-        }
-        $sourceSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $sourceTemplate).Hash
-        $installedSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $installedTemplate).Hash
-        if ($sourceSha -ne $installedSha) { $invalidTemplates += $templateName }
-    }
-    if ($invalidTemplates.Count -gt 0) { throw ("既存self-contained 4.7.2 templateが公式asset内容と不一致。上書きせず停止: " + ($invalidTemplates -join ", ")) }
-} else {
-    New-Item -ItemType Directory -Path $templateDestination | Out-Null
-    Copy-Item -Path (Join-Path $templateExtract "templates\*") -Destination $templateDestination -Recurse -ErrorAction Stop
-}
-
-$env:JARJAR_GODOT = (Resolve-Path -LiteralPath ".\tools\godot\Godot_v4.7.2-stable_win64_console.exe").Path
-$jarjarGodotVersion = (& $env:JARJAR_GODOT --version).Trim()
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-$jarjarGodotVersion
-if (-not $jarjarGodotVersion.StartsWith("4.7.2.stable.official")) { throw ("Godot version mismatch: " + $jarjarGodotVersion) }
-~~~
-
-初回ブロックが`git init`後に失敗した場合だけ、人間が「Gate 1の修正を再開」と明示してから次の再開監査を実行する。初回preflightと`git init`は再実行しない。
-
-~~~powershell
-$jarjarGitName = git config --get user.name 2>$null
-$jarjarGitEmail = git config --get user.email 2>$null
-if ([string]::IsNullOrWhiteSpace($jarjarGitName) -or [string]::IsNullOrWhiteSpace($jarjarGitEmail)) { throw "Git author未設定。人間による設定が必要" }
-if (-not (Test-Path -LiteralPath ".\.git")) { throw "再開対象の.gitが存在しない" }
-$jarjarRepoRootRaw = git rev-parse --show-toplevel 2>$null
-if ($LASTEXITCODE -ne 0) { throw "Gate 1対象repositoryを解決できない" }
-$jarjarRepoRoot = [System.IO.Path]::GetFullPath(($jarjarRepoRootRaw | Select-Object -First 1).Trim())
-$jarjarExpectedRoot = [System.IO.Path]::GetFullPath((Get-Location).Path)
-if (-not [string]::Equals($jarjarRepoRoot, $jarjarExpectedRoot, [System.StringComparison]::OrdinalIgnoreCase)) { throw "現在ディレクトリがGate 1対象repositoryではない" }
-$jarjarBranch = (git branch --show-current 2>$null).Trim()
-if ($LASTEXITCODE -ne 0 -or $jarjarBranch -ne "main") { throw ("Gate 1再開時のbranch不一致: " + $jarjarBranch) }
-$jarjarObjectFormat = (git rev-parse --show-object-format 2>$null).Trim()
-if ($LASTEXITCODE -ne 0 -or $jarjarObjectFormat -ne "sha1") { throw ("Gate 1再開時のobject format不一致: " + $jarjarObjectFormat) }
-git rev-parse --verify HEAD 2>$null | Out-Null
-if ($LASTEXITCODE -eq 0) { throw "既存commitを検出したためGate 1を再開できない" }
-$jarjarRemotes = @(git remote 2>$null)
-if ($LASTEXITCODE -ne 0 -or $jarjarRemotes.Count -gt 0) { throw "既存remoteを検出したためGate 1を再開できない" }
-$jarjarExpectedCodexEntries = @(
-    "dir:skills",
-    "dir:skills/godot-gdscript-guard",
-    "dir:skills/godot-gdscript-guard/agents",
-    "dir:skills/godot-gdscript-guard/references",
-    "dir:skills/godot-gdscript-guard/scripts",
-    "file:skills/godot-gdscript-guard/SKILL.md",
-    "file:skills/godot-gdscript-guard/agents/openai.yaml",
-    "file:skills/godot-gdscript-guard/references/gdscript_python_differences.md",
-    "file:skills/godot-gdscript-guard/scripts/gdscript_guard.py"
+$jarjarOutputsRoot = (Resolve-Path -LiteralPath ".\outputs").Path
+$jarjarActualOutputs = @(Get-ChildItem -LiteralPath ".\outputs" -Force -Recurse | Where-Object { -not $_.PSIsContainer } | ForEach-Object { $_.FullName.Substring($jarjarOutputsRoot.Length + 1).Replace("\", "/") })
+if (@(Compare-Object -ReferenceObject $jarjarExpectedOutputs -DifferenceObject $jarjarActualOutputs).Count -gt 0) { throw "Gate 1再開時のoutputs不一致" }
+git diff --quiet $jarjarAnchor -- outputs/project-jarjar-game-proposal.md
+if ($LASTEXITCODE -ne 0) { throw "Gate 1再開時にgame proposalが変更されている" }
+$jarjarExpectedCodexFiles = @(
+    ".codex/skills/godot-gdscript-guard/SKILL.md",
+    ".codex/skills/godot-gdscript-guard/agents/openai.yaml",
+    ".codex/skills/godot-gdscript-guard/references/gdscript_python_differences.md",
+    ".codex/skills/godot-gdscript-guard/scripts/gdscript_guard.py"
 )
-if (Test-Path -LiteralPath ".\.codex") {
-    if (-not (Test-Path -LiteralPath ".\.codex" -PathType Container)) { throw ".codexはdirectoryでなければならない" }
-    $jarjarCodexRoot = (Resolve-Path -LiteralPath ".\.codex").Path
-    $jarjarActualCodexEntries = @(Get-ChildItem -LiteralPath ".\.codex" -Force -Recurse | ForEach-Object {
-        $jarjarKind = if ($_.PSIsContainer) { "dir:" } else { "file:" }
-        $jarjarKind + $_.FullName.Substring($jarjarCodexRoot.Length + 1).Replace("\", "/")
-    })
-    $jarjarCodexDiff = @(Compare-Object -ReferenceObject $jarjarExpectedCodexEntries -DifferenceObject $jarjarActualCodexEntries)
-    if ($jarjarCodexDiff.Count -gt 0) { throw ".codexは固定のgodot-gdscript-guard支援fileだけでなければならない" }
-}
 $jarjarAllowedExact = @(".gitattributes", ".gitignore", ".godot-version", "README.md", "project.godot", "export_presets.cfg")
 $jarjarAllowedPrefixes = @(".codex/", "outputs/", "scenes/main.tscn", "scenes/debug/", "scenes/ui/", "src/app/", "src/core/", "src/debug/", "src/ui/", "tests/", "tools/", "build/", "artifacts/", "work/")
 $jarjarStatus = @(git status --porcelain=v1 -uall)
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 foreach ($jarjarStatusLine in $jarjarStatus) {
     $jarjarStatusCode = $jarjarStatusLine.Substring(0, 2)
-    if ($jarjarStatusCode -notin @("??", "A ", "AM")) { throw ("Gate 1基準commit前の許可外status: " + $jarjarStatusLine) }
     $jarjarPath = $jarjarStatusLine.Substring(3).Replace("\", "/")
+    $jarjarStatusAllowed = ($jarjarStatusCode -in @("??", "A ", "AM"))
+    if ($jarjarStatusCode -in @(" M", "M ")) { $jarjarStatusAllowed = ($jarjarPath -eq "outputs/project-jarjar-mvp-agent-runbook.md") }
+    if ($jarjarStatusCode -eq "D ") {
+        $jarjarStatusAllowed = $jarjarPath -cin $jarjarExpectedCodexFiles
+        if ($jarjarStatusAllowed -and -not (Test-Path -LiteralPath $jarjarPath -PathType Leaf)) { $jarjarStatusAllowed = $false }
+    }
+    if (-not $jarjarStatusAllowed) { throw ("Gate 1基準commit前の許可外status: " + $jarjarStatusLine) }
     $jarjarAllowed = ($jarjarPath -in $jarjarAllowedExact)
     if (-not $jarjarAllowed) {
         foreach ($jarjarPrefix in $jarjarAllowedPrefixes) {
@@ -1158,16 +1216,22 @@ foreach ($jarjarStatusLine in $jarjarStatus) {
     }
     if (-not $jarjarAllowed) { throw ("Gate 1再開時の想定外file: " + $jarjarPath) }
 }
+$jarjarStagedCodexDeletes = @(git diff --cached --name-status -- ".codex")
+$jarjarExpectedCodexDeletes = @($jarjarExpectedCodexFiles | ForEach-Object { "D`t" + $_ })
+if ($jarjarStagedCodexDeletes.Count -gt 0 -and @(Compare-Object -ReferenceObject $jarjarExpectedCodexDeletes -DifferenceObject $jarjarStagedCodexDeletes).Count -gt 0) { throw "Gate 1再開時の.codex staged削除集合不一致" }
 git status --short --branch
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 ~~~
 
-再開監査に合格した場合は、未コミットの途中成果を削除せず、初回ブロック内で最初に失敗した、または完了を証明できないコマンドから再開する。ダウンロード済みファイルも固定versionと整合するものだけ再利用し、以後の実装・検証手順は通常のGate 1と同じにする。
+再開監査に合格した場合は、未コミットの途中成果を削除せず、初回ブロック内で最初に失敗した、または完了を証明できないコマンドから再開する。engineとtemplate archiveはdownloadしない。PATH上のexact Standard `godot.exe`と`tools/export_templates/4.7.2.stable`の4fileを5.1と6.2の固定条件で再検証し、以後の実装・検証手順は通常のGate 1と同じにする。
 
 プロジェクト、テスト、evidenceを実装した後、次を順に実行する。
 
 ~~~powershell
-$env:JARJAR_GODOT = (Resolve-Path -LiteralPath ".\tools\godot\Godot_v4.7.2-stable_win64_console.exe").Path
+$jarjarGodotCommand = Get-Command -Name "godot.exe" -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($null -eq $jarjarGodotCommand) { throw "PATH上にApplication godot.exeが存在しない" }
+$env:JARJAR_GODOT = [System.IO.Path]::GetFullPath($jarjarGodotCommand.Source)
+if (-not [string]::Equals([System.IO.Path]::GetFileName($env:JARJAR_GODOT), "godot.exe", [System.StringComparison]::OrdinalIgnoreCase) -or $env:JARJAR_GODOT -match '(?i)godot-mono') { throw "exact Standard godot.exe以外は禁止" }
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tests\run_gate_checks.ps1" -GateNumber 1 -Suite all
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 . ".\tests\process_log.ps1"
@@ -1212,10 +1276,75 @@ for ($i = 0; $i -lt $nonSettingsBefore.Count; $i++) {
 ("APPDATA_NONSETTINGS_OK before={0} after={1}" -f $nonSettingsBefore.Count, $nonSettingsAfter.Count)
 ~~~
 
+上記を含む全必須検証が成功した後だけ、次の最終stageを行う。`.codex`の4fileはindexからだけ外し、作業treeに残って`.gitignore`で無視されることを検証する。`tools`、`build`、`artifacts`、`work`、`.godot`はstageしない。
+
+~~~powershell
+$jarjarAnchor = "8922cbbdfdcc601a6d913bab0f491583440a568f"
+$jarjarExpectedCodexFiles = @(
+    ".codex/skills/godot-gdscript-guard/SKILL.md",
+    ".codex/skills/godot-gdscript-guard/agents/openai.yaml",
+    ".codex/skills/godot-gdscript-guard/references/gdscript_python_differences.md",
+    ".codex/skills/godot-gdscript-guard/scripts/gdscript_guard.py"
+)
+git diff --quiet $jarjarAnchor -- ".codex"
+if ($LASTEXITCODE -ne 0) { throw ".codex内容がanchorと不一致" }
+git rm --cached -- $jarjarExpectedCodexFiles
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+git add -- ".gitattributes" ".gitignore" ".godot-version" "README.md" "project.godot" "export_presets.cfg" `
+    "outputs/project-jarjar-mvp-agent-runbook.md" `
+    "scenes/main.tscn" "scenes/ui/title_screen.tscn" "scenes/ui/bootstrap_confirmation.tscn" "scenes/debug/evidence_scene.tscn" `
+    "src/app/game_app.gd" "src/app/game_app.gd.uid" "src/app/launch_arguments.gd" "src/app/launch_arguments.gd.uid" `
+    "src/core/bootstrap_flow.gd" "src/core/bootstrap_flow.gd.uid" "src/core/settings_store.gd" "src/core/settings_store.gd.uid" `
+    "src/ui/focus_controller.gd" "src/ui/focus_controller.gd.uid" "src/ui/title_screen.gd" "src/ui/title_screen.gd.uid" `
+    "src/ui/bootstrap_confirmation.gd" "src/ui/bootstrap_confirmation.gd.uid" "src/debug/evidence_capture.gd" "src/debug/evidence_capture.gd.uid" `
+    "tests/assertions.gd" "tests/assertions.gd.uid" "tests/test_runner.gd" "tests/test_runner.gd.uid" `
+    "tests/unit/smoke_bootstrap_test.gd" "tests/unit/smoke_bootstrap_test.gd.uid" `
+    "tests/process_log.ps1" "tests/run_gate_checks.ps1" "tests/run_with_clean_settings.ps1"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if (@(git ls-files -- ".codex").Count -ne 0) { throw ".codexがindexに残っている" }
+$jarjarExpectedCodexDeletes = @($jarjarExpectedCodexFiles | ForEach-Object { "D`t" + $_ })
+$jarjarActualCodexDeletes = @(git diff --cached --name-status -- ".codex")
+if (@(Compare-Object -ReferenceObject $jarjarExpectedCodexDeletes -DifferenceObject $jarjarActualCodexDeletes).Count -gt 0) { throw ".codex staged削除集合不一致" }
+foreach ($jarjarCodexFile in $jarjarExpectedCodexFiles) {
+    if (-not (Test-Path -LiteralPath $jarjarCodexFile -PathType Leaf)) { throw ".codex作業fileを失った" }
+    git check-ignore --quiet -- $jarjarCodexFile
+    if ($LASTEXITCODE -ne 0) { throw ".codexがignoreされていない" }
+}
+$jarjarExpectedCached = @(
+    "A`t.gitattributes", "A`t.gitignore", "A`t.godot-version", "A`tREADME.md", "A`texport_presets.cfg", "A`tproject.godot",
+    "M`toutputs/project-jarjar-mvp-agent-runbook.md",
+    "A`tscenes/debug/evidence_scene.tscn", "A`tscenes/main.tscn", "A`tscenes/ui/bootstrap_confirmation.tscn", "A`tscenes/ui/title_screen.tscn",
+    "A`tsrc/app/game_app.gd", "A`tsrc/app/game_app.gd.uid", "A`tsrc/app/launch_arguments.gd", "A`tsrc/app/launch_arguments.gd.uid",
+    "A`tsrc/core/bootstrap_flow.gd", "A`tsrc/core/bootstrap_flow.gd.uid", "A`tsrc/core/settings_store.gd", "A`tsrc/core/settings_store.gd.uid",
+    "A`tsrc/debug/evidence_capture.gd", "A`tsrc/debug/evidence_capture.gd.uid",
+    "A`tsrc/ui/bootstrap_confirmation.gd", "A`tsrc/ui/bootstrap_confirmation.gd.uid", "A`tsrc/ui/focus_controller.gd", "A`tsrc/ui/focus_controller.gd.uid",
+    "A`tsrc/ui/title_screen.gd", "A`tsrc/ui/title_screen.gd.uid",
+    "A`ttests/assertions.gd", "A`ttests/assertions.gd.uid", "A`ttests/process_log.ps1", "A`ttests/run_gate_checks.ps1", "A`ttests/run_with_clean_settings.ps1",
+    "A`ttests/test_runner.gd", "A`ttests/test_runner.gd.uid", "A`ttests/unit/smoke_bootstrap_test.gd", "A`ttests/unit/smoke_bootstrap_test.gd.uid"
+) + $jarjarExpectedCodexDeletes
+$jarjarActualCached = @(git diff --cached --name-status)
+if (@(Compare-Object -ReferenceObject $jarjarExpectedCached -DifferenceObject $jarjarActualCached).Count -gt 0) { throw "Gate 1 cached manifest不一致" }
+git diff --cached --quiet
+if ($LASTEXITCODE -eq 0) { throw "Gate 1 staged変更が空" }
+git commit -m "chore: bootstrap Godot 4.7.2 project"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if ((git rev-parse HEAD).Trim().Length -ne 40) { throw "Gate 1 HEAD形式不一致" }
+git merge-base --is-ancestor $jarjarAnchor HEAD
+if ($LASTEXITCODE -ne 0) { throw "採用anchorがGate 1 HEADの祖先ではない" }
+if (@(git rev-list --min-parents=2 "$jarjarAnchor..HEAD").Count -ne 0) { throw "Gate 1 merge commitは禁止" }
+$jarjarSubjects = @(git log --reverse --format=%s "$jarjarAnchor..HEAD")
+if ($jarjarSubjects.Count -lt 1 -or $jarjarSubjects[0] -cne "chore: bootstrap Godot 4.7.2 project") { throw "Gate 1基準subject不一致" }
+foreach ($jarjarSubject in $jarjarSubjects | Select-Object -Skip 1) {
+    if ($jarjarSubject -cne "fix: address Gate 1 review") { throw "Gate 1追補subject不一致" }
+}
+if (@(git status --short).Count -ne 0) { throw "Gate 1 commit後のworking treeがcleanではない" }
+~~~
+
 合格条件:
 
-- 2 assetのSHA-256が本書の固定値と完全一致し、`tools/godot/_sc_`とself-contained Export Templates 4本が存在する。共有`%APPDATA%`は変更されていない。
-- Git branchがmain、object formatがsha1、remote 0件、基準commit後のHEADが40文字である。
+- PATHからApplicationとして解決したexact Standard `godot.exe`を使用し、`godot-mono`ではなく、versionが`4.7.2.stable.official`で始まる。engine downloadを行わず、`tools/godot`は存在しない。
+- `tools/export_templates/4.7.2.stable`のWindows template 4fileだけが存在して各SHA-256が5.1の固定値と完全一致し、Debug/Release custom templateが同directoryのGUI templateへ固定され、共有`%APPDATA%`のExport Templatesを使用していない。
+- Git branchがmain、object formatがsha1、remoteが2.1の固定origin 1件だけで、採用anchorの直後に作った基準commit後のHEADが40文字である。
 - Godot の version が 4.7.2.stable.official で始まる。
 - rendering_method と rendering_method.mobile が gl_compatibility。
 - `debug/file_logging/enable_file_logging`、`.pc` override、`rendering/shader_compiler/shader_cache/enabled`がすべてfalseで、debug smoke/evidence後も`%APPDATA%\ProjectJARJAR`へ新しい非settings fileが0件。
@@ -1223,7 +1352,7 @@ for ($i = 0; $i -lt $nonSettingsBefore.Count; $i++) {
 - import、テスト、debug export の終了コードがすべて0。
 - build/windows/ProjectJARJAR.exe、ProjectJARJAR.console.exe、ProjectJARJAR.pckが存在し、console wrapper経由の起動後にタイトルを表示して自動終了用 --smoke-quit=120 を受け付ける。
 - artifacts/gate-01/bootstrap.png にタイトル、バージョン、renderer、「開始」「終了」が写る。
-- Git に .codex、tools、build、artifacts、.godot が含まれない。
+- Gate 1 candidate tree/indexで`.codex`の追跡が0件であり、anchor履歴内の4件だけを既知例外とする。tools、build、artifacts、work、.godotもGitに含まれない。
 - コミット後の working tree が clean。
 
 ## 7. 工程2 — 決定的ドメインモデルと純粋ロジック
@@ -1231,7 +1360,7 @@ for ($i = 0; $i -lt $nonSettingsBefore.Count; $i++) {
 ### 7.1 コピー用指示文
 
 ~~~text
-直前の人間メッセージが本書2.4の「ゲート1承認 H。工程2へ進んでよい」と完全に対応することを確認してください。Project JARJAR の工程2だけを実行し、最初に本書を最後まで再読して、Hと現在のclean HEADの完全一致、main branch、remote 0件を確認してください。満たさなければ停止し、次工程には進まないでください。
+直前の人間メッセージが本書2.4の「ゲート1承認 H。工程2へ進んでよい」と完全に対応することを確認してください。Project JARJAR の工程2だけを実行し、最初に本書を最後まで再読して、Hと現在のclean HEADの完全一致、main branch、2.1の固定originを確認してください。満たさなければ停止し、次工程には進まないでください。
 
 本書4章のenum、ItemInstance、AffixRoll、SkillState、PendingSkillActivation、ScheduledProcReplay、DamageSample、RunRngStreams、WaveDefinition、BalanceManifest、RewardRoll、RunState、CombatEvent、CombatSnapshotを型付きGDScriptで実装してください。4.2.1の静的Resource class、固定`.tres`、DefinitionCatalogを実装し、ランタイム型はRefCountedにしてください。
 
@@ -1278,7 +1407,7 @@ importと全テストを通し、警告をエラー扱いにしてparser error�
 ### 8.1 コピー用指示文
 
 ~~~text
-直前の人間メッセージが本書2.4の「ゲート2承認 H。工程3へ進んでよい」と完全に対応することを確認してください。Project JARJAR の工程3だけを実行し、Hと現在のclean HEADの完全一致、main branch、remote 0件を確認してください。満たさなければ停止し、次工程には進まないでください。
+直前の人間メッセージが本書2.4の「ゲート2承認 H。工程3へ進んでよい」と完全に対応することを確認してください。Project JARJAR の工程3だけを実行し、Hと現在のclean HEADの完全一致、main branch、2.1の固定originを確認してください。満たさなければ停止し、次工程には進まないでください。
 
 30m×18mの障害物なし3Dアリーナ、プレイヤー移動、固定斜め見下ろしカメラ、4通常敵、W4エリート、W8ボス、木の棒/弓/杖/剣、自動照準、自動攻撃、HUD、ウェーブ状態遷移を実装してください。本書3.3から3.5の数値を変更しないでください。
 
@@ -1327,7 +1456,7 @@ import、全テスト、debug exportを通し、すべて成功後だけ feat: i
 ### 9.1 コピー用指示文
 
 ~~~text
-直前の人間メッセージが本書2.4の「ゲート3承認 H。工程4へ進んでよい」と完全に対応することを確認してください。Project JARJAR の工程4だけを実行し、Hと現在のclean HEADの完全一致、main branch、remote 0件を確認してください。満たさなければ停止し、次工程には進まないでください。
+直前の人間メッセージが本書2.4の「ゲート3承認 H。工程4へ進んでよい」と完全に対応することを確認してください。Project JARJAR の工程4だけを実行し、Hと現在のclean HEADの完全一致、main branch、2.1の固定originを確認してください。満たさなければ停止し、次工程には進まないでください。
 
 敵死亡から箱抽選、箱の物理的な跳ねと自動吸収、RewardRollの獲得時確定、報酬キュー、保証主武器、装備/スキル比率、レアリティ、4%ユニーク、報酬開封画面を本書3.6どおり実装してください。
 
@@ -1371,7 +1500,7 @@ import、全テスト、100 seed simulation、debug exportを通し、すべて�
 ### 10.1 コピー用指示文
 
 ~~~text
-直前の人間メッセージが本書2.4の「ゲート4承認 H。工程5へ進んでよい」と完全に対応することを確認してください。Project JARJAR の工程5だけを実行し、Hと現在のclean HEADの完全一致、main branch、remote 0件を確認してください。満たさなければ停止し、次工程には進まないでください。
+直前の人間メッセージが本書2.4の「ゲート4承認 H。工程5へ進んでよい」と完全に対応することを確認してください。Project JARJAR の工程5だけを実行し、Hと現在のclean HEADの完全一致、main branch、2.1の固定originを確認してください。満たさなければ停止し、次工程には進まないでください。
 
 6装備枠、6×6インベントリ、無制限一時受取欄、ドラッグ装備/並替、比較、ロック、自動低評価選択、保護付き手動廃棄、3対1合成、ワイルド素材、4スキル、6ユニーク、最終スコア、結果画面を固定仕様どおり実装してください。
 
@@ -1428,7 +1557,7 @@ import、全テスト、debug exportを通し、すべて成功後だけ feat: i
 ### 11.1 コピー用指示文
 
 ~~~text
-直前の人間メッセージが本書2.4の「ゲート5承認 H。工程6へ進んでよい」と完全に対応することを確認してください。Project JARJAR の工程6だけを実行し、Hと現在のclean HEADの完全一致、main branch、remote 0件を確認してください。満たさなければ停止してください。これは最終工程ですが、全合格前に完成扱いしないでください。
+直前の人間メッセージが本書2.4の「ゲート5承認 H。工程6へ進んでよい」と完全に対応することを確認してください。Project JARJAR の工程6だけを実行し、Hと現在のclean HEADの完全一致、main branch、2.1の固定originを確認してください。満たさなければ停止してください。これは最終工程ですが、全合格前に完成扱いしないでください。
 
 文脈チュートリアル、プロシージャル効果音、演出調整、設定画面、バランスsimulation、性能試験、Windows x86_64 Release export、最終QAを実装してください。外部素材、外部アドオン、Steamworksは使いません。
 
@@ -1481,7 +1610,10 @@ import、全unit/scenario/simulation test、performance、Release export、pack 
 ~~~powershell
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
-$env:JARJAR_GODOT = (Resolve-Path -LiteralPath ".\tools\godot\Godot_v4.7.2-stable_win64_console.exe").Path
+$jarjarGodotCommand = Get-Command -Name "godot.exe" -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($null -eq $jarjarGodotCommand) { throw "PATH上にApplication godot.exeが存在しない" }
+$env:JARJAR_GODOT = [System.IO.Path]::GetFullPath($jarjarGodotCommand.Source)
+if (-not [string]::Equals([System.IO.Path]::GetFileName($env:JARJAR_GODOT), "godot.exe", [System.StringComparison]::OrdinalIgnoreCase) -or $env:JARJAR_GODOT -match '(?i)godot-mono') { throw "exact Standard godot.exe以外は禁止" }
 New-Item -ItemType Directory -Force -Path ".\artifacts\gate-06" | Out-Null
 
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tests\run_gate_checks.ps1" -GateNumber 6 -Suite all
@@ -1653,6 +1785,7 @@ Project JARJAR Gate N 完了
 - C:\absolute\path\to\artifacts\gate-NN\tests.txt
 
 コミット
+- 採用anchor: 8922cbbdfdcc601a6d913bab0f491583440a568f init commit（Gate 1だけ。Gate 2以降は省略）
 - 基準commit: <hash> <固定message>
 - 追補commit: なし（1件以上ある場合は、`<40文字hash> fix: address Gate N review`を古い順に1件1行で全件列挙）
 - candidate HEAD: <40文字hash>
@@ -1674,13 +1807,13 @@ Project JARJAR Gate N 完了
 
 ## 15. 実装時に参照する一次資料
 
-- [Godot 4.7 系アーカイブ](https://godotengine.org/download/archive/)
-- [Godot 4.7.2-stable 直接ページ](https://godotengine.org/download/archive/4.7.2-stable/)
+- [Godot 4.7 系アーカイブ（version provenance参照専用。文書版1.3ではdownloadしない）](https://godotengine.org/download/archive/)
+- [Godot 4.7.2-stable 直接ページ（version provenance参照専用。文書版1.3ではdownloadしない）](https://godotengine.org/download/archive/4.7.2-stable/)
 - [Godot 4.7 コマンドライン](https://docs.godotengine.org/en/4.7/tutorials/editor/command_line_tutorial.html)
 - [Godot 4.7 RandomNumberGenerator](https://docs.godotengine.org/en/4.7/classes/class_randomnumbergenerator.html)
 - [Godot 4.7 ProjectSettings（desktop file logging既定値を含む）](https://docs.godotengine.org/en/4.7/classes/class_projectsettings.html)
 - [Godot 4.7 shader cache設定](https://docs.godotengine.org/en/4.7/classes/class_projectsettings.html#class-projectsettings-property-rendering-shader-compiler-shader-cache-enabled)
-- [Godot 4.7 ファイルパス・custom user dir・self-contained mode](https://docs.godotengine.org/en/4.7/tutorials/io/data_paths.html)
+- [Godot 4.7 ファイルパス・custom user dir](https://docs.godotengine.org/en/4.7/tutorials/io/data_paths.html)
 - [Godot 4.7 MultiMesh](https://docs.godotengine.org/en/4.7/tutorials/performance/using_multimesh.html)
 - [Godot 4.7 プロジェクトexport](https://docs.godotengine.org/en/4.7/tutorials/export/exporting_projects.html)
 - [Godot Windows export](https://docs.godotengine.org/en/4.7/tutorials/export/exporting_for_windows.html)

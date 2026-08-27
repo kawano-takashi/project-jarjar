@@ -1,0 +1,218 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://src/ui/title_screen.gd" id="1_title"]
+
+[sub_resource type="StyleBoxFlat" id="StyleButton"]
+content_margin_left = 24.0
+content_margin_top = 14.0
+content_margin_right = 24.0
+content_margin_bottom = 14.0
+bg_color = Color(0.125, 0.153, 0.176, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.31, 0.36, 0.4, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleButtonHover"]
+content_margin_left = 24.0
+content_margin_top = 14.0
+content_margin_right = 24.0
+content_margin_bottom = 14.0
+bg_color = Color(0.19, 0.235, 0.265, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.46, 0.54, 0.58, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleButtonPressed"]
+content_margin_left = 24.0
+content_margin_top = 14.0
+content_margin_right = 24.0
+content_margin_bottom = 14.0
+bg_color = Color(0.28, 0.18, 0.15, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.84, 0.36, 0.24, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleButtonFocus"]
+bg_color = Color(0, 0, 0, 0)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(0.95, 0.43, 0.28, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[node name="TitleScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_title")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.047, 0.059, 0.067, 1)
+
+[node name="AccentLeft" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 12
+anchor_right = 0.0
+anchor_bottom = 1.0
+offset_right = 18.0
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.84, 0.35, 0.23, 1)
+
+[node name="AccentBottom" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 12
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -10.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+color = Color(0.22, 0.52, 0.43, 1)
+
+[node name="ContentMargin" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 160.0
+offset_top = 90.0
+offset_right = -160.0
+offset_bottom = -90.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Content" type="VBoxContainer" parent="ContentMargin"]
+layout_mode = 2
+theme_override_constants/separation = 18
+alignment = 1
+
+[node name="BuildLabel" type="Label" parent="ContentMargin/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.95, 0.43, 0.28, 1)
+theme_override_font_sizes/font_size = 20
+text = "BOOTSTRAP BUILD"
+horizontal_alignment = 1
+
+[node name="ProjectTitle" type="Label" parent="ContentMargin/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.95, 0.94, 0.89, 1)
+theme_override_font_sizes/font_size = 78
+text = "Project JARJAR"
+horizontal_alignment = 1
+
+[node name="Rule" type="HSeparator" parent="ContentMargin/Content"]
+custom_minimum_size = Vector2(0, 2)
+layout_mode = 2
+theme_override_colors/separator = Color(0.31, 0.54, 0.46, 1)
+
+[node name="Subtitle" type="Label" parent="ContentMargin/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.69, 0.72, 0.72, 1)
+theme_override_font_sizes/font_size = 24
+text = "見下ろし型 3D ローグライト"
+horizontal_alignment = 1
+
+[node name="Metadata" type="GridContainer" parent="ContentMargin/Content"]
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_constants/h_separation = 28
+theme_override_constants/v_separation = 8
+columns = 2
+
+[node name="VersionLabel" type="Label" parent="ContentMargin/Content/Metadata"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.52, 0.58, 0.6, 1)
+theme_override_font_sizes/font_size = 18
+text = "GODOT"
+
+[node name="VersionValue" type="Label" parent="ContentMargin/Content/Metadata"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.86, 0.87, 0.84, 1)
+theme_override_font_sizes/font_size = 18
+text = "4.7.2.stable"
+
+[node name="RendererLabel" type="Label" parent="ContentMargin/Content/Metadata"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.52, 0.58, 0.6, 1)
+theme_override_font_sizes/font_size = 18
+text = "RENDERER"
+
+[node name="RendererValue" type="Label" parent="ContentMargin/Content/Metadata"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.86, 0.87, 0.84, 1)
+theme_override_font_sizes/font_size = 18
+text = "gl_compatibility"
+
+[node name="ButtonSpacer" type="Control" parent="ContentMargin/Content"]
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="StartCenter" type="CenterContainer" parent="ContentMargin/Content"]
+layout_mode = 2
+
+[node name="TitleStart" type="Button" parent="ContentMargin/Content/StartCenter"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(460, 68)
+layout_mode = 2
+focus_mode = 2
+theme_override_colors/font_color = Color(0.96, 0.95, 0.9, 1)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 24
+theme_override_styles/normal = SubResource("StyleButton")
+theme_override_styles/hover = SubResource("StyleButtonHover")
+theme_override_styles/pressed = SubResource("StyleButtonPressed")
+theme_override_styles/focus = SubResource("StyleButtonFocus")
+text = "開始"
+
+[node name="ExitCenter" type="CenterContainer" parent="ContentMargin/Content"]
+layout_mode = 2
+
+[node name="TitleExit" type="Button" parent="ContentMargin/Content/ExitCenter"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(460, 68)
+layout_mode = 2
+focus_mode = 2
+theme_override_colors/font_color = Color(0.96, 0.95, 0.9, 1)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 24
+theme_override_styles/normal = SubResource("StyleButton")
+theme_override_styles/hover = SubResource("StyleButtonHover")
+theme_override_styles/pressed = SubResource("StyleButtonPressed")
+theme_override_styles/focus = SubResource("StyleButtonFocus")
+text = "終了"

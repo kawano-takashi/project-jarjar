@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/debug/evidence_capture.gd" id="1_evidence"]
+
+[node name="EvidenceCapture" type="Node"]
+script = ExtResource("1_evidence")
