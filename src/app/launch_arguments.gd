@@ -9,6 +9,10 @@ const MODE_QA_SCENARIO: StringName = &"qa_scenario"
 const MODE_PERFORMANCE: StringName = &"performance"
 const MODE_RELEASE_SMOKE: StringName = &"release_smoke"
 const MODE_RELEASE_PACK_AUDIT: StringName = &"release_pack_audit"
+const EVIDENCE_SCENARIOS: Array[String] = [
+	"gate_01:bootstrap",
+	"gate_02:logic_diagnostics",
+]
 
 const DEBUG_OPTIONS: Array[String] = [
 	"--evidence",
@@ -36,7 +40,7 @@ static func parse_debug(arguments: PackedStringArray) -> Dictionary:
 			return _rejected("--settings-path")
 
 	if values.size() == 2 and values.has("--evidence") and values.has("--settings-path"):
-		if values["--evidence"] != "gate_01:bootstrap":
+		if not values["--evidence"] in EVIDENCE_SCENARIOS:
 			return _rejected("--evidence")
 		var result := _accepted(MODE_EVIDENCE, settings_path)
 		result["evidence"] = values["--evidence"]

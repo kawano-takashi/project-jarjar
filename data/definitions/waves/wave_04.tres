@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="WaveDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/wave_definition.gd" id="1_wave"]
+
+[resource]
+script = ExtResource("1_wave")
+wave_number = 4
+duration_seconds = 60.0
+kill_quota = 115
+enemy_weights = {
+0: 0.45,
+1: 0.25,
+2: 0.2,
+3: 0.1
+}
+hp_multiplier = 1.6
+damage_multiplier = 1.35
+spawn_rate_start = 3.6
+spawn_rate_end = 5.0
+normal_chest_rate = 0.1
+rarity_weights = {
+0: 0.8,
+1: 0.17,
+2: 0.025,
+3: 0.005
+}
+elite_spawn_elapsed = 30.0
+boss_at_start = false

@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="SkillDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/skill_definition.gd" id="1_skill"]
+
+[resource]
+script = ExtResource("1_skill")
+skill_id = &"soul_chain"
+trigger_type = 2
+base_threshold = 15.0
+damage_by_level = PackedFloat32Array(24, 38, 56)
+radius_by_level = PackedFloat32Array(0, 0, 0)
+target_count_by_level = PackedInt32Array(4, 6, 9)

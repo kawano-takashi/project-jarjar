@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="ScoreDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/score_definition.gd" id="1_score"]
+
+[resource]
+script = ExtResource("1_score")
+normal_kill = 10
+post_quota_bonus = 10
+elite_kill = 300
+boss_kill = 1500
+wave_clear = 500
+run_clear = 2000
+equipment_scores = PackedInt32Array(30, 105, 360, 1260)
+unique_tag = 600
+skill_level = 100
+wild_material = 100

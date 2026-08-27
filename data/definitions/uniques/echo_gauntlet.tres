@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="UniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/unique_definition.gd" id="1_unique"]
+
+[resource]
+script = ExtResource("1_unique")
+unique_id = &"echo_gauntlet"
+display_name = "反響の手甲"
+equipment_slot = 4

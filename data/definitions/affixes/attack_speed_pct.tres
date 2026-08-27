@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="AffixDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/affix_definition.gd" id="1_affix"]
+
+[resource]
+script = ExtResource("1_affix")
+affix_id = &"attack_speed_pct"
+values_by_rarity = PackedFloat32Array(8, 14, 24, 40)
+slot_pool = Array[int]([0, 4])
+in_common_pool = true
+affinity_weapon_types = Array[int]([1, 3])

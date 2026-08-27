@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="UniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/unique_definition.gd" id="1_unique"]
+
+[resource]
+script = ExtResource("1_unique")
+unique_id = &"broken_clock"
+display_name = "壊れた時計"
+equipment_slot = 1

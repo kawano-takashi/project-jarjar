@@ -1,32 +1,62 @@
 extends Node
 
 
+const LogicDiagnosticsScript = preload("res://src/debug/logic_diagnostics.gd")
+
+@onready var _diagnostics_layer: CanvasLayer = $DiagnosticsLayer
+@onready var _seed_line: Label = $DiagnosticsLayer/Backdrop/Margin/Content/SeedLine
+@onready var _left_text: RichTextLabel = $DiagnosticsLayer/Backdrop/Margin/Content/Columns/LeftPanel/Margin/Text
+@onready var _right_text: RichTextLabel = $DiagnosticsLayer/Backdrop/Margin/Content/Columns/RightPanel/Margin/Text
+
+
 func _ready() -> void:
-	var scenario := _evidence_argument()
-	if scenario != "gate_01:bootstrap":
-		print("EVIDENCE_ARGUMENT_REJECTED name=--evidence")
-		get_tree().quit(2)
-		return
-	_capture_bootstrap.call_deferred()
+	match _evidence_argument():
+		"gate_01:bootstrap":
+			_capture_bootstrap.call_deferred()
+		"gate_02:logic_diagnostics":
+			_capture_logic_diagnostics.call_deferred()
+		_:
+			print("EVIDENCE_ARGUMENT_REJECTED name=--evidence")
+			get_tree().quit(2)
 
 
 func _capture_bootstrap() -> void:
+	_diagnostics_layer.visible = false
+	await _capture_png("gate-01", "bootstrap")
+
+
+func _capture_logic_diagnostics() -> void:
+	var diagnostics: Dictionary = LogicDiagnosticsScript.build()
+	if not diagnostics["valid"]:
+		print("EVIDENCE_CAPTURE_FAILED reason=%s" % diagnostics.get("reason", "diagnostics"))
+		get_tree().quit(1)
+		return
+	_seed_line.text = diagnostics["seed_line"]
+	_left_text.text = diagnostics["left_text"]
+	_right_text.text = diagnostics["right_text"]
+	_diagnostics_layer.visible = true
+	await _capture_png("gate-02", "logic_diagnostics")
+
+
+func _capture_png(gate_directory: String, scenario_name: String) -> void:
 	await RenderingServer.frame_post_draw
 	await RenderingServer.frame_post_draw
-	var image := get_viewport().get_texture().get_image()
+	var image: Image = get_viewport().get_texture().get_image()
 	if image.get_width() < 1280 or image.get_height() < 720:
 		print("EVIDENCE_CAPTURE_FAILED reason=resolution")
 		get_tree().quit(1)
 		return
-	var output_directory := ProjectSettings.globalize_path("res://artifacts/gate-01")
+	var output_directory: String = ProjectSettings.globalize_path(
+		"res://artifacts/%s" % gate_directory
+	)
 	if not DirAccess.dir_exists_absolute(output_directory):
-		var directory_error := DirAccess.make_dir_recursive_absolute(output_directory)
+		var directory_error: Error = DirAccess.make_dir_recursive_absolute(output_directory)
 		if directory_error != OK:
 			print("EVIDENCE_CAPTURE_FAILED reason=directory")
 			get_tree().quit(1)
 			return
-	var output_path := output_directory.path_join("bootstrap.png")
-	var save_error := image.save_png(output_path)
+	var output_path: String = output_directory.path_join("%s.png" % scenario_name)
+	var save_error: Error = image.save_png(output_path)
 	if save_error != OK:
 		print("EVIDENCE_CAPTURE_FAILED reason=save")
 		get_tree().quit(1)
@@ -36,7 +66,7 @@ func _capture_bootstrap() -> void:
 
 
 func _evidence_argument() -> String:
-	for argument in OS.get_cmdline_user_args():
+	for argument: String in OS.get_cmdline_user_args():
 		if argument.begins_with("--evidence="):
 			return argument.trim_prefix("--evidence=")
 	return ""

@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="AffixDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/affix_definition.gd" id="1_affix"]
+
+[resource]
+script = ExtResource("1_affix")
+affix_id = &"skill_power_pct"
+values_by_rarity = PackedFloat32Array(10, 18, 30, 50)
+slot_pool = Array[int]([1, 2])
+in_common_pool = true
+affinity_weapon_types = Array[int]([])

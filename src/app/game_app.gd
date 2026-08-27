@@ -3,12 +3,14 @@ extends Node
 
 const LaunchArgumentsScript = preload("res://src/app/launch_arguments.gd")
 const BootstrapFlowScript = preload("res://src/core/bootstrap_flow.gd")
+const DefinitionCatalogScript = preload("res://src/core/definition_catalog.gd")
 const TITLE_SCENE: PackedScene = preload("res://scenes/ui/title_screen.tscn")
 const BOOTSTRAP_CONFIRMATION_SCENE: PackedScene = preload("res://scenes/ui/bootstrap_confirmation.tscn")
 
 var _launch_valid: bool = false
 var _launch: Dictionary = {}
 var _bootstrap_flow: Variant = null
+var _definition_catalog: DefinitionCatalog = null
 var _active_screen: Control = null
 var _smoke_frames_remaining: int = 0
 
@@ -42,6 +44,15 @@ func _enter_tree() -> void:
 	if initialize_error != OK:
 		print("SETTINGS_INITIALIZATION_FAILED code=%d" % initialize_error)
 		_quit_deferred(1)
+		return
+
+	_definition_catalog = DefinitionCatalogScript.new()
+	if not _definition_catalog.load_and_validate():
+		print(
+			"DEFINITION_CATALOG_INVALID count=%d"
+			% _definition_catalog.validation_errors.size()
+		)
+		_quit_deferred(2)
 		return
 
 	_bootstrap_flow = BootstrapFlowScript.new()

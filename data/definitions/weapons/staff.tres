@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="WeaponDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/weapon_definition.gd" id="1_weapon"]
+
+[resource]
+script = ExtResource("1_weapon")
+weapon_id = &"staff"
+main_weapon_type = 2
+base_damage = 18.0
+base_interval = 1.5
+range_m = 13.0
+projectile_speed = 16.0
+projectile_radius = 0.25
+aoe_radius = 2.25
+arc_degrees = 0.0

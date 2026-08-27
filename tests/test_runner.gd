@@ -1,6 +1,7 @@
 extends SceneTree
 
 
+const TestRegistryScript = preload("res://tests/test_registry.gd")
 const VALID_SUITES: Array[String] = ["unit", "scenario", "simulation", "all"]
 const TEST_TIMEOUT_MS: int = 600000
 
@@ -86,7 +87,8 @@ func _run() -> void:
 				"test_user_root": test_user_root,
 				"runner_preflight_verified": true,
 			}
-			await test_case["instance"].run_test(test_name, assertions, context)
+			var test_instance: Variant = test_case["script"].new()
+			await test_instance.run_test(test_name, assertions, context)
 
 		var restore_error: Error = settings_store.restore_runner_bootstrap_path()
 		assertions.expect_equal(OK, restore_error, "runner restore bootstrap")
@@ -167,17 +169,20 @@ func _load_registry(suite: String) -> Dictionary:
 	else:
 		requested_suites.append(suite)
 	var test_cases: Array[Dictionary] = []
+	var registered_names: Dictionary = {}
 	for suite_name in requested_suites:
-		var script_paths: Array[String] = []
-		if suite_name == "unit":
-			script_paths.append("res://tests/unit/smoke_bootstrap_test.gd")
+		var script_paths: Array[String] = TestRegistryScript.script_paths_for_suite(suite_name)
 		for script_path in script_paths:
 			var test_script := load(script_path)
 			if test_script == null:
 				return {"valid": false, "tests": []}
-			var instance: Variant = test_script.new()
-			for test_name in instance.test_names():
-				test_cases.append({"name": str(test_name), "instance": instance})
+			var registry_instance: Variant = test_script.new()
+			for test_name_value in registry_instance.test_names():
+				var test_name := str(test_name_value)
+				if test_name.is_empty() or registered_names.has(test_name):
+					return {"valid": false, "tests": []}
+				registered_names[test_name] = true
+				test_cases.append({"name": test_name, "script": test_script})
 	return {"valid": true, "tests": test_cases}
 
 
