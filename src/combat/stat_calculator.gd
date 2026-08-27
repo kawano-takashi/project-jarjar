@@ -103,6 +103,24 @@ static func effective_time_skill_interval(
 	return maxf(TIME_SKILL_INTERVAL_MIN_SECONDS, interval)
 
 
+static func effective_skill_threshold(
+	definition: SkillDefinition,
+	stats: Dictionary,
+	unique_ids: Array[StringName] = [],
+) -> float:
+	if definition == null:
+		return 0.0
+	if definition.trigger_type == GameTypes.TriggerType.TIME:
+		return effective_time_skill_interval(
+			definition.base_threshold,
+			stats,
+			unique_ids,
+		)
+	if &"broken_clock" in unique_ids:
+		return float(int(ceil(definition.base_threshold * 0.5)))
+	return definition.base_threshold
+
+
 static func effective_damage_reduction_pct(equipped: Dictionary) -> float:
 	var immortal_item: ItemInstance = equipped.get(
 		GameTypes.EquipmentSlot.BODY,

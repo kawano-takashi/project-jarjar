@@ -17,12 +17,15 @@ var vfx_pool: VfxPool = VfxPool.new()
 var chest_visual_pool: ChestVisualPool = ChestVisualPool.new()
 var event_router: CombatEventRouter = CombatEventRouter.new()
 var weapon_system: WeaponSystem = WeaponSystem.new()
+var skill_system: CombatSkillSystem = CombatSkillSystem.new()
 var loot_service: LootService = LootService.new()
 
 var freeze_enemy_ai: bool = false
 var freeze_enemy_timers: bool = false
 var freeze_normal_spawn: bool = false
 var freeze_countdown: bool = false
+var allow_contact_timers_only: bool = false
+var main_weapon_damage_override: float = -1.0
 var evidence_caption: String = ""
 
 var _pending_deaths: Array[Dictionary] = []
@@ -51,6 +54,9 @@ func initialize(
 	enemy_system.initialize(state, catalog, wave, rng_source)
 	weapon_system = WeaponSystem.new()
 	weapon_system.initialize(state, catalog, projectile_pool, event_router)
+	skill_system = CombatSkillSystem.new()
+	skill_system.initialize(state, catalog, event_router)
+	skill_system.prepare_for_combat()
 	_rebuild_uniform_grid(enemy_system.snapshot_ids(), state.physics_tick + 1)
 
 
@@ -84,6 +90,10 @@ func begin_wave(wave_number: int, rng_source: Variant = null) -> bool:
 	enemy_system.initialize(state, catalog, wave, rng_source)
 	weapon_system = WeaponSystem.new()
 	weapon_system.initialize(state, catalog, projectile_pool, event_router)
+	if skill_system == null:
+		skill_system = CombatSkillSystem.new()
+	skill_system.initialize(state, catalog, event_router)
+	skill_system.prepare_for_combat()
 	return true
 
 
@@ -96,7 +106,9 @@ func step(move_input: Vector2, delta: float) -> CombatSnapshot:
 	var enemy_snapshot: Array[int] = enemy_system.snapshot_ids()
 	var projectile_snapshot: Array[Vector2i] = projectile_pool.snapshot_active()
 
+	var previous_player_position: Vector2 = player_position
 	_move_player(move_input, delta)
+	skill_system.update_coward_motion(previous_player_position, player_position, delta)
 	if not freeze_enemy_ai and not freeze_enemy_timers:
 		enemy_system.advance_snapshot(
 			enemy_snapshot,
@@ -104,6 +116,8 @@ func step(move_input: Vector2, delta: float) -> CombatSnapshot:
 			delta,
 			current_tick,
 		)
+	elif allow_contact_timers_only:
+		_advance_fixture_contact_timers(enemy_snapshot, delta, current_tick)
 	else:
 		_rebuild_uniform_grid(enemy_snapshot, current_tick)
 	weapon_system.move_snapshot_projectiles(projectile_snapshot, delta, current_tick)
@@ -121,6 +135,28 @@ func step(move_input: Vector2, delta: float) -> CombatSnapshot:
 	if not freeze_normal_spawn:
 		enemy_system.resolve_normal_spawns(player_position, current_tick)
 
+	skill_system.advance_time_progress(delta)
+	for replay: ScheduledProcReplay in skill_system.take_due_replays(current_tick):
+		var replay_result: Dictionary
+		if replay.proc_effect_id == CombatSkillSystem.ECHO_PROC_ID:
+			replay_result = weapon_system.replay_weapon(
+				replay,
+				player_position,
+				enemy_system.enemy_store,
+				enemy_system.uniform_grid,
+				current_tick,
+			)
+		else:
+			replay_result = skill_system.resolve_scheduled_skill(
+				replay,
+				enemy_snapshot,
+				enemy_system.enemy_store,
+				enemy_system.uniform_grid,
+				player_position,
+				current_tick,
+			)
+		_apply_resolution_hits(replay_result)
+
 	for projectile_entry: Vector2i in projectile_snapshot:
 		var ally_hits: Array[Dictionary] = weapon_system.resolve_ally_projectile(
 			projectile_entry,
@@ -130,16 +166,34 @@ func step(move_input: Vector2, delta: float) -> CombatSnapshot:
 		)
 		_apply_enemy_hit_records(ally_hits)
 
-	weapon_system.advance_attack_timer(delta)
-	var primary_hits: Array[Dictionary] = weapon_system.try_primary_attack(
-		player_position,
-		enemy_system.enemy_store,
-		enemy_system.uniform_grid,
-		current_tick,
-	)
-	_apply_enemy_hit_records(primary_hits)
 
-	if not freeze_enemy_timers:
+	if not skill_system.combat_progress_paused():
+		var coward_active: bool = skill_system.coward_stationary_active()
+		weapon_system.advance_attack_timer(delta, coward_active)
+		var primary_result: Dictionary = weapon_system.try_primary_attack_detailed(
+			player_position,
+			enemy_system.enemy_store,
+			enemy_system.uniform_grid,
+			current_tick,
+			coward_active,
+			main_weapon_damage_override,
+		)
+		skill_system.register_primary_attack(primary_result, current_tick)
+		_apply_resolution_hits(primary_result)
+
+	var pending_candidates: Array[Dictionary] = skill_system.pending_activation_snapshot()
+	for candidate: Dictionary in pending_candidates:
+		var skill_result: Dictionary = skill_system.resolve_pending_candidate(
+			candidate,
+			enemy_snapshot,
+			enemy_system.enemy_store,
+			enemy_system.uniform_grid,
+			player_position,
+			current_tick,
+		)
+		_apply_resolution_hits(skill_result)
+
+	if not freeze_enemy_timers or allow_contact_timers_only:
 		var enemy_damage: Array[Dictionary] = enemy_system.resolve_ready_enemy_damage_actions(
 			enemy_snapshot,
 			player_position,
@@ -277,6 +331,12 @@ func _move_player(move_input: Vector2, delta: float) -> void:
 	)
 
 
+func _apply_resolution_hits(result: Dictionary) -> void:
+	var records: Array[Dictionary] = []
+	records.assign(result.get("hits", []))
+	_apply_enemy_hit_records(records)
+
+
 func _apply_enemy_hit_records(records: Array[Dictionary]) -> void:
 	for record: Dictionary in records:
 		var event: CombatEvent = record.get("event") as CombatEvent
@@ -288,11 +348,31 @@ func _apply_enemy_hit_records(records: Array[Dictionary]) -> void:
 			continue
 		var applied_damage: float = minf(enemy.hp, maxf(0.0, event.damage_snapshot))
 		enemy.hp = maxf(0.0, enemy.hp - applied_damage)
+		_update_damage_samples(event, applied_damage)
 		if enemy.hp <= 0.0:
-			_record_enemy_death(enemy)
+			_record_enemy_death(enemy, event)
 
 
-func _record_enemy_death(enemy: EnemyEntity) -> void:
+func _update_damage_samples(event: CombatEvent, applied_damage: float) -> void:
+	if applied_damage > 0.0:
+		var sample := DamageSample.new()
+		sample.physics_tick = state.physics_tick
+		sample.event_serial = event.event_serial
+		sample.applied_damage = applied_damage
+		state.recent_damage_samples.append(sample)
+	var minimum_tick: int = state.physics_tick - 60
+	while (
+		not state.recent_damage_samples.is_empty()
+		and state.recent_damage_samples[0].physics_tick < minimum_tick
+	):
+		state.recent_damage_samples.pop_front()
+	var current_dps: float = 0.0
+	for sample: DamageSample in state.recent_damage_samples:
+		current_dps += sample.applied_damage
+	state.peak_dps = maxf(state.peak_dps, current_dps)
+
+
+func _record_enemy_death(enemy: EnemyEntity, cause_event: CombatEvent) -> void:
 	var already_cleared: bool = state.wave_cleared
 	_pending_deaths.append({
 		"entity_id": enemy.entity_id,
@@ -312,6 +392,7 @@ func _record_enemy_death(enemy: EnemyEntity) -> void:
 			state.boss_defeated = true
 		_:
 			state.normal_kills += 1
+	skill_system.register_kill(cause_event)
 
 
 func _process_pending_loot(current_tick: int) -> void:
@@ -337,7 +418,7 @@ func _apply_player_damage_records(records: Array[Dictionary]) -> void:
 		var source_effect_id: StringName = StringName(record.get("source_effect_id", &"enemy"))
 		var raw_damage: float = float(record.get("raw_damage", 0.0))
 		var position: Vector2 = record.get("position", player_position) as Vector2
-		event_router.create_primary(
+		var event: CombatEvent = event_router.create_primary(
 			state,
 			&"player_damage",
 			source_entity_id,
@@ -346,6 +427,7 @@ func _apply_player_damage_records(records: Array[Dictionary]) -> void:
 			position,
 			Vector2.ZERO,
 		)
+		skill_system.register_hit(event)
 		_apply_raw_player_damage(raw_damage)
 
 
@@ -353,7 +435,7 @@ func _apply_enemy_projectile_damage(records: Array[Dictionary]) -> void:
 	for record: Dictionary in records:
 		var raw_damage: float = float(record.get("damage", 0.0))
 		var source_entity_id: int = int(record.get("source_entity_id", -1))
-		event_router.create_primary(
+		var event: CombatEvent = event_router.create_primary(
 			state,
 			&"player_damage",
 			source_entity_id,
@@ -362,6 +444,7 @@ func _apply_enemy_projectile_damage(records: Array[Dictionary]) -> void:
 			player_position,
 			Vector2.ZERO,
 		)
+		skill_system.register_hit(event)
 		_apply_raw_player_damage(raw_damage)
 
 
@@ -374,6 +457,28 @@ func _apply_raw_player_damage(raw_damage: float) -> void:
 func _latch_quota_without_countdown() -> void:
 	if not state.wave_cleared and RunStateMachine.quota_reached(state, wave):
 		state.wave_cleared = true
+
+
+func _advance_fixture_contact_timers(
+	ids: Array[int],
+	delta: float,
+	current_tick: int,
+) -> void:
+	for entity_id: int in ids:
+		var enemy: EnemyEntity = enemy_system.enemy_store.get_by_id(entity_id)
+		if (
+			enemy == null
+			or enemy.definition == null
+			or not enemy.is_targetable(current_tick)
+			or enemy.definition.contact_interval <= 0.0
+		):
+			continue
+		enemy.contact_elapsed = TimerMath.advance_clamped(
+			enemy.contact_elapsed,
+			enemy.definition.contact_interval,
+			delta,
+		)
+	_rebuild_uniform_grid(ids, current_tick)
 
 
 func _rebuild_uniform_grid(ids: Array[int], current_tick: int) -> void:
@@ -408,6 +513,7 @@ func _build_hud_values() -> Dictionary:
 		"enemy_pool_overflow": enemy_system.enemy_store.overflow_count,
 		"projectile_pool_overflow": projectile_pool.overflow_count,
 		"vfx_pool_overflow": vfx_pool.overflow_count,
+		"skill_slots": skill_system.build_hud_slots(),
 		"evidence_caption": evidence_caption,
 	}
 

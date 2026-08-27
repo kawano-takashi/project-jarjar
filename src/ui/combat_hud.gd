@@ -8,6 +8,8 @@ extends Control
 @onready var _hp_value: Label = %HpValue
 @onready var _weapon_value: Label = %WeaponValue
 @onready var _chests_value: Label = %ChestsValue
+@onready var _skill_slot_zero_value: Label = %SkillSlot0Value
+@onready var _skill_slot_one_value: Label = %SkillSlot1Value
 @onready var _bonus_time: Label = %BonusTime
 @onready var _boss_requirement: Label = %BossRequirement
 @onready var _boss_spawn_status: Label = %BossSpawnStatus
@@ -44,11 +46,54 @@ func update_from_snapshot(snapshot: CombatSnapshot) -> void:
 	_hp_value.text = "HP %s / %s" % [_format_health(current_hp), _format_health(max_hp)]
 	_weapon_value.text = "主武器  %s" % weapon_name
 	_chests_value.text = "箱  %d" % wave_chests
+	var skill_slots: Array = values.get("skill_slots", []) as Array
+	_update_skill_slot(_skill_slot_zero_value, skill_slots, 0)
+	_update_skill_slot(_skill_slot_one_value, skill_slots, 1)
 	_bonus_time.visible = wave_cleared
 	_update_boss_gate(wave_number, boss_defeated, non_boss_spawned)
 	_update_debug_overlay(values, snapshot)
 	_evidence_caption.text = evidence_caption
 	_evidence_caption.visible = not evidence_caption.is_empty()
+
+
+func _update_skill_slot(label: Label, skill_slots: Array, slot_index: int) -> void:
+	if slot_index < 0 or slot_index >= skill_slots.size():
+		label.text = "未装着"
+		return
+	var slot: Dictionary = skill_slots[slot_index] as Dictionary
+	match str(slot.get("status", "empty")):
+		"sealed":
+			label.text = "封印"
+		"active":
+			var skill_id: String = str(slot.get("skill_id", ""))
+			var display_name: String = str(slot.get("display_name", skill_id))
+			var level: int = int(slot.get("level", 1))
+			var progress: float = float(slot.get("progress", 0.0))
+			var threshold: float = float(slot.get("threshold", 0.0))
+			var pending_count: int = int(slot.get("pending_count", 0))
+			if skill_id == "starfall":
+				var remaining: float = maxf(
+					0.0,
+					float(slot.get("remaining", threshold - progress)),
+				)
+				label.text = "%s Lv%d  %.1f秒/%.1f秒（残り%.1f秒） 予約%d" % [
+					display_name,
+					level,
+					progress,
+					threshold,
+					remaining,
+					pending_count,
+				]
+			else:
+				label.text = "%s Lv%d  %d/%d 予約%d" % [
+					display_name,
+					level,
+					int(roundf(progress)),
+					int(roundf(threshold)),
+					pending_count,
+				]
+		_:
+			label.text = "未装着"
 
 
 func _update_boss_gate(

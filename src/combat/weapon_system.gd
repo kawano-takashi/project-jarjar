@@ -52,7 +52,7 @@ func current_definition() -> WeaponDefinition:
 	return _catalog.weapon(current_weapon_id())
 
 
-func effective_interval() -> float:
+func effective_interval(coward_stationary_active: bool = false) -> float:
 	if _state == null or _catalog == null:
 		return 0.8
 	var definition: WeaponDefinition = current_definition()
@@ -64,24 +64,32 @@ func effective_interval() -> float:
 		stats,
 		unique_ids,
 		_state.wave_kills,
-		false,
+		coward_stationary_active,
 	)
 
 
-func effective_damage() -> float:
+func effective_damage(coward_stationary_active: bool = false) -> float:
 	var definition: WeaponDefinition = current_definition()
 	var stats: Dictionary = StatCalculator.aggregate_affixes(_state.equipped)
 	var unique_ids: Array[StringName] = StatCalculator.equipped_unique_ids(_state.equipped)
-	return definition.base_damage * StatCalculator.damage_multiplier(stats, unique_ids)
+	return definition.base_damage * StatCalculator.damage_multiplier(
+		stats,
+		unique_ids,
+		false,
+		coward_stationary_active,
+	)
 
 
-func advance_attack_timer(delta: float) -> void:
-	var interval: float = effective_interval()
+func advance_attack_timer(delta: float, coward_stationary_active: bool = false) -> void:
+	var interval: float = effective_interval(coward_stationary_active)
 	attack_elapsed = TimerMath.advance_clamped(attack_elapsed, interval, delta)
 
 
-func is_attack_ready() -> bool:
-	return TimerMath.is_ready(attack_elapsed, effective_interval())
+func is_attack_ready(coward_stationary_active: bool = false) -> bool:
+	return TimerMath.is_ready(
+		attack_elapsed,
+		effective_interval(coward_stationary_active),
+	)
 
 
 func try_primary_attack(
@@ -90,9 +98,37 @@ func try_primary_attack(
 	grid: UniformGrid,
 	current_tick: int,
 ) -> Array[Dictionary]:
+	var result: Dictionary = try_primary_attack_detailed(
+		player_position,
+		enemy_store,
+		grid,
+		current_tick,
+	)
 	var hits: Array[Dictionary] = []
-	if not is_attack_ready():
-		return hits
+	hits.assign(result.get("hits", []))
+	return hits
+
+
+func try_primary_attack_detailed(
+	player_position: Vector2,
+	enemy_store: EnemyStore,
+	grid: UniformGrid,
+	current_tick: int,
+	coward_stationary_active: bool = false,
+	damage_override: float = -1.0,
+) -> Dictionary:
+	var hits: Array[Dictionary] = []
+	var result: Dictionary = {
+		"generated": false,
+		"source_effect_id": &"",
+		"damage_snapshot": 0.0,
+		"direction": Vector2.ZERO,
+		"aim_distance": 0.0,
+		"target_entity_id": -1,
+		"hits": hits,
+	}
+	if not is_attack_ready(coward_stationary_active):
+		return result
 	var definition: WeaponDefinition = current_definition()
 	var target: EnemyEntity = _nearest_target(
 		player_position,
@@ -102,20 +138,37 @@ func try_primary_attack(
 		current_tick,
 	)
 	if target == null:
-		return hits
+		return result
 	var direction: Vector2 = (target.position - player_position).normalized()
 	if direction == Vector2.ZERO:
 		direction = last_attack_direction
 	last_attack_direction = direction
 	attack_elapsed = 0.0
-	var damage: float = effective_damage()
+	var damage: float = (
+		damage_override
+		if damage_override >= 0.0
+		else effective_damage(coward_stationary_active)
+	)
+	var source_effect_id := StringName("weapon:%s" % definition.weapon_id)
+	var aim_distance: float = player_position.distance_to(target.position)
+	var generated: bool = false
 	match definition.weapon_id:
 		WOOD_STICK_ID:
-			hits.append(_damage_record(target.entity_id, definition.weapon_id, damage, player_position, direction))
+			var event: CombatEvent = _router.create_primary(
+				_state,
+				&"damage",
+				-1,
+				source_effect_id,
+				damage,
+				player_position,
+				direction,
+			)
+			hits.append({"entity_id": target.entity_id, "event": event})
+			generated = true
 		BOW_ID:
 			var stats: Dictionary = StatCalculator.aggregate_affixes(_state.equipped)
 			var hit_count: int = 1 + maxi(0, StatCalculator.effective_pierce(stats))
-			_projectile_pool.acquire(
+			var projectile: ProjectileState = _projectile_pool.acquire(
 				ProjectileState.FACTION_ALLY,
 				definition.weapon_id,
 				-1,
@@ -128,9 +181,14 @@ func try_primary_attack(
 				target.position,
 				hit_count,
 				current_tick,
+				source_effect_id,
+				&"",
+				true,
+				PackedStringArray(),
 			)
+			generated = projectile != null
 		STAFF_ID:
-			_projectile_pool.acquire(
+			var projectile: ProjectileState = _projectile_pool.acquire(
 				ProjectileState.FACTION_ALLY,
 				definition.weapon_id,
 				-1,
@@ -143,8 +201,22 @@ func try_primary_attack(
 				target.position,
 				1,
 				current_tick,
+				source_effect_id,
+				&"",
+				true,
+				PackedStringArray(),
 			)
+			generated = projectile != null
 		SWORD_ID:
+			var event: CombatEvent = _router.create_primary(
+				_state,
+				&"damage",
+				-1,
+				source_effect_id,
+				damage,
+				player_position,
+				direction,
+			)
 			var candidates: Array[int] = grid.query_circle_candidates(
 				player_position,
 				definition.range_m,
@@ -163,8 +235,137 @@ func try_primary_attack(
 					enemy.position,
 					enemy.body_radius(),
 				):
-					hits.append(_damage_record(entity_id, definition.weapon_id, damage, player_position, direction))
-	return hits
+					hits.append({"entity_id": entity_id, "event": event})
+			generated = true
+	result["generated"] = generated
+	result["source_effect_id"] = source_effect_id
+	result["damage_snapshot"] = damage
+	result["direction"] = direction
+	result["aim_distance"] = aim_distance
+	result["target_entity_id"] = target.entity_id
+	result["hits"] = hits
+	return result
+
+
+func replay_weapon(
+	replay: ScheduledProcReplay,
+	player_position: Vector2,
+	enemy_store: EnemyStore,
+	grid: UniformGrid,
+	current_tick: int,
+) -> Dictionary:
+	var hits: Array[Dictionary] = []
+	var result: Dictionary = {
+		"generated": false,
+		"event": null,
+		"hits": hits,
+	}
+	if (
+		replay == null
+		or replay.proc_effect_id.is_empty()
+		or not String(replay.source_effect_id).begins_with("weapon:")
+	):
+		return result
+	var weapon_id := StringName(String(replay.source_effect_id).trim_prefix("weapon:"))
+	var definition: WeaponDefinition = _catalog.weapon(weapon_id)
+	if definition == null:
+		return result
+	var direction: Vector2 = replay.direction.normalized()
+	if direction == Vector2.ZERO:
+		direction = Vector2.RIGHT
+	match weapon_id:
+		WOOD_STICK_ID:
+			var target: EnemyEntity = enemy_store.get_by_id(replay.target_entity_id)
+			if (
+				target == null
+				or not target.is_targetable(current_tick)
+				or player_position.distance_to(target.position) > definition.range_m
+			):
+				return result
+			var event: CombatEvent = _materialize_replay_event(
+				replay,
+				player_position,
+				direction,
+			)
+			if event == null:
+				return result
+			hits.append({"entity_id": target.entity_id, "event": event})
+			result["event"] = event
+			result["generated"] = true
+		BOW_ID:
+			var stats: Dictionary = StatCalculator.aggregate_affixes(_state.equipped)
+			var hit_count: int = 1 + maxi(0, StatCalculator.effective_pierce(stats))
+			var projectile: ProjectileState = _projectile_pool.acquire(
+				ProjectileState.FACTION_ALLY,
+				weapon_id,
+				-1,
+				player_position,
+				direction * definition.projectile_speed,
+				definition.projectile_radius,
+				replay.damage_snapshot,
+				definition.range_m,
+				definition.range_m / definition.projectile_speed,
+				player_position + direction * definition.range_m,
+				hit_count,
+				current_tick,
+				replay.source_effect_id,
+				replay.proc_effect_id,
+				false,
+				replay.inherited_effect_chain,
+			)
+			result["generated"] = projectile != null
+		STAFF_ID:
+			var aim_distance: float = clampf(replay.aim_distance, 0.0, definition.range_m)
+			var projectile: ProjectileState = _projectile_pool.acquire(
+				ProjectileState.FACTION_ALLY,
+				weapon_id,
+				-1,
+				player_position,
+				direction * definition.projectile_speed,
+				definition.projectile_radius,
+				replay.damage_snapshot,
+				definition.range_m,
+				definition.range_m / definition.projectile_speed,
+				player_position + direction * aim_distance,
+				1,
+				current_tick,
+				replay.source_effect_id,
+				replay.proc_effect_id,
+				false,
+				replay.inherited_effect_chain,
+			)
+			result["generated"] = projectile != null
+		SWORD_ID:
+			var event: CombatEvent = _materialize_replay_event(
+				replay,
+				player_position,
+				direction,
+			)
+			if event == null:
+				return result
+			var candidates: Array[int] = grid.query_circle_candidates(
+				player_position,
+				definition.range_m,
+				MAX_ENEMY_BODY_RADIUS,
+			)
+			candidates.sort()
+			for entity_id: int in candidates:
+				var enemy: EnemyEntity = enemy_store.get_by_id(entity_id)
+				if enemy == null or not enemy.is_targetable(current_tick):
+					continue
+				if CombatGeometry.point_in_fan(
+					player_position,
+					direction,
+					definition.range_m,
+					definition.arc_degrees,
+					enemy.position,
+					enemy.body_radius(),
+				):
+					hits.append({"entity_id": entity_id, "event": event})
+			result["event"] = event
+			result["generated"] = true
+	result["hits"] = hits
+	return result
 
 
 func move_snapshot_projectiles(
@@ -275,10 +476,9 @@ func _resolve_bow(
 		var entity_id: int = int(intersection["entity_id"])
 		projectile.hit_entity_ids[entity_id] = true
 		projectile.pierce_remaining -= 1
-		hits.append(_damage_record(
+		hits.append(_projectile_damage_record(
 			entity_id,
-			projectile.weapon_id,
-			projectile.damage,
+			projectile,
 			projectile.previous_position.lerp(projectile.position, float(intersection["t"])),
 			projectile.velocity.normalized(),
 		))
@@ -347,10 +547,9 @@ func _resolve_staff(
 		if enemy == null or not enemy.is_targetable(current_tick):
 			continue
 		if CombatGeometry.circle_intersects(center, effect_radius, enemy.position, enemy.body_radius()):
-			hits.append(_damage_record(
+			hits.append(_projectile_damage_record(
 				entity_id,
-				projectile.weapon_id,
-				projectile.damage,
+				projectile,
 				center,
 				projectile.velocity.normalized(),
 			))
@@ -388,23 +587,57 @@ func _nearest_target(
 	return best
 
 
-func _damage_record(
+func _projectile_damage_record(
 	entity_id: int,
-	weapon_id: StringName,
-	damage: float,
+	projectile: ProjectileState,
 	position: Vector2,
 	direction: Vector2,
 ) -> Dictionary:
-	var event: CombatEvent = _router.create_primary(
+	var source_effect_id: StringName = projectile.source_effect_id
+	if source_effect_id.is_empty():
+		source_effect_id = StringName("weapon:%s" % projectile.weapon_id)
+	var event: CombatEvent
+	if projectile.is_primary and projectile.effect_chain.is_empty():
+		event = _router.create_primary(
+			_state,
+			&"damage",
+			-1,
+			source_effect_id,
+			projectile.damage,
+			position,
+			direction,
+		)
+	else:
+		event = _router.create_secondary_from_reserved_chain(
+			_state,
+			projectile.effect_chain,
+			&"damage",
+			-1,
+			source_effect_id,
+			projectile.proc_effect_id,
+			projectile.damage,
+			position,
+			direction,
+		)
+	return {"entity_id": entity_id, "event": event}
+
+
+func _materialize_replay_event(
+	replay: ScheduledProcReplay,
+	position: Vector2,
+	direction: Vector2,
+) -> CombatEvent:
+	return _router.create_secondary_from_reserved_chain(
 		_state,
+		replay.inherited_effect_chain,
 		&"damage",
 		-1,
-		StringName("weapon:%s" % weapon_id),
-		damage,
+		replay.source_effect_id,
+		replay.proc_effect_id,
+		replay.damage_snapshot,
 		position,
 		direction,
 	)
-	return {"entity_id": entity_id, "event": event}
 
 
 func _point_on_segment_t(segment_start: Vector2, segment_end: Vector2, point: Vector2) -> float:

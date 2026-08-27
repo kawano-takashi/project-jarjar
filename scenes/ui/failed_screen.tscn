@@ -1,0 +1,207 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://src/ui/failed_screen.gd" id="1_failed"]
+[ext_resource type="PackedScene" path="res://scenes/ui/settings_overlay.tscn" id="2_settings"]
+
+[sub_resource type="StyleBoxFlat" id="StylePanel"]
+content_margin_left = 24.0
+content_margin_top = 20.0
+content_margin_right = 24.0
+content_margin_bottom = 20.0
+bg_color = Color(0.05, 0.04, 0.052, 0.96)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.62, 0.28, 0.3, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="StyleButton"]
+bg_color = Color(0.16, 0.105, 0.13, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.5, 0.3, 0.34, 1)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[sub_resource type="StyleBoxFlat" id="StyleFocus"]
+bg_color = Color(0.24, 0.13, 0.15, 1)
+border_width_left = 4
+border_width_top = 4
+border_width_right = 4
+border_width_bottom = 4
+border_color = Color(1, 0.72, 0.28, 1)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[node name="FailedScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_failed")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.025, 0.01, 0.018, 1)
+mouse_filter = 2
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 52.0
+offset_top = 34.0
+offset_right = -52.0
+offset_bottom = -34.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Content" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="SummaryHeading" type="Label" parent="Margin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.42, 0.4, 1)
+theme_override_font_sizes/font_size = 48
+text = "RUN FAILED"
+horizontal_alignment = 1
+
+[node name="SummaryOutcome" type="Label" parent="Margin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.78, 0.8, 1)
+theme_override_font_sizes/font_size = 24
+text = "WAVE 1 で敗北"
+horizontal_alignment = 1
+
+[node name="Columns" type="HBoxContainer" parent="Margin/Content"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 14
+
+[node name="RunPanel" type="PanelContainer" parent="Margin/Content/Columns"]
+custom_minimum_size = Vector2(360, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StylePanel")
+
+[node name="SummaryRunText" type="Label" parent="Margin/Content/Columns/RunPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 21
+text = "ラン情報"
+vertical_alignment = 1
+
+[node name="BuildPanel" type="PanelContainer" parent="Margin/Content/Columns"]
+custom_minimum_size = Vector2(460, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StylePanel")
+
+[node name="SummaryBuildText" type="Label" parent="Margin/Content/Columns/BuildPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 19
+text = "最終装備"
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="ScorePanel" type="PanelContainer" parent="Margin/Content/Columns"]
+custom_minimum_size = Vector2(470, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StylePanel")
+
+[node name="SummaryScoreText" type="Label" parent="Margin/Content/Columns/ScorePanel"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.95, 0.84, 0.45, 1)
+theme_override_font_sizes/font_size = 18
+text = "スコア"
+vertical_alignment = 1
+
+[node name="Actions" type="VBoxContainer" parent="Margin/Content/Columns"]
+custom_minimum_size = Vector2(400, 0)
+layout_mode = 2
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="RetrySameSeed" type="Button" parent="Margin/Content/Columns/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(400, 70)
+layout_mode = 2
+focus_mode = 2
+theme_override_font_sizes/font_size = 21
+theme_override_styles/normal = SubResource("StyleButton")
+theme_override_styles/focus = SubResource("StyleFocus")
+text = "同じseedで再挑戦　A／Enter"
+
+[node name="RetryNewSeed" type="Button" parent="Margin/Content/Columns/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(400, 70)
+layout_mode = 2
+focus_mode = 2
+theme_override_font_sizes/font_size = 21
+theme_override_styles/normal = SubResource("StyleButton")
+theme_override_styles/focus = SubResource("StyleFocus")
+text = "新しいseedで再挑戦　A／Enter"
+
+[node name="SummaryTitleButton" type="Button" parent="Margin/Content/Columns/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(400, 70)
+layout_mode = 2
+focus_mode = 2
+theme_override_font_sizes/font_size = 21
+theme_override_styles/normal = SubResource("StyleButton")
+theme_override_styles/focus = SubResource("StyleFocus")
+text = "タイトルへ　A／Enter"
+
+[node name="SummaryExitButton" type="Button" parent="Margin/Content/Columns/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(400, 70)
+layout_mode = 2
+focus_mode = 2
+theme_override_font_sizes/font_size = 21
+theme_override_styles/normal = SubResource("StyleButton")
+theme_override_styles/focus = SubResource("StyleFocus")
+text = "終了　A／Enter"
+
+[node name="SummarySettingsButton" type="Button" parent="Margin/Content/Columns/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(400, 70)
+layout_mode = 2
+focus_mode = 2
+theme_override_font_sizes/font_size = 21
+theme_override_styles/normal = SubResource("StyleButton")
+theme_override_styles/focus = SubResource("StyleFocus")
+text = "設定　A／Enter"
+
+[node name="Hint" type="Label" parent="Margin/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.65, 0.58, 0.62, 1)
+theme_override_font_sizes/font_size = 17
+text = "方向キー／方向パッド／左スティック：移動　A／Enter：決定"
+horizontal_alignment = 1
+
+[node name="SettingsOverlay" parent="." instance=ExtResource("2_settings")]
+unique_name_in_owner = true

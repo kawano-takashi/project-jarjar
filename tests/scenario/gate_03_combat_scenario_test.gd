@@ -806,12 +806,25 @@ func _test_qa_scenarios(assertions: Variant) -> void:
 		assertions.expect_false(bool(result.get("tutorial_active", true)), "%s tutorial inactive" % scenario_id)
 		assertions.expect_true(bool(result.get("rng_unchanged", false)), "%s mutable RNG unchanged" % scenario_id)
 		var state: RunState = result["state"] as RunState
-		if scenario_id == "reward_controls":
-			assertions.expect_equal(GameTypes.RunPhase.REWARD_REVEAL, state.phase, "reward_controls starts REWARD_REVEAL")
-			assertions.expect_equal(3, state.wave_number, "reward_controls starts W3")
-		else:
-			assertions.expect_equal(GameTypes.RunPhase.COMBAT, state.phase, "%s starts COMBAT" % scenario_id)
-			assertions.expect_equal(1, state.wave_number, "%s starts W1" % scenario_id)
+		match scenario_id:
+			"reward_controls":
+				assertions.expect_equal(GameTypes.RunPhase.REWARD_REVEAL, state.phase, "reward_controls starts REWARD_REVEAL")
+				assertions.expect_equal(3, state.wave_number, "reward_controls starts W3")
+			"inventory_controller":
+				assertions.expect_equal(GameTypes.RunPhase.INVENTORY, state.phase, "inventory_controller starts INVENTORY")
+				assertions.expect_equal(7, state.wave_number, "inventory_controller starts after W7")
+			"result_controller":
+				assertions.expect_equal(GameTypes.RunPhase.RESULT, state.phase, "result_controller starts RESULT")
+				assertions.expect_equal(8, state.wave_number, "result_controller represents W8 clear")
+			"immortal_100":
+				assertions.expect_equal(GameTypes.RunPhase.COMBAT, state.phase, "immortal_100 starts COMBAT")
+				assertions.expect_equal(5, state.wave_number, "immortal_100 starts W5")
+			"boss_299":
+				assertions.expect_equal(GameTypes.RunPhase.COMBAT, state.phase, "boss_299 starts COMBAT")
+				assertions.expect_equal(8, state.wave_number, "boss_299 starts W8")
+			_:
+				assertions.expect_equal(GameTypes.RunPhase.COMBAT, state.phase, "%s starts COMBAT" % scenario_id)
+				assertions.expect_equal(1, state.wave_number, "%s starts W1" % scenario_id)
 	assertions.expect_false(QaScenarioFactory.build("unknown", catalog).get("valid", true), "unknown QA ID rejected")
 	for weapon_id: String in ["weapon_bow", "weapon_staff", "weapon_sword"]:
 		var weapon_result: Dictionary = QaScenarioFactory.build(weapon_id, catalog)
