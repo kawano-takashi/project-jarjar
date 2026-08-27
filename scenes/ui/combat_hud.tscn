@@ -1,0 +1,264 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://src/ui/combat_hud.gd" id="1_hud"]
+
+[sub_resource type="StyleBoxFlat" id="StylePanel"]
+content_margin_left = 18.0
+content_margin_top = 14.0
+content_margin_right = 18.0
+content_margin_bottom = 14.0
+bg_color = Color(0.025, 0.039, 0.055, 0.88)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.24, 0.58, 0.5, 0.9)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="StyleDebug"]
+content_margin_left = 14.0
+content_margin_top = 10.0
+content_margin_right = 14.0
+content_margin_bottom = 10.0
+bg_color = Color(0.015, 0.02, 0.026, 0.9)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.93, 0.54, 0.2, 0.9)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+
+[node name="CombatHUD" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1_hud")
+
+[node name="CombatPanel" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 0
+offset_left = 28.0
+offset_top = 24.0
+offset_right = 472.0
+offset_bottom = 278.0
+theme_override_styles/panel = SubResource("StylePanel")
+
+[node name="Content" type="VBoxContainer" parent="CombatPanel"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="WaveRow" type="HBoxContainer" parent="CombatPanel/Content"]
+layout_mode = 2
+theme_override_constants/separation = 22
+
+[node name="WaveValue" type="Label" parent="CombatPanel/Content/WaveRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.95, 0.43, 0.28, 1)
+theme_override_font_sizes/font_size = 32
+text = "WAVE 1"
+
+[node name="TimeValue" type="Label" parent="CombatPanel/Content/WaveRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.94, 0.94, 0.88, 1)
+theme_override_font_sizes/font_size = 26
+text = "残り 60 秒"
+vertical_alignment = 1
+
+[node name="KillsValue" type="Label" parent="CombatPanel/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.83, 0.91, 0.88, 1)
+theme_override_font_sizes/font_size = 25
+text = "撃破 0 / 40"
+
+[node name="HpValue" type="Label" parent="CombatPanel/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.94, 0.78, 0.7, 1)
+theme_override_font_sizes/font_size = 23
+text = "HP 100 / 100"
+
+[node name="WeaponValue" type="Label" parent="CombatPanel/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.76, 0.86, 0.97, 1)
+theme_override_font_sizes/font_size = 23
+text = "主武器  木の棒"
+
+[node name="ChestsValue" type="Label" parent="CombatPanel/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.96, 0.83, 0.38, 1)
+theme_override_font_sizes/font_size = 22
+text = "箱  0"
+
+[node name="SkillPanel" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -410.0
+offset_top = 24.0
+offset_right = -28.0
+offset_bottom = 194.0
+grow_horizontal = 0
+theme_override_styles/panel = SubResource("StylePanel")
+
+[node name="Content" type="VBoxContainer" parent="SkillPanel"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Heading" type="Label" parent="SkillPanel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.44, 0.86, 0.76, 1)
+theme_override_font_sizes/font_size = 20
+text = "SKILLS"
+
+[node name="SkillSlot0" type="HBoxContainer" parent="SkillPanel/Content"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="SkillPanel/Content/SkillSlot0"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.61, 0.69, 0.72, 1)
+theme_override_font_sizes/font_size = 20
+text = "スキル 1"
+
+[node name="SkillSlot0Value" type="Label" parent="SkillPanel/Content/SkillSlot0"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.94, 0.94, 0.88, 1)
+theme_override_font_sizes/font_size = 22
+text = "未装着"
+
+[node name="SkillSlot1" type="HBoxContainer" parent="SkillPanel/Content"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="SkillPanel/Content/SkillSlot1"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.61, 0.69, 0.72, 1)
+theme_override_font_sizes/font_size = 20
+text = "スキル 2"
+
+[node name="SkillSlot1Value" type="Label" parent="SkillPanel/Content/SkillSlot1"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.94, 0.94, 0.88, 1)
+theme_override_font_sizes/font_size = 22
+text = "未装着"
+
+[node name="BonusTime" type="Label" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_top = 36.0
+offset_bottom = 92.0
+grow_horizontal = 2
+theme_override_colors/font_color = Color(1, 0.74, 0.24, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.9)
+theme_override_constants/shadow_offset_x = 3
+theme_override_constants/shadow_offset_y = 3
+theme_override_font_sizes/font_size = 38
+text = "BONUS TIME"
+horizontal_alignment = 1
+
+[node name="BossGate" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 510.0
+offset_top = 108.0
+offset_right = -510.0
+offset_bottom = 206.0
+grow_horizontal = 2
+theme_override_constants/separation = 4
+
+[node name="BossRequirement" type="Label" parent="BossGate"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.7, 0.3, 1)
+theme_override_colors/font_shadow_color = Color(0.05, 0.02, 0, 0.95)
+theme_override_constants/shadow_offset_x = 3
+theme_override_constants/shadow_offset_y = 3
+theme_override_font_sizes/font_size = 26
+text = "300到達にはボス撃破が必要"
+horizontal_alignment = 1
+
+[node name="BossSpawnStatus" type="Label" parent="BossGate"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.38, 0.28, 1)
+theme_override_colors/font_shadow_color = Color(0.05, 0.01, 0, 0.95)
+theme_override_constants/shadow_offset_x = 3
+theme_override_constants/shadow_offset_y = 3
+theme_override_font_sizes/font_size = 24
+text = "通常敵スポーン停止中"
+horizontal_alignment = 1
+
+[node name="DebugOverlay" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 28.0
+offset_top = -104.0
+offset_right = 612.0
+offset_bottom = -24.0
+grow_vertical = 0
+theme_override_styles/panel = SubResource("StyleDebug")
+
+[node name="Content" type="VBoxContainer" parent="DebugOverlay"]
+layout_mode = 2
+theme_override_constants/separation = 3
+
+[node name="DebugActive" type="Label" parent="DebugOverlay/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.76, 0.88, 0.9, 1)
+theme_override_font_sizes/font_size = 16
+text = "ACTIVE  ENEMY 0  PROJECTILE 0  VFX 0"
+
+[node name="DebugOverflow" type="Label" parent="DebugOverlay/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.64, 0.3, 1)
+theme_override_font_sizes/font_size = 16
+text = "POOL OVERFLOW  ENEMY 0  PROJECTILE 0  VFX 0"
+
+[node name="EvidenceCaption" type="Label" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 12
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -78.0
+offset_bottom = -24.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_colors/font_color = Color(1, 0.94, 0.7, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.9)
+theme_override_constants/shadow_offset_x = 3
+theme_override_constants/shadow_offset_y = 3
+theme_override_font_sizes/font_size = 28
+text = "EVIDENCE"
+horizontal_alignment = 1

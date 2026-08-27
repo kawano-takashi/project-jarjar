@@ -3,11 +3,17 @@ extends RefCounted
 
 
 const UNIT_SCRIPT_PATHS: Array[String] = [
-	"res://tests/unit/smoke_bootstrap_test.gd",
+	"res://tests/unit/project_contract_test.gd",
 	"res://tests/unit/gate_02_domain_test.gd",
+	"res://tests/unit/gate_03_combat_core_test.gd",
 ]
-const SCENARIO_SCRIPT_PATHS: Array[String] = []
-const SIMULATION_SCRIPT_PATHS: Array[String] = []
+const SCENARIO_SCRIPT_PATHS: Array[String] = [
+	"res://tests/scenario/gate_03_combat_scenario_test.gd",
+	"res://tests/scenario/gate_03_lifecycle_contract_test.gd",
+]
+const SIMULATION_SCRIPT_PATHS: Array[String] = [
+	"res://tests/simulation/gate_03_wave_simulation_test.gd",
+]
 
 
 static func script_paths_for_suite(suite: String) -> Array[String]:

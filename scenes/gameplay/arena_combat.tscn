@@ -1,0 +1,155 @@
+[gd_scene load_steps=19 format=3]
+
+[ext_resource type="Script" path="res://src/gameplay/arena_presenter.gd" id="1_presenter"]
+[ext_resource type="PackedScene" path="res://scenes/ui/combat_hud.tscn" id="2_hud"]
+
+[sub_resource type="StandardMaterial3D" id="FloorMaterial"]
+albedo_color = Color(0.12, 0.18, 0.17, 1)
+roughness = 0.9
+
+[sub_resource type="BoxMesh" id="FloorMesh"]
+material = SubResource("FloorMaterial")
+size = Vector3(30, 0.1, 18)
+
+[sub_resource type="StandardMaterial3D" id="BoundaryMaterial"]
+albedo_color = Color(0.28, 0.64, 0.53, 1)
+emission_enabled = true
+emission = Color(0.04, 0.18, 0.13, 1)
+emission_energy_multiplier = 1.5
+roughness = 0.65
+
+[sub_resource type="BoxMesh" id="BoundaryHorizontalMesh"]
+material = SubResource("BoundaryMaterial")
+size = Vector3(30.5, 0.25, 0.25)
+
+[sub_resource type="BoxMesh" id="BoundaryVerticalMesh"]
+material = SubResource("BoundaryMaterial")
+size = Vector3(0.25, 0.25, 18)
+
+[sub_resource type="StandardMaterial3D" id="PlayerMaterial"]
+albedo_color = Color(0.3, 0.78, 0.96, 1)
+metallic = 0.1
+roughness = 0.35
+
+[sub_resource type="CapsuleMesh" id="PlayerMesh"]
+material = SubResource("PlayerMaterial")
+radius = 0.45
+height = 1.2
+
+[sub_resource type="StandardMaterial3D" id="EnemyMaterial"]
+albedo_color = Color(0.9, 0.27, 0.2, 1)
+roughness = 0.55
+
+[sub_resource type="CapsuleMesh" id="EnemyMesh"]
+material = SubResource("EnemyMaterial")
+radius = 0.4
+height = 1.0
+
+[sub_resource type="MultiMesh" id="EnemyMultiMesh"]
+transform_format = 1
+mesh = SubResource("EnemyMesh")
+instance_count = 768
+visible_instance_count = 0
+
+[sub_resource type="StandardMaterial3D" id="ProjectileMaterial"]
+albedo_color = Color(1, 0.78, 0.24, 1)
+emission_enabled = true
+emission = Color(0.6, 0.25, 0.02, 1)
+emission_energy_multiplier = 2.0
+roughness = 0.25
+
+[sub_resource type="SphereMesh" id="ProjectileMesh"]
+material = SubResource("ProjectileMaterial")
+radius = 0.16
+height = 0.32
+
+[sub_resource type="MultiMesh" id="ProjectileMultiMesh"]
+transform_format = 1
+mesh = SubResource("ProjectileMesh")
+instance_count = 4096
+visible_instance_count = 0
+
+[sub_resource type="StandardMaterial3D" id="VfxMaterial"]
+transparency = 1
+albedo_color = Color(0.42, 0.9, 1, 0.72)
+emission_enabled = true
+emission = Color(0.08, 0.55, 0.8, 1)
+emission_energy_multiplier = 2.2
+roughness = 0.2
+
+[sub_resource type="BoxMesh" id="VfxMesh"]
+material = SubResource("VfxMaterial")
+size = Vector3(0.22, 0.08, 0.22)
+
+[sub_resource type="MultiMesh" id="VfxMultiMesh"]
+transform_format = 1
+mesh = SubResource("VfxMesh")
+instance_count = 4096
+visible_instance_count = 0
+
+[node name="ArenaCombat" type="Node3D"]
+script = ExtResource("1_presenter")
+
+[node name="Floor" type="MeshInstance3D" parent="."]
+position = Vector3(0, -0.05, 0)
+mesh = SubResource("FloorMesh")
+
+[node name="BoundaryNorth" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.125, -9)
+mesh = SubResource("BoundaryHorizontalMesh")
+
+[node name="BoundarySouth" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.125, 9)
+mesh = SubResource("BoundaryHorizontalMesh")
+
+[node name="BoundaryWest" type="MeshInstance3D" parent="."]
+position = Vector3(-15, 0.125, 0)
+mesh = SubResource("BoundaryVerticalMesh")
+
+[node name="BoundaryEast" type="MeshInstance3D" parent="."]
+position = Vector3(15, 0.125, 0)
+mesh = SubResource("BoundaryVerticalMesh")
+
+[node name="PlayerMesh" type="MeshInstance3D" parent="."]
+unique_name_in_owner = true
+position = Vector3(0, 0.6, 0)
+mesh = SubResource("PlayerMesh")
+
+[node name="EnemyInstances" type="MultiMeshInstance3D" parent="."]
+unique_name_in_owner = true
+multimesh = SubResource("EnemyMultiMesh")
+
+[node name="ProjectileInstances" type="MultiMeshInstance3D" parent="."]
+unique_name_in_owner = true
+multimesh = SubResource("ProjectileMultiMesh")
+
+[node name="VfxInstances" type="MultiMeshInstance3D" parent="."]
+unique_name_in_owner = true
+multimesh = SubResource("VfxMultiMesh")
+
+[node name="KeyLight" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-58, -35, 0)
+light_color = Color(0.96, 0.92, 0.82, 1)
+light_energy = 1.2
+shadow_enabled = true
+
+[node name="FillLight" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-42, 145, 0)
+light_color = Color(0.3, 0.52, 0.72, 1)
+light_energy = 0.45
+
+[node name="ArenaCamera" type="Camera3D" parent="."]
+unique_name_in_owner = true
+position = Vector3(8.912187, 18, 8.912187)
+rotation_degrees = Vector3(-55, 45, 0)
+projection = 1
+current = true
+size = 13.0
+near = 0.1
+far = 100.0
+
+[node name="HUDLayer" type="CanvasLayer" parent="."]
+layer = 10
+
+[node name="CombatHUD" parent="HUDLayer" instance=ExtResource("2_hud")]
+unique_name_in_owner = true

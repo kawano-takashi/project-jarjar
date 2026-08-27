@@ -1,6 +1,11 @@
 extends RefCounted
 
 
+const GameAppScript = preload("res://src/app/game_app.gd")
+const LaunchArgumentsScript = preload("res://src/app/launch_arguments.gd")
+const SettingsStoreScript = preload("res://src/core/settings_store.gd")
+
+
 const EXPECTED_ACTIONS: Array[String] = [
 	"item_lock",
 	"move_down",
@@ -22,11 +27,12 @@ func test_names() -> PackedStringArray:
 		"settings_defaults_and_persistence",
 		"runner_autoload_and_safe_mode",
 		"runner_test_path_isolation",
-		"bootstrap_boot_to_title",
+		"title_starts_new_seed_w1_combat",
 		"title_focus_contract",
 		"project_settings_contract",
 		"input_map_contract",
 		"launch_argument_contract",
+		"qa_runtime_settings_are_ephemeral",
 		"gate_script_argument_validation",
 	])
 
@@ -39,8 +45,8 @@ func run_test(test_name: String, assertions: Variant, context: Dictionary) -> vo
 			_test_runner_autoload_and_safe_mode(assertions, context)
 		"runner_test_path_isolation":
 			_test_runner_test_path_isolation(assertions, context)
-		"bootstrap_boot_to_title":
-			_test_bootstrap_boot_to_title(assertions)
+		"title_starts_new_seed_w1_combat":
+			await _test_title_starts_new_seed_w1_combat(assertions, context)
 		"title_focus_contract":
 			await _test_title_focus_contract(assertions, context)
 		"project_settings_contract":
@@ -49,6 +55,8 @@ func run_test(test_name: String, assertions: Variant, context: Dictionary) -> vo
 			_test_input_map_contract(assertions)
 		"launch_argument_contract":
 			_test_launch_argument_contract(assertions, context)
+		"qa_runtime_settings_are_ephemeral":
+			_test_qa_runtime_settings_are_ephemeral(assertions, context)
 		"gate_script_argument_validation":
 			_test_gate_script_argument_validation(assertions)
 		_:
@@ -143,13 +151,32 @@ func _test_runner_test_path_isolation(assertions: Variant, context: Dictionary) 
 	assertions.expect_float(0.25, float(test_config.get_value("settings", "master_volume", -1.0)), "test settings written only to test path")
 
 
-func _test_bootstrap_boot_to_title(assertions: Variant) -> void:
-	var flow_script := load("res://src/core/bootstrap_flow.gd")
-	var flow: Variant = flow_script.new()
-	assertions.expect_equal(&"BOOT", flow.current_state, "initial bootstrap state")
-	assertions.expect_true(flow.transition_to_title(), "BOOT to TITLE accepted")
-	assertions.expect_equal(&"TITLE", flow.current_state, "TITLE state reached")
-	assertions.expect_false(flow.transition_to_title(), "duplicate TITLE transition rejected")
+func _test_title_starts_new_seed_w1_combat(assertions: Variant, context: Dictionary) -> void:
+	var game_app_script := load("res://src/app/game_app.gd")
+	var app: Node = game_app_script.new()
+	app.call("_show_title")
+	assertions.expect_equal(GameTypes.RunPhase.TITLE, app.current_run_phase(), "TITLE is active before start")
+	var title: Control = app.get_child(0) as Control
+	assertions.expect_true(title != null, "TITLE screen exists")
+	if title != null:
+		title.emit_signal("start_requested")
+	await context["tree"].process_frame
+	assertions.expect_true(app.run_state != null, "TITLE start owns RunState")
+	if app.run_state == null:
+		app.free()
+		return
+	assertions.expect_true(app.run_state.run_seed > 0, "TITLE start creates a new positive seed")
+	assertions.expect_equal(GameTypes.RunPhase.COMBAT, app.run_state.phase, "TITLE enters COMBAT")
+	assertions.expect_equal(1, app.run_state.wave_number, "TITLE enters W1")
+	assertions.expect_equal(1, app.run_state.drop_serial, "initial wood stick consumes serial 0000")
+	var main_weapon: ItemInstance = app.run_state.equipped.get(
+		GameTypes.EquipmentSlot.MAIN_WEAPON,
+		null,
+	) as ItemInstance
+	assertions.expect_true(main_weapon != null, "initial main weapon exists")
+	if main_weapon != null:
+		assertions.expect_equal("木の棒", main_weapon.display_name, "initial main weapon is wood stick")
+	app.free()
 
 
 func _test_title_focus_contract(assertions: Variant, context: Dictionary) -> void:
@@ -175,14 +202,6 @@ func _test_title_focus_contract(assertions: Variant, context: Dictionary) -> voi
 	assertions.expect_equal(exit_button.get_path_to(start), exit_button.focus_neighbor_bottom, "exit down wraps start")
 	assertions.expect_equal(exit_button.get_path_to(exit_button), exit_button.focus_neighbor_left, "exit left self")
 	assertions.expect_equal(exit_button.get_path_to(exit_button), exit_button.focus_neighbor_right, "exit right self")
-	var confirmation_scene := ResourceLoader.load("res://scenes/ui/bootstrap_confirmation.tscn") as PackedScene
-	assertions.expect_true(confirmation_scene != null, "bootstrap confirmation scene loads")
-	if confirmation_scene != null:
-		var confirmation := confirmation_scene.instantiate() as Control
-		assertions.expect_true(confirmation.find_child("Heading", true, false) is Label, "bootstrap confirmation heading")
-		assertions.expect_true(confirmation.find_child("BackButton", true, false) is Button, "bootstrap confirmation has return action")
-		assertions.expect_true(confirmation.find_child("ExitButton", true, false) is Button, "bootstrap confirmation has exit action")
-		confirmation.free()
 	context["tree"].root.remove_child(title)
 	title.free()
 
@@ -325,6 +344,36 @@ func _test_gate_script_argument_validation(assertions: Variant) -> void:
 		true,
 	)
 	assertions.expect_equal(2, invalid_suite_exit, "invalid Suite rejected")
+
+
+func _test_qa_runtime_settings_are_ephemeral(assertions: Variant, context: Dictionary) -> void:
+	var qa_settings_path: String = String(context["test_user_root"]).path_join(
+		"qa-runtime-policy/settings.cfg"
+	)
+	if FileAccess.file_exists(qa_settings_path):
+		assertions.expect_equal(
+			OK,
+			DirAccess.remove_absolute(qa_settings_path),
+			"QA policy fixture removes its prior isolated file",
+		)
+	var settings_store: Variant = SettingsStoreScript.new()
+	var game_app: Variant = GameAppScript.new()
+	game_app.set("_launch", {
+		"mode": LaunchArgumentsScript.MODE_QA_SCENARIO,
+		"settings_path": qa_settings_path,
+	})
+	var initialize_error: Variant = game_app.call(
+		"_initialize_settings_for_launch",
+		settings_store,
+	)
+	assertions.expect_equal(OK, initialize_error, "QA settings policy initializes")
+	assertions.expect_true(settings_store.initialized, "QA settings policy initializes runtime defaults")
+	assertions.expect_false(settings_store.runner_safe_mode, "QA settings policy is not runner mode")
+	assertions.expect_equal("", settings_store.active_settings_path, "QA settings path stays ephemeral")
+	assertions.expect_true(settings_store.tutorial_seen, "QA tutorial_seen is runtime true")
+	assertions.expect_false(FileAccess.file_exists(qa_settings_path), "QA settings policy writes no file")
+	game_app.free()
+	settings_store.free()
 
 
 func _test_launch_argument_contract(assertions: Variant, context: Dictionary) -> void:

@@ -11,18 +11,22 @@ const LogicDiagnosticsScript = preload("res://src/debug/logic_diagnostics.gd")
 
 func _ready() -> void:
 	match _evidence_argument():
-		"gate_01:bootstrap":
-			_capture_bootstrap.call_deferred()
 		"gate_02:logic_diagnostics":
 			_capture_logic_diagnostics.call_deferred()
+		"gate_03:arena_combat":
+			_capture_combat.bind("arena_combat").call_deferred()
+		"gate_03:weapon_shapes":
+			_capture_combat.bind("weapon_shapes").call_deferred()
+		"gate_03:boss_gate":
+			_capture_combat.bind("boss_gate").call_deferred()
 		_:
 			print("EVIDENCE_ARGUMENT_REJECTED name=--evidence")
 			get_tree().quit(2)
 
 
-func _capture_bootstrap() -> void:
+func _capture_combat(scenario_name: String) -> void:
 	_diagnostics_layer.visible = false
-	await _capture_png("gate-01", "bootstrap")
+	await _capture_png("gate-03", scenario_name)
 
 
 func _capture_logic_diagnostics() -> void:
