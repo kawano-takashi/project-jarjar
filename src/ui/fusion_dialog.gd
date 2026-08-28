@@ -2,6 +2,9 @@ class_name FusionDialog
 extends Control
 
 
+const UiPolishScript := preload("res://src/ui/ui_polish.gd")
+
+
 signal rarity_step_requested(step: int)
 signal material_slot_pressed(slot_index: int)
 signal material_drag_removed(slot_index: int)
@@ -41,6 +44,17 @@ func _ready() -> void:
 	_wild_toggle.set_meta("focus_id", "FA1")
 	_confirm.set_meta("focus_id", "FA2")
 	_cancel.set_meta("focus_id", "FA3")
+	for control: Control in [
+		_rarity,
+		_material_slots[0],
+		_material_slots[1],
+		_material_slots[2],
+		_auto_fill,
+		_wild_toggle,
+		_confirm,
+		_cancel,
+	]:
+		UiPolishScript.install_focus_frame(control)
 	_auto_fill.pressed.connect(func() -> void: auto_fill_requested.emit())
 	_wild_toggle.pressed.connect(func() -> void: wild_toggle_requested.emit())
 	_confirm.pressed.connect(func() -> void: confirm_requested.emit())
@@ -95,12 +109,15 @@ func update_view(
 ) -> void:
 	if not is_node_ready():
 		return
-	_rarity.text = "レアリティ  ◀ %s ▶" % rarity_label
+	_rarity.text = "レアリティ　◀ %s ▶\n←→／方向パッド左右" % rarity_label
 	for index: int in range(_material_slots.size()):
 		var item_id: String = material_ids[index] if index < material_ids.size() else ""
 		var item_name: String = material_names[index] if index < material_names.size() else ""
 		var slot: InventoryCardButton = _material_slots[index]
-		slot.text = "F%d\n%s" % [index, item_name if not item_name.is_empty() else "空き"]
+		slot.text = "材料枠%d　外す A／Enter\n%s" % [
+			index + 1,
+			item_name if not item_name.is_empty() else "空き",
+		]
 		slot.configure_drag(
 			{
 				"drag_type": &"fusion_material",
@@ -113,9 +130,9 @@ func update_view(
 		)
 	_wild_toggle.disabled = wild_available <= 0
 	_wild_toggle.text = (
-		"ワイルド解除（予約1）"
+		"ワイルド解除（予約1）\n実行 A／Enter"
 		if use_wild
-		else "ワイルド投入（所持%d）" % wild_available
+		else "ワイルド投入（所持%d）\n実行 A／Enter" % wild_available
 	)
 	_confirm.disabled = not confirm_enabled
 	_preview.text = preview_text
@@ -144,11 +161,17 @@ func _input(event: InputEvent) -> void:
 	var focused: Control = get_viewport().gui_get_focus_owner()
 	if focused != _rarity or event.is_echo():
 		return
-	if event.is_action_pressed("ui_left"):
+	var direction: StringName = FocusController.direction_for_event(event)
+	if direction == FocusController.DIRECTION_LEFT:
 		rarity_step_requested.emit(-1)
 		get_viewport().set_input_as_handled()
-	elif event.is_action_pressed("ui_right"):
+	elif direction == FocusController.DIRECTION_RIGHT:
 		rarity_step_requested.emit(1)
+		get_viewport().set_input_as_handled()
+	elif (
+		FocusController.is_left_stick_focus_motion(event)
+		and (event as InputEventJoypadMotion).axis == JOY_AXIS_LEFT_X
+	):
 		get_viewport().set_input_as_handled()
 
 

@@ -33,6 +33,14 @@ func _ready() -> void:
 			_capture_gate_five.bind("broken_build").call_deferred()
 		"gate_05:final_result":
 			_capture_gate_five.bind("final_result").call_deferred()
+		"gate_06:tutorial_move":
+			_capture_gate_six.bind("tutorial_move").call_deferred()
+		"gate_06:accessibility_reward":
+			_capture_gate_six.bind("accessibility_reward").call_deferred()
+		"gate_06:full_load":
+			_capture_gate_six.bind("full_load").call_deferred()
+		"gate_06:release_result":
+			_capture_gate_six.bind("release_result").call_deferred()
 		_:
 			print("EVIDENCE_ARGUMENT_REJECTED name=--evidence")
 			get_tree().quit(2)
@@ -82,6 +90,29 @@ func _capture_gate_five(scenario_name: String) -> void:
 		_fail_capture(str(validation.get("reason", "gate05_validation")))
 		return
 	await _capture_png("gate-05", scenario_name, true)
+
+
+func _capture_gate_six(scenario_name: String) -> void:
+	_diagnostics_layer.visible = false
+	await get_tree().process_frame
+	await RenderingServer.frame_post_draw
+	var game_app: Node = get_parent()
+	if game_app == null or not game_app.has_method("validate_evidence_capture_state"):
+		_fail_capture("gate06_validator")
+		return
+	var evidence_id := "gate_06:%s" % scenario_name
+	var validation_value: Variant = game_app.call(
+		"validate_evidence_capture_state",
+		evidence_id,
+	)
+	if not validation_value is Dictionary:
+		_fail_capture("gate06_validation")
+		return
+	var validation: Dictionary = validation_value as Dictionary
+	if not bool(validation.get("valid", false)):
+		_fail_capture(str(validation.get("reason", "gate06_validation")))
+		return
+	await _capture_png("gate-06", scenario_name, true)
 
 
 func _capture_png(

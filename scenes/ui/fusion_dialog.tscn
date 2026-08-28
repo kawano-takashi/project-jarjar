@@ -71,7 +71,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 58)
 layout_mode = 2
 focus_mode = 2
-text = "レアリティ  ◀ COMMON ▶"
+text = "レアリティ　◀ COMMON ▶\n←→／方向パッド左右"
 
 [node name="Materials" type="HBoxContainer" parent="Center/Panel/Margin/Content"]
 layout_mode = 2
@@ -83,7 +83,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(270, 112)
 layout_mode = 2
 focus_mode = 2
-text = "F0\n空き"
+text = "材料枠1　外す A／Enter\n空き"
 script = ExtResource("2_card")
 
 [node name="FusionMaterial1" type="Button" parent="Center/Panel/Margin/Content/Materials"]
@@ -91,7 +91,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(270, 112)
 layout_mode = 2
 focus_mode = 2
-text = "F1\n空き"
+text = "材料枠2　外す A／Enter\n空き"
 script = ExtResource("2_card")
 
 [node name="FusionMaterial2" type="Button" parent="Center/Panel/Margin/Content/Materials"]
@@ -99,7 +99,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(270, 112)
 layout_mode = 2
 focus_mode = 2
-text = "F2\n空き"
+text = "材料枠3　外す A／Enter\n空き"
 script = ExtResource("2_card")
 
 [node name="MaterialRemoveZone" type="Control" parent="Center/Panel/Margin/Content"]
@@ -151,14 +151,14 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(235, 60)
 layout_mode = 2
 focus_mode = 2
-text = "自動投入"
+text = "自動投入\n実行 A／Enter"
 
 [node name="FusionWildToggle" type="Button" parent="Center/Panel/Margin/Content/Actions"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(235, 60)
 layout_mode = 2
 focus_mode = 2
-text = "ワイルド投入"
+text = "ワイルド投入\n実行 A／Enter"
 
 [node name="FusionConfirm" type="Button" parent="Center/Panel/Margin/Content/Actions"]
 unique_name_in_owner = true
@@ -166,11 +166,11 @@ custom_minimum_size = Vector2(235, 60)
 layout_mode = 2
 focus_mode = 2
 disabled = true
-text = "確定"
+text = "合成を確定\n実行 A／Enter"
 
 [node name="FusionCancel" type="Button" parent="Center/Panel/Margin/Content/Actions"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(235, 60)
 layout_mode = 2
 focus_mode = 2
-text = "取消  B / Esc"
+text = "取消\nB／Esc"

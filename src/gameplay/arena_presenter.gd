@@ -3,6 +3,7 @@ extends Node3D
 
 
 signal phase_changed(phase: GameTypes.RunPhase)
+signal audio_event_requested(event_id: StringName)
 
 
 const CAMERA_TARGET_X_LIMIT: float = 9.0
@@ -19,6 +20,7 @@ const CAMERA_OFFSET: Vector3 = Vector3(8.912187, 18.0, 8.912187)
 @onready var _combat_hud: CombatHud = %CombatHUD
 
 var _simulation: CombatSimulation = null
+var _tutorial: RefCounted = null
 var _simulation_paused: bool = false
 var _smoothed_camera_target: Vector3 = Vector3.ZERO
 var _camera_target_initialized: bool = false
@@ -30,9 +32,14 @@ func _ready() -> void:
 		_apply_snapshot(_simulation.build_snapshot(), 0.0)
 
 
-func initialize(simulation: CombatSimulation) -> void:
+func initialize(
+	simulation: CombatSimulation,
+	tutorial: RefCounted = null,
+) -> void:
 	_simulation = simulation
+	_tutorial = tutorial
 	_camera_target_initialized = false
+	_apply_accessibility_settings()
 	if not is_node_ready():
 		return
 	set_physics_process(_simulation != null)
@@ -51,6 +58,9 @@ func _physics_process(delta: float) -> void:
 		return
 	var snapshot: CombatSnapshot
 	var previous_phase: GameTypes.RunPhase = _simulation.state.phase
+	var previous_hp: float = _simulation.state.current_hp
+	var previous_wave_cleared: bool = _simulation.state.wave_cleared
+	var previous_absorb_count: int = _simulation.chest_visual_pool.completed_absorb_count
 	if _simulation_paused:
 		snapshot = _simulation.build_snapshot()
 	else:
@@ -61,10 +71,51 @@ func _physics_process(delta: float) -> void:
 			"move_down",
 			0.2
 		)
-		snapshot = _simulation.step(move_input, delta)
+		if (
+			_tutorial != null
+			and _tutorial.should_gate_combat(_simulation.state.wave_number)
+		):
+			var previous_position: Vector2 = _simulation.player_position
+			snapshot = _simulation.step_tutorial_movement(move_input, delta)
+			_tutorial.advance_move(
+				_simulation.player_position - previous_position,
+				delta,
+			)
+		else:
+			snapshot = _simulation.step(move_input, delta)
+			if _tutorial != null:
+				_tutorial.advance_combat(delta)
+				if (
+					_simulation.chest_visual_pool.completed_absorb_count
+					> previous_absorb_count
+				):
+					_tutorial.notify_first_pickup()
+			if (
+				_simulation.chest_visual_pool.completed_absorb_count
+				> previous_absorb_count
+			):
+				var absorbed_count := (
+					_simulation.chest_visual_pool.completed_absorb_count
+					- previous_absorb_count
+				)
+				_combat_hud.present_pickup(
+					absorbed_count,
+					_reduce_motion_enabled(),
+					_reduce_flashes_enabled(),
+				)
+				audio_event_requested.emit(&"pickup")
 	_apply_snapshot(snapshot, delta)
+	if _simulation.state.current_hp < previous_hp:
+		_combat_hud.present_damage(_reduce_motion_enabled(), _reduce_flashes_enabled())
+	if not previous_wave_cleared and _simulation.state.wave_cleared:
+		_combat_hud.present_wave_clear(_reduce_motion_enabled(), _reduce_flashes_enabled())
+		audio_event_requested.emit(&"wave_clear")
 	if _simulation.state.phase != previous_phase:
 		phase_changed.emit(_simulation.state.phase)
+
+
+func refresh_accessibility() -> void:
+	_apply_accessibility_settings()
 
 
 func _apply_snapshot(snapshot: CombatSnapshot, delta: float) -> void:
@@ -110,3 +161,26 @@ func _update_camera(player_position: Vector2, delta: float) -> void:
 		_smoothed_camera_target = _smoothed_camera_target.lerp(target, alpha)
 	_camera.position = _smoothed_camera_target + CAMERA_OFFSET
 	_camera.look_at(_smoothed_camera_target, Vector3.UP)
+
+
+func _apply_accessibility_settings() -> void:
+	if _simulation == null:
+		return
+	_simulation.configure_accessibility(
+		_reduce_motion_enabled(),
+		_reduce_flashes_enabled(),
+	)
+
+
+func _reduce_motion_enabled() -> bool:
+	var store: Variant = (
+		get_node_or_null("/root/SettingsStore") if is_inside_tree() else null
+	)
+	return bool(store.reduce_motion) if store != null else false
+
+
+func _reduce_flashes_enabled() -> bool:
+	var store: Variant = (
+		get_node_or_null("/root/SettingsStore") if is_inside_tree() else null
+	)
+	return bool(store.reduce_flashes) if store != null else false

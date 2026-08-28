@@ -132,8 +132,10 @@ func test_accept() -> void:
 func _input(event: InputEvent) -> void:
 	if _settings_overlay.visible:
 		return
-	var direction: StringName = _direction_for_event(event)
+	var direction: StringName = FocusController.direction_for_event(event)
 	if direction.is_empty():
+		if FocusController.is_left_stick_focus_motion(event):
+			get_viewport().set_input_as_handled()
 		return
 	_focus_controller.move(get_viewport(), direction)
 	get_viewport().set_input_as_handled()
@@ -288,15 +290,3 @@ func _on_settings_closed() -> void:
 
 func _focus_id(suffix: String) -> String:
 	return "%s_%s" % [_screen_prefix(), suffix]
-
-
-func _direction_for_event(event: InputEvent) -> StringName:
-	if event.is_action_pressed("ui_up"):
-		return FocusController.DIRECTION_TOP
-	if event.is_action_pressed("ui_down"):
-		return FocusController.DIRECTION_BOTTOM
-	if event.is_action_pressed("ui_left"):
-		return FocusController.DIRECTION_LEFT
-	if event.is_action_pressed("ui_right"):
-		return FocusController.DIRECTION_RIGHT
-	return &""

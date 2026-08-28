@@ -157,6 +157,18 @@ func _test_chest_visual_pool_and_failure(assertions: Variant) -> void:
 	assertions.expect_false(timing_visual.active, "chest auto-absorbs at 0.25 seconds")
 	assertions.expect_equal(1, timing_pool.completed_absorb_count, "timed absorption counted once")
 
+	var reduced_pool: ChestVisualPool = ChestVisualPoolScript.new()
+	reduced_pool.reduce_motion = true
+	reduced_pool.reduce_flashes = true
+	var reduced_visual: ChestVisual = reduced_pool.acquire("reduced", Vector2.ZERO, 0)
+	reduced_pool.advance(0.10)
+	assertions.expect_float(
+		ChestVisual.BASE_HEIGHT,
+		reduced_visual.current_transform().origin.y,
+		"Reduce Motion substitutes a static chest position",
+	)
+	assertions.expect_true(reduced_visual.reduce_flashes, "Reduce Flashes reaches the chest presentation")
+
 	var success_pool: ChestVisualPool = ChestVisualPoolScript.new()
 	for index: int in range(3):
 		success_pool.acquire("success-%d" % index, Vector2.ZERO, index)

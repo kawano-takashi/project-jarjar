@@ -5,6 +5,7 @@ extends RefCounted
 signal reward_revealed(reward: RewardRoll)
 signal all_revealed
 signal vibration_requested(weak_magnitude: float, strong_magnitude: float, duration: float)
+signal prealert_started(rarity: int)
 
 const NORMAL_INTERVAL_SECONDS: float = 0.35
 const FAST_INTERVAL_SECONDS: float = 0.0875
@@ -277,6 +278,7 @@ func _start_individual_prealert(reward: RewardRoll) -> void:
 	_prealert_elapsed = 0.0
 	_prealert_target = reward
 	_prealert_reward_ids = PackedStringArray([reward.reward_id])
+	prealert_started.emit(reward.rarity_for_presentation)
 	_request_vibration_for_rarity(reward.rarity_for_presentation)
 
 
@@ -290,6 +292,7 @@ func _start_aggregate_prealert(rewards: Array[RewardRoll]) -> void:
 	for reward: RewardRoll in rewards:
 		_prealert_reward_ids.append(reward.reward_id)
 		highest_rarity = maxi(highest_rarity, reward.rarity_for_presentation)
+	prealert_started.emit(highest_rarity)
 	_request_vibration_for_rarity(highest_rarity)
 
 

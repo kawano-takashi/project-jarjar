@@ -21,6 +21,10 @@ const EVIDENCE_SCENARIOS: Array[String] = [
 	"gate_05:fusion_unique_warning",
 	"gate_05:broken_build",
 	"gate_05:final_result",
+	"gate_06:tutorial_move",
+	"gate_06:accessibility_reward",
+	"gate_06:full_load",
+	"gate_06:release_result",
 ]
 const QA_SCENARIOS: Array[String] = [
 	"weapon_bow",

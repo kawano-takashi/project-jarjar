@@ -24,6 +24,7 @@ var freeze_enemy_ai: bool = false
 var freeze_enemy_timers: bool = false
 var freeze_normal_spawn: bool = false
 var freeze_countdown: bool = false
+var freeze_all_updates: bool = false
 var allow_contact_timers_only: bool = false
 var main_weapon_damage_override: float = -1.0
 var evidence_caption: String = ""
@@ -36,6 +37,7 @@ func initialize(
 	p_catalog: DefinitionCatalog,
 	rng_source: Variant = null,
 ) -> void:
+	freeze_all_updates = false
 	state = p_state
 	catalog = p_catalog
 	wave = catalog.wave(state.wave_number)
@@ -64,6 +66,7 @@ func begin_wave(wave_number: int, rng_source: Variant = null) -> bool:
 	var next_wave: WaveDefinition = catalog.wave(wave_number)
 	if next_wave == null:
 		return false
+	freeze_all_updates = false
 	state.wave_number = wave_number
 	state.phase = GameTypes.RunPhase.COMBAT
 	state.time_remaining = next_wave.duration_seconds
@@ -99,6 +102,8 @@ func begin_wave(wave_number: int, rng_source: Variant = null) -> bool:
 
 func step(move_input: Vector2, delta: float) -> CombatSnapshot:
 	if state == null or wave == null or state.phase != GameTypes.RunPhase.COMBAT:
+		return build_snapshot()
+	if freeze_all_updates:
 		return build_snapshot()
 	state.physics_tick += 1
 	var current_tick: int = state.physics_tick
@@ -239,6 +244,18 @@ func step(move_input: Vector2, delta: float) -> CombatSnapshot:
 	return build_snapshot()
 
 
+func step_tutorial_movement(move_input: Vector2, delta: float) -> CombatSnapshot:
+	if state == null or wave == null or state.phase != GameTypes.RunPhase.COMBAT:
+		return build_snapshot()
+	_move_player(move_input, maxf(0.0, delta))
+	return build_snapshot()
+
+
+func configure_accessibility(reduce_motion: bool, reduce_flashes: bool) -> void:
+	chest_visual_pool.reduce_motion = reduce_motion
+	chest_visual_pool.reduce_flashes = reduce_flashes
+
+
 func build_snapshot() -> CombatSnapshot:
 	if state == null or wave == null:
 		return CombatSnapshot.new()
@@ -316,6 +333,122 @@ func add_fixture_vfx(
 	lifetime: float = 3600.0,
 ) -> VfxState:
 	return vfx_pool.acquire(position, scale_m, lifetime, color, state.physics_tick - 1)
+
+
+func prepare_performance_fixture(
+	enemy_count: int = 500,
+	projectile_count: int = 1200,
+	vfx_count: int = 800,
+) -> bool:
+	if (
+		state == null
+		or wave == null
+		or enemy_count < 0
+		or enemy_count > EnemyStore.CAPACITY
+		or projectile_count < 0
+		or projectile_count > ProjectilePool.CAPACITY
+		or vfx_count < 0
+		or vfx_count > VfxPool.CAPACITY
+	):
+		return false
+	enemy_system.enemy_store.clear()
+	projectile_pool.clear()
+	vfx_pool.clear()
+	enemy_system.enemy_store.overflow_count = 0
+	projectile_pool.overflow_count = 0
+	vfx_pool.overflow_count = 0
+	event_router.chain_depth_overflow_count = 0
+	state.next_entity_id = 0
+	var enemy_types: Array[GameTypes.EnemyType] = [
+		GameTypes.EnemyType.TRACKER,
+		GameTypes.EnemyType.FAST,
+		GameTypes.EnemyType.ARMORED,
+		GameTypes.EnemyType.RANGED,
+	]
+	for index: int in range(enemy_count):
+		var enemy_type: GameTypes.EnemyType = enemy_types[index % enemy_types.size()]
+		var definition: EnemyDefinition = catalog.enemy(
+			GameTypes.enemy_type_to_key(enemy_type)
+		)
+		var position := _performance_position(index, enemy_count, 0.0)
+		if enemy_system.enemy_store.try_spawn(
+			state,
+			enemy_type,
+			definition,
+			position,
+			1.0,
+			1.0,
+			state.physics_tick - 1,
+		) == null:
+			return false
+	_rebuild_uniform_grid(enemy_system.snapshot_ids(), state.physics_tick + 1)
+	for index: int in range(projectile_count):
+		var position := _performance_position(index, projectile_count, 0.18)
+		if projectile_pool.acquire(
+			&"ally",
+			&"performance",
+			-1,
+			position,
+			Vector2.ZERO,
+			0.16,
+			0.0,
+			9999.0,
+			3600.0,
+			position,
+			0,
+			state.physics_tick - 1,
+		) == null:
+			return false
+	for index: int in range(vfx_count):
+		var position := _performance_position(index, vfx_count, 0.36)
+		if vfx_pool.acquire(
+			position,
+			0.16 + 0.04 * float(index % 3),
+			3600.0,
+			Color(0.30, 0.75, 1.0, 0.75),
+			state.physics_tick - 1,
+		) == null:
+			return false
+	freeze_enemy_ai = true
+	freeze_enemy_timers = true
+	freeze_normal_spawn = true
+	freeze_countdown = true
+	freeze_all_updates = true
+	evidence_caption = "FULL LOAD  •  ENEMY 500  •  PROJECTILE 1,200  •  VFX 800"
+	return (
+		enemy_system.enemy_store.active_count() == enemy_count
+		and projectile_pool.active_count() == projectile_count
+		and vfx_pool.active_count() == vfx_count
+	)
+
+
+func performance_fixture_metrics() -> Dictionary:
+	return {
+		"active_enemy": enemy_system.enemy_store.active_count(),
+		"active_projectile": projectile_pool.active_count(),
+		"active_vfx": vfx_pool.active_count(),
+		"projectile_pool_used": projectile_pool.active_count(),
+		"vfx_pool_used": vfx_pool.active_count(),
+		"enemy_pool_overflow": enemy_system.enemy_store.overflow_count,
+		"projectile_pool_overflow": projectile_pool.overflow_count,
+		"vfx_pool_overflow": vfx_pool.overflow_count,
+		"effect_chain_depth_overflow": event_router.chain_depth_overflow_count,
+	}
+
+
+func _performance_position(index: int, count: int, offset: float) -> Vector2:
+	if count <= 0:
+		return Vector2.ZERO
+	const COLUMN_COUNT: int = 40
+	var row_count: int = maxi(1, ceili(float(count) / float(COLUMN_COUNT)))
+	var column: int = index % COLUMN_COUNT
+	var row: int = floori(float(index) / float(COLUMN_COUNT))
+	var x_ratio: float = float(column) / float(COLUMN_COUNT - 1)
+	var y_ratio: float = float(row) / float(maxi(1, row_count - 1))
+	return Vector2(
+		lerpf(ARENA_MIN.x + 0.25, ARENA_MAX.x - 0.25, x_ratio) + offset,
+		lerpf(ARENA_MIN.y + 0.25, ARENA_MAX.y - 0.25, y_ratio),
+	)
 
 
 func _move_player(move_input: Vector2, delta: float) -> void:

@@ -69,32 +69,32 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 62)
 layout_mode = 2
 focus_mode = 2
-text = "COMMON"
+text = "コモンを選択　A／Enter"
 
 [node name="BulkRare" type="Button" parent="Center/Panel/Margin/Content"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 62)
 layout_mode = 2
 focus_mode = 2
-text = "RARE"
+text = "レアを選択　A／Enter"
 
 [node name="BulkEpic" type="Button" parent="Center/Panel/Margin/Content"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 62)
 layout_mode = 2
 focus_mode = 2
-text = "EPIC"
+text = "エピックを選択　A／Enter"
 
 [node name="BulkLegendary" type="Button" parent="Center/Panel/Margin/Content"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 62)
 layout_mode = 2
 focus_mode = 2
-text = "LEGENDARY"
+text = "レジェンダリーを選択　A／Enter"
 
 [node name="BulkCancel" type="Button" parent="Center/Panel/Margin/Content"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 62)
 layout_mode = 2
 focus_mode = 2
-text = "取消  B / Esc"
+text = "取消　B／Esc"

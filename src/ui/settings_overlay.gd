@@ -40,7 +40,7 @@ func open_overlay() -> void:
 	_sync_from_store()
 	visible = true
 	set_process_input(true)
-	_master.call_deferred("grab_focus")
+	FocusController.grab_focus_deferred(_master)
 
 
 func close_overlay() -> void:

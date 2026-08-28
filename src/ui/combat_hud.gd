@@ -2,6 +2,10 @@ class_name CombatHud
 extends Control
 
 
+const MIN_FEEDBACK_DURATION_SECONDS: float = 0.40
+const FLASH_PULSE_DURATION_SECONDS: float = 0.50
+const REDUCED_FLASH_OUTLINE_SIZE: int = 5
+
 @onready var _wave_value: Label = %WaveValue
 @onready var _time_value: Label = %TimeValue
 @onready var _kills_value: Label = %KillsValue
@@ -17,10 +21,96 @@ extends Control
 @onready var _debug_active: Label = %DebugActive
 @onready var _debug_overflow: Label = %DebugOverflow
 @onready var _evidence_caption: Label = %EvidenceCaption
+@onready var _feedback_label: Label = %FeedbackLabel
+
+var _feedback_remaining: float = 0.0
+var _feedback_duration: float = 0.0
+var _feedback_elapsed: float = 0.0
+var _feedback_reduce_motion: bool = false
+var _feedback_reduce_flashes: bool = false
+var _feedback_pulse_start_count: int = 0
+var _feedback_merged_event_count: int = 0
 
 
 func _ready() -> void:
 	_debug_overlay.visible = OS.is_debug_build()
+	set_process(false)
+
+
+func _process(delta: float) -> void:
+	var safe_delta: float = maxf(0.0, delta)
+	_feedback_remaining = maxf(0.0, _feedback_remaining - safe_delta)
+	_feedback_elapsed += safe_delta
+	if _feedback_remaining <= 0.0:
+		_feedback_label.visible = false
+		set_process(false)
+		return
+	var progress: float = clampf(_feedback_elapsed / _feedback_duration, 0.0, 1.0)
+	var flash_progress: float = clampf(
+		_feedback_elapsed / FLASH_PULSE_DURATION_SECONDS,
+		0.0,
+		1.0,
+	)
+	_feedback_label.modulate.a = (
+		1.0
+		if _feedback_reduce_flashes
+		else 0.72 + 0.28 * sin(flash_progress * PI)
+	)
+	_feedback_label.scale = (
+		Vector2.ONE
+		if _feedback_reduce_motion
+		else Vector2.ONE * (1.0 + 0.05 * sin(progress * PI))
+	)
+
+
+func present_damage(reduce_motion: bool, reduce_flashes: bool) -> void:
+	_show_feedback(
+		"DAMAGE",
+		Color(1.0, 0.52, 0.42),
+		MIN_FEEDBACK_DURATION_SECONDS,
+		reduce_motion,
+		reduce_flashes,
+	)
+
+
+func present_pickup(count: int, reduce_motion: bool, reduce_flashes: bool) -> void:
+	_show_feedback(
+		"箱を自動回収 +%d" % maxi(1, count),
+		Color(1.0, 0.78, 0.32),
+		0.50,
+		reduce_motion,
+		reduce_flashes,
+	)
+
+
+func present_wave_clear(reduce_motion: bool, reduce_flashes: bool) -> void:
+	_show_feedback(
+		"WAVE CLEAR",
+		Color(0.46, 0.95, 0.72),
+		0.80,
+		reduce_motion,
+		reduce_flashes,
+	)
+
+
+func test_tick_feedback(delta: float) -> void:
+	_process(delta)
+
+
+func debug_feedback_state() -> Dictionary:
+	return {
+		"visible": _feedback_label.visible,
+		"text": _feedback_label.text,
+		"scale": _feedback_label.scale,
+		"alpha": _feedback_label.modulate.a,
+		"outline_size": _feedback_label.get_theme_constant("outline_size"),
+		"reduce_motion": _feedback_reduce_motion,
+		"reduce_flashes": _feedback_reduce_flashes,
+		"pulse_start_count": _feedback_pulse_start_count,
+		"merged_event_count": _feedback_merged_event_count,
+		"elapsed": _feedback_elapsed,
+		"remaining": _feedback_remaining,
+	}
 
 
 func update_from_snapshot(snapshot: CombatSnapshot) -> void:
@@ -142,3 +232,40 @@ func _format_health(value: float) -> String:
 	if is_equal_approx(value, roundf(value)):
 		return str(int(roundf(value)))
 	return "%.1f" % value
+
+
+func _show_feedback(
+	text: String,
+	color: Color,
+	duration: float,
+	reduce_motion: bool,
+	reduce_flashes: bool,
+) -> void:
+	var was_visible: bool = _feedback_label.visible
+	_feedback_label.text = text
+	_feedback_label.add_theme_color_override("font_color", color)
+	_feedback_label.add_theme_color_override("font_outline_color", Color(0.02, 0.03, 0.04, 1.0))
+	_feedback_label.add_theme_constant_override(
+		"outline_size",
+		REDUCED_FLASH_OUTLINE_SIZE if reduce_flashes else 2,
+	)
+	if was_visible:
+		_feedback_merged_event_count += 1
+	else:
+		_feedback_elapsed = 0.0
+		_feedback_pulse_start_count += 1
+		_feedback_label.modulate = Color.WHITE
+		_feedback_label.scale = Vector2.ONE
+	_feedback_label.visible = true
+	var safe_duration: float = maxf(MIN_FEEDBACK_DURATION_SECONDS, duration)
+	if was_visible:
+		_feedback_remaining = maxf(_feedback_remaining, safe_duration)
+		_feedback_duration = maxf(_feedback_duration, safe_duration)
+	else:
+		_feedback_remaining = safe_duration
+		_feedback_duration = safe_duration
+	_feedback_reduce_motion = reduce_motion
+	_feedback_reduce_flashes = reduce_flashes
+	if not was_visible:
+		_feedback_label.modulate.a = 1.0 if reduce_flashes else 0.72
+	set_process(true)

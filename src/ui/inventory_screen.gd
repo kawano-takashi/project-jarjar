@@ -22,18 +22,24 @@ const EQUIPMENT_COUNT: int = 6
 const INVENTORY_COLUMNS: int = 6
 const INVENTORY_ROWS: int = 6
 const INVENTORY_COUNT: int = INVENTORY_COLUMNS * INVENTORY_ROWS
+const FUSION_FEEDBACK_DURATION_SECONDS: float = 0.40
+const FUSION_FEEDBACK_SCALE: float = 1.06
+const FUSION_FEEDBACK_TINT := Color(1.0, 0.82, 0.48, 1.0)
+const FUSION_FEEDBACK_OUTLINE_COLOR := Color(0.10, 0.05, 0.02, 1.0)
+const FUSION_FEEDBACK_OUTLINE_SIZE: int = 4
+const FUSION_SUCCESS_FALLBACK_TEXT: String = "合成成功"
 const EVIDENCE_MODES: Array[String] = [
 	"",
 	"inventory_full",
 	"fusion_unique_warning",
 ]
 const ACTION_LABELS: Array[String] = [
-	"一括選択",
-	"廃棄",
-	"合成",
-	"ワイルド投入",
-	"次戦／結果へ",
-	"設定",
+	"一括選択\n実行 A／Enter",
+	"廃棄\n実行 A／Enter",
+	"合成\n実行 A／Enter",
+	"ワイルド投入\n実行 A／Enter",
+	"次戦／結果へ\n実行 A／Enter",
+	"設定\n実行 A／Enter",
 ]
 
 @onready var _wave_label: Label = %InventoryWave
@@ -72,12 +78,22 @@ var _confirmation_origin_focus_id: String = ""
 var _last_valid_focus_id: String = "equip_0"
 var _pending_evidence_mode: String = ""
 var _evidence_mode: String = ""
+var _fusion_feedback_presented: bool = false
+var _fusion_feedback_reduce_motion: bool = false
+var _fusion_feedback_reduce_flashes: bool = false
+var _fusion_feedback_motion_enabled: bool = false
+var _fusion_feedback_flash_enabled: bool = false
+var _fusion_feedback_static_outline: bool = false
+var _fusion_feedback_animating: bool = false
+var _fusion_feedback_remaining: float = 0.0
 
 
 func _ready() -> void:
 	_build_fixed_controls()
 	_connect_overlays()
 	_settings_overlay.closed.connect(_on_settings_closed)
+	set_process(false)
+	_reset_fusion_feedback_visuals()
 	if _pending_state != null:
 		_controller.initialize(_pending_state, _pending_catalog)
 	_refresh_from_state(false)
@@ -88,6 +104,7 @@ func initialize(state: RunState, catalog: DefinitionCatalog) -> void:
 	_pending_state = state
 	_pending_catalog = catalog
 	if is_node_ready():
+		_clear_fusion_feedback()
 		_controller.initialize(state, catalog)
 		_refresh_from_state(false)
 		_apply_pending_evidence_mode.call_deferred()
@@ -98,9 +115,12 @@ func refresh_from_state(preserve_focus: bool = true) -> void:
 
 
 func apply_command_result(command_kind: StringName, result: Dictionary) -> void:
+	_clear_fusion_feedback()
 	_pending_command_kind = &""
 	var success: bool = bool(result.get("success", false))
 	_status_text = str(result.get("message", result.get("error", "")))
+	if command_kind == &"fusion" and success and _status_text.is_empty():
+		_status_text = FUSION_SUCCESS_FALLBACK_TEXT
 	if bool(result.get("needs_unique_confirmation", false)):
 		_open_confirmation_for_result(command_kind, result)
 		return
@@ -120,6 +140,8 @@ func apply_command_result(command_kind: StringName, result: Dictionary) -> void:
 	]:
 		_controller.clear_marks()
 	_refresh_from_state(true)
+	if command_kind == &"fusion" and success:
+		_present_fusion_feedback()
 	if command_kind == &"discard":
 		_focus_controller.grab_focus_id("action_1")
 	elif command_kind == &"fusion":
@@ -167,6 +189,16 @@ func debug_state() -> Dictionary:
 		"pending_command_kind": _pending_command_kind,
 		"skill_slots": _skill_slot_snapshot(),
 		"evidence_mode": _evidence_mode,
+		"fusion_feedback_presented": _fusion_feedback_presented,
+		"fusion_feedback_reduce_motion": _fusion_feedback_reduce_motion,
+		"fusion_feedback_reduce_flashes": _fusion_feedback_reduce_flashes,
+		"fusion_feedback_motion_enabled": _fusion_feedback_motion_enabled,
+		"fusion_feedback_flash_enabled": _fusion_feedback_flash_enabled,
+		"fusion_feedback_static_outline": _fusion_feedback_static_outline,
+		"fusion_feedback_animating": _fusion_feedback_animating,
+		"fusion_feedback_status_scale": _status_label.scale,
+		"fusion_feedback_status_modulate": _status_label.modulate,
+		"fusion_feedback_outline_size": _status_label.get_theme_constant("outline_size"),
 	}, true)
 	return result
 
@@ -212,6 +244,94 @@ func test_confirm_dialog(confirm: bool) -> void:
 		_on_confirmation_confirmed()
 	else:
 		_on_confirmation_cancelled()
+
+
+func test_tick_fusion_feedback(delta: float) -> void:
+	_advance_fusion_feedback(delta)
+
+
+func _process(delta: float) -> void:
+	_advance_fusion_feedback(delta)
+
+
+func _present_fusion_feedback() -> void:
+	var settings: Dictionary = _fusion_accessibility_settings()
+	_fusion_feedback_presented = true
+	_fusion_feedback_reduce_motion = bool(settings["reduce_motion"])
+	_fusion_feedback_reduce_flashes = bool(settings["reduce_flashes"])
+	_fusion_feedback_motion_enabled = not _fusion_feedback_reduce_motion
+	_fusion_feedback_flash_enabled = not _fusion_feedback_reduce_flashes
+	_fusion_feedback_static_outline = _fusion_feedback_reduce_flashes
+	_fusion_feedback_remaining = FUSION_FEEDBACK_DURATION_SECONDS
+	_fusion_feedback_animating = (
+		_fusion_feedback_motion_enabled or _fusion_feedback_flash_enabled
+	)
+	_status_label.pivot_offset = _status_label.size * 0.5
+	_status_label.scale = Vector2.ONE
+	_status_label.modulate = Color.WHITE
+	_status_label.add_theme_color_override(
+		"font_outline_color",
+		FUSION_FEEDBACK_OUTLINE_COLOR,
+	)
+	_status_label.add_theme_constant_override(
+		"outline_size",
+		FUSION_FEEDBACK_OUTLINE_SIZE if _fusion_feedback_static_outline else 0,
+	)
+	set_process(_fusion_feedback_animating)
+
+
+func _advance_fusion_feedback(delta: float) -> void:
+	if not _fusion_feedback_animating:
+		return
+	_fusion_feedback_remaining = maxf(0.0, _fusion_feedback_remaining - maxf(0.0, delta))
+	var progress: float = (
+		1.0 - _fusion_feedback_remaining / FUSION_FEEDBACK_DURATION_SECONDS
+	)
+	var pulse: float = sin(progress * PI)
+	_status_label.scale = (
+		Vector2.ONE * (1.0 + (FUSION_FEEDBACK_SCALE - 1.0) * pulse)
+		if _fusion_feedback_motion_enabled
+		else Vector2.ONE
+	)
+	_status_label.modulate = (
+		Color.WHITE.lerp(FUSION_FEEDBACK_TINT, pulse)
+		if _fusion_feedback_flash_enabled
+		else Color.WHITE
+	)
+	if _fusion_feedback_remaining <= 0.0:
+		_fusion_feedback_animating = false
+		_status_label.scale = Vector2.ONE
+		_status_label.modulate = Color.WHITE
+		set_process(false)
+
+
+func _clear_fusion_feedback() -> void:
+	_fusion_feedback_presented = false
+	_fusion_feedback_reduce_motion = false
+	_fusion_feedback_reduce_flashes = false
+	_fusion_feedback_motion_enabled = false
+	_fusion_feedback_flash_enabled = false
+	_fusion_feedback_static_outline = false
+	_fusion_feedback_animating = false
+	_fusion_feedback_remaining = 0.0
+	set_process(false)
+	_reset_fusion_feedback_visuals()
+
+
+func _reset_fusion_feedback_visuals() -> void:
+	if _status_label == null:
+		return
+	_status_label.scale = Vector2.ONE
+	_status_label.modulate = Color.WHITE
+	_status_label.add_theme_constant_override("outline_size", 0)
+
+
+func _fusion_accessibility_settings() -> Dictionary:
+	var store: Variant = get_node_or_null("/root/SettingsStore")
+	return {
+		"reduce_motion": bool(store.reduce_motion) if store != null else false,
+		"reduce_flashes": bool(store.reduce_flashes) if store != null else false,
+	}
 
 
 func _apply_pending_evidence_mode() -> bool:
@@ -269,13 +389,16 @@ func _input(event: InputEvent) -> void:
 		return
 	var focus_id: String = _focus_controller.current_focus_id(get_viewport())
 	if _fusion_dialog.visible and focus_id == "FR" and (
-		event.is_action_pressed("ui_left") or event.is_action_pressed("ui_right")
+		event.is_action_pressed(&"ui_left", false, true)
+		or event.is_action_pressed(&"ui_right", false, true)
 	):
 		return
-	var direction: StringName = _direction_for_event(event)
+	var direction: StringName = FocusController.direction_for_event(event)
 	if not direction.is_empty():
 		_focus_controller.move(get_viewport(), direction)
 		_track_current_focus()
+		get_viewport().set_input_as_handled()
+	elif FocusController.is_left_stick_focus_motion(event):
 		get_viewport().set_input_as_handled()
 
 
@@ -406,6 +529,7 @@ func _render_actions() -> void:
 		_action_buttons[4].text += "（残り%d）" % state.overflow.size()
 	elif main_weapon == null:
 		_action_buttons[4].text += "（主武器必須）"
+	_action_buttons[4].text += "\n実行 A／Enter"
 
 
 func _render_skills() -> void:
@@ -423,7 +547,7 @@ func _render_skills() -> void:
 			skill_id = equipped_ids[index]
 			card.visible = true
 			card.disabled = index == 1 and crown_sealed
-			card.text = "K%d  装着枠%d\n%s" % [
+			card.text = "K%d 装着枠%d　A／Enter\n%s" % [
 				index,
 				index + 1,
 				"封印" if card.disabled else (_skill_card_text(skill_id) if not skill_id.is_empty() else "未装着"),
@@ -438,7 +562,11 @@ func _render_skills() -> void:
 				else null
 			)
 			var badge: String = "  [装着中]" if state_skill != null and state_skill.equipped_slot >= 0 else ""
-			card.text = "K%d  %s%s" % [index, _skill_card_text(skill_id), badge]
+			card.text = "K%d　A／Enter\n%s%s" % [
+				index,
+				_skill_card_text(skill_id),
+				badge,
+			]
 		card.set_meta("focus_id", focus_id)
 		card.configure_drag(
 			{
@@ -484,7 +612,7 @@ func _render_item_card(
 	var item: ItemInstance = _controller.item_at(kind, index)
 	var item_id: String = item.item_id if item != null else ""
 	var marked: bool = _controller.marked_item_ids.has(item_id)
-	card.text = "%s\n%s" % [
+	card.text = "%s　A／Enter\n%s" % [
 		token,
 		_item_card_text(item, marked),
 	]
@@ -1084,18 +1212,6 @@ func _graph_entry(top: String, bottom: String, left: String, right: String) -> D
 		FocusController.DIRECTION_LEFT: left,
 		FocusController.DIRECTION_RIGHT: right,
 	}
-
-
-func _direction_for_event(event: InputEvent) -> StringName:
-	if event.is_action_pressed("ui_up"):
-		return FocusController.DIRECTION_TOP
-	if event.is_action_pressed("ui_down"):
-		return FocusController.DIRECTION_BOTTOM
-	if event.is_action_pressed("ui_left"):
-		return FocusController.DIRECTION_LEFT
-	if event.is_action_pressed("ui_right"):
-		return FocusController.DIRECTION_RIGHT
-	return &""
 
 
 func _on_pointer_event() -> void:

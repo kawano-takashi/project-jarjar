@@ -341,6 +341,11 @@ func _test_reveal_modes_and_accessibility(assertions: Variant, context: Dictiona
 	assertions.expect_true(float(reduce_state["scale_multiplier"]) > 1.0 and float(reduce_state["scale_multiplier"]) <= 1.02, "Reduce Motion substitutes at most 2 percent scale pulse")
 	assertions.expect_equal(0, reduce_state["stage_light_step"], "Reduce Flashes removes stepped light")
 	assertions.expect_true(int(reduce_state["outline_thickness"]) > 3, "Reduce Flashes substitutes outline thickness")
+	assertions.expect_equal(
+		"動き軽減 ON・点滅軽減 ON",
+		reduce_state["accessibility_status"],
+		"accessibility alternatives remain visibly identified",
+	)
 	assertions.expect_equal(0, reduce_state["vibration_request_count"], "vibration disabled suppresses controller vibration")
 	reduce_screen.test_tick(0.55)
 	assertions.expect_true(reduce_controller.is_complete(), "aggregate prealert reveals all cards at 0.75 seconds")

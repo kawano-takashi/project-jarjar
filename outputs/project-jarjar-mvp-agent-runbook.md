@@ -60,7 +60,7 @@ MVP の完成条件は、Windows x86_64 の Release ビルドで、タイトル�
 
 人間の「今 PATH に登録されている godot が 4.7.2 stable だからダウンロード必要ないよ！」は、文書版1.3への環境契約変更、既存`tools/godot`の削除、PATH上のexact Standard `godot.exe`採用、既に公式archive SHA照合済みのWindows Export Template 4file再利用、Gate 1継続だけを許可する一回限りの明示指示として扱う。engineとtemplate archiveを再downloadせず、共有`%APPDATA%`のExport Templatesを使わない。文書版1.3のGate 1を再開するときも採用anchorと固定originを維持し、6.2の再開監査を使う。
 
-Gate 2〜6が基準コミット前に停止した場合は、人間が「Gate Nの修正を再開 H」と指示する。Nは対象番号、Hは直前Gateの承認済み40文字HEADである。再開時はbranch=`main`、2.1の固定origin、`git rev-parse HEAD`がHと完全一致し、H以後のcommitがなく、working treeがcleanまたは中断前からの当該Gate変更だけを含むことを確認する。別Gateの変更、未知の生成物、別HEADがあれば停止する。合格時は未コミット成果を削除せず、最初に失敗した、または完了を証明できないコマンドから続ける。Gate 6の人間プレイテスト待ちはこの経路のまま基準コミット前に停止し、集計再開指示だけは「Gate 6のプレイテスト集計を再開 H」に固定する。
+Gate 2〜6が基準コミット前に停止した場合は、人間が「Gate Nの修正を再開 H」と指示する。Nは対象番号、Hは直前Gateの承認済み40文字HEADである。再開時はbranch=`main`、2.1の固定origin、`git rev-parse HEAD`がHと完全一致し、H以後のcommitがなく、working treeがcleanまたは中断前からの当該Gate変更だけを含むことを確認する。別Gateの変更、未知の生成物、別HEADがあれば停止する。合格時は未コミット成果を削除せず、最初に失敗した、または完了を証明できないコマンドから続ける。Gate 6だけは2026-08-29の人間による工程変更を正とし、人間プレイテスト以外の受入成功後に、ユーザー最終調整の開始点として基準コミットを作成できる。このコミットはGate 6合格・完成・最終Releaseを意味せず、最終調整、再検証、再export、正式プレイテストを後続必須とする。
 
 基準コミット作成後から承認までのHEADを「候補HEAD」と呼ぶ。候補HEADの報告後に修正依頼を受けた場合は、人間が「Gate Nの修正を再開 H」と指示する。ここでHは最後に報告した40文字の候補HEADである。再開時にbranch=`main`、2.1の固定origin、`git rev-parse HEAD`がHと完全一致することを確認する。Gate 2〜6では直前の承認済みHEADが祖先であり、その後のsubjectが対象Gateの基準message 1件と`fix: address Gate N review`だけであることも確認する。Gate 1では採用anchorが祖先であり、その直後のsubjectが`chore: bootstrap Godot 4.7.2 project` 1件、その後のsubjectが`fix: address Gate 1 review`だけであることを確認する。working treeはclean、または中断前からの当該Gate修正だけを含む状態でなければ停止する。修正後は当該Gateの全必須検証を再実行し、成功時だけ `fix: address Gate N review` で新しい追補コミットを作り、新しい候補HEADとして再報告する。候補コミット作成後・報告前に中断した場合もHへその候補HEADを指定して再開し、全検証を再実行して既存HEADを報告する。変更がないのに空コミットを作らない。Gateの承認は、直前の承認済みHEADより後にある当該Gateの基準コミットと全追補コミットを、現在の候補HEADまで一括して承認する。Gate 1では採用anchorより後のGate 1基準commitと全追補commitだけを承認する。次Gateはその承認済みHEADからだけ開始できる。
 
@@ -1598,11 +1598,13 @@ $jarjarReleaseDir = Split-Path -Parent $jarjarReleaseExe
 
 各testerの3ラン終了までscriptを閉じない。終了後の`$LASTEXITCODE`が0でなければ当該processを不合格とする。最初のCOMBATへ入る前の起動失敗だけは、同じ人がclean settingsから再試行できる。COMBAT開始後に中断した場合は、その人のresults行とinventory-times行をすべて破棄し、その人を再採用しない。別の未経験参加者を採用し、破棄で空いた最小tester_idを割り当て、最終CSVではT01から欠番なく連番にする。
 
-エージェントは参加者や回答を捏造しない。人間プレイテスト以外のGate 6検証が通った時点で、Release build identity、`balance_revision`、Gate 5の承認済み40文字HEAD、初見資格の質問文と確認欄を`docs/playtest-protocol.md`へ記録し、CSVはheaderだけのまま、未コミットで「Gate 6プレイテスト待ち」と報告して停止する。人間が同じEXE/PCKペアで実施した2つのCSVを提供し、「Gate 6のプレイテスト集計を再開 H」と指示した後だけ集計を再開する。Hはprotocol記載のGate 5承認済みHEADであり、再開時に`git rev-parse HEAD`と完全一致させる。
+エージェントは参加者や回答を捏造しない。人間プレイテスト以外のGate 6検証が通り、人間がユーザー最終調整へ進むためのコミットを明示指示した場合、`feat: polish and export MVP`でGate 6基準コミットを作成し、「ユーザー最終調整待ち」と報告する。この時点ではCSVをheaderだけのままにし、Gate 6を合格・完成扱いしない。最終調整へ関与した人は正式プレイテストの初見testerへ数えない。
 
-Release build identity、balance_revision、Hのいずれかがprotocol記載値に一致しない、protocolの初見資格確認がyesでない、15run未満、参加者5人未満、各人3runでない、列不足、範囲外値、`first_time_eligible_yes_no`がyes以外、または3つのscore列の加算不一致があれば集計せず停止する。`playtest-results.csv`の一意キーは`(tester_id, run_index)`、`playtest-inventory-times.csv`の一意キーは`(tester_id, run_index, wave_number)`とし、各ファイル内で同じ一意キーが重複しても停止する。さらに、各results行に対応するinventory-timesのwave_number集合が`1..cleared_waves`と完全一致しない、resultsにないtester/runのinventory行がある、同一tester内でrun_seedが重複する場合も停止する。実データが揃い、全条件を満たすまでGate 6を合格扱いせず、commitもしない。
+ユーザー最終調整はエフェクト、文言その他の承認済み変更だけを実装し、必要な自動・手動検証に成功した後、`fix: address Gate 6 review`で追補コミットを作成する。調整完了後にimport、全unit/scenario/simulation test、performance、Release export、pack audit、exported smoke、最終QAを再実行し、新しいRelease build identityを固定する。正式プレイテスト開始前に、現在の40文字候補HEAD、Release build identity、`balance_revision`をUTF-8 BOMなし・LFの`key=value`形式で`artifacts/gate-06/playtest-target.txt`へ記録し、同じ値を`docs/playtest-protocol.md`へ反映する。CSVはheaderだけのまま「Gate 6プレイテスト待ち」と報告して停止する。
 
-import、全unit/scenario/simulation test、performance、Release export、pack audit、exported smoke、手動QA、人間プレイテストをすべて通した後だけ feat: polish and export MVP でコミットしてください。build、artifactsはコミットしません。最後に本書2.4の形式で最終報告し、EXE/PCKの絶対パス、Release build identity、全試験結果、playtest集計、commit hashを提示して停止してください。
+人間が同じEXE/PCKペアで実施した2つのCSVを提供し、「Gate 6のプレイテスト集計を再開 H」と指示した後だけ集計を再開する。Hは`playtest-target.txt`の候補HEADであり、再開時に`git rev-parse HEAD`と完全一致させる。Release build identity、balance_revision、Hのいずれかがprotocolおよびtarget記録に一致しない、protocolの初見資格確認がyesでない、15run未満、参加者5人未満、各人3runでない、列不足、範囲外値、`first_time_eligible_yes_no`がyes以外、または3つのscore列の加算不一致があれば集計せず停止する。`playtest-results.csv`の一意キーは`(tester_id, run_index)`、`playtest-inventory-times.csv`の一意キーは`(tester_id, run_index, wave_number)`とし、各ファイル内で同じ一意キーが重複しても停止する。さらに、各results行に対応するinventory-timesのwave_number集合が`1..cleared_waves`と完全一致しない、resultsにないtester/runのinventory行がある、同一tester内でrun_seedが重複する場合も停止する。
+
+Gate 6基準コミットとユーザー最終調整の追補コミットは上記の明示例外として許可するが、全人間プレイテスト条件を満たすまでGate 6を合格・完成扱いしない。全条件成功後、追跡対象のplaytest CSVと最終文書に未コミット変更があれば`fix: address Gate 6 review`でコミットする。build、artifactsはコミットしない。最後に本書2.4の形式で最終報告し、EXE/PCKの絶対パス、Release build identity、全試験結果、playtest集計、commit hashを提示して停止する。
 ~~~
 
 ### 11.2 性能コマンド
@@ -1736,7 +1738,7 @@ Project JARJARの全buildを未プレイ・未観戦で、過去revisionの受�
 
 いずれかの人間受入条件が未達なら、エージェントは実測表、原因仮説、変更候補を報告して未合格のまま停止し、値や実装を変更しない。初見クリア率について人間が再調整を指示する場合、人間は敵HP、敵ダメージ、spawn rateのうち変更する1パラメータ系統と、変更対象ごとの旧値→新値を明示する。各数値の1回の変更幅は±10%以内とし、エージェントが系統または値を選んではならない。quota、箱率、レア率、合成比、unique効果は変更対象外とする。報酬体験、再挑戦意向、整理時間、壊れbuild率、score比率の未達でも、エージェントは承認された正確なUI変更または数値だけを実装する。
 
-承認後の修正では、企画書、本書、該当Resource、期待値テスト、`data/balance/balance_manifest.tres`の`balance_revision`を同じ未コミット変更で同期し、revisionを1増やす。初期値は0とする。変更後は旧プレイテスト行を新revisionへ流用せず、以前のrevisionへ参加した人を再利用しない新規tester 5人以上×各3ランを、新しいRelease buildで最初から実施する。すべての自動・手動・人間受入条件が合格するまでGate 6をコミットしない。
+承認後の修正では、企画書、本書、該当Resource、期待値テスト、`data/balance/balance_manifest.tres`の`balance_revision`を同じ変更で同期し、revisionを1増やす。初期値は0とする。必要な自動・手動検証の成功後に`fix: address Gate 6 review`で追補コミットし、新しいRelease buildをexportしてplaytest targetを更新する。旧プレイテスト行を新revisionへ流用せず、以前のrevisionへ参加した人を再利用しない新規tester 5人以上×各3ランを最初から実施する。追補コミットの存在だけではGate 6合格を意味せず、すべての自動・手動・人間受入条件が合格するまで完成扱いしない。
 
 ## 12. 最終QAシナリオ
 

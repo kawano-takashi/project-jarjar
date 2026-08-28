@@ -100,7 +100,7 @@ size_flags_vertical = 3
 theme_override_constants/separation = 14
 
 [node name="RunPanel" type="PanelContainer" parent="Margin/Content/Columns"]
-custom_minimum_size = Vector2(360, 0)
+custom_minimum_size = Vector2(330, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_styles/panel = SubResource("StylePanel")
@@ -113,7 +113,7 @@ text = "ラン情報"
 vertical_alignment = 1
 
 [node name="BuildPanel" type="PanelContainer" parent="Margin/Content/Columns"]
-custom_minimum_size = Vector2(460, 0)
+custom_minimum_size = Vector2(420, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_styles/panel = SubResource("StylePanel")
@@ -127,7 +127,7 @@ vertical_alignment = 1
 autowrap_mode = 2
 
 [node name="ScorePanel" type="PanelContainer" parent="Margin/Content/Columns"]
-custom_minimum_size = Vector2(470, 0)
+custom_minimum_size = Vector2(430, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_styles/panel = SubResource("StylePanel")
@@ -141,14 +141,14 @@ text = "スコア"
 vertical_alignment = 1
 
 [node name="Actions" type="VBoxContainer" parent="Margin/Content/Columns"]
-custom_minimum_size = Vector2(400, 0)
+custom_minimum_size = Vector2(360, 0)
 layout_mode = 2
 theme_override_constants/separation = 12
 alignment = 1
 
 [node name="RetrySameSeed" type="Button" parent="Margin/Content/Columns/Actions"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(400, 70)
+custom_minimum_size = Vector2(360, 70)
 layout_mode = 2
 focus_mode = 2
 theme_override_font_sizes/font_size = 21
@@ -158,7 +158,7 @@ text = "同じseedで再挑戦　A／Enter"
 
 [node name="RetryNewSeed" type="Button" parent="Margin/Content/Columns/Actions"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(400, 70)
+custom_minimum_size = Vector2(360, 70)
 layout_mode = 2
 focus_mode = 2
 theme_override_font_sizes/font_size = 21
@@ -168,7 +168,7 @@ text = "新しいseedで再挑戦　A／Enter"
 
 [node name="SummaryTitleButton" type="Button" parent="Margin/Content/Columns/Actions"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(400, 70)
+custom_minimum_size = Vector2(360, 70)
 layout_mode = 2
 focus_mode = 2
 theme_override_font_sizes/font_size = 21
@@ -178,7 +178,7 @@ text = "タイトルへ　A／Enter"
 
 [node name="SummaryExitButton" type="Button" parent="Margin/Content/Columns/Actions"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(400, 70)
+custom_minimum_size = Vector2(360, 70)
 layout_mode = 2
 focus_mode = 2
 theme_override_font_sizes/font_size = 21
@@ -188,7 +188,7 @@ text = "終了　A／Enter"
 
 [node name="SummarySettingsButton" type="Button" parent="Margin/Content/Columns/Actions"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(400, 70)
+custom_minimum_size = Vector2(360, 70)
 layout_mode = 2
 focus_mode = 2
 theme_override_font_sizes/font_size = 21

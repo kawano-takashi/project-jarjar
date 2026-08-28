@@ -2,6 +2,7 @@ class_name FocusController
 extends RefCounted
 
 
+const UiPolishScript := preload("res://src/ui/ui_polish.gd")
 const DIRECTION_TOP: StringName = &"top"
 const DIRECTION_BOTTOM: StringName = &"bottom"
 const DIRECTION_LEFT: StringName = &"left"
@@ -28,6 +29,7 @@ static func configure_vertical_cycle(controls: Array) -> void:
 		var previous: Control = controls[(index - 1 + controls.size()) % controls.size()]
 		var next: Control = controls[(index + 1) % controls.size()]
 		control.focus_mode = Control.FOCUS_ALL
+		UiPolishScript.install_focus_frame(control)
 		control.focus_neighbor_top = control.get_path_to(previous)
 		control.focus_neighbor_bottom = control.get_path_to(next)
 		control.focus_neighbor_left = control.get_path_to(control)
@@ -42,10 +44,61 @@ static func configure_horizontal_cycle(controls: Array) -> void:
 		var previous: Control = controls[(index - 1 + controls.size()) % controls.size()]
 		var next: Control = controls[(index + 1) % controls.size()]
 		control.focus_mode = Control.FOCUS_ALL
+		UiPolishScript.install_focus_frame(control)
 		control.focus_neighbor_top = control.get_path_to(control)
 		control.focus_neighbor_bottom = control.get_path_to(control)
 		control.focus_neighbor_left = control.get_path_to(previous)
 		control.focus_neighbor_right = control.get_path_to(next)
+
+
+static func direction_for_event(event: InputEvent) -> StringName:
+	var actions: Array[StringName] = [
+		&"ui_up",
+		&"ui_down",
+		&"ui_left",
+		&"ui_right",
+	]
+	for index: int in range(actions.size()):
+		var action: StringName = actions[index]
+		var exact_match: bool = event is InputEventJoypadMotion
+		if not event.is_action_pressed(action, false, exact_match):
+			continue
+		if (
+			event is InputEventJoypadMotion
+			and not Input.is_action_just_pressed_by_event(action, event, true)
+		):
+			continue
+		return DIRECTIONS[index]
+	return &""
+
+
+static func is_left_stick_focus_motion(event: InputEvent) -> bool:
+	if not event is InputEventJoypadMotion:
+		return false
+	var motion := event as InputEventJoypadMotion
+	return motion.axis == JOY_AXIS_LEFT_X or motion.axis == JOY_AXIS_LEFT_Y
+
+
+static func grab_focus_deferred(control: Control) -> void:
+	if control == null:
+		return
+	_grab_focus_if_ready.bind(control).call_deferred()
+
+
+static func _grab_focus_if_ready(control: Variant) -> void:
+	if control == null or not is_instance_valid(control):
+		return
+	var target := control as Control
+	if (
+		target == null
+		or not target.is_inside_tree()
+		or not target.is_visible_in_tree()
+		or target.focus_mode == Control.FOCUS_NONE
+	):
+		return
+	if target is BaseButton and (target as BaseButton).disabled:
+		return
+	target.grab_focus()
 
 
 func clear() -> void:
@@ -88,6 +141,7 @@ func register_control(focus_id: String, control: Control) -> void:
 	_controls[focus_id] = control
 	control.set_meta("focus_id", focus_id)
 	control.focus_mode = Control.FOCUS_ALL
+	UiPolishScript.install_focus_frame(control)
 	if not _neighbors.has(focus_id):
 		_neighbors[focus_id] = _self_neighbors(focus_id)
 
@@ -135,7 +189,7 @@ func focus_initial_deferred() -> void:
 	var focus_id: String = _first_focusable_from(_initial_focus_id)
 	var control: Control = control_for_id(focus_id)
 	if control != null:
-		control.call_deferred("grab_focus")
+		grab_focus_deferred(control)
 
 
 func current_focus_id(viewport: Viewport) -> String:
@@ -225,9 +279,9 @@ func is_focusable_id(focus_id: String) -> bool:
 	if not _modal_allowed.is_empty() and not _modal_allowed.has(focus_id):
 		return false
 	var control: Control = control_for_id(focus_id)
-	if control == null or not is_instance_valid(control):
+	if control == null or not is_instance_valid(control) or not control.is_inside_tree():
 		return false
-	if not control.visible or (control.is_inside_tree() and not control.is_visible_in_tree()):
+	if not control.visible or not control.is_visible_in_tree():
 		return false
 	if control.focus_mode == Control.FOCUS_NONE:
 		return false

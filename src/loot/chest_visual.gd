@@ -12,6 +12,8 @@ var origin: Vector2 = Vector2.ZERO
 var acquired_tick: int = 0
 var activation_serial: int = -1
 var elapsed: float = 0.0
+var reduce_motion: bool = false
+var reduce_flashes: bool = false
 
 
 func activate(
@@ -46,7 +48,9 @@ func deactivate() -> void:
 
 func current_transform() -> Transform3D:
 	var progress: float = clampf(elapsed / BOUNCE_SECONDS, 0.0, 1.0)
-	var height: float = BASE_HEIGHT + BOUNCE_HEIGHT * 4.0 * progress * (1.0 - progress)
+	var height: float = BASE_HEIGHT
+	if not reduce_motion:
+		height += BOUNCE_HEIGHT * 4.0 * progress * (1.0 - progress)
 	return Transform3D(
 		Basis.IDENTITY,
 		Vector3(origin.x, height, origin.y),

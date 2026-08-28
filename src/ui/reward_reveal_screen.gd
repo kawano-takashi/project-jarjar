@@ -3,10 +3,13 @@ extends Control
 
 
 signal reveal_completed
+signal audio_event_requested(event_id: StringName)
 
 const HOLD_THRESHOLD_SECONDS: float = 0.25
+const CURRENT_CARD_SIZE := Vector2(760.0, 340.0)
 
 @onready var _unopened_count: Label = %UnopenedCount
+@onready var _accessibility_status: Label = %AccessibilityStatus
 @onready var _prealert_banner: Label = %PrealertBanner
 @onready var _current_card: PanelContainer = %CurrentCard
 @onready var _current_rarity: Label = %CurrentRarity
@@ -58,11 +61,13 @@ func _ready() -> void:
 	_controller.reward_revealed.connect(_on_reward_revealed)
 	_controller.all_revealed.connect(_on_all_revealed)
 	_controller.vibration_requested.connect(_on_vibration_requested)
+	_controller.prealert_started.connect(_on_prealert_started)
 	_refresh_accessibility_from_store()
-	_speed_proxy.call_deferred("grab_focus")
+	FocusController.grab_focus_deferred(_speed_proxy)
 	if _pending_state != null:
 		_initialize_controller(_pending_state)
 	_update_view()
+	_stabilize_current_card_layout.call_deferred()
 
 
 func initialize(state: RunState) -> void:
@@ -154,6 +159,7 @@ func debug_state() -> Dictionary:
 	result["reward_open_all_click_count"] = int(_button_click_counts["reward_open_all"])
 	result["reward_settings_click_count"] = int(_button_click_counts["reward_settings"])
 	result["settings_open"] = _settings_overlay.visible
+	result["accessibility_status"] = _accessibility_status.text
 	result["saved_focus_id"] = _saved_focus_id
 	result["vibration_call_count"] = _vibration_call_count
 	return result
@@ -282,7 +288,11 @@ func _on_settings_closed() -> void:
 
 
 func _restore_saved_focus() -> void:
-	if not _grab_focus_id(_saved_focus_id):
+	if (
+		not _grab_focus_id(_saved_focus_id)
+		and _speed_proxy.is_inside_tree()
+		and _speed_proxy.is_visible_in_tree()
+	):
 		_speed_proxy.grab_focus()
 
 
@@ -339,8 +349,20 @@ func _on_vibration_requested(
 	)
 
 
-func _on_reward_revealed(_reward: RewardRoll) -> void:
+func _on_reward_revealed(reward: RewardRoll) -> void:
+	if reward != null and reward.rarity_for_presentation == GameTypes.Rarity.RARE:
+		audio_event_requested.emit(&"rare_open")
+	elif reward != null and reward.rarity_for_presentation < GameTypes.Rarity.RARE:
+		audio_event_requested.emit(&"normal_open")
 	_update_view()
+
+
+func _on_prealert_started(rarity: int) -> void:
+	audio_event_requested.emit(
+		&"legendary_prealert"
+		if rarity == GameTypes.Rarity.LEGENDARY
+		else &"epic_prealert"
+	)
 
 
 func _on_all_revealed() -> void:
@@ -364,6 +386,10 @@ func _update_view() -> void:
 		_render_reward_grid_evidence()
 		return
 	var presentation: Dictionary = _controller.presentation_state()
+	_accessibility_status.text = "動き軽減 %s・点滅軽減 %s" % [
+		"ON" if bool(presentation["reduce_motion"]) else "OFF",
+		"ON" if bool(presentation["reduce_flashes"]) else "OFF",
+	]
 	_unopened_count.text = "未開封箱　%d" % _controller.unrevealed_count()
 	_speed_label.text = (
 		"4倍開封中（離すと通常速度）"
@@ -385,6 +411,7 @@ func _update_view() -> void:
 
 
 func _update_current_card(presentation: Dictionary) -> void:
+	_current_card.size = CURRENT_CARD_SIZE
 	var reward: RewardRoll = _controller.last_revealed_reward()
 	var prealert_active: bool = bool(presentation["prealert_active"])
 	if prealert_active:
@@ -420,6 +447,11 @@ func _update_current_card(presentation: Dictionary) -> void:
 	_current_card.position = Vector2(float(presentation["shake_offset"]), 0.0)
 	_current_card.pivot_offset = _current_card.size * 0.5
 	_current_card.scale = Vector2.ONE * float(presentation["scale_multiplier"])
+
+
+func _stabilize_current_card_layout() -> void:
+	_current_card.size = CURRENT_CARD_SIZE
+	_current_card.pivot_offset = CURRENT_CARD_SIZE * 0.5
 
 
 func _update_prealert_targets(presentation: Dictionary) -> void:

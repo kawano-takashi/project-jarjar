@@ -8,6 +8,8 @@ const CAPACITY: int = 128
 var slots: Array[ChestVisualScript] = []
 var forced_absorb_count: int = 0
 var completed_absorb_count: int = 0
+var reduce_motion: bool = false
+var reduce_flashes: bool = false
 
 var _next_activation_serial: int = 0
 
@@ -24,6 +26,8 @@ func acquire(reward_id: String, position: Vector2, acquired_tick: int) -> ChestV
 		visual.deactivate()
 		forced_absorb_count += 1
 	visual.activate(reward_id, position, acquired_tick, _next_activation_serial)
+	visual.reduce_motion = reduce_motion
+	visual.reduce_flashes = reduce_flashes
 	_next_activation_serial += 1
 	return visual
 

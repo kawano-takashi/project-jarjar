@@ -189,16 +189,26 @@ func _test_title_focus_contract(assertions: Variant, context: Dictionary) -> voi
 	await context["tree"].process_frame
 	await context["tree"].process_frame
 	var start: Control = title.initial_focus_control()
+	var settings: Control = title.settings_focus_control()
 	var exit_button: Control = title.exit_focus_control()
-	assertions.expect_equal(PackedStringArray(["title_start", "title_exit"]), title.focus_order(), "title focus order")
+	assertions.expect_equal(
+		PackedStringArray(["title_start", "title_settings", "title_exit"]),
+		title.focus_order(),
+		"title focus order",
+	)
 	assertions.expect_equal("title_start", str(start.get_meta("focus_id", "")), "start focus id")
+	assertions.expect_equal("title_settings", str(settings.get_meta("focus_id", "")), "settings focus id")
 	assertions.expect_equal("title_exit", str(exit_button.get_meta("focus_id", "")), "exit focus id")
 	assertions.expect_equal(start, title.get_viewport().gui_get_focus_owner(), "deferred initial focus")
 	assertions.expect_equal(start.get_path_to(exit_button), start.focus_neighbor_top, "start up wraps exit")
-	assertions.expect_equal(start.get_path_to(exit_button), start.focus_neighbor_bottom, "start down reaches exit")
+	assertions.expect_equal(start.get_path_to(settings), start.focus_neighbor_bottom, "start down reaches settings")
 	assertions.expect_equal(start.get_path_to(start), start.focus_neighbor_left, "start left self")
 	assertions.expect_equal(start.get_path_to(start), start.focus_neighbor_right, "start right self")
-	assertions.expect_equal(exit_button.get_path_to(start), exit_button.focus_neighbor_top, "exit up reaches start")
+	assertions.expect_equal(settings.get_path_to(start), settings.focus_neighbor_top, "settings up reaches start")
+	assertions.expect_equal(settings.get_path_to(exit_button), settings.focus_neighbor_bottom, "settings down reaches exit")
+	assertions.expect_equal(settings.get_path_to(settings), settings.focus_neighbor_left, "settings left self")
+	assertions.expect_equal(settings.get_path_to(settings), settings.focus_neighbor_right, "settings right self")
+	assertions.expect_equal(exit_button.get_path_to(settings), exit_button.focus_neighbor_top, "exit up reaches settings")
 	assertions.expect_equal(exit_button.get_path_to(start), exit_button.focus_neighbor_bottom, "exit down wraps start")
 	assertions.expect_equal(exit_button.get_path_to(exit_button), exit_button.focus_neighbor_left, "exit left self")
 	assertions.expect_equal(exit_button.get_path_to(exit_button), exit_button.focus_neighbor_right, "exit right self")
@@ -227,6 +237,9 @@ func _test_project_settings_contract(assertions: Variant) -> void:
 
 	var config := ConfigFile.new()
 	assertions.expect_equal(OK, config.load("res://project.godot"), "project.godot readable")
+	assertions.expect_equal(false, config.get_value("debug", "file_logging/enable_file_logging", null), "file logging explicitly disabled")
+	assertions.expect_equal(false, config.get_value("debug", "file_logging/enable_file_logging.pc", null), "PC file logging explicitly disabled")
+	assertions.expect_equal(60, config.get_value("physics", "common/physics_ticks_per_second", null), "physics 60Hz explicitly configured")
 	assertions.expect_equal(PackedStringArray(["SettingsStore"]), config.get_section_keys("autoload"), "sole autoload")
 	var main_scene := ResourceLoader.load("res://scenes/main.tscn") as PackedScene
 	assertions.expect_true(main_scene != null, "main scene loads")
@@ -422,3 +435,79 @@ func _test_launch_argument_contract(assertions: Variant, context: Dictionary) ->
 		]))
 		assertions.expect_false(rejected_smoke["valid"], "malformed or out-of-range Gate path rejected: %s" % rejected_path)
 		assertions.expect_equal("--settings-path", rejected_smoke["rejected_name"], "rejected Gate path marker: %s" % rejected_path)
+
+	var valid_performance: Dictionary = parser.parse_debug(PackedStringArray([
+		"--performance=full_hd_500_2000",
+		"--run-seed=5002000",
+		"--settings-path=" + context["test_path"],
+	]))
+	assertions.expect_true(valid_performance["valid"], "exact Gate 6 performance arguments accepted")
+	assertions.expect_equal(&"performance", valid_performance["mode"], "performance mode selected")
+	assertions.expect_equal(5_002_000, valid_performance["run_seed"], "performance seed fixed")
+	for invalid_performance: PackedStringArray in [
+		PackedStringArray([
+			"--performance=full_hd_500_2000",
+			"--run-seed=1",
+			"--settings-path=" + context["test_path"],
+		]),
+		PackedStringArray([
+			"--performance=reduced_load",
+			"--run-seed=5002000",
+			"--settings-path=" + context["test_path"],
+		]),
+		PackedStringArray([
+			"--performance=full_hd_500_2000",
+			"--settings-path=" + context["test_path"],
+		]),
+	]:
+		var rejected_performance: Dictionary = parser.parse_debug(invalid_performance)
+		assertions.expect_false(rejected_performance["valid"], "altered performance contract rejected")
+
+	for evidence_id: String in [
+		"gate_06:tutorial_move",
+		"gate_06:accessibility_reward",
+		"gate_06:full_load",
+		"gate_06:release_result",
+	]:
+		var gate_six_evidence: Dictionary = parser.parse_debug(PackedStringArray([
+			"--evidence=" + evidence_id,
+			"--settings-path=" + context["test_path"],
+		]))
+		assertions.expect_true(gate_six_evidence["valid"], "%s evidence accepted" % evidence_id)
+
+	var release_normal: Dictionary = parser.parse_release(PackedStringArray())
+	assertions.expect_true(release_normal["valid"], "Release no-argument normal launch accepted")
+	assertions.expect_equal(&"normal", release_normal["mode"], "Release normal mode selected")
+	var release_smoke: Dictionary = parser.parse_release(PackedStringArray(["--smoke-run"]))
+	assertions.expect_true(release_smoke["valid"], "Release smoke driver accepted alone")
+	assertions.expect_equal(&"release_smoke", release_smoke["mode"], "Release smoke mode selected")
+	var manifest_path := ProjectSettings.globalize_path(
+		"res://artifacts/gate-06/release-pack-manifest.txt"
+	)
+	var release_audit: Dictionary = parser.parse_release(PackedStringArray([
+		"--release-pack-audit=" + manifest_path,
+	]))
+	assertions.expect_true(release_audit["valid"], "Release absolute pack audit accepted alone")
+	assertions.expect_equal(&"release_pack_audit", release_audit["mode"], "Release audit mode selected")
+	assertions.expect_equal(
+		manifest_path.replace("\\", "/").simplify_path(),
+		release_audit["manifest_path"],
+		"Release audit path normalized",
+	)
+
+	var rejected_release_cases: Array[PackedStringArray] = [
+		PackedStringArray(["--qa-scenario=weapon_bow"]),
+		PackedStringArray(["--evidence=gate_06:release_result"]),
+		PackedStringArray(["--settings-path=" + context["test_path"]]),
+		PackedStringArray(["--smoke-quit=1"]),
+		PackedStringArray(["--performance=full_hd_500_2000"]),
+		PackedStringArray(["--run-seed=5002000"]),
+		PackedStringArray(["--suite", "unit"]),
+		PackedStringArray(["--unknown-qa-option"]),
+		PackedStringArray(["--smoke-run", "--smoke-run"]),
+		PackedStringArray(["--smoke-run", "--release-pack-audit=" + manifest_path]),
+		PackedStringArray(["--release-pack-audit=relative.txt"]),
+	]
+	for release_arguments: PackedStringArray in rejected_release_cases:
+		var rejected_release: Dictionary = parser.parse_release(release_arguments)
+		assertions.expect_false(rejected_release["valid"], "Release rejects non-whitelisted arguments")

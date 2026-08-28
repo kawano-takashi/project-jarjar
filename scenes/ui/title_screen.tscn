@@ -1,6 +1,7 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://src/ui/title_screen.gd" id="1_title"]
+[ext_resource type="PackedScene" path="res://scenes/ui/settings_overlay.tscn" id="2_settings"]
 
 [sub_resource type="StyleBoxFlat" id="StyleButton"]
 content_margin_left = 24.0
@@ -198,7 +199,24 @@ theme_override_styles/normal = SubResource("StyleButton")
 theme_override_styles/hover = SubResource("StyleButtonHover")
 theme_override_styles/pressed = SubResource("StyleButtonPressed")
 theme_override_styles/focus = SubResource("StyleButtonFocus")
-text = "開始"
+text = "開始　A／Enter"
+
+[node name="SettingsCenter" type="CenterContainer" parent="ContentMargin/Content"]
+layout_mode = 2
+
+[node name="TitleSettings" type="Button" parent="ContentMargin/Content/SettingsCenter"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(460, 68)
+layout_mode = 2
+focus_mode = 2
+theme_override_colors/font_color = Color(0.96, 0.95, 0.9, 1)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 24
+theme_override_styles/normal = SubResource("StyleButton")
+theme_override_styles/hover = SubResource("StyleButtonHover")
+theme_override_styles/pressed = SubResource("StyleButtonPressed")
+theme_override_styles/focus = SubResource("StyleButtonFocus")
+text = "設定　A／Enter"
 
 [node name="ExitCenter" type="CenterContainer" parent="ContentMargin/Content"]
 layout_mode = 2
@@ -215,4 +233,7 @@ theme_override_styles/normal = SubResource("StyleButton")
 theme_override_styles/hover = SubResource("StyleButtonHover")
 theme_override_styles/pressed = SubResource("StyleButtonPressed")
 theme_override_styles/focus = SubResource("StyleButtonFocus")
-text = "終了"
+text = "終了　A／Enter"
+
+[node name="SettingsOverlay" parent="." instance=ExtResource("2_settings")]
+unique_name_in_owner = true

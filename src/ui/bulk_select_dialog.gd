@@ -90,9 +90,11 @@ func _input(event: InputEvent) -> void:
 		_cancel_dialog()
 		get_viewport().set_input_as_handled()
 		return
-	var direction: StringName = _direction_for_event(event)
+	var direction: StringName = FocusController.direction_for_event(event)
 	if not direction.is_empty():
 		_focus_controller.move(get_viewport(), direction)
+		get_viewport().set_input_as_handled()
+	elif FocusController.is_left_stick_focus_motion(event):
 		get_viewport().set_input_as_handled()
 
 
@@ -119,15 +121,3 @@ func _focus_id_for_rarity(rarity: GameTypes.Rarity) -> String:
 		GameTypes.Rarity.LEGENDARY:
 			return "bulk_legendary"
 	return "bulk_common"
-
-
-func _direction_for_event(event: InputEvent) -> StringName:
-	if event.is_action_pressed("ui_up"):
-		return FocusController.DIRECTION_TOP
-	if event.is_action_pressed("ui_down"):
-		return FocusController.DIRECTION_BOTTOM
-	if event.is_action_pressed("ui_left"):
-		return FocusController.DIRECTION_LEFT
-	if event.is_action_pressed("ui_right"):
-		return FocusController.DIRECTION_RIGHT
-	return &""

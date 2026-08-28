@@ -87,7 +87,7 @@ custom_minimum_size = Vector2(220, 56)
 layout_mode = 2
 focus_mode = 2
 theme_override_font_sizes/font_size = 20
-text = "取消  B / Esc"
+text = "取消　B／Esc"
 
 [node name="DialogConfirm" type="Button" parent="Center/Panel/Margin/Content/Buttons"]
 unique_name_in_owner = true
@@ -95,4 +95,4 @@ custom_minimum_size = Vector2(260, 56)
 layout_mode = 2
 focus_mode = 2
 theme_override_font_sizes/font_size = 20
-text = "実行  A / Enter"
+text = "実行　A／Enter"

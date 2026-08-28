@@ -5,6 +5,12 @@ const LaunchArgumentsScript = preload("res://src/app/launch_arguments.gd")
 const DefinitionCatalogScript = preload("res://src/core/definition_catalog.gd")
 const RunStateFactoryScript = preload("res://src/core/run_state_factory.gd")
 const SeedServiceScript = preload("res://src/core/seed_service.gd")
+const TutorialControllerScript = preload("res://src/tutorial/tutorial_controller.gd")
+const TutorialOverlayScript = preload("res://src/tutorial/tutorial_overlay.gd")
+const AudioFactoryScript = preload("res://src/audio/audio_factory.gd")
+const AudioVoicePoolScript = preload("res://src/audio/audio_voice_pool.gd")
+const ReleasePackAuditorScript = preload("res://src/release/release_pack_auditor.gd")
+const ReleaseSmokeValidatorScript = preload("res://src/release/release_smoke_validator.gd")
 const TITLE_SCENE: PackedScene = preload("res://scenes/ui/title_screen.tscn")
 const ARENA_SCENE: PackedScene = preload("res://scenes/gameplay/arena_combat.tscn")
 const REWARD_REVEAL_SCENE: PackedScene = preload("res://scenes/ui/reward_reveal_screen.tscn")
@@ -19,6 +25,11 @@ var _active_screen: Node = null
 var _smoke_frames_remaining: int = 0
 var _logical_phase: GameTypes.RunPhase = GameTypes.RunPhase.BOOT
 var _prepared_evidence_id: String = ""
+var _tutorial_controller: RefCounted = TutorialControllerScript.new()
+var _tutorial_overlay: CanvasLayer = null
+var _audio_pool: Node = null
+var _audio_streams: Dictionary[StringName, AudioStream] = {}
+var _release_smoke_validator: RefCounted = null
 
 var run_state: RunState = null
 var combat_simulation: CombatSimulation = null
@@ -41,8 +52,7 @@ func _enter_tree() -> void:
 		return
 
 	if _launch.get("mode", LaunchArgumentsScript.MODE_NORMAL) == LaunchArgumentsScript.MODE_RELEASE_PACK_AUDIT:
-		_launch_valid = true
-		_quit_deferred(0)
+		_run_release_pack_audit()
 		return
 
 	var initialize_error: Error = _initialize_settings_for_launch(settings_store)
@@ -73,7 +83,10 @@ func _initialize_settings_for_launch(settings_store: Variant) -> Error:
 		]
 		else settings_store.initialize_for_game(_launch["settings_path"])
 	)
-	if initialize_error == OK and mode == LaunchArgumentsScript.MODE_QA_SCENARIO:
+	if initialize_error == OK and mode in [
+		LaunchArgumentsScript.MODE_QA_SCENARIO,
+		LaunchArgumentsScript.MODE_PERFORMANCE,
+	]:
 		settings_store.tutorial_seen = true
 	return initialize_error
 
@@ -81,13 +94,42 @@ func _initialize_settings_for_launch(settings_store: Variant) -> Error:
 func _ready() -> void:
 	if not _launch_valid or _launch["mode"] == LaunchArgumentsScript.MODE_RELEASE_PACK_AUDIT:
 		return
+	_tutorial_overlay = TutorialOverlayScript.new()
+	add_child(_tutorial_overlay)
+	_tutorial_overlay.cancel_input_observed.connect(_on_tutorial_cancel_input_observed)
+	_audio_pool = AudioVoicePoolScript.new()
+	add_child(_audio_pool)
+	_audio_streams = {
+		&"pickup": AudioFactoryScript.pickup(),
+		&"normal_open": AudioFactoryScript.normal_open(),
+		&"rare_open": AudioFactoryScript.rare_open(),
+		&"epic_prealert": AudioFactoryScript.epic_prealert(),
+		&"legendary_prealert": AudioFactoryScript.legendary_prealert(),
+		&"wave_clear": AudioFactoryScript.wave_clear(),
+		&"fusion": AudioFactoryScript.fusion(),
+	}
 	match _launch.get("mode", LaunchArgumentsScript.MODE_NORMAL):
 		LaunchArgumentsScript.MODE_EVIDENCE:
 			_start_evidence_mode(_launch["evidence"])
 		LaunchArgumentsScript.MODE_QA_SCENARIO:
 			_start_qa_mode(_launch["qa_scenario"])
+		LaunchArgumentsScript.MODE_RELEASE_SMOKE:
+			_show_title()
+			_start_release_smoke()
+		LaunchArgumentsScript.MODE_PERFORMANCE:
+			_start_performance_mode()
 		_:
 			_show_title()
+
+
+func _process(_delta: float) -> void:
+	_advance_release_smoke()
+	_refresh_tutorial_overlay()
+
+
+func _input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel") and not event.is_echo():
+		_dismiss_noncombat_tutorial()
 
 
 func _physics_process(_delta: float) -> void:
@@ -107,17 +149,17 @@ func _show_title() -> void:
 	run_state = null
 	combat_simulation = null
 	_logical_phase = GameTypes.RunPhase.TITLE
+	_tutorial_controller.dismiss_noncombat()
 	var title_screen := TITLE_SCENE.instantiate() as Control
 	_active_screen = title_screen
 	title_screen.connect("start_requested", _start_new_run)
 	title_screen.connect("exit_requested", _exit_game)
 	add_child(title_screen)
+	_raise_tutorial_overlay()
 
 	match _launch.get("mode", LaunchArgumentsScript.MODE_NORMAL):
 		LaunchArgumentsScript.MODE_SMOKE_QUIT:
 			_smoke_frames_remaining = _launch["smoke_frames"]
-		LaunchArgumentsScript.MODE_RELEASE_SMOKE:
-			_smoke_frames_remaining = 1
 
 
 func _start_new_run() -> void:
@@ -133,6 +175,12 @@ func start_new_run_with_seed(run_seed: int) -> bool:
 	if first_wave == null:
 		return false
 	run_state = RunStateFactoryScript.create(run_seed, first_wave)
+	var settings_store: Variant = (
+		get_node_or_null("/root/SettingsStore") if is_inside_tree() else null
+	)
+	_tutorial_controller.begin_run(
+		bool(settings_store.tutorial_seen) if settings_store != null else false
+	)
 	combat_simulation = CombatSimulation.new()
 	combat_simulation.initialize(run_state, _definition_catalog)
 	_show_combat_arena(false)
@@ -152,9 +200,11 @@ func _show_combat_arena(paused: bool) -> bool:
 	_active_screen = arena
 	add_child(arena)
 	arena.phase_changed.connect(_on_combat_phase_changed)
-	arena.initialize(combat_simulation)
+	arena.audio_event_requested.connect(_play_audio_event)
+	arena.initialize(combat_simulation, _tutorial_controller)
 	arena.set_simulation_paused(paused)
 	_logical_phase = GameTypes.RunPhase.COMBAT
+	_raise_tutorial_overlay()
 	return true
 
 
@@ -165,11 +215,14 @@ func _show_reward_reveal(evidence_mode: String = "") -> void:
 	var reward_screen := REWARD_REVEAL_SCENE.instantiate() as RewardRevealScreen
 	_active_screen = reward_screen
 	reward_screen.reveal_completed.connect(_on_reward_reveal_completed)
+	reward_screen.audio_event_requested.connect(_play_audio_event)
 	reward_screen.initialize(run_state)
 	if not evidence_mode.is_empty():
 		reward_screen.set_evidence_mode(evidence_mode)
 	add_child(reward_screen)
 	_logical_phase = GameTypes.RunPhase.REWARD_REVEAL
+	_tutorial_controller.enter_reward(run_state.wave_number)
+	_raise_tutorial_overlay()
 
 
 func _on_combat_phase_changed(phase: GameTypes.RunPhase) -> void:
@@ -220,6 +273,8 @@ func _show_inventory(evidence_mode: String = "") -> bool:
 	screen.call("initialize", run_state, _definition_catalog)
 	add_child(screen)
 	_logical_phase = GameTypes.RunPhase.INVENTORY
+	_tutorial_controller.enter_inventory(run_state.wave_number)
+	_raise_tutorial_overlay()
 	return true
 
 
@@ -292,6 +347,8 @@ func _apply_inventory_command_result(
 ) -> void:
 	if _active_screen != null and _active_screen.has_method("apply_command_result"):
 		_active_screen.call("apply_command_result", command_kind, result)
+	if command_kind == &"fusion" and bool(result.get("success", false)):
+		_play_audio_event(&"fusion")
 
 
 func _on_inventory_continue_requested() -> void:
@@ -317,6 +374,7 @@ func _on_inventory_continue_requested() -> void:
 	var next_wave_number: int = run_state.wave_number + 1
 	if _definition_catalog.wave(next_wave_number) == null:
 		return
+	_complete_w1_tutorial_if_needed()
 	RunStateMachine.transition(run_state, GameTypes.RunPhase.COMBAT)
 	if not combat_simulation.begin_wave(next_wave_number):
 		push_error("Failed to begin wave %d" % next_wave_number)
@@ -363,7 +421,184 @@ func _show_run_summary(
 	screen.call("initialize", run_state, _definition_catalog)
 	add_child(screen)
 	_logical_phase = phase
+	_tutorial_controller.dismiss_noncombat()
+	_raise_tutorial_overlay()
 	return true
+
+
+func _complete_w1_tutorial_if_needed() -> void:
+	if run_state == null or not _tutorial_controller.leave_w1_inventory(run_state.wave_number):
+		return
+	var settings_store: Variant = get_node_or_null("/root/SettingsStore")
+	if settings_store == null:
+		return
+	settings_store.tutorial_seen = true
+	if not str(settings_store.active_settings_path).is_empty():
+		var save_error: Error = settings_store.save_settings()
+		if save_error != OK:
+			push_error("Tutorial setting save failed: %d" % save_error)
+
+
+func _refresh_tutorial_overlay() -> void:
+	if _tutorial_overlay == null or not is_instance_valid(_tutorial_overlay):
+		return
+	var phase: GameTypes.RunPhase = current_run_phase()
+	var wave_number: int = run_state.wave_number if run_state != null else 0
+	var message: String = _tutorial_controller.current_message(
+		phase == GameTypes.RunPhase.COMBAT,
+		wave_number,
+	)
+	if message.is_empty():
+		_tutorial_overlay.hide_message()
+	else:
+		_tutorial_overlay.show_message(message)
+
+
+func _on_tutorial_cancel_input_observed() -> void:
+	_dismiss_noncombat_tutorial()
+
+
+func _dismiss_noncombat_tutorial() -> void:
+	if (
+		current_run_phase() != GameTypes.RunPhase.COMBAT
+		and _tutorial_controller.dismiss_noncombat()
+	):
+		_refresh_tutorial_overlay()
+
+
+func _raise_tutorial_overlay() -> void:
+	if (
+		_tutorial_overlay != null
+		and is_instance_valid(_tutorial_overlay)
+		and _tutorial_overlay.get_parent() == self
+	):
+		move_child(_tutorial_overlay, get_child_count() - 1)
+
+
+func _play_audio_event(event_id: StringName) -> void:
+	if _audio_pool == null or not _audio_streams.has(event_id):
+		return
+	var settings_store: Variant = get_node_or_null("/root/SettingsStore")
+	var master_volume: float = (
+		float(settings_store.master_volume) if settings_store != null else 1.0
+	)
+	var sfx_volume: float = (
+		float(settings_store.sfx_volume) if settings_store != null else 0.9
+	)
+	_audio_pool.call(
+		"play_stream",
+		_audio_streams[event_id],
+		master_volume,
+		sfx_volume,
+	)
+
+
+func _run_release_pack_audit() -> void:
+	var result: Dictionary = ReleasePackAuditorScript.audit(
+		str(_launch.get("manifest_path", ""))
+	)
+	var exit_code: int = int(result.get("exit_code", 3))
+	if exit_code == 2:
+		print("RELEASE_ARGUMENT_REJECTED name=--release-pack-audit")
+	elif bool(result.get("success", false)):
+		print(str(result.get("message", "")))
+	else:
+		print("PACK_AUDIT_FAILED reason=%s" % str(result.get("reason", &"unknown")))
+	_quit_deferred(exit_code)
+
+
+func _start_release_smoke() -> void:
+	var settings_store: Variant = get_node_or_null("/root/SettingsStore")
+	_release_smoke_validator = ReleaseSmokeValidatorScript.new()
+	var result: Dictionary = _release_smoke_validator.call("begin", self, settings_store)
+	if not _release_smoke_step_succeeded(result):
+		return
+	if not start_new_run_with_seed(int(result.get("run_seed", 20260827))):
+		_fail_release_smoke(&"start_run_failed")
+		return
+	result = _release_smoke_validator.call("validate_started_and_prepare_timeout", self)
+	_release_smoke_step_succeeded(result)
+
+
+func _advance_release_smoke() -> void:
+	if _release_smoke_validator == null:
+		return
+	var stage: StringName = _release_smoke_validator.call("stage_name")
+	if stage == &"awaiting_first_failure" and _logical_phase == GameTypes.RunPhase.FAILED:
+		var first_result: Dictionary = _release_smoke_validator.call(
+			"validate_first_failure",
+			self,
+		)
+		if not _release_smoke_step_succeeded(first_result):
+			return
+		_retry_same_seed()
+		var retry_result: Dictionary = _release_smoke_validator.call(
+			"validate_retry_and_prepare_timeout",
+			self,
+		)
+		_release_smoke_step_succeeded(retry_result)
+	elif stage == &"awaiting_second_failure" and _logical_phase == GameTypes.RunPhase.FAILED:
+		var second_result: Dictionary = _release_smoke_validator.call(
+			"validate_second_failure",
+			self,
+		)
+		if not _release_smoke_step_succeeded(second_result):
+			return
+		_show_title()
+		var title_result: Dictionary = _release_smoke_validator.call(
+			"validate_title_and_finish",
+			self,
+		)
+		if _release_smoke_step_succeeded(title_result):
+			print("RELEASE_SMOKE_OK seed=20260827 failures=2")
+			_release_smoke_validator = null
+			get_tree().quit(0)
+
+
+func _release_smoke_step_succeeded(result: Dictionary) -> bool:
+	if bool(result.get("success", false)):
+		return true
+	_fail_release_smoke(StringName(result.get("reason", &"unknown")))
+	return false
+
+
+func _fail_release_smoke(reason: StringName) -> void:
+	print("RELEASE_SMOKE_FAILED reason=%s" % String(reason))
+	_release_smoke_validator = null
+	get_tree().quit(1)
+
+
+func _start_performance_mode() -> void:
+	if not start_new_run_with_seed(int(_launch.get("run_seed", 0))):
+		print("PERFORMANCE_FAILED reasons=start_run_failed")
+		get_tree().quit(1)
+		return
+	var runner_script: Variant = load("res://src/debug/performance_runner.gd")
+	if runner_script == null:
+		print("PERFORMANCE_FAILED reasons=runner_missing")
+		get_tree().quit(1)
+		return
+	var runner: Node = runner_script.new()
+	runner.connect("completed", _on_performance_completed)
+	add_child(runner)
+	var output_directory: String = ProjectSettings.globalize_path(
+		"res://artifacts/gate-06"
+	)
+	var initialize_error: Error = runner.call(
+		"initialize",
+		combat_simulation,
+		output_directory,
+	)
+	if initialize_error != OK:
+		print(
+			"PERFORMANCE_FAILED reasons=%s"
+			% str(runner.get("last_error_message"))
+		)
+		get_tree().quit(1)
+
+
+func _on_performance_completed(exit_code: int, _summary: Dictionary) -> void:
+	get_tree().quit(exit_code)
 
 
 func _retry_same_seed() -> void:
@@ -471,6 +706,9 @@ func _start_evidence_mode(evidence_id: String) -> void:
 	if evidence_id.begins_with("gate_05:"):
 		_start_gate_five_evidence(evidence_id)
 		return
+	if evidence_id.begins_with("gate_06:"):
+		_start_gate_six_evidence(evidence_id)
+		return
 	var first_wave: WaveDefinition = _definition_catalog.wave(1)
 	run_state = RunStateFactoryScript.create(20260827, first_wave)
 	combat_simulation = CombatSimulation.new()
@@ -574,6 +812,76 @@ func _start_gate_five_evidence(evidence_id: String) -> void:
 	_attach_evidence_capture()
 
 
+func _start_gate_six_evidence(evidence_id: String) -> void:
+	_prepared_evidence_id = ""
+	var prepared: bool = false
+	match evidence_id:
+		"gate_06:tutorial_move":
+			var first_wave: WaveDefinition = _definition_catalog.wave(1)
+			run_state = RunStateFactoryScript.create(20260827, first_wave)
+			combat_simulation = CombatSimulation.new()
+			combat_simulation.initialize(run_state, _definition_catalog)
+			combat_simulation.evidence_caption = (
+				"TUTORIAL STOP  •  TIMER 60.0  •  PHYSICS TICK 0  •  SPAWN 0"
+			)
+			_tutorial_controller.begin_run(false)
+			prepared = _show_combat_arena(true)
+		"gate_06:accessibility_reward":
+			var settings_store: Variant = get_node_or_null("/root/SettingsStore")
+			if settings_store != null:
+				settings_store.reduce_motion = true
+				settings_store.reduce_flashes = true
+				settings_store.tutorial_seen = true
+			var reward_fixture: Dictionary = _build_qa_fixture("reward_controls")
+			if bool(reward_fixture.get("valid", false)):
+				run_state = reward_fixture["state"] as RunState
+				combat_simulation = reward_fixture["simulation"] as CombatSimulation
+				var legendary_rewards: Array[RewardRoll] = []
+				for reward: RewardRoll in run_state.unopened_rewards:
+					if reward.rarity_for_presentation == GameTypes.Rarity.LEGENDARY:
+						legendary_rewards.append(reward)
+				run_state.unopened_rewards = legendary_rewards
+				if legendary_rewards.size() == 1:
+					_show_reward_reveal()
+				if legendary_rewards.size() == 1 and _active_screen is RewardRevealScreen:
+					var reward_screen := _active_screen as RewardRevealScreen
+					reward_screen.set_automatic_progression(false)
+					reward_screen.test_tick(RewardRevealController.NORMAL_INTERVAL_SECONDS)
+					reward_screen.test_tick(0.20)
+					prepared = true
+		"gate_06:full_load":
+			var first_wave: WaveDefinition = _definition_catalog.wave(1)
+			run_state = RunStateFactoryScript.create(5002000, first_wave)
+			combat_simulation = CombatSimulation.new()
+			combat_simulation.initialize(run_state, _definition_catalog)
+			prepared = (
+				combat_simulation.prepare_performance_fixture(500, 1200, 800)
+				and _show_combat_arena(true)
+			)
+		"gate_06:release_result":
+			var result_fixture: Dictionary = _build_qa_fixture("result_controller")
+			if bool(result_fixture.get("valid", false)):
+				run_state = result_fixture["state"] as RunState
+				combat_simulation = result_fixture["simulation"] as CombatSimulation
+				prepared = _show_result()
+		_:
+			print("EVIDENCE_ARGUMENT_REJECTED name=--evidence")
+			get_tree().quit(2)
+			return
+	if not prepared:
+		_fail_evidence_capture("gate06_screen_setup")
+		return
+	_prepared_evidence_id = evidence_id
+	_attach_evidence_capture()
+
+
+func _build_qa_fixture(scenario_id: String) -> Dictionary:
+	var factory_script: Variant = load("res://src/debug/qa_scenario_factory.gd")
+	if factory_script == null:
+		return {"valid": false}
+	return factory_script.build(scenario_id, _definition_catalog)
+
+
 func _configure_broken_build_evidence() -> bool:
 	if run_state == null or combat_simulation == null:
 		return false
@@ -604,18 +912,18 @@ func validate_evidence_capture_state(evidence_id: String) -> Dictionary:
 		!= LaunchArgumentsScript.MODE_EVIDENCE
 		or str(_launch.get("evidence", "")) != evidence_id
 	):
-		return _evidence_validation_failure("gate05_argument")
+		return _evidence_validation_failure("evidence_argument")
 	if _prepared_evidence_id != evidence_id:
-		return _evidence_validation_failure("gate05_not_prepared")
+		return _evidence_validation_failure("evidence_not_prepared")
 	if (
 		run_state == null
 		or _active_screen == null
 		or not is_instance_valid(_active_screen)
 		or not _active_screen.is_inside_tree()
 	):
-		return _evidence_validation_failure("gate05_active_screen")
+		return _evidence_validation_failure("evidence_active_screen")
 	if _active_screen is CanvasItem and not (_active_screen as CanvasItem).is_visible_in_tree():
-		return _evidence_validation_failure("gate05_screen_hidden")
+		return _evidence_validation_failure("evidence_screen_hidden")
 
 	match evidence_id:
 		"gate_05:inventory_full":
@@ -626,7 +934,87 @@ func validate_evidence_capture_state(evidence_id: String) -> Dictionary:
 			return _validate_broken_build_evidence()
 		"gate_05:final_result":
 			return _validate_final_result_evidence()
-	return _evidence_validation_failure("gate05_unknown_state")
+		"gate_06:tutorial_move":
+			return _validate_tutorial_move_evidence()
+		"gate_06:accessibility_reward":
+			return _validate_accessibility_reward_evidence()
+		"gate_06:full_load":
+			return _validate_full_load_evidence()
+		"gate_06:release_result":
+			return _validate_final_result_evidence()
+	return _evidence_validation_failure("evidence_unknown_state")
+
+
+func _validate_tutorial_move_evidence() -> Dictionary:
+	if (
+		run_state.phase != GameTypes.RunPhase.COMBAT
+		or run_state.wave_number != 1
+		or run_state.physics_tick != 0
+		or not is_equal_approx(run_state.time_remaining, 60.0)
+		or run_state.non_boss_spawned != 0
+		or not _tutorial_controller.should_gate_combat(1)
+	):
+		return _evidence_validation_failure("gate06_tutorial_state")
+	if (
+		_tutorial_overlay == null
+		or not _tutorial_overlay.visible
+		or _tutorial_overlay.call("message_text") != TutorialControllerScript.MOVE_MESSAGE
+	):
+		return _evidence_validation_failure("gate06_tutorial_overlay")
+	return {"valid": true, "reason": ""}
+
+
+func _validate_accessibility_reward_evidence() -> Dictionary:
+	if run_state.phase != GameTypes.RunPhase.REWARD_REVEAL:
+		return _evidence_validation_failure("gate06_accessibility_phase")
+	if not _active_screen is RewardRevealScreen:
+		return _evidence_validation_failure("gate06_accessibility_screen")
+	var presentation: Dictionary = (
+		(_active_screen as RewardRevealScreen).reveal_controller().presentation_state()
+	)
+	var prealert_reward_ids: PackedStringArray = presentation.get(
+		"prealert_reward_ids",
+		PackedStringArray(),
+	) as PackedStringArray
+	var rarity_label := (_active_screen as RewardRevealScreen).get_node_or_null(
+		"%CurrentRarity"
+	) as Label
+	var accessibility_label := (_active_screen as RewardRevealScreen).get_node_or_null(
+		"%AccessibilityStatus"
+	) as Label
+	if (
+		not bool(presentation.get("prealert_active", false))
+		or bool(presentation.get("aggregate_prealert", true))
+		or prealert_reward_ids.size() != 1
+		or not bool(presentation.get("reduce_motion", false))
+		or not bool(presentation.get("reduce_flashes", false))
+		or not is_zero_approx(float(presentation.get("shake_offset", 1.0)))
+		or int(presentation.get("stage_light_step", -1)) != 0
+		or float(presentation.get("scale_multiplier", 0.0)) <= 1.0
+		or int(presentation.get("outline_thickness", 0)) <= 3
+		or rarity_label == null
+		or rarity_label.text != "LEGENDARY"
+		or accessibility_label == null
+		or accessibility_label.text != "動き軽減 ON・点滅軽減 ON"
+	):
+		return _evidence_validation_failure("gate06_accessibility_values")
+	return {"valid": true, "reason": ""}
+
+
+func _validate_full_load_evidence() -> Dictionary:
+	if run_state.phase != GameTypes.RunPhase.COMBAT or combat_simulation == null:
+		return _evidence_validation_failure("gate06_full_load_phase")
+	var metrics: Dictionary = combat_simulation.performance_fixture_metrics()
+	if (
+		int(metrics.get("active_enemy", -1)) != 500
+		or int(metrics.get("active_projectile", -1)) != 1200
+		or int(metrics.get("active_vfx", -1)) != 800
+		or int(metrics.get("enemy_pool_overflow", -1)) != 0
+		or int(metrics.get("projectile_pool_overflow", -1)) != 0
+		or int(metrics.get("vfx_pool_overflow", -1)) != 0
+	):
+		return _evidence_validation_failure("gate06_full_load_counts")
+	return {"valid": true, "reason": ""}
 
 
 func _validate_inventory_evidence(mode: String, expect_warning: bool) -> Dictionary:

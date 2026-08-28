@@ -114,6 +114,14 @@ theme_override_colors/font_color = Color(0.92, 1, 0.97, 1)
 theme_override_font_sizes/font_size = 34
 text = "報酬開封"
 
+[node name="AccessibilityStatus" type="Label" parent="RootMargin/Content/Header/Row"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.61, 0.83, 0.78, 1)
+theme_override_font_sizes/font_size = 18
+text = "動き軽減 OFF・点滅軽減 OFF"
+vertical_alignment = 1
+
 [node name="UnopenedCount" type="Label" parent="RootMargin/Content/Header/Row"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -188,11 +196,8 @@ mouse_filter = 2
 [node name="CurrentCard" type="PanelContainer" parent="RootMargin/Content/Body/CurrentColumn/RewardSpeedProxy/CurrentCardFrame/CurrentCardMotion"]
 unique_name_in_owner = true
 layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
+offset_right = 760.0
+offset_bottom = 340.0
 
 [node name="Margin" type="MarginContainer" parent="RootMargin/Content/Body/CurrentColumn/RewardSpeedProxy/CurrentCardFrame/CurrentCardMotion/CurrentCard"]
 layout_mode = 2
@@ -295,7 +300,7 @@ focus_mode = 2
 theme_override_font_sizes/font_size = 22
 theme_override_styles/normal = SubResource("ButtonStyle")
 theme_override_styles/focus = SubResource("FocusStyle")
-text = "すべて開ける\nY／F"
+text = "すべて開ける\nY／F・A／Enter"
 
 [node name="RewardSettings" type="Button" parent="RootMargin/Content/Controls"]
 unique_name_in_owner = true
