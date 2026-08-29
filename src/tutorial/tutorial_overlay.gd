@@ -53,9 +53,10 @@ func _ready() -> void:
 	visible = false
 
 
-func _input(event: InputEvent) -> void:
+func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel") and not event.is_echo():
 		cancel_input_observed.emit()
+		get_viewport().set_input_as_handled()
 
 
 func show_message(message: String) -> void:

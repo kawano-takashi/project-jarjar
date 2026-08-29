@@ -9,9 +9,11 @@ signal exit_requested
 @onready var title_start: Button = %TitleStart
 @onready var title_settings: Button = %TitleSettings
 @onready var title_exit: Button = %TitleExit
+@onready var _content_root: Control = $ContentMargin
 @onready var _settings_overlay: SettingsOverlay = %SettingsOverlay
 
 var _saved_focus_id: String = "title_start"
+var _modal_focus := ModalFocusCoordinator.new()
 
 
 func _ready() -> void:
@@ -25,6 +27,7 @@ func _ready() -> void:
 	title_settings.pressed.connect(_on_settings_pressed)
 	title_exit.pressed.connect(_on_exit_pressed)
 	_settings_overlay.closed.connect(_on_settings_closed)
+	_modal_focus.configure(get_viewport(), [_content_root])
 	FocusController.grab_focus_deferred(title_start)
 
 
@@ -45,27 +48,30 @@ func settings_focus_control() -> Control:
 
 
 func _on_start_pressed() -> void:
+	if _modal_focus.has_active_modal():
+		return
 	start_requested.emit()
 
 
 func _on_settings_pressed() -> void:
+	if _modal_focus.has_active_modal():
+		return
 	var focused: Control = get_viewport().gui_get_focus_owner()
 	_saved_focus_id = (
 		str(focused.get_meta("focus_id", "title_start"))
 		if focused != null
 		else "title_start"
 	)
+	if not _modal_focus.push(_settings_overlay, title_start):
+		return
 	_settings_overlay.open_overlay()
 
 
 func _on_settings_closed() -> void:
-	var target: Control = title_start
-	if _saved_focus_id == "title_settings":
-		target = title_settings
-	elif _saved_focus_id == "title_exit":
-		target = title_exit
-	FocusController.grab_focus_deferred(target)
+	_modal_focus.pop(_settings_overlay, null, title_start)
 
 
 func _on_exit_pressed() -> void:
+	if _modal_focus.has_active_modal():
+		return
 	exit_requested.emit()

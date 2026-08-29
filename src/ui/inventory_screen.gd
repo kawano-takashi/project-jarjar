@@ -48,6 +48,7 @@ const ACTION_LABELS: Array[String] = [
 @onready var _overflow_row: HBoxContainer = %OverflowRow
 @onready var _action_row: HBoxContainer = %ActionRow
 @onready var _skill_row: HBoxContainer = %SkillRow
+@onready var _content_root: Control = $Margin
 @onready var _settings_overlay: SettingsOverlay = %SettingsOverlay
 @onready var _bulk_dialog: BulkSelectDialog = %BulkSelectDialog
 @onready var _fusion_dialog: FusionDialog = %FusionDialog
@@ -55,6 +56,7 @@ const ACTION_LABELS: Array[String] = [
 
 var _controller := InventoryController.new()
 var _focus_controller := FocusController.new()
+var _modal_focus := ModalFocusCoordinator.new()
 var _pending_state: RunState = null
 var _pending_catalog: DefinitionCatalog = null
 
@@ -79,11 +81,13 @@ var _fusion_feedback_flash_enabled: bool = false
 var _fusion_feedback_static_outline: bool = false
 var _fusion_feedback_animating: bool = false
 var _fusion_feedback_remaining: float = 0.0
+var _fusion_feedback_target: Label = null
 
 
 func _ready() -> void:
 	_build_fixed_controls()
 	_connect_overlays()
+	_modal_focus.configure(get_viewport(), [_content_root])
 	_settings_overlay.closed.connect(_on_settings_closed)
 	set_process(false)
 	_reset_fusion_feedback_visuals()
@@ -109,9 +113,13 @@ func apply_command_result(command_kind: StringName, result: Dictionary) -> void:
 	_clear_fusion_feedback()
 	_pending_command_kind = &""
 	var success: bool = bool(result.get("success", false))
-	_status_text = str(result.get("message", result.get("error", "")))
-	if command_kind == &"fusion" and success and _status_text.is_empty():
-		_status_text = FUSION_SUCCESS_FALLBACK_TEXT
+	var result_text: String = str(result.get("message", result.get("error", "")))
+	if command_kind == &"fusion" and success and result_text.is_empty():
+		result_text = FUSION_SUCCESS_FALLBACK_TEXT
+	var fusion_modal_active: bool = (
+		command_kind == &"fusion" and _modal_focus.is_active(_fusion_dialog)
+	)
+	_status_text = "" if fusion_modal_active else result_text
 	if bool(result.get("needs_unique_confirmation", false)):
 		_open_confirmation_for_result(command_kind, result)
 		return
@@ -122,8 +130,17 @@ func apply_command_result(command_kind: StringName, result: Dictionary) -> void:
 			&"discard":
 				_controller.clear_marks()
 			&"fusion":
-				_controller.reset_fusion()
-				_fusion_dialog.close_without_signal()
+				if fusion_modal_active:
+					_controller.complete_fusion_success(result_text)
+					_modal_focus.set_restore_target(
+						_fusion_dialog,
+						_action_buttons[2],
+					)
+				else:
+					_controller.reset_fusion()
+					_fusion_dialog.close_without_signal()
+	elif command_kind == &"fusion" and fusion_modal_active:
+		_controller.set_fusion_result_status(result_text)
 	if command_kind == &"discard" and not success and StringName(result.get("error", &"")) in [
 		&"missing",
 		&"item_missing",
@@ -132,22 +149,33 @@ func apply_command_result(command_kind: StringName, result: Dictionary) -> void:
 		_controller.clear_marks()
 	_refresh_from_state(true)
 	if command_kind == &"fusion" and success:
-		_present_fusion_feedback()
+		if fusion_modal_active:
+			_present_fusion_feedback(_fusion_dialog.status_control())
+			_fusion_dialog.focus_after_success()
+		else:
+			_present_fusion_feedback(_status_label)
 	if command_kind == &"discard":
 		_focus_controller.grab_focus_id("action_1")
 	elif command_kind == &"fusion":
-		_focus_controller.grab_focus_id("action_2" if success else "FA2")
+		if not success and fusion_modal_active:
+			_fusion_dialog.test_focus("FA2")
 
 
 func focus_ids() -> PackedStringArray:
+	if _fusion_dialog.visible:
+		return _fusion_dialog.focus_ids()
 	return _focus_controller.focus_ids()
 
 
 func focus_control(focus_id: String) -> Control:
+	if _fusion_dialog.visible:
+		return _fusion_dialog.focus_control(focus_id)
 	return _focus_controller.control_for_id(focus_id)
 
 
 func neighbor_specification(focus_id: String) -> Dictionary:
+	if _fusion_dialog.visible:
+		return _fusion_dialog.neighbor_specification(focus_id)
 	return _focus_controller.neighbor_specification(focus_id)
 
 
@@ -157,8 +185,13 @@ func initial_focus_control() -> Control:
 
 func debug_state() -> Dictionary:
 	var result: Dictionary = _controller.debug_state()
+	var feedback_target: Label = _fusion_feedback_control()
 	result.merge({
-		"focus_id": _focus_controller.current_focus_id(get_viewport()),
+		"focus_id": str(
+			get_viewport().gui_get_focus_owner().get_meta("focus_id", "")
+			if get_viewport().gui_get_focus_owner() != null
+			else ""
+		),
 		"pointer_event_count": _pointer_event_count,
 		"status": _status_text,
 		"comparison": _comparison_label.text,
@@ -168,6 +201,12 @@ func debug_state() -> Dictionary:
 		"fusion_open": _fusion_dialog.visible,
 		"confirmation_open": _confirmation_dialog.visible,
 		"settings_open": _settings_overlay.visible,
+		"modal_stack_size": _modal_focus.stack_size(),
+		"active_modal": (
+			_modal_focus.active_modal().name
+			if _modal_focus.active_modal() != null
+			else &""
+		),
 		"pending_command_kind": _pending_command_kind,
 		"skill_slots": _skill_slot_snapshot(),
 		"fusion_feedback_presented": _fusion_feedback_presented,
@@ -177,27 +216,65 @@ func debug_state() -> Dictionary:
 		"fusion_feedback_flash_enabled": _fusion_feedback_flash_enabled,
 		"fusion_feedback_static_outline": _fusion_feedback_static_outline,
 		"fusion_feedback_animating": _fusion_feedback_animating,
-		"fusion_feedback_status_scale": _status_label.scale,
-		"fusion_feedback_status_modulate": _status_label.modulate,
-		"fusion_feedback_outline_size": _status_label.get_theme_constant("outline_size"),
+		"fusion_feedback_target": str(feedback_target.name) if feedback_target != null else "",
+		"fusion_feedback_status_scale": (
+			feedback_target.scale if feedback_target != null else Vector2.ONE
+		),
+		"fusion_feedback_status_modulate": (
+			feedback_target.modulate if feedback_target != null else Color.WHITE
+		),
+		"fusion_feedback_outline_size": (
+			feedback_target.get_theme_constant("outline_size")
+			if feedback_target != null
+			else 0
+		),
+		"fusion_feedback_background_scale": _status_label.scale,
+		"fusion_feedback_background_modulate": _status_label.modulate,
+		"fusion_feedback_background_outline_size": _status_label.get_theme_constant(
+			"outline_size"
+		),
 	}, true)
 	return result
 
 
 func test_focus(focus_id: String) -> bool:
+	if _fusion_dialog.visible:
+		return _fusion_dialog.test_focus(focus_id)
 	return _focus_controller.grab_focus_id(focus_id)
 
 
 func test_direction(direction: StringName) -> bool:
+	if _fusion_dialog.visible:
+		return _fusion_dialog.test_direction(direction)
 	return _focus_controller.move(get_viewport(), direction)
 
 
+func test_fusion_candidate_focus(item_id: String) -> bool:
+	if not _fusion_dialog.visible:
+		return false
+	return _fusion_dialog.test_focus(_fusion_dialog.focus_id_for_candidate(item_id))
+
+
 func test_accept() -> void:
+	if _fusion_dialog.visible:
+		_fusion_dialog.test_accept()
+		return
 	_activate_focus_id(_focus_controller.current_focus_id(get_viewport()))
 
 
 func test_cancel() -> void:
-	_handle_cancel()
+	if _modal_focus.is_active(_fusion_dialog):
+		_on_fusion_cancelled()
+	elif _modal_focus.is_active(_bulk_dialog):
+		_bulk_dialog.close_without_signal()
+		_on_bulk_cancelled()
+	elif _modal_focus.is_active(_confirmation_dialog):
+		_confirmation_dialog.close_without_signal()
+		_on_confirmation_cancelled()
+	elif _modal_focus.is_active(_settings_overlay):
+		_settings_overlay.close_overlay()
+	else:
+		_handle_cancel()
 
 
 func test_lock() -> void:
@@ -205,6 +282,8 @@ func test_lock() -> void:
 
 
 func test_mouse_drop(source: Dictionary, target: Dictionary) -> void:
+	if _modal_focus.has_active_modal():
+		return
 	_pointer_event_count += 1
 	_on_card_drop_received(source, target)
 
@@ -235,7 +314,10 @@ func _process(delta: float) -> void:
 	_advance_fusion_feedback(delta)
 
 
-func _present_fusion_feedback() -> void:
+func _present_fusion_feedback(target: Label = null) -> void:
+	_fusion_feedback_target = (
+		target if target != null and is_instance_valid(target) else _status_label
+	)
 	var settings: Dictionary = _fusion_accessibility_settings()
 	_fusion_feedback_presented = true
 	_fusion_feedback_reduce_motion = bool(settings["reduce_motion"])
@@ -247,14 +329,15 @@ func _present_fusion_feedback() -> void:
 	_fusion_feedback_animating = (
 		_fusion_feedback_motion_enabled or _fusion_feedback_flash_enabled
 	)
-	_status_label.pivot_offset = _status_label.size * 0.5
-	_status_label.scale = Vector2.ONE
-	_status_label.modulate = Color.WHITE
-	_status_label.add_theme_color_override(
+	var feedback_target: Label = _fusion_feedback_control()
+	feedback_target.pivot_offset = feedback_target.size * 0.5
+	feedback_target.scale = Vector2.ONE
+	feedback_target.modulate = Color.WHITE
+	feedback_target.add_theme_color_override(
 		"font_outline_color",
 		FUSION_FEEDBACK_OUTLINE_COLOR,
 	)
-	_status_label.add_theme_constant_override(
+	feedback_target.add_theme_constant_override(
 		"outline_size",
 		FUSION_FEEDBACK_OUTLINE_SIZE if _fusion_feedback_static_outline else 0,
 	)
@@ -269,20 +352,21 @@ func _advance_fusion_feedback(delta: float) -> void:
 		1.0 - _fusion_feedback_remaining / FUSION_FEEDBACK_DURATION_SECONDS
 	)
 	var pulse: float = sin(progress * PI)
-	_status_label.scale = (
+	var feedback_target: Label = _fusion_feedback_control()
+	feedback_target.scale = (
 		Vector2.ONE * (1.0 + (FUSION_FEEDBACK_SCALE - 1.0) * pulse)
 		if _fusion_feedback_motion_enabled
 		else Vector2.ONE
 	)
-	_status_label.modulate = (
+	feedback_target.modulate = (
 		Color.WHITE.lerp(FUSION_FEEDBACK_TINT, pulse)
 		if _fusion_feedback_flash_enabled
 		else Color.WHITE
 	)
 	if _fusion_feedback_remaining <= 0.0:
 		_fusion_feedback_animating = false
-		_status_label.scale = Vector2.ONE
-		_status_label.modulate = Color.WHITE
+		feedback_target.scale = Vector2.ONE
+		feedback_target.modulate = Color.WHITE
 		set_process(false)
 
 
@@ -297,14 +381,30 @@ func _clear_fusion_feedback() -> void:
 	_fusion_feedback_remaining = 0.0
 	set_process(false)
 	_reset_fusion_feedback_visuals()
+	_fusion_feedback_target = _status_label
 
 
 func _reset_fusion_feedback_visuals() -> void:
-	if _status_label == null:
+	var feedback_target: Label = _fusion_feedback_control()
+	if feedback_target == null:
 		return
-	_status_label.scale = Vector2.ONE
-	_status_label.modulate = Color.WHITE
-	_status_label.add_theme_constant_override("outline_size", 0)
+	feedback_target.scale = Vector2.ONE
+	feedback_target.modulate = Color.WHITE
+	feedback_target.add_theme_constant_override("outline_size", 0)
+
+
+func _fusion_feedback_control() -> Label:
+	if _fusion_feedback_target != null and is_instance_valid(_fusion_feedback_target):
+		return _fusion_feedback_target
+	return _status_label
+
+
+func _clear_fusion_success_presentation() -> void:
+	if not _fusion_feedback_presented:
+		return
+	_clear_fusion_feedback()
+	_controller.set_fusion_result_status("")
+	_status_text = ""
 
 
 func _fusion_accessibility_settings() -> Dictionary:
@@ -316,21 +416,23 @@ func _fusion_accessibility_settings() -> Dictionary:
 
 
 func _input(event: InputEvent) -> void:
-	if _settings_overlay.visible or _bulk_dialog.visible or _confirmation_dialog.visible:
+	if _modal_focus.has_active_modal():
 		return
 	if event.is_action_pressed("ui_cancel") and not event.is_echo():
-		_handle_cancel()
-		get_viewport().set_input_as_handled()
+		if _handle_cancel():
+			get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed("item_lock") and not event.is_echo():
 		_handle_item_lock()
 		get_viewport().set_input_as_handled()
 		return
-	var focus_id: String = _focus_controller.current_focus_id(get_viewport())
-	if _fusion_dialog.visible and focus_id == "FR" and (
-		event.is_action_pressed(&"ui_left", false, true)
-		or event.is_action_pressed(&"ui_right", false, true)
-	):
+	if event.is_action_pressed(&"ui_focus_next") and not event.is_echo():
+		_focus_controller.move_tab(get_viewport(), true)
+		get_viewport().set_input_as_handled()
+		return
+	if event.is_action_pressed(&"ui_focus_prev") and not event.is_echo():
+		_focus_controller.move_tab(get_viewport(), false)
+		get_viewport().set_input_as_handled()
 		return
 	var direction: StringName = FocusController.direction_for_event(event)
 	if not direction.is_empty():
@@ -377,6 +479,7 @@ func _connect_overlays() -> void:
 	_fusion_dialog.material_slot_pressed.connect(_on_fusion_material_slot_pressed)
 	_fusion_dialog.material_drag_removed.connect(_on_fusion_material_slot_pressed)
 	_fusion_dialog.material_item_dropped.connect(_on_fusion_material_dropped)
+	_fusion_dialog.candidate_toggled.connect(_on_fusion_candidate_toggled)
 	_fusion_dialog.auto_fill_requested.connect(_on_fusion_auto_fill)
 	_fusion_dialog.wild_toggle_requested.connect(_on_fusion_wild_toggle)
 	_fusion_dialog.confirm_requested.connect(_on_fusion_confirm)
@@ -391,7 +494,7 @@ func _refresh_from_state(preserve_focus: bool) -> void:
 		return
 	var previous_focus: String = (
 		_focus_controller.current_focus_id(get_viewport())
-		if preserve_focus
+		if preserve_focus and not _modal_focus.has_active_modal()
 		else ""
 	)
 	_render_header()
@@ -401,10 +504,9 @@ func _refresh_from_state(preserve_focus: bool) -> void:
 	_render_actions()
 	_render_skills()
 	_render_fusion()
-	if _fusion_dialog.visible:
-		_configure_fusion_focus_graph()
-	else:
-		_configure_normal_focus_graph()
+	_configure_normal_focus_graph()
+	if _modal_focus.has_active_modal():
+		return
 	if preserve_focus and _focus_controller.grab_focus_id(previous_focus):
 		_last_valid_focus_id = previous_focus
 	else:
@@ -539,7 +641,47 @@ func _render_fusion() -> void:
 		_controller.fusion_is_valid(),
 		_controller.fusion_preview_text(),
 		_controller.fusion_status,
+		_fusion_candidate_entries(),
 	)
+
+
+func _fusion_candidate_entries() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for location: Dictionary in _controller.fusion_candidate_locations():
+		var item: ItemInstance = location.get("item") as ItemInstance
+		if item == null:
+			continue
+		var kind := StringName(location.get("kind", &""))
+		var index: int = int(location.get("index", -1))
+		var source_label: String = (
+			"通常枠 G%d,%d" % [
+				floori(float(index) / float(INVENTORY_COLUMNS)),
+				index % INVENTORY_COLUMNS,
+			]
+			if kind == &"inventory"
+			else "一時受取 O%d" % index
+		)
+		var selected_slot: int = _controller.fusion_material_ids.find(item.item_id)
+		var selected_badge: String = "✓ 材料%d　" % (selected_slot + 1) if selected_slot >= 0 else ""
+		var unique_badge: String = "⚠ ユニーク　" if not item.unique_id.is_empty() else ""
+		var details: String = "%s\n保管位置: %s" % [_item_details(item), source_label]
+		if selected_slot >= 0:
+			details += "\n選択中: 材料枠%d" % (selected_slot + 1)
+		if not item.unique_id.is_empty():
+			details += "\n⚠ 合成すると固定名と固有効果が失われます。"
+		result.append({
+			"item_id": item.item_id,
+			"source": {"kind": kind, "index": index},
+			"selected_slot": selected_slot,
+			"text": "%s%s%s\n%s\nA／Enter 切替" % [
+				selected_badge,
+				unique_badge,
+				_controller.rarity_label(item.rarity),
+				item.display_name,
+			],
+			"details": details,
+		})
+	return result
 
 
 func _render_item_card(
@@ -600,7 +742,7 @@ func _configure_normal_focus_graph() -> void:
 			"grid_%d" % (row * INVENTORY_COLUMNS + posmod(column - 1, INVENTORY_COLUMNS)),
 			"grid_%d" % (row * INVENTORY_COLUMNS + (column + 1) % INVENTORY_COLUMNS),
 		)
-	_add_overflow_to_graph(controls, graph, false)
+	_add_overflow_to_graph(controls, graph)
 	for index: int in range(_action_buttons.size()):
 		var focus_id := "action_%d" % index
 		controls[focus_id] = _action_buttons[index]
@@ -626,64 +768,16 @@ func _configure_normal_focus_graph() -> void:
 		)
 	_focus_controller.configure_graph(controls, graph, "equip_0")
 
-
-func _configure_fusion_focus_graph() -> void:
-	var controls: Dictionary = _fusion_dialog.focus_controls()
-	var graph: Dictionary = {
-		"FR": _graph_entry("FA3", "F0", "FR", "FR"),
-		"F0": _graph_entry("FR", "grid_0", "F2", "F1"),
-		"F1": _graph_entry("FR", "grid_2", "F0", "F2"),
-		"F2": _graph_entry("FR", "grid_4", "F1", "F0"),
-	}
-	for index: int in range(INVENTORY_COUNT):
-		var row: int = floori(float(index) / float(INVENTORY_COLUMNS))
-		var column: int = index % INVENTORY_COLUMNS
-		var focus_id := "grid_%d" % index
-		controls[focus_id] = _grid_cards[index]
-		var fusion_slot: int = mini(floori(float(column) / 2.0), 2)
-		var top: String = "F%d" % fusion_slot if row == 0 else "grid_%d" % (index - INVENTORY_COLUMNS)
-		var bottom: String
-		if row < INVENTORY_ROWS - 1:
-			bottom = "grid_%d" % (index + INVENTORY_COLUMNS)
-		elif not _overflow_cards.is_empty():
-			bottom = "overflow_%d" % mini(column, _overflow_cards.size() - 1)
-		else:
-			bottom = "FA%d" % mini(column, 3)
-		graph[focus_id] = _graph_entry(
-			top,
-			bottom,
-			"grid_%d" % (row * INVENTORY_COLUMNS + posmod(column - 1, INVENTORY_COLUMNS)),
-			"grid_%d" % (row * INVENTORY_COLUMNS + (column + 1) % INVENTORY_COLUMNS),
-		)
-	_add_overflow_to_graph(controls, graph, true)
-	for index: int in range(4):
-		var focus_id := "FA%d" % index
-		var top: String = (
-			"overflow_%d" % mini(index, _overflow_cards.size() - 1)
-			if not _overflow_cards.is_empty()
-			else "grid_%d" % ((INVENTORY_ROWS - 1) * INVENTORY_COLUMNS + mini(index, 5))
-		)
-		graph[focus_id] = _graph_entry(
-			top,
-			"FR",
-			"FA%d" % posmod(index - 1, 4),
-			"FA%d" % ((index + 1) % 4),
-		)
-	_focus_controller.configure_graph(controls, graph, "FR")
-	_focus_controller.set_modal_allowed(_focus_controller.focus_ids())
-
-
 func _add_overflow_to_graph(
 	controls: Dictionary,
 	graph: Dictionary,
-	fusion_mode: bool,
 ) -> void:
 	for index: int in range(_overflow_cards.size()):
 		var focus_id := "overflow_%d" % index
 		controls[focus_id] = _overflow_cards[index]
 		graph[focus_id] = _graph_entry(
 			"grid_%d" % ((INVENTORY_ROWS - 1) * INVENTORY_COLUMNS + mini(index, 5)),
-			("FA%d" if fusion_mode else "action_%d") % mini(index, 3 if fusion_mode else 5),
+			"action_%d" % mini(index, 5),
 			"overflow_%d" % posmod(index - 1, _overflow_cards.size()),
 			"overflow_%d" % ((index + 1) % _overflow_cards.size()),
 		)
@@ -698,10 +792,7 @@ func _connect_item_card(card: InventoryCardButton, kind: StringName, index: int)
 
 func _on_item_card_pressed(kind: StringName, index: int) -> void:
 	var item: ItemInstance = _controller.item_at(kind, index)
-	if _fusion_dialog.visible:
-		if item != null and kind in [&"inventory", &"overflow"]:
-			_controller.toggle_fusion_material(item.item_id, true)
-			_render_fusion()
+	if _modal_focus.has_active_modal():
 		return
 	if _controller.held_item_source.is_empty():
 		if _controller.begin_item_lift(kind, index):
@@ -720,7 +811,7 @@ func _on_item_card_pressed(kind: StringName, index: int) -> void:
 
 
 func _on_skill_card_pressed(index: int) -> void:
-	if _fusion_dialog.visible:
+	if _modal_focus.has_active_modal():
 		return
 	var source_kind: StringName = &"slot" if index < 2 else &"catalog"
 	var source_id: Variant = index
@@ -743,15 +834,17 @@ func _on_skill_card_pressed(index: int) -> void:
 
 
 func _on_card_drop_received(source: Dictionary, target: Dictionary) -> void:
+	if _modal_focus.has_active_modal():
+		return
 	_pointer_event_count += 1
 	var drag_type := StringName(source.get("drag_type", &""))
-	if drag_type == &"item" and not _fusion_dialog.visible:
+	if drag_type == &"item":
 		_pending_command_kind = &"item_move"
 		item_move_requested.emit(
 			{"kind": source.get("kind"), "index": source.get("index"), "item_id": source.get("item_id")},
 			target,
 		)
-	elif drag_type == &"skill" and not _fusion_dialog.visible:
+	elif drag_type == &"skill":
 		_pending_command_kind = &"skill_move"
 		skill_move_requested.emit(
 			StringName(source.get("source_kind", &"")),
@@ -762,6 +855,8 @@ func _on_card_drop_received(source: Dictionary, target: Dictionary) -> void:
 
 
 func _on_action_pressed(index: int) -> void:
+	if _modal_focus.has_active_modal():
+		return
 	match index:
 		0:
 			_open_bulk_dialog()
@@ -789,19 +884,13 @@ func _activate_focus_id(focus_id: String) -> void:
 		_on_action_pressed(focus_id.trim_prefix("action_").to_int())
 	elif focus_id.begins_with("skill_"):
 		_on_skill_card_pressed(focus_id.trim_prefix("skill_").to_int())
-	elif focus_id.begins_with("F") and focus_id.length() == 2:
-		_on_fusion_material_slot_pressed(focus_id.substr(1).to_int())
-	elif focus_id.begins_with("FA"):
-		match focus_id.substr(2).to_int():
-			0: _on_fusion_auto_fill()
-			1: _on_fusion_wild_toggle()
-			2: _on_fusion_confirm()
-			3: _on_fusion_cancelled()
 
 
 func _open_bulk_dialog() -> void:
 	var item: ItemInstance = _controller.find_item(_controller.last_item_focus_id).get("item") as ItemInstance
 	var rarity: GameTypes.Rarity = item.rarity if item != null else GameTypes.Rarity.COMMON
+	if not _modal_focus.push(_bulk_dialog, _action_buttons[0]):
+		return
 	_bulk_dialog.open_dialog(rarity, "action_0")
 
 
@@ -809,12 +898,11 @@ func _on_bulk_rarity_selected(rarity: GameTypes.Rarity) -> void:
 	var selected: PackedStringArray = _controller.auto_select(rarity)
 	_status_text = "候補がありません" if selected.is_empty() else "%d件を選択しました" % selected.size()
 	_refresh_from_state(true)
-	_focus_controller.grab_focus_id("action_0")
+	_modal_focus.pop(_bulk_dialog, null, _action_buttons[0])
 
 
 func _on_bulk_cancelled() -> void:
-	_configure_normal_focus_graph()
-	_focus_controller.grab_focus_id("action_0")
+	_modal_focus.pop(_bulk_dialog, null, _action_buttons[0])
 
 
 func _request_discard() -> void:
@@ -826,6 +914,9 @@ func _request_discard() -> void:
 		_confirmation_kind = &"discard"
 		_confirmation_payload = {"item_ids": targets}
 		_confirmation_origin_focus_id = "action_1"
+		if not _modal_focus.push(_confirmation_dialog, _action_buttons[1]):
+			return
+		_modal_focus.set_restore_target(_confirmation_dialog, _action_buttons[1])
 		_confirmation_dialog.open_dialog(
 			"ユニーク装備を廃棄します",
 			"対象: %s" % "、".join(names),
@@ -838,35 +929,49 @@ func _request_discard() -> void:
 
 
 func _open_fusion(use_wild: bool) -> void:
+	var origin_index: int = 3 if use_wild else 2
+	if not _modal_focus.push(_fusion_dialog, _action_buttons[origin_index]):
+		return
+	_clear_fusion_success_presentation()
 	_controller.open_fusion(use_wild)
-	_fusion_dialog.open_dialog("action_3" if use_wild else "action_2")
+	_fusion_dialog.open_dialog("action_%d" % origin_index)
 	_render_fusion()
-	_configure_fusion_focus_graph()
-	_focus_controller.focus_initial_deferred()
+	_fusion_dialog.focus_initial_deferred()
 
 
 func _on_fusion_rarity_step(step: int) -> void:
+	_clear_fusion_success_presentation()
 	_controller.change_fusion_rarity(step)
 	_render_fusion()
 
 
 func _on_fusion_material_slot_pressed(slot_index: int) -> void:
+	_clear_fusion_success_presentation()
 	_controller.remove_fusion_material(slot_index)
 	_render_fusion()
 
 
 func _on_fusion_material_dropped(source: Dictionary, _slot_index: int) -> void:
+	_clear_fusion_success_presentation()
 	_pointer_event_count += 1
 	_controller.toggle_fusion_material(str(source.get("item_id", "")), true)
 	_render_fusion()
 
 
+func _on_fusion_candidate_toggled(item_id: String) -> void:
+	_clear_fusion_success_presentation()
+	_controller.toggle_fusion_material(item_id, true)
+	_render_fusion()
+
+
 func _on_fusion_auto_fill() -> void:
+	_clear_fusion_success_presentation()
 	_controller.auto_fill_fusion()
 	_render_fusion()
 
 
 func _on_fusion_wild_toggle() -> void:
+	_clear_fusion_success_presentation()
 	_controller.toggle_fusion_wild()
 	_render_fusion()
 
@@ -882,6 +987,10 @@ func _on_fusion_confirm() -> void:
 			"use_wild": _controller.fusion_use_wild,
 		}
 		_confirmation_origin_focus_id = "FA2"
+		var confirm_focus: Control = _fusion_dialog.focus_control("FA2")
+		if not _modal_focus.push(_confirmation_dialog, confirm_focus):
+			return
+		_modal_focus.set_restore_target(_confirmation_dialog, confirm_focus)
 		_confirmation_dialog.open_dialog(
 			"ユニーク装備を合成します",
 			"固有効果と固定名が失われます。対象: %s" % "、".join(names),
@@ -898,40 +1007,41 @@ func _on_fusion_confirm() -> void:
 
 
 func _on_fusion_cancelled() -> void:
+	var fallback_id: String = _fusion_dialog.origin_focus_id()
+	var fallback_control: Control = _focus_controller.control_for_id(fallback_id)
+	_clear_fusion_success_presentation()
 	_controller.reset_fusion()
 	_fusion_dialog.close_without_signal()
 	_refresh_from_state(false)
-	_focus_controller.grab_focus_id("action_2")
+	_modal_focus.pop(_fusion_dialog, null, fallback_control)
 
 
 func _on_confirmation_confirmed() -> void:
-	match _confirmation_kind:
+	var command_kind: StringName = _confirmation_kind
+	var payload: Dictionary = _confirmation_payload.duplicate(true)
+	_modal_focus.pop(_confirmation_dialog)
+	_confirmation_kind = &""
+	_confirmation_payload.clear()
+	match command_kind:
 		&"discard":
 			_pending_command_kind = &"discard"
 			discard_requested.emit(
-				_confirmation_payload.get("item_ids", PackedStringArray()) as PackedStringArray,
+				payload.get("item_ids", PackedStringArray()) as PackedStringArray,
 				true,
 			)
 		&"fusion":
 			_pending_command_kind = &"fusion"
 			fusion_requested.emit(
-				_confirmation_payload.get("material_ids", PackedStringArray()) as PackedStringArray,
-				bool(_confirmation_payload.get("use_wild", false)),
+				payload.get("material_ids", PackedStringArray()) as PackedStringArray,
+				bool(payload.get("use_wild", false)),
 				true,
 			)
-	_confirmation_kind = &""
-	_confirmation_payload.clear()
 
 
 func _on_confirmation_cancelled() -> void:
-	var target: String = _confirmation_origin_focus_id
 	_confirmation_kind = &""
 	_confirmation_payload.clear()
-	if _fusion_dialog.visible:
-		_configure_fusion_focus_graph()
-	else:
-		_configure_normal_focus_graph()
-	_focus_controller.grab_focus_id(target)
+	_modal_focus.pop(_confirmation_dialog)
 
 
 func _open_confirmation_for_result(command_kind: StringName, result: Dictionary) -> void:
@@ -939,6 +1049,14 @@ func _open_confirmation_for_result(command_kind: StringName, result: Dictionary)
 	_confirmation_kind = command_kind
 	_confirmation_payload = result.get("retry_payload", {}) as Dictionary
 	_confirmation_origin_focus_id = "FA2" if command_kind == &"fusion" else "action_1"
+	var origin_control: Control = (
+		_fusion_dialog.focus_control("FA2")
+		if command_kind == &"fusion" and _fusion_dialog.visible
+		else _action_buttons[1]
+	)
+	if not _modal_focus.push(_confirmation_dialog, origin_control):
+		return
+	_modal_focus.set_restore_target(_confirmation_dialog, origin_control)
 	_confirmation_dialog.open_dialog(
 		"確認",
 		"対象: %s" % "、".join(names),
@@ -948,32 +1066,26 @@ func _open_confirmation_for_result(command_kind: StringName, result: Dictionary)
 
 
 func _open_settings() -> void:
-	_focus_controller.save_current_focus(get_viewport())
+	if not _modal_focus.push(_settings_overlay, initial_focus_control()):
+		return
 	_settings_overlay.open_overlay()
 
 
 func _on_settings_closed() -> void:
-	var saved_focus_id: String = _focus_controller.saved_focus_id()
-	if _fusion_dialog.visible:
-		_configure_fusion_focus_graph()
-	else:
-		_configure_normal_focus_graph()
-	_focus_controller.save_focus_id(saved_focus_id)
-	_focus_controller.restore_saved_focus("equip_0")
+	_modal_focus.pop(_settings_overlay, null, initial_focus_control())
 
 
-func _handle_cancel() -> void:
-	if _fusion_dialog.visible:
-		_on_fusion_cancelled()
-		return
+func _handle_cancel() -> bool:
 	if not _controller.held_item_source.is_empty() or not _controller.held_skill_source.is_empty():
 		_controller.cancel_lift()
 		_status_text = "持ち上げを取り消しました"
 		_refresh_from_state(true)
+		return true
+	return false
 
 
 func _handle_item_lock() -> void:
-	if _fusion_dialog.visible:
+	if _modal_focus.has_active_modal():
 		return
 	var focus_id: String = _focus_controller.current_focus_id(get_viewport())
 	var item: ItemInstance = _item_for_focus_id(focus_id)
@@ -984,6 +1096,8 @@ func _handle_item_lock() -> void:
 
 
 func _on_item_focus_entered(kind: StringName, index: int) -> void:
+	if _modal_focus.has_active_modal():
+		return
 	var item: ItemInstance = _controller.item_at(kind, index)
 	var focus_id: String = _focus_id_for_location(kind, index)
 	_on_focus_entered(focus_id, item.item_id if item != null else "")

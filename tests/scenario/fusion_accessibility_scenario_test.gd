@@ -49,6 +49,10 @@ func _test_fusion_feedback_accessibility(
 
 
 	await tree.process_frame
+	screen.test_focus("action_2")
+	screen.test_accept()
+	await tree.process_frame
+	var fusion_dialog: FusionDialog = screen.get_node("%FusionDialog") as FusionDialog
 
 	var settings_store: Variant = context["settings_store"]
 	var state_before: Dictionary = _state_observation(state)
@@ -67,10 +71,23 @@ func _test_fusion_feedback_accessibility(
 		screen.apply_command_result(&"fusion", {"success": true, "message": ""})
 		var initial: Dictionary = screen.debug_state()
 		assertions.expect_equal(
-			InventoryScreen.FUSION_SUCCESS_FALLBACK_TEXT,
+			"",
 			initial["status"],
-			"%s exposes a visible fusion-success message" % label,
+			"%s does not leak the modal success message to the background" % label,
 		)
+		assertions.expect_equal(
+			InventoryScreen.FUSION_SUCCESS_FALLBACK_TEXT,
+			initial["fusion_status"],
+			"%s exposes a visible fusion-success message inside the modal" % label,
+		)
+		assertions.expect_equal(
+			InventoryScreen.FUSION_SUCCESS_FALLBACK_TEXT,
+			fusion_dialog.debug_state()["status"],
+			"%s renders the success message in FusionStatus" % label,
+		)
+		assertions.expect_true(initial["fusion_open"], "%s leaves FusionDialog open" % label)
+		assertions.expect_equal("FA0", initial["focus_id"], "%s focuses auto-fill" % label)
+		assertions.expect_equal("FusionStatus", initial["fusion_feedback_target"], "%s targets the modal status" % label)
 		assertions.expect_true(
 			bool(initial["fusion_feedback_presented"]),
 			"%s records fusion feedback presentation" % label,
@@ -105,6 +122,9 @@ func _test_fusion_feedback_accessibility(
 			initial["fusion_feedback_outline_size"],
 			"%s outline thickness matches the static alternative" % label,
 		)
+		assertions.expect_equal(Vector2.ONE, initial["fusion_feedback_background_scale"], "%s keeps background status scale unchanged" % label)
+		assertions.expect_equal(Color.WHITE, initial["fusion_feedback_background_modulate"], "%s keeps background status color unchanged" % label)
+		assertions.expect_equal(0, initial["fusion_feedback_background_outline_size"], "%s keeps background status outline unchanged" % label)
 
 		screen.test_tick_fusion_feedback(
 			InventoryScreen.FUSION_FEEDBACK_DURATION_SECONDS * 0.5
@@ -163,6 +183,11 @@ func _test_fusion_feedback_accessibility(
 			settled["fusion_feedback_outline_size"],
 			"%s keeps only the static flash alternative" % label,
 		)
+		assertions.expect_equal(
+			InventoryScreen.FUSION_SUCCESS_FALLBACK_TEXT,
+			settled["fusion_status"],
+			"%s keeps success wording after the pulse settles" % label,
+		)
 
 	settings_store.reduce_motion = true
 	settings_store.reduce_flashes = true
@@ -172,7 +197,7 @@ func _test_fusion_feedback_accessibility(
 	)
 	assertions.expect_equal(
 		"既存の合成メッセージ",
-		screen.debug_state()["status"],
+		screen.debug_state()["fusion_status"],
 		"non-empty fusion result wording is preserved exactly",
 	)
 	screen.apply_command_result(
@@ -180,12 +205,43 @@ func _test_fusion_feedback_accessibility(
 		{"success": false, "error": &"invalid", "message": "合成できません"},
 	)
 	var failure: Dictionary = screen.debug_state()
-	assertions.expect_equal("合成できません", failure["status"], "fusion failure wording is unchanged")
+	assertions.expect_equal("合成できません", failure["fusion_status"], "fusion failure wording is visible inside the modal")
+	assertions.expect_equal("合成できません", fusion_dialog.debug_state()["status"], "FusionStatus renders the exact failure wording")
+	assertions.expect_true(failure["fusion_open"], "fusion failure keeps the modal open")
 	assertions.expect_false(
 		bool(failure["fusion_feedback_presented"]),
 		"fusion failure does not present success feedback",
 	)
 	assertions.expect_equal(0, failure["fusion_feedback_outline_size"], "failure clears static outline")
+
+	screen.apply_command_result(
+		&"fusion",
+		{"success": true, "message": "閉じる前の合成成功"},
+	)
+	assertions.expect_equal("閉じる前の合成成功", screen.debug_state()["fusion_status"], "success wording remains until close")
+	screen.test_cancel()
+	var closed: Dictionary = screen.debug_state()
+	assertions.expect_false(closed["fusion_open"], "manual close ends the fusion modal")
+	assertions.expect_equal("", closed["status"], "manual close does not carry success wording to the background")
+	assertions.expect_equal("", closed["fusion_status"], "manual close clears controller success wording")
+	assertions.expect_false(closed["fusion_feedback_presented"], "manual close clears success feedback state")
+	assertions.expect_equal(0, closed["fusion_feedback_background_outline_size"], "manual close leaves no background outline")
+
+	screen.apply_command_result(
+		&"fusion",
+		{"success": true, "message": "非モーダル合成成功"},
+	)
+	var fallback: Dictionary = screen.debug_state()
+	assertions.expect_false(fallback["fusion_open"], "out-of-context fusion result does not open a modal")
+	assertions.expect_equal("非モーダル合成成功", fallback["status"], "out-of-context fusion result keeps the background fallback")
+	assertions.expect_equal("InventoryStatus", fallback["fusion_feedback_target"], "out-of-context fusion result targets InventoryStatus")
+	screen.apply_command_result(
+		&"fusion",
+		{"success": false, "error": &"invalid", "message": "合成できません"},
+	)
+	var fallback_failure: Dictionary = screen.debug_state()
+	assertions.expect_equal("合成できません", fallback_failure["status"], "out-of-context failure wording is unchanged")
+	assertions.expect_false(fallback_failure["fusion_feedback_presented"], "out-of-context failure clears success feedback")
 	assertions.expect_equal(
 		state_before,
 		_state_observation(state),

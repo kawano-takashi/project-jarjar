@@ -39,6 +39,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 0
+mouse_force_pass_scroll_events = false
 z_index = 100
 script = ExtResource("1_settings")
 

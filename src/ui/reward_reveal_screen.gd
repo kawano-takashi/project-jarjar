@@ -21,11 +21,13 @@ const CURRENT_CARD_SIZE := Vector2(760.0, 340.0)
 @onready var _speed_label: Label = %SpeedLabel
 @onready var _open_all: Button = %RewardOpenAll
 @onready var _settings: Button = %RewardSettings
+@onready var _content_root: Control = $RootMargin
 @onready var _settings_overlay: SettingsOverlay = %SettingsOverlay
 
 var _pending_state: RunState = null
 var _controller: RewardRevealController = RewardRevealController.new()
 var _automatic_progression: bool = true
+var _modal_focus := ModalFocusCoordinator.new()
 
 var _accept_pressed: bool = false
 var _accept_elapsed: float = 0.0
@@ -57,6 +59,7 @@ func _ready() -> void:
 	_settings.pressed.connect(_on_settings_pressed)
 	_settings_overlay.closed.connect(_on_settings_closed)
 	_settings_overlay.settings_changed.connect(_on_settings_changed)
+	_modal_focus.configure(get_viewport(), [_content_root])
 	_controller.reward_revealed.connect(_on_reward_revealed)
 	_controller.all_revealed.connect(_on_all_revealed)
 	_controller.vibration_requested.connect(_on_vibration_requested)
@@ -146,6 +149,7 @@ func debug_state() -> Dictionary:
 	result["reward_open_all_click_count"] = int(_button_click_counts["reward_open_all"])
 	result["reward_settings_click_count"] = int(_button_click_counts["reward_settings"])
 	result["settings_open"] = _settings_overlay.visible
+	result["modal_stack_size"] = _modal_focus.stack_size()
 	result["accessibility_status"] = _accessibility_status.text
 	result["saved_focus_id"] = _saved_focus_id
 	result["vibration_call_count"] = _vibration_call_count
@@ -158,7 +162,7 @@ func _process(delta: float) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if _settings_overlay.visible:
+	if _modal_focus.has_active_modal():
 		return
 	if event is InputEventJoypadButton:
 		_last_joypad_device = event.device
@@ -242,6 +246,8 @@ func _end_mouse_proxy() -> void:
 
 
 func _activate_focus_id(focus_id: String) -> void:
+	if _modal_focus.has_active_modal():
+		return
 	match focus_id:
 		"reward_open_all":
 			_button_click_counts["reward_open_all"] = (
@@ -256,31 +262,29 @@ func _activate_focus_id(focus_id: String) -> void:
 
 
 func _request_open_all() -> void:
+	if _modal_focus.has_active_modal():
+		return
 	_open_all_request_count += 1
 	_controller.request_open_all()
 	_update_view()
 
 
 func _open_settings() -> void:
+	if _modal_focus.has_active_modal():
+		return
 	_saved_focus_id = _current_focus_id()
 	_controller.set_fast_open(false)
 	_controller.set_paused(true)
+	if not _modal_focus.push(_settings_overlay, _speed_proxy):
+		_controller.set_paused(false)
+		return
 	_settings_overlay.open_overlay()
 
 
 func _on_settings_closed() -> void:
 	_controller.set_paused(false)
 	_refresh_accessibility_from_store()
-	_restore_saved_focus.call_deferred()
-
-
-func _restore_saved_focus() -> void:
-	if (
-		not _grab_focus_id(_saved_focus_id)
-		and _speed_proxy.is_inside_tree()
-		and _speed_proxy.is_visible_in_tree()
-	):
-		_speed_proxy.grab_focus()
+	_modal_focus.pop(_settings_overlay, null, _speed_proxy)
 
 
 func _on_settings_changed(values: Dictionary) -> void:

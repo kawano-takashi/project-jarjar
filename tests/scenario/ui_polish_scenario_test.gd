@@ -396,7 +396,11 @@ func _find_content_overlaps(root: Control) -> PackedStringArray:
 			var second: Control = content_controls[second_index]
 			if first.is_ancestor_of(second) or second.is_ancestor_of(first):
 				continue
-			var overlap: Rect2 = first.get_global_rect().intersection(second.get_global_rect())
+			var first_visible_rect: Rect2 = _visible_content_rect(first)
+			var second_visible_rect: Rect2 = _visible_content_rect(second)
+			if first_visible_rect.has_area() == false or second_visible_rect.has_area() == false:
+				continue
+			var overlap: Rect2 = first_visible_rect.intersection(second_visible_rect)
 			if overlap.size.x * overlap.size.y > 0.25:
 				overlaps.append(
 					"%s rect=%s / %s rect=%s overlap=%s"
@@ -409,6 +413,18 @@ func _find_content_overlaps(root: Control) -> PackedStringArray:
 					]
 				)
 	return overlaps
+
+
+func _visible_content_rect(control: Control) -> Rect2:
+	var result: Rect2 = control.get_global_rect()
+	var ancestor: Node = control.get_parent()
+	while ancestor != null:
+		if ancestor is ScrollContainer:
+			result = result.intersection((ancestor as ScrollContainer).get_global_rect())
+			if not result.has_area():
+				return Rect2()
+		ancestor = ancestor.get_parent()
+	return result
 
 
 func _is_content_leaf(control: Control) -> bool:

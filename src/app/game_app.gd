@@ -126,11 +126,6 @@ func _process(_delta: float) -> void:
 	_refresh_tutorial_overlay()
 
 
-func _input(event: InputEvent) -> void:
-	if event.is_action_pressed("ui_cancel") and not event.is_echo():
-		_dismiss_noncombat_tutorial()
-
-
 func _physics_process(_delta: float) -> void:
 	if _smoke_frames_remaining <= 0:
 		return

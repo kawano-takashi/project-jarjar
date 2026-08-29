@@ -62,15 +62,26 @@ func _test_focus_modal_overflow(
 	assertions.expect_equal("action_5", screen.debug_state()["focus_id"], "disabled next-wave action is skipped")
 
 	screen.test_focus("action_5")
+	var background_action_5: Control = screen.focus_control("action_5")
 	screen.test_accept()
 	await (context["tree"] as SceneTree).process_frame
 	assertions.expect_true(screen.debug_state()["settings_open"], "inventory settings opens from A")
 	var settings: SettingsOverlay = screen.get_node("%SettingsOverlay") as SettingsOverlay
+	assertions.expect_equal(Control.FOCUS_NONE, background_action_5.get_focus_mode_with_override(), "inventory settings disables background focus")
+	assertions.expect_equal(Control.MOUSE_FILTER_IGNORE, background_action_5.get_mouse_filter_with_override(), "inventory settings disables background mouse")
+	assertions.expect_false(settings.mouse_force_pass_scroll_events, "inventory settings blocks background wheel events")
+	background_action_5.grab_focus()
+	assertions.expect_false(
+		background_action_5 == screen.get_viewport().gui_get_focus_owner(),
+		"inventory settings rejects direct background grab_focus",
+	)
+	FocusController.grab_focus_safe(settings.initial_focus_control())
 	settings.close_overlay()
 	await (context["tree"] as SceneTree).process_frame
 	assertions.expect_equal("action_5", screen.debug_state()["focus_id"], "settings closes to exact origin")
 
 	screen.test_focus("grid_0")
+	var background_grid_0: Control = screen.focus_control("grid_0")
 	screen.test_open_bulk()
 	await (context["tree"] as SceneTree).process_frame
 	var bulk: BulkSelectDialog = screen.get_node("%BulkSelectDialog") as BulkSelectDialog
@@ -80,21 +91,52 @@ func _test_focus_modal_overflow(
 		"BulkSelectDialog exact focus order",
 	)
 	assertions.expect_equal("bulk_common", bulk.debug_state()["focus_id"], "BulkSelectDialog starts at last item rarity")
+	assertions.expect_equal(Control.FOCUS_NONE, background_grid_0.get_focus_mode_with_override(), "bulk dialog disables background focus")
+	assertions.expect_equal(Control.MOUSE_FILTER_IGNORE, background_grid_0.get_mouse_filter_with_override(), "bulk dialog disables background mouse")
+	assertions.expect_false(bulk.mouse_force_pass_scroll_events, "bulk blocker does not pass wheel events")
 	_assert_control_neighbor_paths(assertions, bulk.focus_controls(), "bulk")
 	bulk.get_node("%BulkCancel").emit_signal("pressed")
 	await (context["tree"] as SceneTree).process_frame
-	assertions.expect_equal("action_0", screen.debug_state()["focus_id"], "bulk cancel restores A0")
+	assertions.expect_equal("grid_0", screen.debug_state()["focus_id"], "bulk cancel restores exact opening focus")
 
 	screen.test_focus("action_2")
 	screen.test_accept()
 	await (context["tree"] as SceneTree).process_frame
 	assertions.expect_true(screen.debug_state()["fusion_open"], "A2 opens FusionDialog")
 	assertions.expect_equal("FR", screen.debug_state()["focus_id"], "FusionDialog starts at FR")
-	_assert_neighbor_spec(assertions, screen, "FR", "FA3", "F0", "FR", "FR", "FR")
-	_assert_neighbor_spec(assertions, screen, "F1", "FR", "grid_2", "F0", "F2", "F1")
-	_assert_neighbor_spec(assertions, screen, "grid_0", "F0", "grid_6", "grid_5", "grid_1", "Fusion G0,0")
-	_assert_neighbor_spec(assertions, screen, "overflow_0", "grid_30", "FA0", "overflow_3", "overflow_1", "Fusion O0")
-	_assert_neighbor_spec(assertions, screen, "FA3", "overflow_3", "FR", "FA2", "FA0", "FA3")
+	var fusion_dialog: FusionDialog = screen.get_node("%FusionDialog") as FusionDialog
+	var candidate_count: int = int(fusion_dialog.debug_state()["candidate_count"])
+	assertions.expect_true(candidate_count > 4, "FusionDialog owns a non-empty candidate grid")
+	_assert_neighbor_spec(assertions, screen, "FR", "FA3", "FC0", "FR", "FR", "FR")
+	_assert_neighbor_spec(assertions, screen, "FC0", "FR", "FC4", "FC3", "FC1", "Fusion candidate 0")
+	_assert_neighbor_spec(
+		assertions,
+		screen,
+		"FA3",
+		"FC%d" % (candidate_count - 1),
+		"FR",
+		"FA2",
+		"FA0",
+		"FA3",
+	)
+	assertions.expect_false("grid_0" in screen.focus_ids(), "fusion public focus set excludes background grid")
+	assertions.expect_false("overflow_0" in screen.focus_ids(), "fusion public focus set excludes background overflow")
+	assertions.expect_false("F0" in screen.focus_ids(), "empty material slot is not focusable")
+	assertions.expect_false(fusion_dialog.mouse_force_pass_scroll_events, "fusion blocker does not pass wheel events")
+	assertions.expect_false((fusion_dialog.get_node("%FusionCandidateScroll") as ScrollContainer).mouse_force_pass_scroll_events, "candidate scroll does not pass wheel events to the background")
+	var outside_click := InputEventMouseButton.new()
+	outside_click.button_index = MOUSE_BUTTON_LEFT
+	outside_click.pressed = true
+	fusion_dialog.emit_signal("gui_input", outside_click)
+	assertions.expect_true(fusion_dialog.visible, "outside blocker click does not close FusionDialog")
+	assertions.expect_equal(Control.FOCUS_NONE, background_grid_0.get_focus_mode_with_override(), "fusion recursively disables background focus")
+	assertions.expect_equal(Control.MOUSE_FILTER_IGNORE, background_grid_0.get_mouse_filter_with_override(), "fusion recursively disables background mouse input")
+	background_grid_0.grab_focus()
+	assertions.expect_equal("FR", screen.debug_state()["focus_id"], "direct background grab_focus cannot steal modal focus")
+	assertions.expect_true(fusion_dialog.test_tab(true), "Tab advances inside FusionDialog")
+	assertions.expect_equal("FC0", screen.debug_state()["focus_id"], "Tab skips empty material slots")
+	assertions.expect_true(fusion_dialog.test_tab(false), "Shift+Tab reverses inside FusionDialog")
+	assertions.expect_equal("FR", screen.debug_state()["focus_id"], "Shift+Tab wraps back to rarity")
 	_assert_focus_graph(assertions, screen, "fusion modal")
 	screen.test_cancel()
 	assertions.expect_equal("action_2", screen.debug_state()["focus_id"], "FusionDialog B restores A2")
@@ -134,6 +176,31 @@ func _test_focus_modal_overflow(
 	assertions.expect_equal("action_5", missing_weapon_screen.debug_state()["focus_id"], "wild and transition disabled states are both skipped")
 	_cleanup_fixture(missing_weapon_fixture, context)
 
+	var empty_candidate_state: RunState = _overflow_state(assertions, 0)
+	for item: ItemInstance in empty_candidate_state.inventory:
+		if item != null:
+			item.locked = true
+	var empty_candidate_fixture: Dictionary = await _spawn_inventory(
+		assertions,
+		context,
+		empty_candidate_state,
+	)
+	if not empty_candidate_fixture.is_empty():
+		var empty_candidate_screen: InventoryScreen = empty_candidate_fixture["screen"]
+		empty_candidate_screen.test_focus("action_2")
+		empty_candidate_screen.test_accept()
+		await (context["tree"] as SceneTree).process_frame
+		var empty_dialog: FusionDialog = empty_candidate_screen.get_node("%FusionDialog") as FusionDialog
+		assertions.expect_equal(0, empty_dialog.debug_state()["candidate_count"], "empty candidate state renders an explicit empty list")
+		assertions.expect_equal(
+			PackedStringArray(["FR", "FA0", "FA1", "FA2", "FA3"]),
+			empty_dialog.focus_order(),
+			"empty candidates and material slots are absent from Tab order",
+		)
+		_assert_neighbor_spec(assertions, empty_candidate_screen, "FR", "FA3", "FA0", "FR", "FR", "empty FusionDialog FR")
+		empty_candidate_screen.test_cancel()
+		_cleanup_fixture(empty_candidate_fixture, context)
+
 	var overflow_fixture: Dictionary = await _spawn_inventory(assertions, context, _overflow_state(assertions, 40))
 	if overflow_fixture.is_empty():
 		return
@@ -154,6 +221,19 @@ func _test_focus_modal_overflow(
 	await (context["tree"] as SceneTree).process_frame
 	assertions.expect_equal("overflow_39", overflow_screen.debug_state()["focus_id"], "O0 left wraps to O39")
 	_assert_horizontally_visible(assertions, overflow_screen, 39)
+	overflow_screen.test_focus("action_2")
+	overflow_screen.test_accept()
+	await (context["tree"] as SceneTree).process_frame
+	var long_fusion: FusionDialog = overflow_screen.get_node("%FusionDialog") as FusionDialog
+	var long_ids: PackedStringArray = long_fusion.debug_state()["candidate_item_ids"] as PackedStringArray
+	assertions.expect_equal(40, long_ids.slice(long_ids.size() - 40).size(), "all 40 temporary-receipt candidates remain available")
+	assertions.expect_equal("qa-overflow-long-00", long_ids[long_ids.size() - 40], "temporary candidates follow normal inventory candidates")
+	assertions.expect_equal("qa-overflow-long-39", long_ids[-1], "temporary candidate order is stable through O39")
+	assertions.expect_true(overflow_screen.test_fusion_candidate_focus("qa-overflow-long-39"), "last temporary candidate can receive focus")
+	await (context["tree"] as SceneTree).process_frame
+	_assert_fusion_candidate_vertically_visible(assertions, long_fusion, "qa-overflow-long-39")
+	assertions.expect_true(int(long_fusion.debug_state()["candidate_scroll"]) > 0, "candidate focus scrolls only the candidate list")
+	overflow_screen.test_cancel()
 	_cleanup_fixture(overflow_fixture, context)
 
 func _test_controller_mouse_bulk_fusion_and_discard(
@@ -297,7 +377,7 @@ func _test_controller_mouse_bulk_fusion_and_discard(
 	controller_fusion_screen.test_accept()
 	mouse_fusion_screen.test_focus("action_2")
 	mouse_fusion_screen.test_accept()
-	controller_fusion_screen.test_focus("grid_0")
+	controller_fusion_screen.test_fusion_candidate_focus("qa-inventory-00")
 	controller_fusion_screen.test_accept()
 	var mouse_fusion_dialog: FusionDialog = mouse_fusion_screen.get_node("%FusionDialog") as FusionDialog
 	mouse_fusion_dialog.pointer_event.emit()
@@ -363,10 +443,13 @@ func _test_controller_mouse_bulk_fusion_and_discard(
 	var rng_before: Dictionary = _rng_snapshot(unique_state)
 	unique_screen.test_focus("grid_33")
 	unique_screen.test_focus("action_1")
+	var discard_origin: Control = unique_screen.focus_control("action_1")
 	unique_screen.test_accept()
 	await (context["tree"] as SceneTree).process_frame
 	assertions.expect_true(unique_screen.debug_state()["confirmation_open"], "unique discard opens standard confirmation")
 	assertions.expect_equal("dialog_cancel", (unique_screen.get_node("%ConfirmationDialog") as JarjarConfirmationDialog).debug_state()["focus_id"], "confirmation starts on cancel")
+	assertions.expect_equal(Control.FOCUS_NONE, discard_origin.get_focus_mode_with_override(), "confirmation disables inventory background focus")
+	assertions.expect_equal(Control.MOUSE_FILTER_IGNORE, discard_origin.get_mouse_filter_with_override(), "confirmation disables inventory background mouse")
 	unique_screen.test_confirm_dialog(false)
 	assertions.expect_equal("action_1", unique_screen.debug_state()["focus_id"], "unique discard cancel restores A1")
 	assertions.expect_equal(rng_before, _rng_snapshot(unique_state), "unique discard cancel preserves RNG and serial")
@@ -384,27 +467,109 @@ func _test_controller_mouse_bulk_fusion_and_discard(
 	var fusion_screen: InventoryScreen = fusion_fixture["screen"]
 	var fusion_state: RunState = fusion_fixture["state"]
 	var fusion_requests: Array[Dictionary] = []
+	var fusion_background_grid_0: Control = fusion_screen.focus_control("grid_0")
 	fusion_screen.fusion_requested.connect(func(ids: PackedStringArray, use_wild: bool, confirmed: bool) -> void:
 		fusion_requests.append({"ids": ids.duplicate(), "wild": use_wild, "confirmed": confirmed})
 	)
 	fusion_screen.test_focus("action_2")
 	fusion_screen.test_accept()
+	var fusion_dialog: FusionDialog = fusion_screen.get_node("%FusionDialog") as FusionDialog
+	var fusion_rarity_before: GameTypes.Rarity = fusion_screen.debug_state()["fusion_rarity"]
 	fusion_screen.test_focus("FA0")
 	fusion_screen.test_accept()
+	var first_material_ids := PackedStringArray([
+		"qa-inventory-00",
+		"qa-inventory-01",
+		"qa-inventory-02",
+	])
 	assertions.expect_equal(
-		PackedStringArray(["qa-inventory-00", "qa-inventory-01", "qa-inventory-02"]),
+		first_material_ids,
 		fusion_screen.debug_state()["fusion_material_ids"],
 		"fusion auto-fill uses exact fixed Common IDs",
 	)
 	fusion_screen.test_focus("FA2")
+	fusion_screen.apply_command_result(
+		&"fusion",
+		{"success": false, "error": &"invalid", "message": "合成できません"},
+	)
+	assertions.expect_true(fusion_screen.debug_state()["fusion_open"], "fusion failure keeps the modal open")
+	assertions.expect_equal(first_material_ids, fusion_screen.debug_state()["fusion_material_ids"], "fusion failure preserves exact material IDs")
+	assertions.expect_equal("合成できません", fusion_screen.debug_state()["fusion_status"], "fusion failure is visible inside the modal")
+	assertions.expect_equal("FA2", fusion_screen.debug_state()["focus_id"], "fusion failure restores the confirm focus")
 	fusion_screen.test_accept()
 	assertions.expect_equal(1, fusion_requests.size(), "fusion confirm emits one command")
 	if not fusion_requests.is_empty():
-		assertions.expect_equal(PackedStringArray(["qa-inventory-00", "qa-inventory-01", "qa-inventory-02"]), fusion_requests[0]["ids"], "fusion command preserves exact material order")
+		assertions.expect_equal(first_material_ids, fusion_requests[0]["ids"], "fusion command preserves exact material order")
 	assertions.expect_equal(1, fusion_state.fusion_count, "fusion command commits once")
-	assertions.expect_equal("action_2", fusion_screen.debug_state()["focus_id"], "fusion success closes to A2")
+	var first_success: Dictionary = fusion_screen.debug_state()
+	assertions.expect_true(first_success["fusion_open"], "fusion success keeps FusionDialog open")
+	assertions.expect_equal(1, first_success["modal_stack_size"], "fusion success keeps one active modal")
+	assertions.expect_equal(&"FusionDialog", first_success["active_modal"], "fusion success keeps FusionDialog topmost")
+	assertions.expect_equal(fusion_rarity_before, first_success["fusion_rarity"], "fusion success preserves the selected rarity")
+	assertions.expect_equal(PackedStringArray(), first_success["fusion_material_ids"], "fusion success clears consumed material slots")
+	assertions.expect_false(first_success["fusion_use_wild"], "fusion success clears the wild reservation")
+	assertions.expect_false(first_success["fusion_valid"], "fusion success disables confirm until new materials are chosen")
+	assertions.expect_equal("FA0", first_success["focus_id"], "fusion success focuses auto-fill")
+	assertions.expect_equal(InventoryScreen.FUSION_SUCCESS_FALLBACK_TEXT, first_success["fusion_status"], "fusion success message is visible inside FusionDialog")
+	assertions.expect_equal("FusionStatus", first_success["fusion_feedback_target"], "fusion success animates the modal status")
+	assertions.expect_equal(Control.FOCUS_NONE, fusion_background_grid_0.get_focus_mode_with_override(), "fusion success never re-enables background focus")
+	assertions.expect_equal(Control.MOUSE_FILTER_IGNORE, fusion_background_grid_0.get_mouse_filter_with_override(), "fusion success never re-enables background mouse input")
+	var refreshed_candidate_ids: PackedStringArray = fusion_dialog.debug_state()["candidate_item_ids"]
+	for consumed_id: String in first_material_ids:
+		assertions.expect_false(consumed_id in refreshed_candidate_ids, "fusion refresh removes consumed candidate %s" % consumed_id)
+	assertions.expect_true(fusion_screen.test_fusion_candidate_focus("qa-inventory-03"), "fusion success refresh keeps the next Common candidate")
+	assertions.expect_equal(InventoryScreen.FUSION_SUCCESS_FALLBACK_TEXT, fusion_screen.debug_state()["fusion_status"], "focus movement does not clear the success message")
+	fusion_screen.test_focus("FA0")
+	fusion_screen.test_accept()
+	var second_material_ids: PackedStringArray = fusion_screen.debug_state()["fusion_material_ids"]
+	assertions.expect_equal(3, second_material_ids.size(), "auto-fill prepares a second fusion without closing the modal")
+	for consumed_id: String in first_material_ids:
+		assertions.expect_false(consumed_id in second_material_ids, "second auto-fill never reuses consumed material %s" % consumed_id)
+	assertions.expect_equal("", fusion_screen.debug_state()["fusion_status"], "next fusion operation clears the success message")
+	assertions.expect_false(fusion_screen.debug_state()["fusion_feedback_presented"], "next fusion operation clears the success feedback")
+	fusion_screen.test_focus("FA2")
+	fusion_screen.test_accept()
+	assertions.expect_equal(2, fusion_requests.size(), "second fusion emits exactly one additional command")
+	assertions.expect_equal(2, fusion_state.fusion_count, "second fusion commits without stale selection state")
+	assertions.expect_true(fusion_screen.debug_state()["fusion_open"], "second fusion also keeps the modal open")
+	assertions.expect_equal("FA0", fusion_screen.debug_state()["focus_id"], "second fusion returns to auto-fill")
 	assertions.expect_equal(0, fusion_screen.debug_state()["pointer_event_count"], "fusion controller flow emits zero pointer events")
+	fusion_screen.test_cancel()
+	assertions.expect_false(fusion_screen.debug_state()["fusion_open"], "manual close ends the continued fusion session")
+	assertions.expect_equal("action_2", fusion_screen.debug_state()["focus_id"], "successful fusion session closes to A2")
+	assertions.expect_equal("", fusion_screen.debug_state()["status"], "closing the successful session does not carry its message to the background")
 	_cleanup_fixture(fusion_fixture, context)
+
+	var exhausted_state: RunState = _overflow_state(assertions, 0)
+	if exhausted_state != null:
+		exhausted_state.wild_material_count = 0
+		for index: int in range(exhausted_state.inventory.size()):
+			var item: ItemInstance = exhausted_state.inventory[index]
+			if item != null:
+				item.locked = index > 2
+		var exhausted_fixture: Dictionary = await _spawn_inventory(
+			assertions,
+			context,
+			exhausted_state,
+		)
+		if not exhausted_fixture.is_empty():
+			var exhausted_screen: InventoryScreen = exhausted_fixture["screen"]
+			exhausted_screen.test_focus("action_2")
+			exhausted_screen.test_accept()
+			exhausted_screen.test_focus("FA0")
+			exhausted_screen.test_accept()
+			exhausted_screen.test_focus("FA2")
+			exhausted_screen.test_accept()
+			var exhausted_dialog: FusionDialog = exhausted_screen.get_node("%FusionDialog") as FusionDialog
+			assertions.expect_equal(0, exhausted_dialog.debug_state()["candidate_count"], "fusion success supports an empty refreshed candidate list")
+			assertions.expect_equal("FA0", exhausted_screen.debug_state()["focus_id"], "empty refreshed candidates still focus auto-fill")
+			assertions.expect_false(exhausted_dialog.debug_state()["wild_enabled"], "empty exhausted fixture disables wild")
+			assertions.expect_false(exhausted_dialog.debug_state()["confirm_enabled"], "empty exhausted fixture disables confirm")
+			assertions.expect_true(exhausted_dialog.test_tab(true), "Tab remains usable after the final candidate is consumed")
+			assertions.expect_equal("FA3", exhausted_screen.debug_state()["focus_id"], "Tab skips disabled wild and confirm buttons")
+			exhausted_screen.test_cancel()
+			assertions.expect_equal("action_2", exhausted_screen.debug_state()["focus_id"], "exhausted successful session closes to A2")
+			_cleanup_fixture(exhausted_fixture, context)
 
 	var wild_fixture: Dictionary = await _spawn_inventory(assertions, context)
 	if wild_fixture.is_empty():
@@ -417,7 +582,7 @@ func _test_controller_mouse_bulk_fusion_and_discard(
 	assertions.expect_true(wild_screen.debug_state()["fusion_use_wild"], "wild shortcut reserves exactly one wild material")
 	assertions.expect_equal(PackedStringArray(["qa-inventory-00", "qa-inventory-01"]), wild_screen.debug_state()["fusion_material_ids"], "wild fusion auto-fill uses exact two item IDs")
 	wild_screen.test_cancel()
-	assertions.expect_equal("action_2", wild_screen.debug_state()["focus_id"], "wild fusion B discards reservation and returns A2")
+	assertions.expect_equal("action_3", wild_screen.debug_state()["focus_id"], "wild fusion B returns to its exact A3 origin")
 	assertions.expect_equal(1, (wild_fixture["state"] as RunState).wild_material_count, "wild cancel leaves RunState unchanged")
 	_cleanup_fixture(wild_fixture, context)
 
@@ -437,21 +602,39 @@ func _test_fusion_dialog_exact_controller(
 	rare_screen.test_focus("action_2")
 	rare_screen.test_accept()
 	assertions.expect_equal(GameTypes.Rarity.RARE, rare_screen.debug_state()["fusion_rarity"], "last focus qa-inventory-33 opens FR=Rare")
+	var rare_dialog: FusionDialog = rare_screen.get_node("%FusionDialog") as FusionDialog
+	var unique_candidate_id: String = rare_dialog.focus_id_for_candidate("qa-inventory-33")
+	assertions.expect_false(unique_candidate_id.is_empty(), "unlocked unique remains manually selectable")
+	rare_screen.test_fusion_candidate_focus("qa-inventory-33")
+	assertions.expect_true("通常枠 G5,3" in str(rare_dialog.debug_state()["candidate_details"]), "candidate details show exact storage location")
+	assertions.expect_true("固有効果が失われます" in str(rare_dialog.debug_state()["candidate_details"]), "unique candidate details show loss warning")
+	var unique_candidate: BaseButton = rare_dialog.focus_control(unique_candidate_id) as BaseButton
+	var unique_candidate_position: Vector2 = unique_candidate.position
 	for index: int in [18, 19, 33]:
-		rare_screen.test_focus("grid_%d" % index)
+		rare_screen.test_fusion_candidate_focus("qa-inventory-%02d" % index)
 		rare_screen.test_accept()
 	assertions.expect_equal(
 		PackedStringArray(["qa-inventory-18", "qa-inventory-19", "qa-inventory-33"]),
 		rare_screen.debug_state()["fusion_material_ids"],
 		"controller assigns exact Rare IDs to F0, F1, F2",
 	)
+	assertions.expect_equal(unique_candidate, rare_dialog.focus_control(unique_candidate_id), "selected candidate keeps the same control and list position")
+	assertions.expect_equal(unique_candidate_position, unique_candidate.position, "selected candidate stays at its original grid position")
+	assertions.expect_true(unique_candidate.button_pressed, "selected candidate has persistent highlighted state")
+	assertions.expect_true("✓ 材料3" in unique_candidate.text, "selected candidate shows check and material number")
 	assertions.expect_equal(rare_before, _run_state_signature(rare_state), "selecting F materials does not remove or mutate source slots before commit")
 	assertions.expect_true((rare_screen.get_node("%FusionDialog") as FusionDialog).debug_state()["confirm_enabled"], "FA2 enables for exact three Rare materials")
 	rare_screen.test_focus("FA2")
 	rare_screen.test_accept()
+	await (context["tree"] as SceneTree).process_frame
 	assertions.expect_true(rare_screen.debug_state()["confirmation_open"], "Rare fusion containing unique opens named confirmation")
+	var rare_confirm: Control = rare_dialog.focus_control("FA2")
+	assertions.expect_equal(Control.FOCUS_NONE, rare_confirm.get_focus_mode_with_override(), "nested confirmation disables lower FusionDialog focus")
+	rare_confirm.grab_focus()
+	assertions.expect_equal("dialog_cancel", rare_screen.debug_state()["focus_id"], "lower modal cannot steal nested confirmation focus")
 	var fusion_selection_before_cancel: Dictionary = _fusion_selection_signature(rare_screen)
 	rare_screen.test_confirm_dialog(false)
+	assertions.expect_equal("FA2", rare_screen.debug_state()["focus_id"], "confirmation cancel restores fusion confirm")
 	assertions.expect_equal(fusion_selection_before_cancel, _fusion_selection_signature(rare_screen), "unique warning cancel preserves F selection and rarity")
 	assertions.expect_equal(rare_before, _run_state_signature(rare_state), "unique warning cancel preserves complete RunState")
 	assertions.expect_equal(rare_rng_before, _rng_snapshot(rare_state), "unique warning cancel preserves every RNG stream")
@@ -464,7 +647,15 @@ func _test_fusion_dialog_exact_controller(
 	if rare_output != null:
 		assertions.expect_equal(GameTypes.Rarity.EPIC, rare_output.rarity, "confirmed Rare fusion creates exact Epic output")
 	assertions.expect_equal(1, rare_state.fusion_count, "confirmed Rare fusion increments count once")
+	assertions.expect_true(rare_screen.debug_state()["fusion_open"], "confirmed unique fusion keeps FusionDialog open")
+	assertions.expect_equal(GameTypes.Rarity.RARE, rare_screen.debug_state()["fusion_rarity"], "confirmed unique fusion preserves Rare selection")
+	assertions.expect_equal(PackedStringArray(), rare_screen.debug_state()["fusion_material_ids"], "confirmed unique fusion clears materials")
+	assertions.expect_equal("FA0", rare_screen.debug_state()["focus_id"], "confirmed unique fusion focuses auto-fill")
+	for consumed_id: String in ["qa-inventory-18", "qa-inventory-19", "qa-inventory-33"]:
+		assertions.expect_false(rare_screen.test_fusion_candidate_focus(consumed_id), "confirmed unique fusion removes candidate %s" % consumed_id)
 	assertions.expect_equal(0, rare_screen.debug_state()["pointer_event_count"], "exact Rare fusion controller flow emits no pointer events")
+	rare_screen.test_cancel()
+	assertions.expect_equal("action_2", rare_screen.debug_state()["focus_id"], "confirmed unique fusion session closes to A2")
 	_cleanup_fixture(rare_fixture, context)
 
 	var wild_fixture: Dictionary = await _spawn_inventory(assertions, context)
@@ -478,7 +669,7 @@ func _test_fusion_dialog_exact_controller(
 	assertions.expect_equal(GameTypes.Rarity.COMMON, wild_screen.debug_state()["fusion_rarity"], "last focus qa-inventory-03 opens FR=Common")
 	assertions.expect_true(wild_screen.debug_state()["fusion_use_wild"], "A3 reserves exactly one wild material")
 	for index: int in [3, 4]:
-		wild_screen.test_focus("grid_%d" % index)
+		wild_screen.test_fusion_candidate_focus("qa-inventory-%02d" % index)
 		wild_screen.test_accept()
 	assertions.expect_equal(PackedStringArray(["qa-inventory-03", "qa-inventory-04"]), wild_screen.debug_state()["fusion_material_ids"], "wild controller flow assigns exact Common IDs")
 	wild_screen.test_focus("FA2")
@@ -491,7 +682,14 @@ func _test_fusion_dialog_exact_controller(
 		assertions.expect_equal(GameTypes.Rarity.RARE, wild_output.rarity, "two Common plus wild creates exact Rare output")
 	assertions.expect_equal(0, wild_state.wild_material_count, "wild fusion consumes exactly one wild material")
 	assertions.expect_equal(1, wild_state.fusion_count, "wild fusion increments count once")
+	assertions.expect_true(wild_screen.debug_state()["fusion_open"], "wild fusion success keeps FusionDialog open")
+	assertions.expect_false(wild_screen.debug_state()["fusion_use_wild"], "wild fusion success clears the next reservation")
+	assertions.expect_equal(PackedStringArray(), wild_screen.debug_state()["fusion_material_ids"], "wild fusion success clears materials")
+	assertions.expect_equal("FA0", wild_screen.debug_state()["focus_id"], "wild fusion success focuses auto-fill")
+	assertions.expect_false((wild_screen.get_node("%FusionDialog") as FusionDialog).debug_state()["wild_enabled"], "consumed final wild disables its button")
 	assertions.expect_equal(0, wild_screen.debug_state()["pointer_event_count"], "exact wild fusion controller flow emits no pointer events")
+	wild_screen.test_cancel()
+	assertions.expect_equal("action_2", wild_screen.debug_state()["focus_id"], "successful A3 fusion session ultimately closes to A2")
 	_cleanup_fixture(wild_fixture, context)
 
 	var rejection_fixture: Dictionary = await _spawn_inventory(assertions, context)
@@ -505,17 +703,19 @@ func _test_fusion_dialog_exact_controller(
 	rejection_screen.test_focus("action_2")
 	rejection_screen.test_accept()
 	for rejected_index: int in [34, 35, 18]:
-		rejection_screen.test_focus("grid_%d" % rejected_index)
-		rejection_screen.test_accept()
+		assertions.expect_false(
+			rejection_screen.test_fusion_candidate_focus("qa-inventory-%02d" % rejected_index),
+			"locked/Legendary/mismatched item %d is absent from candidates" % rejected_index,
+		)
 		assertions.expect_equal(PackedStringArray(), rejection_screen.debug_state()["fusion_material_ids"], "locked/Legendary/mismatched material %d is rejected" % rejected_index)
-	rejection_screen.test_focus("grid_3")
+	rejection_screen.test_fusion_candidate_focus("qa-inventory-03")
 	rejection_screen.test_accept()
 	assertions.expect_equal(PackedStringArray(["qa-inventory-03"]), rejection_screen.debug_state()["fusion_material_ids"], "valid Common enters F0")
 	rejection_screen.test_focus("F0")
 	rejection_screen.test_accept()
 	assertions.expect_equal(PackedStringArray(), rejection_screen.debug_state()["fusion_material_ids"], "A on F removes selected material")
 	for index: int in [3, 4]:
-		rejection_screen.test_focus("grid_%d" % index)
+		rejection_screen.test_fusion_candidate_focus("qa-inventory-%02d" % index)
 		rejection_screen.test_accept()
 	_replay_fusion_rarity_input(rejection_screen, "ui_right")
 	assertions.expect_equal(GameTypes.Rarity.RARE, rejection_screen.debug_state()["fusion_rarity"], "controller FR right changes Common to Rare")
@@ -539,7 +739,7 @@ func _test_fusion_dialog_exact_controller(
 		screen.test_focus("action_2")
 		screen.test_accept()
 	for index: int in [18, 19, 33]:
-		controller_screen.test_focus("grid_%d" % index)
+		controller_screen.test_fusion_candidate_focus("qa-inventory-%02d" % index)
 		controller_screen.test_accept()
 	var mouse_dialog: FusionDialog = mouse_screen.get_node("%FusionDialog") as FusionDialog
 	var rare_ids := PackedStringArray(["qa-inventory-18", "qa-inventory-19", "qa-inventory-33"])
@@ -836,7 +1036,14 @@ func _assert_control_neighbor_paths(assertions: Variant, controls: Dictionary, l
 	for focus_id_value: Variant in controls:
 		var focus_id: String = str(focus_id_value)
 		var control: Control = controls[focus_id_value] as Control
-		for property_name: String in ["focus_neighbor_top", "focus_neighbor_bottom", "focus_neighbor_left", "focus_neighbor_right"]:
+		for property_name: String in [
+			"focus_neighbor_top",
+			"focus_neighbor_bottom",
+			"focus_neighbor_left",
+			"focus_neighbor_right",
+			"focus_previous",
+			"focus_next",
+		]:
 			assertions.expect_false((control.get(property_name) as NodePath).is_empty(), "%s %s has %s" % [label, focus_id, property_name])
 
 
@@ -853,6 +1060,28 @@ func _assert_horizontally_visible(assertions: Variant, screen: InventoryScreen, 
 			viewport_rect,
 			card_rect,
 			scroll.scroll_horizontal,
+		],
+	)
+
+
+func _assert_fusion_candidate_vertically_visible(
+	assertions: Variant,
+	dialog: FusionDialog,
+	item_id: String,
+) -> void:
+	var scroll: ScrollContainer = dialog.get_node("%FusionCandidateScroll") as ScrollContainer
+	var focus_id: String = dialog.focus_id_for_candidate(item_id)
+	var card: Control = dialog.focus_control(focus_id)
+	var viewport_rect: Rect2 = scroll.get_global_rect()
+	var card_rect: Rect2 = card.get_global_rect()
+	assertions.expect_true(
+		card_rect.position.y >= viewport_rect.position.y - 0.5
+		and card_rect.end.y <= viewport_rect.end.y + 0.5,
+		"focused %s is fully inside candidate viewport (viewport=%s card=%s scroll=%d)" % [
+			item_id,
+			viewport_rect,
+			card_rect,
+			scroll.scroll_vertical,
 		],
 	)
 

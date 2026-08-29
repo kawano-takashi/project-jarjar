@@ -19,6 +19,7 @@ var _neighbors: Dictionary[String, Dictionary] = {}
 var _modal_allowed: Dictionary[String, bool] = {}
 var _initial_focus_id: String = ""
 var _saved_focus_id: String = ""
+var _tab_order := PackedStringArray()
 
 
 static func configure_vertical_cycle(controls: Array) -> void:
@@ -34,6 +35,8 @@ static func configure_vertical_cycle(controls: Array) -> void:
 		control.focus_neighbor_bottom = control.get_path_to(next)
 		control.focus_neighbor_left = control.get_path_to(control)
 		control.focus_neighbor_right = control.get_path_to(control)
+		control.focus_previous = control.get_path_to(previous)
+		control.focus_next = control.get_path_to(next)
 
 
 static func configure_horizontal_cycle(controls: Array) -> void:
@@ -49,6 +52,8 @@ static func configure_horizontal_cycle(controls: Array) -> void:
 		control.focus_neighbor_bottom = control.get_path_to(control)
 		control.focus_neighbor_left = control.get_path_to(previous)
 		control.focus_neighbor_right = control.get_path_to(next)
+		control.focus_previous = control.get_path_to(previous)
+		control.focus_next = control.get_path_to(next)
 
 
 static func direction_for_event(event: InputEvent) -> StringName:
@@ -79,26 +84,37 @@ static func is_left_stick_focus_motion(event: InputEvent) -> bool:
 	return motion.axis == JOY_AXIS_LEFT_X or motion.axis == JOY_AXIS_LEFT_Y
 
 
-static func grab_focus_deferred(control: Control) -> void:
-	if control == null:
+static func grab_focus_deferred(control: Control, fallback: Control = null) -> void:
+	if control == null and fallback == null:
 		return
-	_grab_focus_if_ready.bind(control).call_deferred()
+	_grab_focus_if_ready.bind(control, fallback).call_deferred()
 
 
-static func _grab_focus_if_ready(control: Variant) -> void:
+static func _grab_focus_if_ready(control: Variant, fallback: Variant) -> void:
+	grab_focus_safe(control, fallback)
+
+
+static func grab_focus_safe(control: Variant, fallback: Variant = null) -> bool:
+	for candidate: Variant in [control, fallback]:
+		if _is_control_focusable(candidate):
+			(candidate as Control).grab_focus()
+			return true
+	return false
+
+
+static func _is_control_focusable(control: Variant) -> bool:
 	if control == null or not is_instance_valid(control):
-		return
+		return false
 	var target := control as Control
-	if (
-		target == null
-		or not target.is_inside_tree()
-		or not target.is_visible_in_tree()
-		or target.focus_mode == Control.FOCUS_NONE
-	):
-		return
+	if target == null or not target.is_inside_tree() or not target.is_visible_in_tree():
+		return false
+	if target.get_focus_mode_with_override() == Control.FOCUS_NONE:
+		return false
+	if bool(target.get_meta("focus_disabled", false)):
+		return false
 	if target is BaseButton and (target as BaseButton).disabled:
-		return
-	target.grab_focus()
+		return false
+	return true
 
 
 func clear() -> void:
@@ -107,12 +123,14 @@ func clear() -> void:
 	_modal_allowed.clear()
 	_initial_focus_id = ""
 	_saved_focus_id = ""
+	_tab_order.clear()
 
 
 func configure_graph(
 	controls: Dictionary,
 	neighbors: Dictionary,
 	p_initial_focus_id: String,
+	p_tab_order: PackedStringArray = PackedStringArray(),
 ) -> void:
 	clear()
 	for focus_id_value: Variant in controls:
@@ -132,7 +150,15 @@ func configure_graph(
 			str(specification.get(DIRECTION_RIGHT, focus_id)),
 		)
 	_initial_focus_id = p_initial_focus_id if _controls.has(p_initial_focus_id) else ""
+	if p_tab_order.is_empty():
+		for focus_id: String in _controls:
+			_tab_order.append(focus_id)
+	else:
+		for focus_id: String in p_tab_order:
+			if _controls.has(focus_id) and not focus_id in _tab_order:
+				_tab_order.append(focus_id)
 	_apply_neighbor_paths()
+	_apply_tab_paths()
 
 
 func register_control(focus_id: String, control: Control) -> void:
@@ -243,6 +269,24 @@ func move(viewport: Viewport, direction: StringName) -> bool:
 	return grab_focus_id(target_id)
 
 
+func move_tab(viewport: Viewport, forward: bool) -> bool:
+	if _tab_order.is_empty():
+		return false
+	var origin_id: String = current_focus_id(viewport)
+	var origin_index: int = _tab_order.find(origin_id)
+	for offset: int in range(1, _tab_order.size() + 1):
+		var step: int = offset if forward else -offset
+		var candidate_index: int
+		if origin_index < 0:
+			candidate_index = 0 if forward else _tab_order.size() - 1
+		else:
+			candidate_index = posmod(origin_index + step, _tab_order.size())
+		var candidate_id: String = _tab_order[candidate_index]
+		if is_focusable_id(candidate_id):
+			return grab_focus_id(candidate_id)
+	return false
+
+
 func resolve_neighbor(origin_id: String, direction: StringName) -> String:
 	if not _controls.has(origin_id) or not direction in DIRECTIONS:
 		return ""
@@ -283,7 +327,7 @@ func is_focusable_id(focus_id: String) -> bool:
 		return false
 	if not control.visible or not control.is_visible_in_tree():
 		return false
-	if control.focus_mode == Control.FOCUS_NONE:
+	if control.get_focus_mode_with_override() == Control.FOCUS_NONE:
 		return false
 	if bool(control.get_meta("focus_disabled", false)):
 		return false
@@ -310,6 +354,10 @@ func modal_allowed_ids() -> PackedStringArray:
 	return result
 
 
+func tab_order() -> PackedStringArray:
+	return _tab_order.duplicate()
+
+
 func _apply_neighbor_paths() -> void:
 	for focus_id: String in _controls:
 		var control: Control = control_for_id(focus_id)
@@ -323,6 +371,20 @@ func _apply_neighbor_paths() -> void:
 		_set_neighbor_path(control, "focus_neighbor_bottom", str(specification[DIRECTION_BOTTOM]))
 		_set_neighbor_path(control, "focus_neighbor_left", str(specification[DIRECTION_LEFT]))
 		_set_neighbor_path(control, "focus_neighbor_right", str(specification[DIRECTION_RIGHT]))
+
+
+func _apply_tab_paths() -> void:
+	if _tab_order.is_empty():
+		return
+	for index: int in range(_tab_order.size()):
+		var focus_id: String = _tab_order[index]
+		var control: Control = control_for_id(focus_id)
+		if control == null:
+			continue
+		var previous_id: String = _tab_order[posmod(index - 1, _tab_order.size())]
+		var next_id: String = _tab_order[(index + 1) % _tab_order.size()]
+		_set_neighbor_path(control, "focus_previous", previous_id)
+		_set_neighbor_path(control, "focus_next", next_id)
 
 
 func _set_neighbor_path(control: Control, property_name: String, target_id: String) -> void:

@@ -181,6 +181,16 @@ func reset_fusion() -> void:
 	fusion_status = ""
 
 
+func complete_fusion_success(status_text: String) -> void:
+	fusion_material_ids = PackedStringArray()
+	fusion_use_wild = false
+	fusion_status = status_text
+
+
+func set_fusion_result_status(status_text: String) -> void:
+	fusion_status = status_text
+
+
 func change_fusion_rarity(step: int) -> void:
 	var values: Array[GameTypes.Rarity] = [
 		GameTypes.Rarity.COMMON,
@@ -335,6 +345,15 @@ func all_unequipped_locations() -> Array[Dictionary]:
 			result.append({"kind": &"inventory", "index": index, "item": inventory_item})
 	for index: int in range(state.overflow.size()):
 		result.append({"kind": &"overflow", "index": index, "item": state.overflow[index]})
+	return result
+
+
+func fusion_candidate_locations() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for location: Dictionary in all_unequipped_locations():
+		var item: ItemInstance = location.get("item") as ItemInstance
+		if _eligible_fusion_item(item, true):
+			result.append(location)
 	return result
 
 

@@ -1,4 +1,4 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://src/ui/fusion_dialog.gd" id="1_fusion"]
 [ext_resource type="Script" path="res://src/ui/inventory_card_button.gd" id="2_card"]
@@ -16,6 +16,18 @@ corner_radius_top_right = 12
 corner_radius_bottom_right = 12
 corner_radius_bottom_left = 12
 
+[sub_resource type="StyleBoxFlat" id="StyleDetails"]
+bg_color = Color(0.075, 0.095, 0.12, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.22, 0.34, 0.4, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
 [node name="FusionDialog" type="Control"]
 visible = false
 layout_mode = 3
@@ -25,6 +37,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 0
+mouse_force_pass_scroll_events = false
 script = ExtResource("1_fusion")
 
 [node name="Dim" type="ColorRect" parent="."]
@@ -34,7 +47,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-color = Color(0.01, 0.015, 0.022, 0.72)
+mouse_filter = 2
+color = Color(0.01, 0.015, 0.022, 0.78)
 
 [node name="Center" type="CenterContainer" parent="."]
 layout_mode = 1
@@ -43,68 +57,129 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 1
 
 [node name="Panel" type="PanelContainer" parent="Center"]
-custom_minimum_size = Vector2(1180, 720)
+custom_minimum_size = Vector2(1660, 960)
 layout_mode = 2
+mouse_filter = 0
 theme_override_styles/panel = SubResource("StylePanel")
 
 [node name="Margin" type="MarginContainer" parent="Center/Panel"]
 layout_mode = 2
-theme_override_constants/margin_left = 28
-theme_override_constants/margin_top = 24
-theme_override_constants/margin_right = 28
-theme_override_constants/margin_bottom = 24
+theme_override_constants/margin_left = 26
+theme_override_constants/margin_top = 18
+theme_override_constants/margin_right = 26
+theme_override_constants/margin_bottom = 18
 
 [node name="Content" type="VBoxContainer" parent="Center/Panel/Margin"]
 layout_mode = 2
-theme_override_constants/separation = 16
+theme_override_constants/separation = 10
 
 [node name="Heading" type="Label" parent="Center/Panel/Margin/Content"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 30
+theme_override_font_sizes/font_size = 28
 text = "3対1 合成"
 horizontal_alignment = 1
 
 [node name="FusionRarity" type="Button" parent="Center/Panel/Margin/Content"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 58)
+custom_minimum_size = Vector2(0, 54)
 layout_mode = 2
 focus_mode = 2
 text = "レアリティ　◀ COMMON ▶\n←→／方向パッド左右"
 
 [node name="Materials" type="HBoxContainer" parent="Center/Panel/Margin/Content"]
 layout_mode = 2
-theme_override_constants/separation = 14
+theme_override_constants/separation = 12
 alignment = 1
 
 [node name="FusionMaterial0" type="Button" parent="Center/Panel/Margin/Content/Materials"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(270, 112)
+custom_minimum_size = Vector2(360, 92)
 layout_mode = 2
-focus_mode = 2
-text = "材料枠1　外す A／Enter\n空き"
+focus_mode = 0
+text = "材料枠1　材料投入後は A／Enter で外す\n空き（フォーカス対象外）"
 script = ExtResource("2_card")
 
 [node name="FusionMaterial1" type="Button" parent="Center/Panel/Margin/Content/Materials"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(270, 112)
+custom_minimum_size = Vector2(360, 92)
 layout_mode = 2
-focus_mode = 2
-text = "材料枠2　外す A／Enter\n空き"
+focus_mode = 0
+text = "材料枠2　材料投入後は A／Enter で外す\n空き（フォーカス対象外）"
 script = ExtResource("2_card")
 
 [node name="FusionMaterial2" type="Button" parent="Center/Panel/Margin/Content/Materials"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(270, 112)
+custom_minimum_size = Vector2(360, 92)
 layout_mode = 2
-focus_mode = 2
-text = "材料枠3　外す A／Enter\n空き"
+focus_mode = 0
+text = "材料枠3　材料投入後は A／Enter で外す\n空き（フォーカス対象外）"
 script = ExtResource("2_card")
+
+[node name="Middle" type="HBoxContainer" parent="Center/Panel/Margin/Content"]
+custom_minimum_size = Vector2(0, 350)
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 16
+
+[node name="CandidateColumn" type="VBoxContainer" parent="Center/Panel/Margin/Content/Middle"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="CandidateHeading" type="Label" parent="Center/Panel/Margin/Content/Middle/CandidateColumn"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "合成候補（通常枠順 → 一時受取順）"
+
+[node name="FusionCandidateEmpty" type="Label" parent="Center/Panel/Margin/Content/Middle/CandidateColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.72, 0.3, 1)
+text = "このレアリティで合成可能な候補はありません"
+horizontal_alignment = 1
+
+[node name="FusionCandidateScroll" type="ScrollContainer" parent="Center/Panel/Margin/Content/Middle/CandidateColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+mouse_force_pass_scroll_events = false
+follow_focus = true
+horizontal_scroll_mode = 0
+
+[node name="FusionCandidateGrid" type="GridContainer" parent="Center/Panel/Margin/Content/Middle/CandidateColumn/FusionCandidateScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 8
+columns = 4
+
+[node name="Details" type="PanelContainer" parent="Center/Panel/Margin/Content/Middle"]
+custom_minimum_size = Vector2(420, 0)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleDetails")
+
+[node name="DetailsMargin" type="MarginContainer" parent="Center/Panel/Margin/Content/Middle/Details"]
+layout_mode = 2
+theme_override_constants/margin_left = 18
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 18
+theme_override_constants/margin_bottom = 16
+
+[node name="FusionCandidateDetails" type="Label" parent="Center/Panel/Margin/Content/Middle/Details/DetailsMargin"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "候補へフォーカスまたはポインターを合わせると詳細を表示します。"
+vertical_alignment = 1
+autowrap_mode = 2
 
 [node name="MaterialRemoveZone" type="Control" parent="Center/Panel/Margin/Content"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 64)
+custom_minimum_size = Vector2(0, 42)
 layout_mode = 2
 mouse_filter = 0
 script = ExtResource("3_drop")
@@ -118,16 +193,16 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 theme_override_colors/font_color = Color(0.63, 0.69, 0.72, 1)
-theme_override_font_sizes/font_size = 18
-text = "材料を外す：Fカードをこの領域へドラッグ"
+theme_override_font_sizes/font_size = 17
+text = "材料を外す：材料枠をこの領域へドラッグ"
 horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="FusionPreview" type="Label" parent="Center/Panel/Margin/Content"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 88)
+custom_minimum_size = Vector2(0, 64)
 layout_mode = 2
-theme_override_font_sizes/font_size = 20
+theme_override_font_sizes/font_size = 19
 text = "材料を選択してください"
 horizontal_alignment = 1
 vertical_alignment = 1
@@ -135,7 +210,7 @@ autowrap_mode = 2
 
 [node name="FusionStatus" type="Label" parent="Center/Panel/Margin/Content"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 42)
+custom_minimum_size = Vector2(0, 30)
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 0.72, 0.3, 1)
 theme_override_font_sizes/font_size = 18
@@ -148,21 +223,21 @@ alignment = 1
 
 [node name="FusionAutoFill" type="Button" parent="Center/Panel/Margin/Content/Actions"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(235, 60)
+custom_minimum_size = Vector2(300, 58)
 layout_mode = 2
 focus_mode = 2
 text = "自動投入\n実行 A／Enter"
 
 [node name="FusionWildToggle" type="Button" parent="Center/Panel/Margin/Content/Actions"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(235, 60)
+custom_minimum_size = Vector2(300, 58)
 layout_mode = 2
 focus_mode = 2
 text = "ワイルド投入\n実行 A／Enter"
 
 [node name="FusionConfirm" type="Button" parent="Center/Panel/Margin/Content/Actions"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(235, 60)
+custom_minimum_size = Vector2(300, 58)
 layout_mode = 2
 focus_mode = 2
 disabled = true
@@ -170,7 +245,7 @@ text = "合成を確定\n実行 A／Enter"
 
 [node name="FusionCancel" type="Button" parent="Center/Panel/Margin/Content/Actions"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(235, 60)
+custom_minimum_size = Vector2(300, 58)
 layout_mode = 2
 focus_mode = 2
 text = "取消\nB／Esc"

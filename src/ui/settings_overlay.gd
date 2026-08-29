@@ -19,6 +19,7 @@ signal settings_changed(values: Dictionary)
 
 var _settings_store: Variant = null
 var _synchronizing: bool = false
+var _focus_controller := FocusController.new()
 
 
 func _ready() -> void:
@@ -34,6 +35,7 @@ func _ready() -> void:
 	_close.pressed.connect(close_overlay)
 	visible = false
 	set_process_input(false)
+	set_process_unhandled_input(false)
 
 
 func open_overlay() -> void:
@@ -51,6 +53,7 @@ func close_overlay() -> void:
 		_settings_store.save_settings()
 	visible = false
 	set_process_input(false)
+	set_process_unhandled_input(false)
 	closed.emit()
 
 
@@ -71,6 +74,21 @@ func initial_focus_control() -> Control:
 	return _master
 
 
+func focus_controls() -> Dictionary:
+	var result: Dictionary = {}
+	for focus_id: String in _focus_controller.focus_ids():
+		result[focus_id] = _focus_controller.control_for_id(focus_id)
+	return result
+
+
+func focus_control(focus_id: String) -> Control:
+	return _focus_controller.control_for_id(focus_id)
+
+
+func test_focus(focus_id: String) -> bool:
+	return _focus_controller.grab_focus_id(focus_id)
+
+
 func settings_values() -> Dictionary:
 	return {
 		"master_volume": _master.value / 100.0,
@@ -88,6 +106,14 @@ func _input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel") and not event.is_echo():
 		close_overlay()
 		get_viewport().set_input_as_handled()
+		return
+	if event.is_action_pressed(&"ui_focus_next") and not event.is_echo():
+		_focus_controller.move_tab(get_viewport(), true)
+		get_viewport().set_input_as_handled()
+		return
+	if event.is_action_pressed(&"ui_focus_prev") and not event.is_echo():
+		_focus_controller.move_tab(get_viewport(), false)
+		get_viewport().set_input_as_handled()
 
 
 func _configure_focus() -> void:
@@ -102,10 +128,19 @@ func _configure_focus() -> void:
 		_close,
 	]
 	var ids: PackedStringArray = focus_order()
+	var control_map: Dictionary = {}
+	var graph: Dictionary = {}
 	for index: int in range(controls.size()):
 		var control: Control = controls[index] as Control
-		control.set_meta("focus_id", ids[index])
-	FocusController.configure_vertical_cycle(controls)
+		var focus_id: String = ids[index]
+		control_map[focus_id] = control
+		graph[focus_id] = {
+			FocusController.DIRECTION_TOP: ids[posmod(index - 1, ids.size())],
+			FocusController.DIRECTION_BOTTOM: ids[(index + 1) % ids.size()],
+			FocusController.DIRECTION_LEFT: focus_id,
+			FocusController.DIRECTION_RIGHT: focus_id,
+		}
+	_focus_controller.configure_graph(control_map, graph, ids[0], ids)
 
 
 func _sync_from_store() -> void:

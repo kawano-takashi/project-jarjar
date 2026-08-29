@@ -38,9 +38,11 @@ const SLOT_LABELS: Array[String] = [
 @onready var _title_button: Button = %SummaryTitleButton
 @onready var _exit_button: Button = %SummaryExitButton
 @onready var _settings_button: Button = %SummarySettingsButton
+@onready var _content_root: Control = $Margin
 @onready var _settings_overlay: SettingsOverlay = %SettingsOverlay
 
 var _focus_controller := FocusController.new()
+var _modal_focus := ModalFocusCoordinator.new()
 var _pending_state: RunState = null
 
 
@@ -51,6 +53,7 @@ func _ready() -> void:
 	_exit_button.pressed.connect(func() -> void: exit_requested.emit())
 	_settings_button.pressed.connect(_open_settings)
 	_settings_overlay.closed.connect(_on_settings_closed)
+	_modal_focus.configure(get_viewport(), [_content_root])
 	_configure_focus()
 	_render()
 	_focus_controller.focus_initial_deferred()
@@ -97,6 +100,7 @@ func debug_state() -> Dictionary:
 		"focus_id": _focus_controller.current_focus_id(get_viewport()),
 		"focus_order": focus_order(),
 		"settings_open": _settings_overlay.visible,
+		"modal_stack_size": _modal_focus.stack_size(),
 		"run_seed": _pending_state.run_seed if _pending_state != null else 0,
 		"combat_score": int(score.get(&"combat_score", 0)),
 		"final_build_score": int(score.get(&"final_build_score", 0)),
@@ -130,7 +134,15 @@ func test_accept() -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if _settings_overlay.visible:
+	if _modal_focus.has_active_modal():
+		return
+	if event.is_action_pressed(&"ui_focus_next") and not event.is_echo():
+		_focus_controller.move_tab(get_viewport(), true)
+		get_viewport().set_input_as_handled()
+		return
+	if event.is_action_pressed(&"ui_focus_prev") and not event.is_echo():
+		_focus_controller.move_tab(get_viewport(), false)
+		get_viewport().set_input_as_handled()
 		return
 	var direction: StringName = FocusController.direction_for_event(event)
 	if direction.is_empty():
@@ -169,7 +181,7 @@ func _configure_focus() -> void:
 			FocusController.DIRECTION_LEFT: focus_id,
 			FocusController.DIRECTION_RIGHT: focus_id,
 		}
-	_focus_controller.configure_graph(controls, graph, ids[0])
+	_focus_controller.configure_graph(controls, graph, ids[0], ids)
 
 
 func _render() -> void:
@@ -277,15 +289,16 @@ func _skill_name(skill_id: StringName) -> String:
 
 
 func _open_settings() -> void:
-	_focus_controller.save_current_focus(get_viewport())
+	if _modal_focus.has_active_modal():
+		return
+	if not _modal_focus.push(_settings_overlay, _retry_same):
+		return
 	_settings_overlay.open_overlay()
 
 
 func _on_settings_closed() -> void:
-	var saved_focus_id: String = _focus_controller.saved_focus_id()
 	_configure_focus()
-	_focus_controller.save_focus_id(saved_focus_id)
-	_focus_controller.restore_saved_focus(_focus_id("retry_same_seed"))
+	_modal_focus.pop(_settings_overlay, null, _retry_same)
 
 
 func _focus_id(suffix: String) -> String:

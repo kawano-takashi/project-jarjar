@@ -28,11 +28,13 @@ func _ready() -> void:
 			"dialog_confirm": _neighbors("dialog_confirm", "dialog_cancel"),
 		},
 		"dialog_cancel",
+		PackedStringArray(["dialog_cancel", "dialog_confirm"]),
 	)
 	_cancel.pressed.connect(_cancel_dialog)
 	_confirm.pressed.connect(_confirm_dialog)
 	visible = false
 	set_process_input(false)
+	set_process_unhandled_input(false)
 	_apply_pending_text()
 
 
@@ -55,6 +57,7 @@ func open_dialog(
 func close_without_signal() -> void:
 	visible = false
 	set_process_input(false)
+	set_process_unhandled_input(false)
 
 
 func origin_focus_id() -> String:
@@ -70,6 +73,18 @@ func focus_controls() -> Dictionary:
 		"dialog_cancel": _cancel,
 		"dialog_confirm": _confirm,
 	}
+
+
+func focus_ids() -> PackedStringArray:
+	return _focus_controller.focus_ids()
+
+
+func focus_control(focus_id: String) -> Control:
+	return _focus_controller.control_for_id(focus_id)
+
+
+func test_focus(focus_id: String) -> bool:
+	return _focus_controller.grab_focus_id(focus_id)
 
 
 func initial_focus_control() -> Control:
@@ -90,6 +105,14 @@ func _input(event: InputEvent) -> void:
 		return
 	if event.is_action_pressed("ui_cancel") and not event.is_echo():
 		_cancel_dialog()
+		get_viewport().set_input_as_handled()
+		return
+	if event.is_action_pressed(&"ui_focus_next") and not event.is_echo():
+		_focus_controller.move_tab(get_viewport(), true)
+		get_viewport().set_input_as_handled()
+		return
+	if event.is_action_pressed(&"ui_focus_prev") and not event.is_echo():
+		_focus_controller.move_tab(get_viewport(), false)
 		get_viewport().set_input_as_handled()
 		return
 	var direction: StringName = FocusController.direction_for_event(event)

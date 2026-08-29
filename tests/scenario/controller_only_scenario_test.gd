@@ -261,6 +261,12 @@ func _exercise_title_and_all_settings(
 		title.get_viewport().gui_get_focus_owner(),
 		"settings starts focused on master volume",
 	)
+	_assert_settings_background_isolated(
+		assertions,
+		title_settings,
+		overlay,
+		"TITLE settings",
+	)
 
 	var visited := PackedStringArray()
 	var control: Control = title.get_viewport().gui_get_focus_owner()
@@ -364,6 +370,12 @@ func _exercise_reward(
 	screen.test_accept_release()
 	assertions.expect_true(screen.debug_state()["settings_open"], "reward controller opens settings")
 	var overlay := screen.get_node("%SettingsOverlay") as SettingsOverlay
+	_assert_settings_background_isolated(
+		assertions,
+		screen.get_node("%RewardSettings") as Control,
+		overlay,
+		"REWARD settings",
+	)
 	_send_cancel_to_settings(overlay)
 	await tree.process_frame
 	assertions.expect_false(screen.debug_state()["settings_open"], "reward settings B closes overlay")
@@ -444,13 +456,38 @@ func _exercise_inventory(
 	tree.root.push_input(cancel_event)
 	await tree.process_frame
 	assertions.expect_equal(
-		1,
+		0,
 		tutorial_cancel_observed[0],
-		"tutorial overlay observes B before INVENTORY consumes it",
+		"handled INVENTORY B does not reach the tutorial overlay",
 	)
 	assertions.expect_true(
 		(screen.debug_state()["held_item_source"] as Dictionary).is_empty(),
-		"the same B continues to INVENTORY and cancels an item lift",
+		"first B cancels only the active INVENTORY item lift",
+	)
+	screen.test_focus("action_2")
+	screen.test_accept()
+	await tree.process_frame
+	assertions.expect_true(screen.debug_state()["fusion_open"], "fusion modal opens above the remaining tutorial")
+	var modal_cancel_event := InputEventAction.new()
+	modal_cancel_event.action = &"ui_cancel"
+	modal_cancel_event.pressed = true
+	tree.root.push_input(modal_cancel_event)
+	await tree.process_frame
+	assertions.expect_false(screen.debug_state()["fusion_open"], "next B closes only the top fusion modal")
+	assertions.expect_equal(
+		0,
+		tutorial_cancel_observed[0],
+		"fusion-consumed B does not also dismiss the tutorial",
+	)
+	var second_cancel_event := InputEventAction.new()
+	second_cancel_event.action = &"ui_cancel"
+	second_cancel_event.pressed = true
+	tree.root.push_input(second_cancel_event)
+	await tree.process_frame
+	assertions.expect_equal(
+		1,
+		tutorial_cancel_observed[0],
+		"following unhandled B reaches the remaining tutorial overlay",
 	)
 	tree.root.remove_child(tutorial_overlay)
 	tutorial_overlay.free()
@@ -517,7 +554,14 @@ func _exercise_summary(
 	screen.test_accept()
 	await tree.process_frame
 	assertions.expect_true(screen.debug_state()["settings_open"], "%s controller opens settings" % prefix)
-	_send_cancel_to_settings(screen.get_node("%SettingsOverlay") as SettingsOverlay)
+	var settings_overlay := screen.get_node("%SettingsOverlay") as SettingsOverlay
+	_assert_settings_background_isolated(
+		assertions,
+		screen.focus_control(expected_order[4]),
+		settings_overlay,
+		"%s settings" % prefix,
+	)
+	_send_cancel_to_settings(settings_overlay)
 	await tree.process_frame
 	assertions.expect_false(screen.debug_state()["settings_open"], "%s settings B closes overlay" % prefix)
 	assertions.expect_equal(
@@ -570,6 +614,34 @@ func _send_cancel_to_settings(overlay: SettingsOverlay) -> void:
 	cancel.action = &"ui_cancel"
 	cancel.pressed = true
 	overlay.call("_input", cancel)
+
+
+func _assert_settings_background_isolated(
+	assertions: Variant,
+	background_control: Control,
+	overlay: SettingsOverlay,
+	label: String,
+) -> void:
+	assertions.expect_equal(
+		Control.FOCUS_NONE,
+		background_control.get_focus_mode_with_override(),
+		"%s disables background focus recursively" % label,
+	)
+	assertions.expect_equal(
+		Control.MOUSE_FILTER_IGNORE,
+		background_control.get_mouse_filter_with_override(),
+		"%s disables background mouse recursively" % label,
+	)
+	assertions.expect_false(
+		overlay.mouse_force_pass_scroll_events,
+		"%s blocker does not pass wheel events" % label,
+	)
+	background_control.grab_focus()
+	assertions.expect_false(
+		background_control == overlay.get_viewport().gui_get_focus_owner(),
+		"%s rejects direct background grab_focus" % label,
+	)
+	FocusController.grab_focus_safe(overlay.initial_focus_control())
 
 
 func _instrument_pointer_events(root: Control, counter: Array[int]) -> void:
