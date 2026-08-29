@@ -6,22 +6,22 @@ const DELTA: float = 1.0 / 60.0
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"gate03_wood_stick_one_hit_and_w1_40_within_32_seconds",
-		"gate03_death_timeout_same_tick_and_full_heal_flow",
-		"gate03_w8_boss_299_gate_and_spawn_resume",
+		"wood_stick_one_hit_and_w1_40_within_32_seconds",
+		"death_timeout_same_tick_and_full_heal_flow",
+		"w8_boss_299_gate_and_spawn_resume",
 	])
 
 
 func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
 	match test_name:
-		"gate03_wood_stick_one_hit_and_w1_40_within_32_seconds":
+		"wood_stick_one_hit_and_w1_40_within_32_seconds":
 			_test_wood_stick_w1(assertions)
-		"gate03_death_timeout_same_tick_and_full_heal_flow":
+		"death_timeout_same_tick_and_full_heal_flow":
 			_test_flow_priorities_and_heal(assertions)
-		"gate03_w8_boss_299_gate_and_spawn_resume":
+		"w8_boss_299_gate_and_spawn_resume":
 			_test_w8_gate(assertions)
 		_:
-			assertions.expect_true(false, "registered gate03 simulation test")
+			assertions.expect_true(false, "registered combat simulation test")
 
 
 func _test_wood_stick_w1(assertions: Variant) -> void:

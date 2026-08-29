@@ -1,4 +1,4 @@
-class_name Gate06PerformanceMetrics
+class_name PerformanceMetrics
 extends RefCounted
 
 

@@ -9,27 +9,38 @@ $env:JARJAR_GODOT = (Resolve-Path -LiteralPath (Get-Command godot.exe -CommandTy
 $jarjarVersion = ((& $env:JARJAR_GODOT --version 2>&1) -join "`n").Trim()
 if (-not $jarjarVersion.StartsWith("4.7.2.stable.official")) { throw "Godot 4.7.2-stable Standard is required." }
 
-# 全回帰テスト
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\run_gate_checks.ps1 -GateNumber 6 -Suite all
+# 通常のコード変更: GDScript全回帰と全.gd/.tscn/.tresのロード検査
+& $env:JARJAR_GODOT --headless --path . --script res://tests/test_runner.gd
 
-# Windows Release export。ユーザー最終調整完了後だけ正式buildとして実行する。
+# ユーザーが最終調整完了を明示した後だけ、以下を上から実行する。
+& $env:JARJAR_GODOT --headless --path . --script res://tests/test_runner.gd
+& $env:JARJAR_GODOT --headless --path . -- --performance=full_hd_500_2000 --run-seed=5002000
 New-Item -ItemType Directory -Force -Path .\build\windows | Out-Null
 & $env:JARJAR_GODOT --headless --path . --export-release "Windows Desktop" .\build\windows\ProjectJARJAR.exe
+.\tests\release.ps1 -Task Verify
+.\tests\release.ps1 -Task ManualQa
+
+# 手動QA合格後に対象identityを artifacts/playtest/target.txt へ手入力してから実施する。
+.\tests\release.ps1 -Task Playtest -TesterId T01
 ```
 
 ## Workflow
 
 - 作業前に `docs/project-status.md` を読む。そこだけを現在フェーズの正とする。
-- 正式playtest対象が未固定なら、`docs/playtest-protocol.md`を実施・集計しない。
-- ユーザー最終調整後は、全回帰、GDScript検査、性能試験、Release export、pack audit、smoke、手動QA、新identity固定の順で完了させてから5人×3runへ進む。
-- EXE、PCK、`balance_revision`、候補HEADのいずれかが変わったら、旧playtestデータを流用しない。
+- `tests/test_runner.gd` は `tests/**/*_test.gd` を再帰検出する。`unit/`、`scenario/`、`simulation/` は整理用であり、登録簿も実行順契約もない。
+- PowerShellテストは既存のWindows Release buildだけを検証する。コード変更だけならGDScriptテストを使い、buildまで検証するときだけ性能試験・export・`tests/release.ps1` を使う。
+- `Verify` はpack audit、Release smoke、代表的なRelease引数拒否、build鮮度、identityを検証する。buildやsource testは実行しない。
+- `ManualQa` のexit 0はセッション終了だけを表し、QA合格ではない。人間が `docs/final-qa.md` に判定を記録する。
+- 正式playtest対象が未固定なら `docs/playtest-protocol.md` を実施・集計しない。
+- 手動QA合格後、`Verify` が表示した4値を `artifacts/playtest/target.txt` に `candidate_head`、`exe_sha256`、`pck_sha256`、`balance_revision` として手入力する。自動固定しない。
+- EXE、PCK、`balance_revision`、候補HEADのいずれかが変わったら旧playtestデータを流用しない。
 - 人間の参加・回答・計測値を生成または補完しない。
 
 ## Constraints
 
 - 承認済みのbalance、確率、score係数、受入閾値を、ユーザーの明示承認なしに変更しない。
-- QAとplaytestは `tests/run_gate_checks.ps1` または `tests/run_with_clean_settings.ps1` を使い、実ユーザー設定を汚さない。
-- `tests/`、`src/debug/`、`scenes/debug/`、`src/release/` は最終調整後の検証用であり、5人×3run完了までは未使用扱いで削除しない。
+- QAとplaytestは `tests/release.ps1` を使い、実ユーザー設定を汚さない。
+- `build/windows/ProjectJARJAR.exe`、`.console.exe`、`.pck`を手動で差し替えない。
 - GDScriptを変更する前に `.codex/skills/godot-gdscript-guard/SKILL.md` を読み、Python構文を持ち込まない。
 - `build/`、`artifacts/`、`.godot/`、`.codex/`、`work/` をコミットしない。
 - fetch、pull、push、rebase、amend、tag作成は、ユーザーの明示指示なしに実行しない。

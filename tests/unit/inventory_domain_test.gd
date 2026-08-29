@@ -23,37 +23,37 @@ var _catalog: DefinitionCatalog = null
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"gate05_inventory_capacity_order_and_refill_contract",
-		"gate05_equipment_move_and_unique_side_effect_contract",
-		"gate05_lock_compare_select_and_discard_contract",
-		"gate05_reward_skill_wild_and_autoequip_contract",
-		"gate05_fusion_preview_commit_and_protection_contract",
-		"gate05_skill_move_snapshot_and_crown_contract",
-		"gate05_score_w8_and_retry_contract",
-		"gate05_w8_reward_inventory_fusion_result_contract",
+		"inventory_capacity_order_and_refill_contract",
+		"equipment_move_and_unique_side_effect_contract",
+		"lock_compare_select_and_discard_contract",
+		"reward_skill_wild_and_autoequip_contract",
+		"fusion_preview_commit_and_protection_contract",
+		"skill_move_snapshot_and_crown_contract",
+		"score_w8_and_retry_contract",
+		"w8_reward_inventory_fusion_result_contract",
 	])
 
 
 func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
 	match test_name:
-		"gate05_inventory_capacity_order_and_refill_contract":
+		"inventory_capacity_order_and_refill_contract":
 			_test_inventory_capacity_order_and_refill(assertions)
-		"gate05_equipment_move_and_unique_side_effect_contract":
+		"equipment_move_and_unique_side_effect_contract":
 			_test_equipment_move_and_unique_side_effect(assertions)
-		"gate05_lock_compare_select_and_discard_contract":
+		"lock_compare_select_and_discard_contract":
 			_test_lock_compare_select_and_discard(assertions)
-		"gate05_reward_skill_wild_and_autoequip_contract":
+		"reward_skill_wild_and_autoequip_contract":
 			_test_reward_skill_wild_and_autoequip(assertions)
-		"gate05_fusion_preview_commit_and_protection_contract":
+		"fusion_preview_commit_and_protection_contract":
 			_test_fusion_preview_commit_and_protection(assertions)
-		"gate05_skill_move_snapshot_and_crown_contract":
+		"skill_move_snapshot_and_crown_contract":
 			_test_skill_move_snapshot_and_crown(assertions)
-		"gate05_score_w8_and_retry_contract":
+		"score_w8_and_retry_contract":
 			_test_score_w8_and_retry(assertions)
-		"gate05_w8_reward_inventory_fusion_result_contract":
+		"w8_reward_inventory_fusion_result_contract":
 			_test_w8_reward_inventory_fusion_result(assertions)
 		_:
-			assertions.expect_true(false, "registered Gate 5 inventory-domain test")
+			assertions.expect_true(false, "registered inventory inventory-domain test")
 
 
 func _test_inventory_capacity_order_and_refill(assertions: Variant) -> void:
@@ -897,7 +897,7 @@ func _loaded_catalog(assertions: Variant) -> DefinitionCatalog:
 	if _catalog == null:
 		_catalog = DefinitionCatalog.new()
 		var valid: bool = _catalog.load_and_validate()
-		assertions.expect_true(valid, "Gate 5 DefinitionCatalog valid: %s" % _catalog.error_text)
+		assertions.expect_true(valid, "inventory DefinitionCatalog valid: %s" % _catalog.error_text)
 	return _catalog if _catalog.is_valid else null
 
 

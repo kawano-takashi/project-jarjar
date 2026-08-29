@@ -28,11 +28,6 @@ const FUSION_FEEDBACK_TINT := Color(1.0, 0.82, 0.48, 1.0)
 const FUSION_FEEDBACK_OUTLINE_COLOR := Color(0.10, 0.05, 0.02, 1.0)
 const FUSION_FEEDBACK_OUTLINE_SIZE: int = 4
 const FUSION_SUCCESS_FALLBACK_TEXT: String = "合成成功"
-const EVIDENCE_MODES: Array[String] = [
-	"",
-	"inventory_full",
-	"fusion_unique_warning",
-]
 const ACTION_LABELS: Array[String] = [
 	"一括選択\n実行 A／Enter",
 	"廃棄\n実行 A／Enter",
@@ -76,8 +71,6 @@ var _confirmation_kind: StringName = &""
 var _confirmation_payload: Dictionary = {}
 var _confirmation_origin_focus_id: String = ""
 var _last_valid_focus_id: String = "equip_0"
-var _pending_evidence_mode: String = ""
-var _evidence_mode: String = ""
 var _fusion_feedback_presented: bool = false
 var _fusion_feedback_reduce_motion: bool = false
 var _fusion_feedback_reduce_flashes: bool = false
@@ -97,7 +90,6 @@ func _ready() -> void:
 	if _pending_state != null:
 		_controller.initialize(_pending_state, _pending_catalog)
 	_refresh_from_state(false)
-	_apply_pending_evidence_mode.call_deferred()
 
 
 func initialize(state: RunState, catalog: DefinitionCatalog) -> void:
@@ -107,7 +99,6 @@ func initialize(state: RunState, catalog: DefinitionCatalog) -> void:
 		_clear_fusion_feedback()
 		_controller.initialize(state, catalog)
 		_refresh_from_state(false)
-		_apply_pending_evidence_mode.call_deferred()
 
 
 func refresh_from_state(preserve_focus: bool = true) -> void:
@@ -148,15 +139,6 @@ func apply_command_result(command_kind: StringName, result: Dictionary) -> void:
 		_focus_controller.grab_focus_id("action_2" if success else "FA2")
 
 
-func set_evidence_mode(mode: String) -> bool:
-	if not mode in EVIDENCE_MODES:
-		return false
-	_pending_evidence_mode = mode
-	if is_node_ready() and _controller.state != null:
-		return _apply_pending_evidence_mode()
-	return true
-
-
 func focus_ids() -> PackedStringArray:
 	return _focus_controller.focus_ids()
 
@@ -188,7 +170,6 @@ func debug_state() -> Dictionary:
 		"settings_open": _settings_overlay.visible,
 		"pending_command_kind": _pending_command_kind,
 		"skill_slots": _skill_slot_snapshot(),
-		"evidence_mode": _evidence_mode,
 		"fusion_feedback_presented": _fusion_feedback_presented,
 		"fusion_feedback_reduce_motion": _fusion_feedback_reduce_motion,
 		"fusion_feedback_reduce_flashes": _fusion_feedback_reduce_flashes,
@@ -332,48 +313,6 @@ func _fusion_accessibility_settings() -> Dictionary:
 		"reduce_motion": bool(store.reduce_motion) if store != null else false,
 		"reduce_flashes": bool(store.reduce_flashes) if store != null else false,
 	}
-
-
-func _apply_pending_evidence_mode() -> bool:
-	if not is_node_ready() or _controller.state == null:
-		return false
-	var mode: String = _pending_evidence_mode
-	_evidence_mode = mode
-	_bulk_dialog.close_without_signal()
-	_confirmation_dialog.close_without_signal()
-	if mode == "":
-		_controller.reset_fusion()
-		_fusion_dialog.close_without_signal()
-		_refresh_from_state(false)
-		return true
-	if mode == "inventory_full":
-		_controller.reset_fusion()
-		_fusion_dialog.close_without_signal()
-		_status_text = "36枠満杯・一時受取 %d件" % _controller.state.overflow.size()
-		_refresh_from_state(false)
-		return (
-			_count_inventory_items() == INVENTORY_COUNT
-			and not _controller.state.overflow.is_empty()
-		)
-	var material_ids := PackedStringArray([
-		"qa-inventory-18",
-		"qa-inventory-19",
-		"qa-inventory-33",
-	])
-	for item_id: String in material_ids:
-		var item: ItemInstance = _controller.find_item(item_id).get("item") as ItemInstance
-		if item == null or item.rarity != GameTypes.Rarity.RARE:
-			return false
-	_controller.open_fusion(false)
-	_controller.fusion_rarity = GameTypes.Rarity.RARE
-	for item_id: String in material_ids:
-		if not _controller.toggle_fusion_material(item_id, true):
-			return false
-	_fusion_dialog.open_dialog("action_2")
-	_render_fusion()
-	_configure_fusion_focus_graph()
-	_on_fusion_confirm()
-	return _confirmation_dialog.visible
 
 
 func _input(event: InputEvent) -> void:

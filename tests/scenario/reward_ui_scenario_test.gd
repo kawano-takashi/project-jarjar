@@ -9,25 +9,25 @@ var _catalog: DefinitionCatalog = null
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"gate04_reward_controls_fixed_fixture_and_focus_contract",
-		"gate04_controller_hold_button_settings_and_y_contract",
-		"gate04_mouse_capture_and_button_priority_contract",
-		"gate04_reveal_timing_prealert_accessibility_and_rng_contract",
+		"reward_controls_fixed_fixture_and_focus_contract",
+		"controller_hold_button_settings_and_y_contract",
+		"mouse_capture_and_button_priority_contract",
+		"reveal_timing_prealert_accessibility_and_rng_contract",
 	])
 
 
 func run_test(test_name: String, assertions: Variant, context: Dictionary) -> void:
 	match test_name:
-		"gate04_reward_controls_fixed_fixture_and_focus_contract":
+		"reward_controls_fixed_fixture_and_focus_contract":
 			await _test_fixed_fixture_and_focus(assertions, context)
-		"gate04_controller_hold_button_settings_and_y_contract":
+		"controller_hold_button_settings_and_y_contract":
 			await _test_controller_contract(assertions, context)
-		"gate04_mouse_capture_and_button_priority_contract":
+		"mouse_capture_and_button_priority_contract":
 			await _test_mouse_contract(assertions, context)
-		"gate04_reveal_timing_prealert_accessibility_and_rng_contract":
+		"reveal_timing_prealert_accessibility_and_rng_contract":
 			await _test_reveal_modes_and_accessibility(assertions, context)
 		_:
-			assertions.expect_true(false, "registered Gate 4 reward UI scenario test")
+			assertions.expect_true(false, "registered loot reward UI scenario test")
 
 
 func _test_fixed_fixture_and_focus(assertions: Variant, context: Dictionary) -> void:
@@ -391,7 +391,7 @@ func _loaded_catalog(assertions: Variant) -> DefinitionCatalog:
 	if _catalog == null:
 		_catalog = DefinitionCatalog.new()
 		var valid: bool = _catalog.load_and_validate()
-		assertions.expect_true(valid, "Gate 4 reward UI catalog valid: %s" % _catalog.error_text)
+		assertions.expect_true(valid, "loot reward UI catalog valid: %s" % _catalog.error_text)
 	return _catalog if _catalog.is_valid else null
 
 

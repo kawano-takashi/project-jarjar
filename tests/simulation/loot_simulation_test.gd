@@ -14,22 +14,22 @@ var _catalog: DefinitionCatalog = null
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"gate04_reward_kind_rarity_and_guarantee_distribution",
-		"gate04_normal_fusion_and_unique_selector_distribution",
-		"gate04_chest_counts_and_fusion_progression",
+		"reward_kind_rarity_and_guarantee_distribution",
+		"normal_fusion_and_unique_selector_distribution",
+		"chest_counts_and_fusion_progression",
 	])
 
 
 func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
 	match test_name:
-		"gate04_reward_kind_rarity_and_guarantee_distribution":
+		"reward_kind_rarity_and_guarantee_distribution":
 			_test_reward_kind_rarity_and_guarantee_distribution(assertions)
-		"gate04_normal_fusion_and_unique_selector_distribution":
+		"normal_fusion_and_unique_selector_distribution":
 			_test_normal_fusion_and_unique_selector_distribution(assertions)
-		"gate04_chest_counts_and_fusion_progression":
+		"chest_counts_and_fusion_progression":
 			_test_chest_counts_and_fusion_progression(assertions)
 		_:
-			assertions.expect_true(false, "registered Gate 4 loot simulation test")
+			assertions.expect_true(false, "registered loot loot simulation test")
 
 
 func _test_reward_kind_rarity_and_guarantee_distribution(assertions: Variant) -> void:
@@ -236,13 +236,13 @@ func _test_chest_counts_and_fusion_progression(assertions: Variant) -> void:
 
 	for wave_index: int in range(8):
 		var mean: float = float(chest_totals[wave_index]) / float(RUN_COUNT)
-		print("GATE04_CHEST_MEAN wave=%d mean=%.4f total=%d seeds=%d" % [wave_index + 1, mean, chest_totals[wave_index], RUN_COUNT])
+		print("LOOT_CHEST_MEAN wave=%d mean=%.4f total=%d seeds=%d" % [wave_index + 1, mean, chest_totals[wave_index], RUN_COUNT])
 		assertions.expect_true(
 			mean >= 15.0 and mean <= 25.0,
 			"W%d chest mean 15..25 actual=%.4f" % [wave_index + 1, mean],
 		)
 	print(
-		"GATE04_FUSION_PROGRESSION epic_reached=%d legendary_reached=%d direct_epic=%d fusion_epic=%d direct_legendary=%d fusion_legendary=%d seeds=%d"
+		"LOOT_FUSION_PROGRESSION epic_reached=%d legendary_reached=%d direct_epic=%d fusion_epic=%d direct_legendary=%d fusion_legendary=%d seeds=%d"
 		% [
 			fusion_reached_epic,
 			fusion_reached_legendary,
@@ -374,7 +374,7 @@ func _loaded_catalog(assertions: Variant) -> DefinitionCatalog:
 	if _catalog == null:
 		_catalog = DefinitionCatalog.new()
 		var valid: bool = _catalog.load_and_validate()
-		assertions.expect_true(valid, "Gate 4 simulation DefinitionCatalog valid: %s" % _catalog.error_text)
+		assertions.expect_true(valid, "loot simulation DefinitionCatalog valid: %s" % _catalog.error_text)
 	return _catalog if _catalog.is_valid else null
 
 

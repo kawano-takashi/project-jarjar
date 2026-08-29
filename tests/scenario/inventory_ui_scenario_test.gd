@@ -16,31 +16,31 @@ var _catalog: DefinitionCatalog = null
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"gate05_inventory_focus_modal_overflow_and_evidence_contract",
-		"gate05_inventory_controller_mouse_bulk_fusion_and_discard_contract",
-		"gate05_fusion_dialog_exact_controller_contract",
-		"gate05_inventory_exact_skill_sequence_and_crown_contract",
-		"gate05_result_failed_summary_focus_and_routes_contract",
+		"inventory_focus_modal_overflow_contract",
+		"inventory_controller_mouse_bulk_fusion_and_discard_contract",
+		"fusion_dialog_exact_controller_contract",
+		"inventory_exact_skill_sequence_and_crown_contract",
+		"result_failed_summary_focus_and_routes_contract",
 	])
 
 
 func run_test(test_name: String, assertions: Variant, context: Dictionary) -> void:
 	match test_name:
-		"gate05_inventory_focus_modal_overflow_and_evidence_contract":
-			await _test_focus_modal_overflow_and_evidence(assertions, context)
-		"gate05_inventory_controller_mouse_bulk_fusion_and_discard_contract":
+		"inventory_focus_modal_overflow_contract":
+			await _test_focus_modal_overflow(assertions, context)
+		"inventory_controller_mouse_bulk_fusion_and_discard_contract":
 			await _test_controller_mouse_bulk_fusion_and_discard(assertions, context)
-		"gate05_fusion_dialog_exact_controller_contract":
+		"fusion_dialog_exact_controller_contract":
 			await _test_fusion_dialog_exact_controller(assertions, context)
-		"gate05_inventory_exact_skill_sequence_and_crown_contract":
+		"inventory_exact_skill_sequence_and_crown_contract":
 			await _test_skill_sequence_and_crown(assertions, context)
-		"gate05_result_failed_summary_focus_and_routes_contract":
+		"result_failed_summary_focus_and_routes_contract":
 			await _test_result_failed_routes(assertions, context)
 		_:
-			assertions.expect_true(false, "registered Gate 5 inventory UI scenario test")
+			assertions.expect_true(false, "registered inventory inventory UI scenario test")
 
 
-func _test_focus_modal_overflow_and_evidence(
+func _test_focus_modal_overflow(
 	assertions: Variant,
 	context: Dictionary,
 ) -> void:
@@ -155,32 +155,6 @@ func _test_focus_modal_overflow_and_evidence(
 	assertions.expect_equal("overflow_39", overflow_screen.debug_state()["focus_id"], "O0 left wraps to O39")
 	_assert_horizontally_visible(assertions, overflow_screen, 39)
 	_cleanup_fixture(overflow_fixture, context)
-
-	var evidence_fixture: Dictionary = await _spawn_inventory(assertions, context)
-	if evidence_fixture.is_empty():
-		return
-	var evidence_screen: InventoryScreen = evidence_fixture["screen"]
-	assertions.expect_false(evidence_screen.set_evidence_mode("unknown"), "unknown inventory evidence mode is rejected")
-	assertions.expect_true(evidence_screen.set_evidence_mode("inventory_full"), "inventory_full evidence mode applies")
-	assertions.expect_equal("inventory_full", evidence_screen.debug_state()["evidence_mode"], "inventory evidence mode is observable")
-	assertions.expect_true(evidence_screen.set_evidence_mode("fusion_unique_warning"), "unique fusion evidence mode applies")
-	var evidence_state: Dictionary = evidence_screen.debug_state()
-	assertions.expect_equal(
-		PackedStringArray(["qa-inventory-18", "qa-inventory-19", "qa-inventory-33"]),
-		evidence_state["fusion_material_ids"],
-		"unique fusion evidence uses exact fixed material IDs",
-	)
-	assertions.expect_true(evidence_state["confirmation_open"], "unique fusion evidence leaves named confirmation visible")
-	var confirmation: JarjarConfirmationDialog = evidence_screen.get_node("%ConfirmationDialog") as JarjarConfirmationDialog
-	assertions.expect_equal(PackedStringArray(["dialog_cancel", "dialog_confirm"]), confirmation.focus_order(), "confirmation exact focus order")
-	_assert_control_neighbor_paths(assertions, confirmation.focus_controls(), "confirmation")
-	assertions.expect_true(
-		"血塗れの短剣" in str(confirmation.debug_state()["message"]),
-		"unique-loss confirmation names the fixed unique",
-	)
-	assertions.expect_equal(0, evidence_state["pointer_event_count"], "evidence setup emits no pointer event")
-	_cleanup_fixture(evidence_fixture, context)
-
 
 func _test_controller_mouse_bulk_fusion_and_discard(
 	assertions: Variant,
@@ -1097,7 +1071,7 @@ func _loaded_catalog(assertions: Variant) -> DefinitionCatalog:
 	if _catalog == null:
 		_catalog = DefinitionCatalog.new()
 		var valid: bool = _catalog.load_and_validate()
-		assertions.expect_true(valid, "Gate 5 inventory UI catalog valid: %s" % _catalog.error_text)
+		assertions.expect_true(valid, "inventory inventory UI catalog valid: %s" % _catalog.error_text)
 	return _catalog if _catalog.is_valid else null
 
 

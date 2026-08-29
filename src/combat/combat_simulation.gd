@@ -27,7 +27,6 @@ var freeze_countdown: bool = false
 var freeze_all_updates: bool = false
 var allow_contact_timers_only: bool = false
 var main_weapon_damage_override: float = -1.0
-var evidence_caption: String = ""
 
 var _pending_deaths: Array[Dictionary] = []
 
@@ -414,7 +413,6 @@ func prepare_performance_fixture(
 	freeze_normal_spawn = true
 	freeze_countdown = true
 	freeze_all_updates = true
-	evidence_caption = "FULL LOAD  •  ENEMY 500  •  PROJECTILE 1,200  •  VFX 800"
 	return (
 		enemy_system.enemy_store.active_count() == enemy_count
 		and projectile_pool.active_count() == projectile_count
@@ -647,7 +645,6 @@ func _build_hud_values() -> Dictionary:
 		"projectile_pool_overflow": projectile_pool.overflow_count,
 		"vfx_pool_overflow": vfx_pool.overflow_count,
 		"skill_slots": skill_system.build_hud_slots(),
-		"evidence_caption": evidence_caption,
 	}
 
 

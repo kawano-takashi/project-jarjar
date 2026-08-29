@@ -26,7 +26,6 @@ const CURRENT_CARD_SIZE := Vector2(760.0, 340.0)
 var _pending_state: RunState = null
 var _controller: RewardRevealController = RewardRevealController.new()
 var _automatic_progression: bool = true
-var _evidence_mode: String = ""
 
 var _accept_pressed: bool = false
 var _accept_elapsed: float = 0.0
@@ -94,18 +93,6 @@ func initial_focus_control() -> Control:
 
 func set_automatic_progression(enabled: bool) -> void:
 	_automatic_progression = enabled
-
-
-func set_evidence_mode(mode: String) -> bool:
-	if not mode in ["", "epic_prealert", "reward_grid"]:
-		return false
-	_evidence_mode = mode
-	if not _evidence_mode.is_empty():
-		_automatic_progression = false
-	_last_rendered_revealed_count = -1
-	_last_prealert_key = ""
-	_update_view()
-	return true
 
 
 func test_tick(delta: float) -> void:
@@ -379,12 +366,6 @@ func _initialize_controller(state: RunState) -> void:
 func _update_view() -> void:
 	if not is_node_ready():
 		return
-	if _evidence_mode == "epic_prealert":
-		_render_epic_prealert_evidence()
-		return
-	if _evidence_mode == "reward_grid":
-		_render_reward_grid_evidence()
-		return
 	var presentation: Dictionary = _controller.presentation_state()
 	_accessibility_status.text = "動き軽減 %s・点滅軽減 %s" % [
 		"ON" if bool(presentation["reduce_motion"]) else "OFF",
@@ -488,11 +469,7 @@ func _update_prealert_targets(presentation: Dictionary) -> void:
 
 func _rebuild_acquired_list() -> void:
 	_clear_children(_acquired_list)
-	var rewards: Array[RewardRoll] = (
-		_controller.ordered_rewards()
-		if _evidence_mode == "reward_grid"
-		else _controller.revealed_rewards()
-	)
+	var rewards: Array[RewardRoll] = _controller.revealed_rewards()
 	for reward: RewardRoll in rewards:
 		var panel := PanelContainer.new()
 		panel.custom_minimum_size = Vector2(0.0, 92.0)
@@ -515,43 +492,6 @@ func _rebuild_acquired_list() -> void:
 		label.add_theme_font_size_override("font_size", 18)
 		margin.add_child(label)
 		_acquired_list.add_child(panel)
-
-
-func _render_epic_prealert_evidence() -> void:
-	_unopened_count.text = "未開封箱　%d" % maxi(1, _controller.unrevealed_count())
-	_speed_label.text = "長押し4倍　A／Enter またはマウス左"
-	_prealert_banner.visible = true
-	_prealert_banner.text = "高レア予告　EPIC"
-	_prealert_targets.visible = false
-	_current_rarity.text = "⬡ EPIC"
-	_current_name.text = "内容は公開前です"
-	_current_details.text = "真の高レア予告 • 結果は獲得時に確定済み"
-	_current_card.add_theme_stylebox_override(
-		"panel",
-		_card_style(GameTypes.Rarity.EPIC, 7, 2),
-	)
-	_current_card.position = Vector2.ZERO
-	_current_card.pivot_offset = _current_card.size * 0.5
-	_current_card.scale = Vector2.ONE * 1.02
-	if _last_rendered_revealed_count != 0:
-		_last_rendered_revealed_count = 0
-		_clear_children(_acquired_list)
-
-
-func _render_reward_grid_evidence() -> void:
-	_unopened_count.text = "レアリティ表示一覧"
-	_speed_label.text = "色＋文字＋輪郭形状で識別"
-	_prealert_banner.visible = false
-	_prealert_targets.visible = false
-	_current_rarity.text = "報酬カード GRID"
-	_current_name.text = "COMMON → LEGENDARY"
-	_current_details.text = "□ COMMON　◇ RARE　⬡ EPIC　✦ LEGENDARY"
-	_current_card.add_theme_stylebox_override("panel", _card_style(-2, 3, 0))
-	_current_card.position = Vector2.ZERO
-	_current_card.scale = Vector2.ONE
-	if _last_rendered_revealed_count != _controller.ordered_rewards().size():
-		_last_rendered_revealed_count = _controller.ordered_rewards().size()
-		_rebuild_acquired_list()
 
 
 func _build_hidden_prealert_card(reward_id: String) -> PanelContainer:

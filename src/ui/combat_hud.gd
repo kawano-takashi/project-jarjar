@@ -20,7 +20,6 @@ const REDUCED_FLASH_OUTLINE_SIZE: int = 5
 @onready var _debug_overlay: PanelContainer = %DebugOverlay
 @onready var _debug_active: Label = %DebugActive
 @onready var _debug_overflow: Label = %DebugOverflow
-@onready var _evidence_caption: Label = %EvidenceCaption
 @onready var _feedback_label: Label = %FeedbackLabel
 
 var _feedback_remaining: float = 0.0
@@ -128,7 +127,6 @@ func update_from_snapshot(snapshot: CombatSnapshot) -> void:
 	var wave_cleared := bool(values.get("wave_cleared", false))
 	var boss_defeated := bool(values.get("boss_defeated", false))
 	var non_boss_spawned := int(values.get("non_boss_spawned", 0))
-	var evidence_caption := str(values.get("evidence_caption", ""))
 
 	_wave_value.text = "WAVE %d" % wave_number
 	_time_value.text = "残り %d 秒" % int(ceil(time_remaining))
@@ -142,8 +140,6 @@ func update_from_snapshot(snapshot: CombatSnapshot) -> void:
 	_bonus_time.visible = wave_cleared
 	_update_boss_gate(wave_number, boss_defeated, non_boss_spawned)
 	_update_debug_overlay(values, snapshot)
-	_evidence_caption.text = evidence_caption
-	_evidence_caption.visible = not evidence_caption.is_empty()
 
 
 func _update_skill_slot(label: Label, skill_slots: Array, slot_index: int) -> void:

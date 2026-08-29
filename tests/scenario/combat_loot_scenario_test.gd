@@ -11,25 +11,25 @@ const HIGH_ID_POSITION: Vector2 = Vector2(0.8, 0.0)
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"gate04_combat_loot_entity_order_and_normal_rate",
-		"gate04_combat_loot_fixed_special_counts",
-		"gate04_combat_loot_quota_fallback",
-		"gate04_combat_loot_success_failure_cleanup",
+		"combat_loot_entity_order_and_normal_rate",
+		"combat_loot_fixed_special_counts",
+		"combat_loot_quota_fallback",
+		"combat_loot_success_failure_cleanup",
 	])
 
 
 func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
 	match test_name:
-		"gate04_combat_loot_entity_order_and_normal_rate":
+		"combat_loot_entity_order_and_normal_rate":
 			_test_entity_order_and_normal_rate(assertions)
-		"gate04_combat_loot_fixed_special_counts":
+		"combat_loot_fixed_special_counts":
 			_test_fixed_special_counts(assertions)
-		"gate04_combat_loot_quota_fallback":
+		"combat_loot_quota_fallback":
 			_test_quota_fallback(assertions)
-		"gate04_combat_loot_success_failure_cleanup":
+		"combat_loot_success_failure_cleanup":
 			_test_success_failure_cleanup(assertions)
 		_:
-			assertions.expect_true(false, "registered Gate 4 combat-loot scenario")
+			assertions.expect_true(false, "registered loot combat-loot scenario")
 
 
 func _test_entity_order_and_normal_rate(assertions: Variant) -> void:
@@ -227,7 +227,7 @@ func _test_success_failure_cleanup(assertions: Variant) -> void:
 
 func _loaded_catalog(assertions: Variant) -> DefinitionCatalog:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "Gate 4 combat-loot catalog valid")
+	assertions.expect_true(catalog.load_and_validate(), "loot combat-loot catalog valid")
 	return catalog if catalog.is_valid else null
 
 

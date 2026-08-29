@@ -4,6 +4,7 @@ extends Node
 const USER_SETTINGS_PATH := "user://settings.cfg"
 const SETTINGS_SECTION := "settings"
 const RUNNER_BOOTSTRAP_SUFFIX := "/runner/settings.cfg"
+const TEST_SETTINGS_ROOT := "res://artifacts/gdscript-tests/settings"
 
 const DEFAULT_SETTINGS: Dictionary = {
 	"master_volume": 1.0,
@@ -75,7 +76,11 @@ func initialize_for_runner(validated_settings_path: String) -> Error:
 	if not _is_path_within(resolved_path, test_user_root):
 		return ERR_INVALID_PARAMETER
 
-	var load_result := _load_or_create_settings(resolved_path)
+	if FileAccess.file_exists(resolved_path):
+		var remove_error := DirAccess.remove_absolute(resolved_path)
+		if remove_error != OK:
+			return remove_error
+	var load_result := _create_default_settings(resolved_path)
 	var load_error: Error = load_result["error"]
 	if load_error != OK:
 		return load_error
@@ -259,13 +264,7 @@ func _apply_values(values: Dictionary) -> void:
 
 
 func _resolve_game_settings_path(settings_path: String) -> String:
-	if settings_path == USER_SETTINGS_PATH:
-		return USER_SETTINGS_PATH
-
-	var resolved_path := _normalize_absolute_path(settings_path)
-	if resolved_path.is_empty():
-		return ""
-	return resolved_path if not _find_test_user_root(resolved_path).is_empty() else ""
+	return USER_SETTINGS_PATH if settings_path == USER_SETTINGS_PATH else ""
 
 
 func _normalize_absolute_path(path: String) -> String:
@@ -283,11 +282,8 @@ func _find_test_user_root(settings_path: String) -> String:
 	var repository_root := _repository_root()
 	if repository_root.is_empty():
 		return ""
-	for gate_number in range(1, 7):
-		var test_user_root := repository_root.path_join("artifacts/gate-%02d/test-user" % gate_number)
-		if _is_path_within(settings_path, test_user_root):
-			return test_user_root
-	return ""
+	var test_user_root := repository_root.path_join(TEST_SETTINGS_ROOT.trim_prefix("res://"))
+	return test_user_root if _is_path_within(settings_path, test_user_root) else ""
 
 
 func _repository_root() -> String:

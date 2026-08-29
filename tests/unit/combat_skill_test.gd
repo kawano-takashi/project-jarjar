@@ -20,31 +20,31 @@ const WEAPON_TYPES: Array[int] = [
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"gate05_skill_threshold_pending_fifo_contract",
-		"gate05_echo_and_coward_replay_contract",
-		"gate05_effect_chain_and_crown_empty_contract",
-		"gate05_bloodied_kill_bonus_wave_reset_contract",
-		"gate05_crown_all_skill_schedule_contract",
-		"gate05_unique_skill_weapon_parameter_matrix",
+		"skill_threshold_pending_fifo_contract",
+		"echo_and_coward_replay_contract",
+		"effect_chain_and_crown_empty_contract",
+		"bloodied_kill_bonus_wave_reset_contract",
+		"crown_all_skill_schedule_contract",
+		"unique_skill_weapon_parameter_matrix",
 	])
 
 
 func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
 	match test_name:
-		"gate05_skill_threshold_pending_fifo_contract":
+		"skill_threshold_pending_fifo_contract":
 			_test_skill_threshold_pending_fifo(assertions)
-		"gate05_echo_and_coward_replay_contract":
+		"echo_and_coward_replay_contract":
 			_test_echo_and_coward_replay(assertions)
-		"gate05_effect_chain_and_crown_empty_contract":
+		"effect_chain_and_crown_empty_contract":
 			_test_effect_chain_and_crown_empty(assertions)
-		"gate05_bloodied_kill_bonus_wave_reset_contract":
+		"bloodied_kill_bonus_wave_reset_contract":
 			_test_bloodied_kill_bonus_wave_reset(assertions)
-		"gate05_crown_all_skill_schedule_contract":
+		"crown_all_skill_schedule_contract":
 			_test_crown_all_skill_schedule(assertions)
-		"gate05_unique_skill_weapon_parameter_matrix":
+		"unique_skill_weapon_parameter_matrix":
 			_test_unique_skill_weapon_parameter_matrix(assertions)
 		_:
-			assertions.expect_true(false, "registered Gate 5 combat skill unit test")
+			assertions.expect_true(false, "registered inventory combat skill unit test")
 
 
 func _test_skill_threshold_pending_fifo(assertions: Variant) -> void:
@@ -665,7 +665,7 @@ func _test_unique_skill_weapon_parameter_matrix(assertions: Variant) -> void:
 
 func _catalog(assertions: Variant) -> DefinitionCatalog:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "Gate 5 combat DefinitionCatalog valid")
+	assertions.expect_true(catalog.load_and_validate(), "inventory combat DefinitionCatalog valid")
 	return catalog if catalog.is_valid else null
 
 

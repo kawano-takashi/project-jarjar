@@ -7,22 +7,22 @@ const RunnerScript = preload("res://src/debug/performance_runner.gd")
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"gate06_performance_nearest_rank_and_memory_median",
-		"gate06_performance_summary_thresholds",
-		"gate06_performance_csv_buffer_contract",
-		"gate06_performance_fixture_contract",
+		"performance_nearest_rank_and_memory_median",
+		"performance_summary_thresholds",
+		"performance_csv_buffer_contract",
+		"performance_fixture_contract",
 	])
 
 
 func run_test(test_name: String, assertions: Variant, context: Dictionary) -> void:
 	match test_name:
-		"gate06_performance_nearest_rank_and_memory_median":
+		"performance_nearest_rank_and_memory_median":
 			_test_nearest_rank_and_memory_median(assertions)
-		"gate06_performance_summary_thresholds":
+		"performance_summary_thresholds":
 			_test_summary_thresholds(assertions)
-		"gate06_performance_csv_buffer_contract":
+		"performance_csv_buffer_contract":
 			_test_csv_buffer_contract(assertions)
-		"gate06_performance_fixture_contract":
+		"performance_fixture_contract":
 			_test_fixture_contract(assertions, context)
 		_:
 			assertions.expect_true(false, "registered test name")

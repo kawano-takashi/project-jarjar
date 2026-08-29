@@ -33,7 +33,6 @@ func test_names() -> PackedStringArray:
 		"input_map_contract",
 		"launch_argument_contract",
 		"qa_runtime_settings_are_ephemeral",
-		"gate_script_argument_validation",
 	])
 
 
@@ -54,11 +53,9 @@ func run_test(test_name: String, assertions: Variant, context: Dictionary) -> vo
 		"input_map_contract":
 			_test_input_map_contract(assertions)
 		"launch_argument_contract":
-			_test_launch_argument_contract(assertions, context)
+			_test_launch_argument_contract(assertions)
 		"qa_runtime_settings_are_ephemeral":
 			_test_qa_runtime_settings_are_ephemeral(assertions, context)
-		"gate_script_argument_validation":
-			_test_gate_script_argument_validation(assertions)
 		_:
 			assertions.expect_true(false, "registered test name")
 
@@ -124,16 +121,32 @@ func _test_runner_test_path_isolation(assertions: Variant, context: Dictionary) 
 	var store: Variant = context["settings_store"]
 	assertions.expect_not_equal(context["bootstrap_path"], context["test_path"], "test path differs from bootstrap")
 	assertions.expect_equal(context["test_path"], store.active_settings_path, "test path selected")
-	var current_gate_name: String = context["test_user_root"].get_base_dir().get_file()
-	var other_gate_name := "gate-02" if current_gate_name == "gate-01" else "gate-01"
-	var cross_gate_path := ProjectSettings.globalize_path(
-		"res://artifacts/%s/test-user/cross_gate_rejected_from_%s/settings.cfg"
-		% [other_gate_name, current_gate_name]
+	var outside_root_path := ProjectSettings.globalize_path(
+		"res://artifacts/release-tests/rejected-settings/settings.cfg"
 	)
-	assertions.expect_false(FileAccess.file_exists(cross_gate_path), "cross-Gate target absent before rejection")
-	assertions.expect_equal(ERR_INVALID_PARAMETER, store.use_test_path(cross_gate_path), "cross-Gate test path rejected")
-	assertions.expect_equal(context["test_path"], store.active_settings_path, "cross-Gate rejection preserves active path")
-	assertions.expect_false(FileAccess.file_exists(cross_gate_path), "cross-Gate rejection performs no target file I/O")
+	var outside_existed := FileAccess.file_exists(outside_root_path)
+	var outside_contents := (
+		FileAccess.get_file_as_string(outside_root_path)
+		if outside_existed
+		else ""
+	)
+	assertions.expect_equal(
+		ERR_INVALID_PARAMETER,
+		store.use_test_path(outside_root_path),
+		"path outside GDScript test settings root rejected",
+	)
+	assertions.expect_equal(context["test_path"], store.active_settings_path, "rejection preserves active path")
+	assertions.expect_equal(
+		outside_existed,
+		FileAccess.file_exists(outside_root_path),
+		"rejection preserves outside path existence",
+	)
+	if outside_existed:
+		assertions.expect_equal(
+			outside_contents,
+			FileAccess.get_file_as_string(outside_root_path),
+			"rejection preserves outside path contents",
+		)
 	var bootstrap_config := ConfigFile.new()
 	assertions.expect_equal(OK, bootstrap_config.load(context["bootstrap_path"]), "bootstrap settings remain readable")
 	assertions.expect_float(
@@ -320,46 +333,6 @@ func _assert_action(assertions: Variant, action: StringName, keys: Array, button
 		assertions.expect_true(found, "%s joy axis %s:%s" % [action, axis_spec[0], axis_spec[1]])
 
 
-func _test_gate_script_argument_validation(assertions: Variant) -> void:
-	var script_path := ProjectSettings.globalize_path("res://tests/run_gate_checks.ps1")
-	var invalid_gate_output: Array[String] = []
-	var invalid_gate_exit := OS.execute(
-		"powershell.exe",
-		PackedStringArray([
-			"-NoProfile",
-			"-ExecutionPolicy",
-			"Bypass",
-			"-File",
-			script_path,
-			"-GateNumber",
-			"0",
-			"-Suite",
-			"all",
-		]),
-		invalid_gate_output,
-		true,
-	)
-	assertions.expect_equal(2, invalid_gate_exit, "invalid GateNumber rejected")
-	var invalid_suite_output: Array[String] = []
-	var invalid_suite_exit := OS.execute(
-		"powershell.exe",
-		PackedStringArray([
-			"-NoProfile",
-			"-ExecutionPolicy",
-			"Bypass",
-			"-File",
-			script_path,
-			"-GateNumber",
-			"1",
-			"-Suite",
-			"invalid",
-		]),
-		invalid_suite_output,
-		true,
-	)
-	assertions.expect_equal(2, invalid_suite_exit, "invalid Suite rejected")
-
-
 func _test_qa_runtime_settings_are_ephemeral(assertions: Variant, context: Dictionary) -> void:
 	var qa_settings_path: String = String(context["test_user_root"]).path_join(
 		"qa-runtime-policy/settings.cfg"
@@ -374,7 +347,6 @@ func _test_qa_runtime_settings_are_ephemeral(assertions: Variant, context: Dicti
 	var game_app: Variant = GameAppScript.new()
 	game_app.set("_launch", {
 		"mode": LaunchArgumentsScript.MODE_QA_SCENARIO,
-		"settings_path": qa_settings_path,
 	})
 	var initialize_error: Variant = game_app.call(
 		"_initialize_settings_for_launch",
@@ -390,91 +362,95 @@ func _test_qa_runtime_settings_are_ephemeral(assertions: Variant, context: Dicti
 	settings_store.free()
 
 
-func _test_launch_argument_contract(assertions: Variant, context: Dictionary) -> void:
+func _test_launch_argument_contract(assertions: Variant) -> void:
 	var parser := load("res://src/app/launch_arguments.gd")
-	var valid_smoke: Dictionary = parser.parse_debug(PackedStringArray([
-		"--smoke-quit=120",
-		"--settings-path=" + context["test_path"],
-	]))
+	var debug_normal: Dictionary = parser.parse_debug(PackedStringArray())
+	assertions.expect_true(debug_normal["valid"], "debug no-argument normal launch accepted")
+	assertions.expect_equal(&"normal", debug_normal["mode"], "debug normal mode selected")
+	assertions.expect_equal(
+		"user://settings.cfg",
+		debug_normal["settings_path"],
+		"normal launch uses user settings",
+	)
+
+	var valid_smoke: Dictionary = parser.parse_debug(PackedStringArray(["--smoke-quit=120"]))
 	assertions.expect_true(valid_smoke["valid"], "valid smoke accepted")
 	assertions.expect_equal(&"smoke_quit", valid_smoke["mode"], "smoke mode")
 	assertions.expect_equal(120, valid_smoke["smoke_frames"], "smoke physics frames")
-
+	assertions.expect_equal("", valid_smoke["settings_path"], "smoke settings are ephemeral")
 	for invalid_value in ["", "abc", "0", "-1", "1.5"]:
 		var invalid_smoke: Dictionary = parser.parse_debug(PackedStringArray([
 			"--smoke-quit=" + invalid_value,
-			"--settings-path=" + context["test_path"],
 		]))
 		assertions.expect_false(invalid_smoke["valid"], "invalid smoke value rejected: %s" % invalid_value)
 		assertions.expect_equal("--smoke-quit", invalid_smoke["rejected_name"], "invalid smoke marker: %s" % invalid_value)
-
-	var missing_smoke: Dictionary = parser.parse_debug(PackedStringArray([
-		"--smoke-quit",
-		"--settings-path=" + context["test_path"],
-	]))
-	assertions.expect_false(missing_smoke["valid"], "missing smoke value rejected")
-	assertions.expect_equal("--smoke-quit", missing_smoke["rejected_name"], "missing smoke marker")
-	var settings_only: Dictionary = parser.parse_debug(PackedStringArray(["--settings-path=" + context["test_path"]]))
-	assertions.expect_false(settings_only["valid"], "settings-only rejected")
-	assertions.expect_equal("--settings-path", settings_only["rejected_name"], "settings-only marker")
-	var future_gate_path := ProjectSettings.globalize_path("res://artifacts/gate-02/test-user/future/settings.cfg")
-	var future_gate_smoke: Dictionary = parser.parse_debug(PackedStringArray([
-		"--smoke-quit=1",
-		"--settings-path=" + future_gate_path,
-	]))
-	assertions.expect_true(future_gate_smoke["valid"], "future Gate settings path accepted")
-	assertions.expect_equal(future_gate_path.replace("\\", "/").simplify_path(), future_gate_smoke["settings_path"], "future Gate settings path normalized")
-	for rejected_path in [
-		ProjectSettings.globalize_path("res://artifacts/gate-00/test-user/rejected/settings.cfg"),
-		ProjectSettings.globalize_path("res://artifacts/gate-07/test-user/rejected/settings.cfg"),
-		ProjectSettings.globalize_path("res://artifacts/gate-01/test-users/rejected/settings.cfg"),
-		ProjectSettings.globalize_path("res://artifacts/gate-01/test-user/rejected/not-settings.cfg"),
+	for invalid_smoke_arguments: PackedStringArray in [
+		PackedStringArray(["--smoke-quit"]),
+		PackedStringArray(["--smoke-quit=1", "--smoke-quit=2"]),
+		PackedStringArray(["--smoke-quit=1", "--qa-scenario=weapon_bow"]),
 	]:
-		var rejected_smoke: Dictionary = parser.parse_debug(PackedStringArray([
-			"--smoke-quit=1",
-			"--settings-path=" + rejected_path,
-		]))
-		assertions.expect_false(rejected_smoke["valid"], "malformed or out-of-range Gate path rejected: %s" % rejected_path)
-		assertions.expect_equal("--settings-path", rejected_smoke["rejected_name"], "rejected Gate path marker: %s" % rejected_path)
+		assertions.expect_false(
+			parser.parse_debug(invalid_smoke_arguments)["valid"],
+			"invalid smoke argument shape rejected",
+		)
 
-	var valid_performance: Dictionary = parser.parse_debug(PackedStringArray([
-		"--performance=full_hd_500_2000",
-		"--run-seed=5002000",
-		"--settings-path=" + context["test_path"],
-	]))
-	assertions.expect_true(valid_performance["valid"], "exact Gate 6 performance arguments accepted")
-	assertions.expect_equal(&"performance", valid_performance["mode"], "performance mode selected")
-	assertions.expect_equal(5_002_000, valid_performance["run_seed"], "performance seed fixed")
-	for invalid_performance: PackedStringArray in [
+	for scenario_id: String in parser.QA_SCENARIOS:
+		var valid_qa: Dictionary = parser.parse_debug(PackedStringArray([
+			"--qa-scenario=" + scenario_id,
+		]))
+		assertions.expect_true(valid_qa["valid"], "QA scenario accepted: %s" % scenario_id)
+		assertions.expect_equal(&"qa_scenario", valid_qa["mode"], "QA mode selected")
+		assertions.expect_equal("", valid_qa["settings_path"], "QA settings are ephemeral")
+	for invalid_qa_arguments: PackedStringArray in [
+		PackedStringArray(["--qa-scenario=unknown"]),
+		PackedStringArray(["--qa-scenario"]),
+		PackedStringArray(["--qa-scenario=weapon_bow", "--qa-scenario=weapon_staff"]),
+	]:
+		assertions.expect_false(
+			parser.parse_debug(invalid_qa_arguments)["valid"],
+			"invalid QA argument shape rejected",
+		)
+
+	for valid_performance_arguments: PackedStringArray in [
 		PackedStringArray([
 			"--performance=full_hd_500_2000",
-			"--run-seed=1",
-			"--settings-path=" + context["test_path"],
-		]),
-		PackedStringArray([
-			"--performance=reduced_load",
 			"--run-seed=5002000",
-			"--settings-path=" + context["test_path"],
 		]),
 		PackedStringArray([
+			"--run-seed=5002000",
 			"--performance=full_hd_500_2000",
-			"--settings-path=" + context["test_path"],
 		]),
 	]:
-		var rejected_performance: Dictionary = parser.parse_debug(invalid_performance)
-		assertions.expect_false(rejected_performance["valid"], "altered performance contract rejected")
-
-	for evidence_id: String in [
-		"gate_06:tutorial_move",
-		"gate_06:accessibility_reward",
-		"gate_06:full_load",
-		"gate_06:release_result",
+		var valid_performance: Dictionary = parser.parse_debug(valid_performance_arguments)
+		assertions.expect_true(valid_performance["valid"], "exact performance arguments accepted")
+		assertions.expect_equal(&"performance", valid_performance["mode"], "performance mode selected")
+		assertions.expect_equal(5_002_000, valid_performance["run_seed"], "performance seed fixed")
+		assertions.expect_equal("", valid_performance["settings_path"], "performance settings are ephemeral")
+	for invalid_performance: PackedStringArray in [
+		PackedStringArray(["--performance=full_hd_500_2000", "--run-seed=1"]),
+		PackedStringArray(["--performance=reduced_load", "--run-seed=5002000"]),
+		PackedStringArray(["--performance=full_hd_500_2000"]),
+		PackedStringArray(["--run-seed=5002000"]),
+		PackedStringArray([
+			"--performance=full_hd_500_2000",
+			"--run-seed=5002000",
+			"--run-seed=5002000",
+		]),
 	]:
-		var gate_six_evidence: Dictionary = parser.parse_debug(PackedStringArray([
-			"--evidence=" + evidence_id,
-			"--settings-path=" + context["test_path"],
-		]))
-		assertions.expect_true(gate_six_evidence["valid"], "%s evidence accepted" % evidence_id)
+		assertions.expect_false(
+			parser.parse_debug(invalid_performance)["valid"],
+			"altered performance contract rejected",
+		)
+
+	for removed_or_unknown_debug: PackedStringArray in [
+		PackedStringArray(["--settings-path=C:/tmp/settings.cfg"]),
+		PackedStringArray(["--suite=unit"]),
+		PackedStringArray(["--unknown=value"]),
+	]:
+		assertions.expect_false(
+			parser.parse_debug(removed_or_unknown_debug)["valid"],
+			"removed or unknown debug option rejected",
+		)
 
 	var release_normal: Dictionary = parser.parse_release(PackedStringArray())
 	assertions.expect_true(release_normal["valid"], "Release no-argument normal launch accepted")
@@ -483,7 +459,7 @@ func _test_launch_argument_contract(assertions: Variant, context: Dictionary) ->
 	assertions.expect_true(release_smoke["valid"], "Release smoke driver accepted alone")
 	assertions.expect_equal(&"release_smoke", release_smoke["mode"], "Release smoke mode selected")
 	var manifest_path := ProjectSettings.globalize_path(
-		"res://artifacts/gate-06/release-pack-manifest.txt"
+		"res://artifacts/release-tests/pack-manifest.txt"
 	)
 	var release_audit: Dictionary = parser.parse_release(PackedStringArray([
 		"--release-pack-audit=" + manifest_path,
@@ -498,16 +474,19 @@ func _test_launch_argument_contract(assertions: Variant, context: Dictionary) ->
 
 	var rejected_release_cases: Array[PackedStringArray] = [
 		PackedStringArray(["--qa-scenario=weapon_bow"]),
-		PackedStringArray(["--evidence=gate_06:release_result"]),
-		PackedStringArray(["--settings-path=" + context["test_path"]]),
+		PackedStringArray(["--settings-path=C:/tmp/settings.cfg"]),
 		PackedStringArray(["--smoke-quit=1"]),
 		PackedStringArray(["--performance=full_hd_500_2000"]),
 		PackedStringArray(["--run-seed=5002000"]),
-		PackedStringArray(["--suite", "unit"]),
+		PackedStringArray(["--suite=unit"]),
 		PackedStringArray(["--unknown-qa-option"]),
 		PackedStringArray(["--smoke-run", "--smoke-run"]),
 		PackedStringArray(["--smoke-run", "--release-pack-audit=" + manifest_path]),
 		PackedStringArray(["--release-pack-audit=relative.txt"]),
+		PackedStringArray([
+			"--release-pack-audit=" + manifest_path,
+			"--release-pack-audit=" + manifest_path,
+		]),
 	]
 	for release_arguments: PackedStringArray in rejected_release_cases:
 		var rejected_release: Dictionary = parser.parse_release(release_arguments)

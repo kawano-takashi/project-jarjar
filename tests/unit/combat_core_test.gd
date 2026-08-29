@@ -3,25 +3,25 @@ extends RefCounted
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"gate03_uniform_grid_circle_and_clamp",
-		"gate03_uniform_grid_segment_and_weapon_queries",
-		"gate03_projectile_pool_generation_order",
-		"gate03_combat_event_router_chain_contract",
+		"uniform_grid_circle_and_clamp",
+		"uniform_grid_segment_and_weapon_queries",
+		"projectile_pool_generation_order",
+		"combat_event_router_chain_contract",
 	])
 
 
 func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
 	match test_name:
-		"gate03_uniform_grid_circle_and_clamp":
+		"uniform_grid_circle_and_clamp":
 			_test_uniform_grid_circle_and_clamp(assertions)
-		"gate03_uniform_grid_segment_and_weapon_queries":
+		"uniform_grid_segment_and_weapon_queries":
 			_test_uniform_grid_segment_and_weapon_queries(assertions)
-		"gate03_projectile_pool_generation_order":
+		"projectile_pool_generation_order":
 			_test_projectile_pool_generation_order(assertions)
-		"gate03_combat_event_router_chain_contract":
+		"combat_event_router_chain_contract":
 			_test_combat_event_router_chain_contract(assertions)
 		_:
-			assertions.expect_true(false, "registered gate03 core test")
+			assertions.expect_true(false, "registered combat core test")
 
 
 func _test_uniform_grid_circle_and_clamp(assertions: Variant) -> void:

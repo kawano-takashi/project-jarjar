@@ -6,19 +6,19 @@ const TutorialControllerScript = preload("res://src/tutorial/tutorial_controller
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"gate06_tutorial_sequence_and_timers",
-		"gate06_tutorial_move_only_freezes_combat",
+		"tutorial_sequence_and_timers",
+		"tutorial_move_only_freezes_combat",
 	])
 
 
 func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
 	match test_name:
-		"gate06_tutorial_sequence_and_timers":
+		"tutorial_sequence_and_timers":
 			_test_sequence_and_timers(assertions)
-		"gate06_tutorial_move_only_freezes_combat":
+		"tutorial_move_only_freezes_combat":
 			_test_move_only_freezes_combat(assertions)
 		_:
-			assertions.expect_true(false, "registered Gate 6 tutorial test")
+			assertions.expect_true(false, "registered release readiness tutorial test")
 
 
 func _test_sequence_and_timers(assertions: Variant) -> void:
@@ -64,7 +64,7 @@ func _test_sequence_and_timers(assertions: Variant) -> void:
 
 func _test_move_only_freezes_combat(assertions: Variant) -> void:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "Gate 6 tutorial catalog valid")
+	assertions.expect_true(catalog.load_and_validate(), "release readiness tutorial catalog valid")
 	if not catalog.is_valid:
 		return
 	var state: RunState = RunStateFactory.create(20260827, catalog.wave(1))

@@ -7,22 +7,22 @@ const AudioVoicePoolScript := preload("res://src/audio/audio_voice_pool.gd")
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"gate06_audio_factory_stream_contract",
-		"gate06_audio_factory_pcm_contract",
-		"gate06_audio_voice_pool_contract",
+		"audio_factory_stream_contract",
+		"audio_factory_pcm_contract",
+		"audio_voice_pool_contract",
 	])
 
 
 func run_test(test_name: String, assertions: Variant, context: Dictionary) -> void:
 	match test_name:
-		"gate06_audio_factory_stream_contract":
+		"audio_factory_stream_contract":
 			_test_stream_contract(assertions)
-		"gate06_audio_factory_pcm_contract":
+		"audio_factory_pcm_contract":
 			_test_pcm_contract(assertions)
-		"gate06_audio_voice_pool_contract":
-			_test_voice_pool_contract(assertions, context)
+		"audio_voice_pool_contract":
+			await _test_voice_pool_contract(assertions, context)
 		_:
-			assertions.expect_true(false, "registered Gate 6 audio test")
+			assertions.expect_true(false, "registered release readiness audio test")
 
 
 func _test_stream_contract(assertions: Variant) -> void:
@@ -89,6 +89,7 @@ func _test_pcm_contract(assertions: Variant) -> void:
 func _test_voice_pool_contract(assertions: Variant, context: Dictionary) -> void:
 	var pool: Variant = AudioVoicePoolScript.new()
 	(context["tree"] as SceneTree).root.add_child(pool)
+	await (context["tree"] as SceneTree).process_frame
 	assertions.expect_equal(AudioVoicePoolScript.VOICE_COUNT, pool.voice_count(), "voice pool contains exactly 16 players")
 	assertions.expect_equal(AudioVoicePoolScript.VOICE_COUNT, pool.get_child_count(), "voice pool never allocates an extra child")
 

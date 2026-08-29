@@ -63,7 +63,7 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 		"timer_math_test":
 			_timer_math_test(assertions)
 		_:
-			assertions.expect_true(false, "registered Gate 2 test name")
+			assertions.expect_true(false, "registered domain test name")
 
 
 func _game_types_test(assertions: Variant) -> void:

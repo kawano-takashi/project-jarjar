@@ -23,19 +23,19 @@ var _catalog: DefinitionCatalog = null
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"gate06_controller_only_primary_routes_and_zero_pointer_contract",
-		"gate06_left_stick_focus_moves_once_per_tilt",
+		"controller_only_primary_routes_and_zero_pointer_contract",
+		"left_stick_focus_moves_once_per_tilt",
 	])
 
 
 func run_test(test_name: String, assertions: Variant, context: Dictionary) -> void:
 	match test_name:
-		"gate06_controller_only_primary_routes_and_zero_pointer_contract":
+		"controller_only_primary_routes_and_zero_pointer_contract":
 			await _test_controller_only_primary_routes(assertions, context)
-		"gate06_left_stick_focus_moves_once_per_tilt":
+		"left_stick_focus_moves_once_per_tilt":
 			await _test_left_stick_focus_moves_once_per_tilt(assertions, context)
 		_:
-			assertions.expect_true(false, "registered Gate 6 controller-only scenario test")
+			assertions.expect_true(false, "registered release readiness controller-only scenario test")
 
 
 func _test_controller_only_primary_routes(assertions: Variant, context: Dictionary) -> void:
@@ -67,7 +67,7 @@ func _test_controller_only_primary_routes(assertions: Variant, context: Dictiona
 	assertions.expect_equal(
 		0,
 		pointer_event_count[0],
-		"Gate 6 controller-only scenario pointer event count=0",
+		"release readiness controller-only scenario pointer event count=0",
 	)
 
 
@@ -636,5 +636,5 @@ func _loaded_catalog(assertions: Variant) -> DefinitionCatalog:
 	if _catalog == null:
 		_catalog = DefinitionCatalog.new()
 		var valid: bool = _catalog.load_and_validate()
-		assertions.expect_true(valid, "Gate 6 controller-only catalog valid: %s" % _catalog.error_text)
+		assertions.expect_true(valid, "release readiness controller-only catalog valid: %s" % _catalog.error_text)
 	return _catalog if _catalog.is_valid else null

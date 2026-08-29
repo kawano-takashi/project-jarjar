@@ -1,4 +1,4 @@
-# Project JARJAR Gate 6 人間プレイテスト手順
+# Project JARJAR 人間プレイテスト手順
 
 **状態: 使用禁止（ユーザー最終調整待ち）**
 
@@ -8,10 +8,17 @@
 ## 正式対象の固定条件
 
 ユーザー最終調整後に全検証とRelease exportを再実施し、
-`artifacts/playtest-target.txt`へ
-`candidate_head=<40hex>`、`release_build_identity=<identity>`、`balance_revision=<integer>`を
-記録する。`docs/project-status.md`が「正式playtest対象固定済み」へ更新され、同じ3値が一致するまで
-下記手順を開始しない。EXE/PCK、identity、balance revision、または候補HEADが
+`artifacts/playtest/target.txt`へ次の4行を手動で記録する。
+
+```text
+candidate_head=<40hex>
+exe_sha256=<64hex>
+pck_sha256=<64hex>
+balance_revision=<integer>
+```
+
+`docs/project-status.md`が「正式playtest対象固定済み」へ更新され、同じ4値が一致するまで
+下記手順を開始しない。EXE/PCK、balance revision、または候補HEADが
 変わった場合、以前の対象やデータを流用しない。
 
 ## 初見資格
@@ -43,10 +50,7 @@
 各testerの開始時に新しいPowerShell sessionで次を実行し、`T01`だけを割当IDへ置換する。
 
 ```powershell
-$testerId = "T01"
-$jarjarReleaseExe = (Resolve-Path -LiteralPath ".\build\windows\ProjectJARJAR.exe").Path
-$jarjarReleaseDir = Split-Path -Parent $jarjarReleaseExe
-& ".\tests\run_with_clean_settings.ps1" -Executable $jarjarReleaseExe -Arguments ([string[]]@()) -Label ("playtest_" + $testerId.ToLowerInvariant()) -ExpectedExitCodes @(0) -WorkingDirectory $jarjarReleaseDir
+.\tests\release.ps1 -Task Playtest -TesterId T01
 ```
 
 3run終了までPowerShell sessionを閉じない。終了コードが0でなければ、そのprocessは不合格とする。
@@ -117,8 +121,8 @@ RESULTへ遷移する瞬間までを計測する。W8最終整理を含む。REW
 
 同一EXE/PCKペアで記入済みの2つのCSVを提供した後、次の文言で再開する。
 
-`Gate 6のプレイテスト集計を再開 H`
+`正式プレイテスト集計を再開 H`
 
-`H`は`artifacts/playtest-target.txt`へ記録した40文字候補HEADへ置換する。再開時に
-現在HEAD、target記録、identity、balance revision、初見資格`yes`、全CSV制約を再検証する。
+`H`は`artifacts/playtest/target.txt`へ記録した40文字候補HEADへ置換する。再開時に
+現在HEAD、target記録、EXE/PCK SHA-256、balance revision、初見資格`yes`、全CSV制約を再検証する。
 不一致が1件でもあれば集計しない。

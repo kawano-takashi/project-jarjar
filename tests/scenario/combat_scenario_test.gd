@@ -30,55 +30,55 @@ class TraceRng:
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"gate03_camera_arena_and_input_contract",
-		"gate03_four_weapon_target_shape_interval_contract",
-		"gate03_ally_projectile_immediate_resolution_contract",
-		"gate03_strict_distance_and_intersection_order_contract",
-		"gate03_four_normal_enemy_behavior_contract",
-		"gate03_enemy_special_fixed_tick_contract",
-		"gate03_wave_resource_contract",
-		"gate03_spawn_rng_order_reject_and_block_contract",
-		"gate03_boss_summon_priority_and_born_tick_contract",
-		"gate03_w4_normal_before_elite_entity_id_contract",
-		"gate03_deterministic_replay_and_dense_500_contract",
-		"gate03_hud_fixed_text_contract",
-		"gate03_qa_item_builder_validation_contract",
-		"gate03_qa_scenario_contract",
+		"camera_arena_and_input_contract",
+		"four_weapon_target_shape_interval_contract",
+		"ally_projectile_immediate_resolution_contract",
+		"strict_distance_and_intersection_order_contract",
+		"four_normal_enemy_behavior_contract",
+		"enemy_special_fixed_tick_contract",
+		"wave_resource_contract",
+		"spawn_rng_order_reject_and_block_contract",
+		"boss_summon_priority_and_born_tick_contract",
+		"w4_normal_before_elite_entity_id_contract",
+		"deterministic_replay_and_dense_500_contract",
+		"hud_fixed_text_contract",
+		"qa_item_builder_validation_contract",
+		"qa_scenario_contract",
 	])
 
 
 func run_test(test_name: String, assertions: Variant, context: Dictionary) -> void:
 	match test_name:
-		"gate03_camera_arena_and_input_contract":
+		"camera_arena_and_input_contract":
 			_test_camera_arena_and_input(assertions)
-		"gate03_four_weapon_target_shape_interval_contract":
+		"four_weapon_target_shape_interval_contract":
 			_test_four_weapons(assertions)
-		"gate03_ally_projectile_immediate_resolution_contract":
+		"ally_projectile_immediate_resolution_contract":
 			_test_ally_projectile_immediate_resolution(assertions)
-		"gate03_strict_distance_and_intersection_order_contract":
+		"strict_distance_and_intersection_order_contract":
 			_test_strict_distance_and_intersection_order(assertions)
-		"gate03_four_normal_enemy_behavior_contract":
+		"four_normal_enemy_behavior_contract":
 			_test_four_normal_behaviors(assertions)
-		"gate03_enemy_special_fixed_tick_contract":
+		"enemy_special_fixed_tick_contract":
 			_test_enemy_special_timing(assertions)
-		"gate03_wave_resource_contract":
+		"wave_resource_contract":
 			_test_wave_resources(assertions)
-		"gate03_spawn_rng_order_reject_and_block_contract":
+		"spawn_rng_order_reject_and_block_contract":
 			_test_spawn_rng(assertions)
-		"gate03_boss_summon_priority_and_born_tick_contract":
+		"boss_summon_priority_and_born_tick_contract":
 			_test_boss_priority_and_born_tick(assertions)
-		"gate03_w4_normal_before_elite_entity_id_contract":
+		"w4_normal_before_elite_entity_id_contract":
 			_test_w4_order(assertions)
-		"gate03_deterministic_replay_and_dense_500_contract":
+		"deterministic_replay_and_dense_500_contract":
 			_test_deterministic_replay_and_dense_500(assertions)
-		"gate03_hud_fixed_text_contract":
+		"hud_fixed_text_contract":
 			await _test_hud_fixed_text(assertions, context)
-		"gate03_qa_item_builder_validation_contract":
+		"qa_item_builder_validation_contract":
 			_test_qa_item_builder_validation(assertions)
-		"gate03_qa_scenario_contract":
+		"qa_scenario_contract":
 			_test_qa_scenarios(assertions)
 		_:
-			assertions.expect_true(false, "registered gate03 scenario test")
+			assertions.expect_true(false, "registered combat scenario test")
 
 
 func _test_camera_arena_and_input(assertions: Variant) -> void:

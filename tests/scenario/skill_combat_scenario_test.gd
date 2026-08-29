@@ -12,28 +12,28 @@ const WEAPON_TYPES: Array[int] = [
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"gate05_pending_target_snapshot_and_one_per_tick",
-		"gate05_skill_target_selection_contract",
-		"gate05_echo_and_crown_replay_execution_contract",
-		"gate05_immortal_hit_and_dps_window_contract",
-		"gate05_skill_hud_presentation_contract",
+		"pending_target_snapshot_and_one_per_tick",
+		"skill_target_selection_contract",
+		"echo_and_crown_replay_execution_contract",
+		"immortal_hit_and_dps_window_contract",
+		"skill_hud_presentation_contract",
 	])
 
 
 func run_test(test_name: String, assertions: Variant, context: Dictionary) -> void:
 	match test_name:
-		"gate05_pending_target_snapshot_and_one_per_tick":
+		"pending_target_snapshot_and_one_per_tick":
 			_test_pending_target_snapshot_and_one_per_tick(assertions)
-		"gate05_skill_target_selection_contract":
+		"skill_target_selection_contract":
 			_test_skill_target_selection(assertions)
-		"gate05_echo_and_crown_replay_execution_contract":
+		"echo_and_crown_replay_execution_contract":
 			_test_echo_and_crown_replay_execution(assertions)
-		"gate05_immortal_hit_and_dps_window_contract":
+		"immortal_hit_and_dps_window_contract":
 			_test_immortal_hit_and_dps_window(assertions)
-		"gate05_skill_hud_presentation_contract":
+		"skill_hud_presentation_contract":
 			await _test_skill_hud_presentation(assertions, context)
 		_:
-			assertions.expect_true(false, "registered Gate 5 skill combat scenario test")
+			assertions.expect_true(false, "registered inventory skill combat scenario test")
 
 
 func _test_pending_target_snapshot_and_one_per_tick(assertions: Variant) -> void:
@@ -423,7 +423,7 @@ func _test_skill_hud_presentation(assertions: Variant, context: Dictionary) -> v
 	if catalog == null:
 		return
 	var packed := ResourceLoader.load("res://scenes/ui/combat_hud.tscn") as PackedScene
-	assertions.expect_true(packed != null, "combat HUD scene loads for Gate 5")
+	assertions.expect_true(packed != null, "combat HUD scene loads for inventory")
 	if packed == null:
 		return
 	var hud := packed.instantiate() as CombatHud
@@ -508,7 +508,7 @@ func _test_skill_hud_presentation(assertions: Variant, context: Dictionary) -> v
 
 func _catalog(assertions: Variant) -> DefinitionCatalog:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "Gate 5 scenario DefinitionCatalog valid")
+	assertions.expect_true(catalog.load_and_validate(), "inventory scenario DefinitionCatalog valid")
 	return catalog if catalog.is_valid else null
 
 

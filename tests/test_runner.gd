@@ -1,9 +1,17 @@
 extends SceneTree
 
 
-const TestRegistryScript = preload("res://tests/test_registry.gd")
-const VALID_SUITES: Array[String] = ["unit", "scenario", "simulation", "all"]
 const TEST_TIMEOUT_MS: int = 600000
+const TEST_SETTINGS_ROOT: String = "res://artifacts/gdscript-tests/settings"
+const PREFLIGHT_EXTENSIONS: Array[String] = ["gd", "tscn", "tres"]
+const IGNORED_ROOT_DIRECTORIES: Array[String] = [
+	".codex",
+	".git",
+	".godot",
+	"artifacts",
+	"build",
+	"work",
+]
 
 var _started: bool = false
 var _finished: bool = false
@@ -30,50 +38,67 @@ func _process(_delta: float) -> bool:
 
 
 func _run() -> void:
-	var invocation := _validate_invocation()
-	if not invocation["valid"]:
-		_reject(invocation["rejected_name"])
+	var user_arguments := OS.get_cmdline_user_args()
+	if not user_arguments.is_empty():
+		_reject(_option_name(user_arguments[0]))
 		return
 
 	var settings_store: Variant = root.get_node_or_null("SettingsStore")
 	if settings_store == null:
-		print("RUNNER_BOOTSTRAP_FAILED reason=autoload")
-		quit(2)
+		_bootstrap_failed("autoload")
 		return
-	var initialize_error: Error = settings_store.initialize_for_runner(invocation["settings_path"])
+
+	var test_user_root := ProjectSettings.globalize_path(TEST_SETTINGS_ROOT).replace("\\", "/").simplify_path()
+	var bootstrap_path := test_user_root.path_join("runner/settings.cfg")
+	var initialize_error: Error = settings_store.initialize_for_runner(bootstrap_path)
 	if initialize_error != OK:
-		print("RUNNER_BOOTSTRAP_FAILED reason=initialize code=%d" % initialize_error)
-		quit(2)
+		_bootstrap_failed("initialize code=%d" % initialize_error)
 		return
 	if (
 		not settings_store.initialized
 		or not settings_store.runner_safe_mode
-		or settings_store.active_settings_path != invocation["settings_path"]
+		or settings_store.active_settings_path != bootstrap_path
 	):
-		print("RUNNER_BOOTSTRAP_FAILED reason=state")
-		quit(2)
+		_bootstrap_failed("state")
 		return
 
 	var assertion_script := load("res://tests/assertions.gd")
 	if assertion_script == null:
-		print("RUNNER_BOOTSTRAP_FAILED reason=assertions")
-		quit(2)
-		return
-	var registry := _load_registry(invocation["suite"])
-	if not registry["valid"] or registry["tests"].is_empty():
-		print("RUNNER_BOOTSTRAP_FAILED reason=empty-suite")
-		quit(2)
+		_bootstrap_failed("assertions")
 		return
 
-	var bootstrap_path: String = invocation["settings_path"]
-	var test_user_root := bootstrap_path.get_base_dir().get_base_dir()
+	var resource_paths: Array[String] = []
+	var test_script_paths: Array[String] = []
+	if not _collect_project_paths("res://", resource_paths, test_script_paths):
+		_bootstrap_failed("discovery")
+		return
+	if not _preflight_resources(resource_paths):
+		_bootstrap_failed("source-preflight")
+		return
+	print("SOURCE_PREFLIGHT_OK resources=%d" % resource_paths.size())
+
+	var discovery := _discover_tests(test_script_paths)
+	if not discovery["valid"]:
+		_bootstrap_failed(str(discovery["reason"]))
+		return
+	var test_cases: Array = discovery["tests"]
+	if test_cases.is_empty():
+		_bootstrap_failed("empty-test-set")
+		return
+
 	var passed := 0
 	var failed := 0
 	var suite_started_ms := Time.get_ticks_msec()
-	for test_case in registry["tests"]:
+	for test_index in test_cases.size():
 		_deadline_ms = Time.get_ticks_msec() + TEST_TIMEOUT_MS
+		var test_case: Dictionary = test_cases[test_index]
 		var test_name: String = test_case["name"]
-		var test_path := test_user_root.path_join(test_name).path_join("settings.cfg")
+		var test_path := (
+			test_user_root
+			.path_join("cases")
+			.path_join("case-%04d" % test_index)
+			.path_join("settings.cfg")
+		)
 		var assertions: Variant = assertion_script.new()
 		var test_started_ms := Time.get_ticks_msec()
 		var switch_error: Error = settings_store.use_test_path(test_path)
@@ -121,91 +146,76 @@ func _run() -> void:
 	quit(0 if failed == 0 else 1)
 
 
-func _validate_invocation() -> Dictionary:
-	var engine_arguments := OS.get_cmdline_args()
-	var script_index := engine_arguments.find("--script")
-	if (
-		script_index < 0
-		or script_index + 1 >= engine_arguments.size()
-		or engine_arguments[script_index + 1] != "res://tests/test_runner.gd"
-	):
-		return _invalid("--script")
-
-	var user_arguments := OS.get_cmdline_user_args()
-	var suite := ""
-	var settings_path := ""
-	var index := 0
-	while index < user_arguments.size():
-		var argument := user_arguments[index]
-		if argument == "--suite":
-			if not suite.is_empty():
-				return _invalid("--suite")
-			if index + 1 >= user_arguments.size() or user_arguments[index + 1].begins_with("--"):
-				return _invalid("missing")
-			suite = user_arguments[index + 1]
-			index += 2
-			continue
-		if argument.begins_with("--settings-path="):
-			if not settings_path.is_empty():
-				return _invalid("--settings-path")
-			settings_path = _normalize_settings_path(argument.trim_prefix("--settings-path="))
-			if settings_path.is_empty():
-				return _invalid("--settings-path")
-			index += 1
-			continue
-		return _invalid(_option_name(argument))
-
-	if suite.is_empty() or settings_path.is_empty():
-		return _invalid("missing")
-	if not suite in VALID_SUITES:
-		return _invalid("--suite")
-	return {"valid": true, "suite": suite, "settings_path": settings_path}
+func _collect_project_paths(
+	directory_path: String,
+	resource_paths: Array[String],
+	test_script_paths: Array[String],
+) -> bool:
+	var directory := DirAccess.open(directory_path)
+	if directory == null:
+		return false
+	directory.list_dir_begin()
+	var entry_name := directory.get_next()
+	while not entry_name.is_empty():
+		var child_path := directory_path.path_join(entry_name)
+		if directory.current_is_dir():
+			if directory_path == "res://" and entry_name in IGNORED_ROOT_DIRECTORIES:
+				entry_name = directory.get_next()
+				continue
+			if not _collect_project_paths(child_path, resource_paths, test_script_paths):
+				directory.list_dir_end()
+				return false
+		else:
+			var extension := entry_name.get_extension().to_lower()
+			if extension in PREFLIGHT_EXTENSIONS:
+				resource_paths.append(child_path)
+			if child_path.begins_with("res://tests/") and entry_name.ends_with("_test.gd"):
+				test_script_paths.append(child_path)
+		entry_name = directory.get_next()
+	directory.list_dir_end()
+	return true
 
 
-func _load_registry(suite: String) -> Dictionary:
-	var requested_suites: Array[String] = []
-	if suite == "all":
-		requested_suites.assign(["unit", "scenario", "simulation"])
-	else:
-		requested_suites.append(suite)
+func _preflight_resources(resource_paths: Array[String]) -> bool:
+	for resource_path in resource_paths:
+		if ResourceLoader.load(resource_path) == null:
+			print("SOURCE_PREFLIGHT_FAILED path=%s" % resource_path)
+			return false
+	return true
+
+
+func _discover_tests(test_script_paths: Array[String]) -> Dictionary:
 	var test_cases: Array[Dictionary] = []
-	var registered_names: Dictionary = {}
-	for suite_name in requested_suites:
-		var script_paths: Array[String] = TestRegistryScript.script_paths_for_suite(suite_name)
-		for script_path in script_paths:
-			var test_script := load(script_path)
-			if test_script == null:
-				return {"valid": false, "tests": []}
-			var registry_instance: Variant = test_script.new()
-			for test_name_value in registry_instance.test_names():
-				var test_name := str(test_name_value)
-				if test_name.is_empty() or registered_names.has(test_name):
-					return {"valid": false, "tests": []}
-				registered_names[test_name] = true
-				test_cases.append({"name": test_name, "script": test_script})
-	return {"valid": true, "tests": test_cases}
+	for script_path in test_script_paths:
+		var test_script := ResourceLoader.load(script_path)
+		if test_script == null:
+			return {"valid": false, "reason": "test-load path=%s" % script_path, "tests": []}
+		var test_instance: Variant = test_script.new()
+		if not test_instance.has_method("test_names") or not test_instance.has_method("run_test"):
+			return {"valid": false, "reason": "test-contract path=%s" % script_path, "tests": []}
+		var names: Variant = test_instance.test_names()
+		if typeof(names) not in [TYPE_ARRAY, TYPE_PACKED_STRING_ARRAY] or names.is_empty():
+			return {"valid": false, "reason": "test-names path=%s" % script_path, "tests": []}
+		var names_in_script: Dictionary = {}
+		for test_name_value in names:
+			var test_name := str(test_name_value)
+			if test_name.is_empty() or names_in_script.has(test_name):
+				return {"valid": false, "reason": "test-name path=%s" % script_path, "tests": []}
+			names_in_script[test_name] = true
+			test_cases.append({"name": test_name, "script": test_script, "path": script_path})
+	return {"valid": true, "reason": "", "tests": test_cases}
 
 
-func _normalize_settings_path(path: String) -> String:
-	var normalized := path.replace("\\", "/").simplify_path()
-	if not normalized.is_absolute_path() or normalized.get_file().to_lower() != "settings.cfg":
-		return ""
-	for gate_number in range(1, 7):
-		var allowed := ProjectSettings.globalize_path(
-			"res://artifacts/gate-%02d/test-user/runner/settings.cfg" % gate_number
-		).replace("\\", "/").simplify_path()
-		if normalized.to_lower() == allowed.to_lower():
-			return normalized
-	return ""
+func _bootstrap_failed(reason: String) -> void:
+	print("RUNNER_BOOTSTRAP_FAILED reason=%s" % reason)
+	_finished = true
+	quit(2)
 
 
 func _reject(argument_name: String) -> void:
 	print("RUNNER_ARGUMENT_REJECTED name=%s" % argument_name)
+	_finished = true
 	quit(2)
-
-
-func _invalid(argument_name: String) -> Dictionary:
-	return {"valid": false, "rejected_name": argument_name}
 
 
 func _option_name(argument: String) -> String:

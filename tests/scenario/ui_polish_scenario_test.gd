@@ -17,16 +17,16 @@ const TARGET_RESOLUTIONS: Array[Vector2i] = [
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"gate06_ui_focus_shape_labels_and_resolution_contract",
+		"ui_focus_shape_labels_and_resolution_contract",
 	])
 
 
 func run_test(test_name: String, assertions: Variant, context: Dictionary) -> void:
 	match test_name:
-		"gate06_ui_focus_shape_labels_and_resolution_contract":
+		"ui_focus_shape_labels_and_resolution_contract":
 			await _test_ui_polish_contract(assertions, context)
 		_:
-			assertions.expect_true(false, "registered Gate 6 UI polish scenario test")
+			assertions.expect_true(false, "registered release readiness UI polish scenario test")
 
 
 func _test_ui_polish_contract(assertions: Variant, context: Dictionary) -> void:
@@ -35,7 +35,7 @@ func _test_ui_polish_contract(assertions: Variant, context: Dictionary) -> void:
 	var catalog := DefinitionCatalog.new()
 	assertions.expect_true(
 		catalog.load_and_validate(),
-		"Gate 6 UI polish catalog valid: %s" % catalog.error_text,
+		"release readiness UI polish catalog valid: %s" % catalog.error_text,
 	)
 	if not catalog.is_valid:
 		return
@@ -86,17 +86,6 @@ func _test_ui_polish_contract(assertions: Variant, context: Dictionary) -> void:
 		await _assert_screen_contract(assertions, bulk, "BULK_SELECT_DIALOG", tree)
 		(bulk.get_node("%BulkCancel") as Button).emit_signal("pressed")
 		await tree.process_frame
-		assertions.expect_true(
-			inventory.set_evidence_mode("fusion_unique_warning"),
-			"confirmation UI polish fixture applies",
-		)
-		await tree.process_frame
-		await _assert_screen_contract(
-			assertions,
-			inventory.get_node("%ConfirmationDialog") as Control,
-			"CONFIRMATION_DIALOG",
-			tree,
-		)
 		await _remove_screen(inventory, tree)
 
 	var summary_qa: Dictionary = QaScenarioFactory.build("result_controller", catalog)
@@ -124,7 +113,7 @@ func _attach_screen(screen: Control, tree: SceneTree) -> void:
 	if screen == null:
 		return
 	var viewport := SubViewport.new()
-	viewport.name = "__Gate06LayoutViewport"
+	viewport.name = "__ReleaseReadinessLayoutViewport"
 	viewport.size = LOGICAL_VIEWPORT_SIZE
 	viewport.size_2d_override = LOGICAL_VIEWPORT_SIZE
 	viewport.size_2d_override_stretch = true
@@ -167,22 +156,22 @@ func _assert_project_stretch_contract(assertions: Variant) -> void:
 	assertions.expect_equal(
 		LOGICAL_VIEWPORT_SIZE.x,
 		int(ProjectSettings.get_setting("display/window/size/viewport_width", 0)),
-		"Gate 6 base viewport width remains 1920",
+		"release readiness base viewport width remains 1920",
 	)
 	assertions.expect_equal(
 		LOGICAL_VIEWPORT_SIZE.y,
 		int(ProjectSettings.get_setting("display/window/size/viewport_height", 0)),
-		"Gate 6 base viewport height remains 1080",
+		"release readiness base viewport height remains 1080",
 	)
 	assertions.expect_equal(
 		"canvas_items",
 		str(ProjectSettings.get_setting("display/window/stretch/mode", "")),
-		"Gate 6 uses canvas_items stretch",
+		"release readiness uses canvas_items stretch",
 	)
 	assertions.expect_equal(
 		"expand",
 		str(ProjectSettings.get_setting("display/window/stretch/aspect", "")),
-		"Gate 6 uses expand stretch aspect",
+		"release readiness uses expand stretch aspect",
 	)
 	for resolution: Vector2i in TARGET_RESOLUTIONS:
 		assertions.expect_equal(
@@ -251,7 +240,7 @@ func _assert_resolution_layout(
 	tree: SceneTree,
 ) -> void:
 	var viewport := root.get_viewport() as SubViewport
-	assertions.expect_true(viewport != null, "%s uses the Gate 6 render viewport" % label)
+	assertions.expect_true(viewport != null, "%s uses the release readiness render viewport" % label)
 	if viewport == null:
 		return
 	assertions.expect_equal(

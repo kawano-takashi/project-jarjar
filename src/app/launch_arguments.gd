@@ -3,29 +3,11 @@ extends RefCounted
 
 
 const MODE_NORMAL: StringName = &"normal"
-const MODE_EVIDENCE: StringName = &"evidence"
 const MODE_SMOKE_QUIT: StringName = &"smoke_quit"
 const MODE_QA_SCENARIO: StringName = &"qa_scenario"
 const MODE_PERFORMANCE: StringName = &"performance"
 const MODE_RELEASE_SMOKE: StringName = &"release_smoke"
 const MODE_RELEASE_PACK_AUDIT: StringName = &"release_pack_audit"
-const EVIDENCE_SCENARIOS: Array[String] = [
-	"gate_02:logic_diagnostics",
-	"gate_03:arena_combat",
-	"gate_03:weapon_shapes",
-	"gate_03:boss_gate",
-	"gate_04:chest_absorb",
-	"gate_04:epic_prealert",
-	"gate_04:reward_grid",
-	"gate_05:inventory_full",
-	"gate_05:fusion_unique_warning",
-	"gate_05:broken_build",
-	"gate_05:final_result",
-	"gate_06:tutorial_move",
-	"gate_06:accessibility_reward",
-	"gate_06:full_load",
-	"gate_06:release_result",
-]
 const QA_SCENARIOS: Array[String] = [
 	"weapon_bow",
 	"weapon_staff",
@@ -41,9 +23,7 @@ const QA_SCENARIOS: Array[String] = [
 ]
 
 const DEBUG_OPTIONS: Array[String] = [
-	"--evidence",
 	"--qa-scenario",
-	"--settings-path",
 	"--smoke-quit",
 	"--performance",
 	"--run-seed",
@@ -59,52 +39,32 @@ static func parse_debug(arguments: PackedStringArray) -> Dictionary:
 		return parsed
 
 	var values: Dictionary = parsed["values"]
-	var settings_path := ""
-	if values.has("--settings-path"):
-		settings_path = _normalize_test_settings_path(values["--settings-path"])
-		if settings_path.is_empty():
-			return _rejected("--settings-path")
-
-	if values.size() == 2 and values.has("--evidence") and values.has("--settings-path"):
-		if not values["--evidence"] in EVIDENCE_SCENARIOS:
-			return _rejected("--evidence")
-		var result := _accepted(MODE_EVIDENCE, settings_path)
-		result["evidence"] = values["--evidence"]
-		return result
-
-	if values.size() == 2 and values.has("--smoke-quit") and values.has("--settings-path"):
+	if values.size() == 1 and values.has("--smoke-quit"):
 		var frame_text: String = values["--smoke-quit"]
 		if not frame_text.is_valid_int():
 			return _rejected("--smoke-quit")
 		var frame_count := frame_text.to_int()
 		if frame_count < 1:
 			return _rejected("--smoke-quit")
-		var result := _accepted(MODE_SMOKE_QUIT, settings_path)
+		var result := _accepted(MODE_SMOKE_QUIT, "")
 		result["smoke_frames"] = frame_count
 		return result
 
-	if values.size() == 2 and values.has("--qa-scenario") and values.has("--settings-path"):
+	if values.size() == 1 and values.has("--qa-scenario"):
 		if not values["--qa-scenario"] in QA_SCENARIOS:
 			return _rejected("--qa-scenario")
-		var result := _accepted(MODE_QA_SCENARIO, settings_path)
+		var result := _accepted(MODE_QA_SCENARIO, "")
 		result["qa_scenario"] = values["--qa-scenario"]
 		return result
 
-	if (
-		values.size() == 3
-		and values.has("--performance")
-		and values.has("--run-seed")
-		and values.has("--settings-path")
-	):
+	if values.size() == 2 and values.has("--performance") and values.has("--run-seed"):
 		if values["--performance"] != "full_hd_500_2000" or values["--run-seed"] != "5002000":
 			return _rejected("--performance")
-		var result := _accepted(MODE_PERFORMANCE, settings_path)
+		var result := _accepted(MODE_PERFORMANCE, "")
 		result["performance"] = values["--performance"]
 		result["run_seed"] = 5002000
 		return result
 
-	if values.size() == 1 and values.has("--settings-path"):
-		return _rejected("--settings-path")
 	return _rejected(_first_option_name(arguments))
 
 
@@ -142,30 +102,6 @@ static func _parse_named_values(arguments: PackedStringArray, allowed: Array[Str
 	return {"valid": true, "values": values}
 
 
-static func _normalize_test_settings_path(path: String) -> String:
-	var normalized := path.replace("\\", "/").simplify_path()
-	if not normalized.is_absolute_path() or normalized.get_file().to_lower() != "settings.cfg":
-		return ""
-	var repository_root := _repository_root()
-	if repository_root.is_empty():
-		return ""
-	for gate_number in range(1, 7):
-		var root := repository_root.path_join("artifacts/gate-%02d/test-user" % gate_number)
-		if normalized.to_lower().begins_with(root.to_lower() + "/"):
-			return normalized
-	return ""
-
-
-static func _repository_root() -> String:
-	var repository_root := ProjectSettings.globalize_path("res://").replace("\\", "/").simplify_path().trim_suffix("/")
-	var executable_directory := OS.get_executable_path().get_base_dir().replace("\\", "/").simplify_path()
-	if executable_directory.get_file().to_lower() == "windows":
-		var build_directory := executable_directory.get_base_dir()
-		if build_directory.get_file().to_lower() == "build":
-			repository_root = build_directory.get_base_dir()
-	return repository_root if repository_root.is_absolute_path() else ""
-
-
 static func _accepted(mode: StringName, settings_path: String) -> Dictionary:
 	return {
 		"valid": true,
@@ -173,7 +109,6 @@ static func _accepted(mode: StringName, settings_path: String) -> Dictionary:
 		"mode": mode,
 		"settings_path": settings_path,
 		"smoke_frames": 0,
-		"evidence": "",
 	}
 
 

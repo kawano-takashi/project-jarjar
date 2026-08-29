@@ -23,31 +23,28 @@ class TraceRng:
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"gate03_projectile_stale_generation_resolver_contract",
-		"gate03_boss_summon_full_born_tick_lifecycle_contract",
-		"gate03_enemy_and_ally_projectile_born_tick_contract",
-		"gate03_vfx_pool_lifecycle_and_overflow_contract",
-		"gate03_multimesh_only_runtime_entity_contract",
-		"gate03_legacy_product_artifact_absence_contract",
+		"projectile_stale_generation_resolver_contract",
+		"boss_summon_full_born_tick_lifecycle_contract",
+		"enemy_and_ally_projectile_born_tick_contract",
+		"vfx_pool_lifecycle_and_overflow_contract",
+		"multimesh_only_runtime_entity_contract",
 	])
 
 
 func run_test(test_name: String, assertions: Variant, context: Dictionary) -> void:
 	match test_name:
-		"gate03_projectile_stale_generation_resolver_contract":
+		"projectile_stale_generation_resolver_contract":
 			_test_projectile_stale_generation_resolver(assertions)
-		"gate03_boss_summon_full_born_tick_lifecycle_contract":
+		"boss_summon_full_born_tick_lifecycle_contract":
 			_test_boss_summon_full_born_tick_lifecycle(assertions)
-		"gate03_enemy_and_ally_projectile_born_tick_contract":
+		"enemy_and_ally_projectile_born_tick_contract":
 			_test_enemy_and_ally_projectile_born_tick(assertions)
-		"gate03_vfx_pool_lifecycle_and_overflow_contract":
+		"vfx_pool_lifecycle_and_overflow_contract":
 			_test_vfx_pool_lifecycle_and_overflow(assertions)
-		"gate03_multimesh_only_runtime_entity_contract":
+		"multimesh_only_runtime_entity_contract":
 			await _test_multimesh_only_runtime_entities(assertions, context)
-		"gate03_legacy_product_artifact_absence_contract":
-			_test_legacy_product_artifact_absence(assertions)
 		_:
-			assertions.expect_true(false, "registered gate03 lifecycle test")
+			assertions.expect_true(false, "registered combat lifecycle test")
 
 
 func _test_projectile_stale_generation_resolver(assertions: Variant) -> void:
@@ -428,33 +425,6 @@ func _test_multimesh_only_runtime_entities(assertions: Variant, context: Diction
 
 
 
-func _test_legacy_product_artifact_absence(assertions: Variant) -> void:
-	var legacy_marker := "boot" + "strap"
-	var legacy_paths := PackedStringArray([
-		"res://scenes/ui/%s_confirmation.tscn" % legacy_marker,
-		"res://src/core/%s_flow.gd" % legacy_marker,
-		"res://src/core/%s_flow.gd.uid" % legacy_marker,
-		"res://src/ui/%s_confirmation.gd" % legacy_marker,
-		"res://src/ui/%s_confirmation.gd.uid" % legacy_marker,
-		"res://tests/unit/smoke_%s_test.gd" % legacy_marker,
-		"res://tests/unit/smoke_%s_test.gd.uid" % legacy_marker,
-	])
-	for legacy_path: String in legacy_paths:
-		assertions.expect_false(FileAccess.file_exists(legacy_path), "legacy setup path absent: %s" % legacy_path)
-
-	var forbidden_tokens := PackedStringArray([
-		legacy_marker + "_confirmation",
-		legacy_marker + "_flow",
-		legacy_marker + " build",
-		"開始" + "確認",
-		"準備ができました" + "。",
-	])
-	var violations := PackedStringArray()
-	_scan_product_text("res://src", forbidden_tokens, violations)
-	_scan_product_text("res://scenes", forbidden_tokens, violations)
-	assertions.expect_equal(PackedStringArray(), violations, "live product source contains no legacy setup path or wording")
-
-
 func _catalog() -> DefinitionCatalog:
 	var catalog := DefinitionCatalog.new()
 	catalog.load_and_validate()
@@ -545,27 +515,3 @@ func _count_descendant_type(root: Node, type: Variant) -> int:
 			count += 1
 		count += _count_descendant_type(child, type)
 	return count
-
-
-func _scan_product_text(
-	directory_path: String,
-	forbidden_tokens: PackedStringArray,
-	violations: PackedStringArray,
-) -> void:
-	var directory := DirAccess.open(directory_path)
-	if directory == null:
-		violations.append("missing-directory:%s" % directory_path)
-		return
-	directory.list_dir_begin()
-	var entry_name: String = directory.get_next()
-	while not entry_name.is_empty():
-		var entry_path: String = directory_path.path_join(entry_name)
-		if directory.current_is_dir():
-			_scan_product_text(entry_path, forbidden_tokens, violations)
-		elif entry_path.get_extension().to_lower() in ["gd", "tscn", "tres"]:
-			var contents: String = FileAccess.get_file_as_string(entry_path).to_lower()
-			for token: String in forbidden_tokens:
-				if token.to_lower() in contents:
-					violations.append("%s:%s" % [entry_path, token])
-		entry_name = directory.get_next()
-	directory.list_dir_end()

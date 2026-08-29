@@ -2,7 +2,7 @@ class_name ReleasePackAuditor
 extends RefCounted
 
 
-const MANIFEST_RELATIVE_PATH: String = "artifacts/gate-06/release-pack-manifest.txt"
+const MANIFEST_RELATIVE_PATH: String = "artifacts/release-tests/pack-manifest.txt"
 const REQUIRED_MAIN_SCENE_PATH: String = "res://scenes/main.tscn"
 const REQUIRED_BALANCE_PATH: String = "res://data/balance/balance_manifest.tres"
 const FORBIDDEN_PREFIXES: Array[String] = [
@@ -76,6 +76,11 @@ static func audit(manifest_path: String) -> Dictionary:
 	)
 	var main_scene_valid: bool = main_resource is PackedScene
 	var balance_manifest_valid: bool = balance_resource is BalanceManifest
+	var balance_revision: int = (
+		(balance_resource as BalanceManifest).balance_revision
+		if balance_manifest_valid
+		else -1
+	)
 	var required_count: int = int(main_scene_valid) + int(balance_manifest_valid)
 
 	var details := {
@@ -86,6 +91,7 @@ static func audit(manifest_path: String) -> Dictionary:
 		"required_count": required_count,
 		"main_scene_valid": main_scene_valid,
 		"balance_manifest_valid": balance_manifest_valid,
+		"balance_revision": balance_revision,
 	}
 	if resource_paths.is_empty():
 		return _failure(3, &"empty_manifest", details)
@@ -100,8 +106,8 @@ static func audit(manifest_path: String) -> Dictionary:
 	details["exit_code"] = 0
 	details["reason"] = &""
 	details["message"] = (
-		"PACK_AUDIT_OK paths=%d required=2 forbidden=0"
-		% resource_paths.size()
+		"PACK_AUDIT_OK paths=%d required=2 forbidden=0 balance_revision=%d"
+		% [resource_paths.size(), balance_revision]
 	)
 	return details
 

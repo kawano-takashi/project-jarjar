@@ -9,22 +9,22 @@ var _catalog: DefinitionCatalog = null
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"gate04_reward_acquisition_guarantee_and_rng_contract",
-		"gate04_chest_visual_pool_and_failure_contract",
-		"gate04_reward_payload_presentation_and_determinism_contract",
+		"reward_acquisition_guarantee_and_rng_contract",
+		"chest_visual_pool_and_failure_contract",
+		"reward_payload_presentation_and_determinism_contract",
 	])
 
 
 func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
 	match test_name:
-		"gate04_reward_acquisition_guarantee_and_rng_contract":
+		"reward_acquisition_guarantee_and_rng_contract":
 			_test_reward_acquisition_guarantee_and_rng(assertions)
-		"gate04_chest_visual_pool_and_failure_contract":
+		"chest_visual_pool_and_failure_contract":
 			_test_chest_visual_pool_and_failure(assertions)
-		"gate04_reward_payload_presentation_and_determinism_contract":
+		"reward_payload_presentation_and_determinism_contract":
 			_test_reward_payload_presentation_and_determinism(assertions)
 		_:
-			assertions.expect_true(false, "registered Gate 4 loot-domain test")
+			assertions.expect_true(false, "registered loot loot-domain test")
 
 
 func _test_reward_acquisition_guarantee_and_rng(assertions: Variant) -> void:
@@ -274,7 +274,7 @@ func _loaded_catalog(assertions: Variant) -> DefinitionCatalog:
 	if _catalog == null:
 		_catalog = DefinitionCatalog.new()
 		var valid: bool = _catalog.load_and_validate()
-		assertions.expect_true(valid, "Gate 4 DefinitionCatalog valid: %s" % _catalog.error_text)
+		assertions.expect_true(valid, "loot DefinitionCatalog valid: %s" % _catalog.error_text)
 	return _catalog if _catalog.is_valid else null
 
 

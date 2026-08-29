@@ -8,22 +8,22 @@ const GameAppScript = preload("res://src/app/game_app.gd")
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"gate05_qa_id_launch_and_settings_contract",
-		"gate05_qa_inventory_and_result_fixtures",
-		"gate05_qa_immortal_and_boss_fixtures",
+		"qa_id_launch_and_settings_contract",
+		"qa_inventory_and_result_fixtures",
+		"qa_immortal_and_boss_fixtures",
 	])
 
 
 func run_test(test_name: String, assertions: Variant, context: Dictionary) -> void:
 	match test_name:
-		"gate05_qa_id_launch_and_settings_contract":
+		"qa_id_launch_and_settings_contract":
 			_test_qa_id_launch_and_settings(assertions, context)
-		"gate05_qa_inventory_and_result_fixtures":
+		"qa_inventory_and_result_fixtures":
 			_test_inventory_and_result(assertions)
-		"gate05_qa_immortal_and_boss_fixtures":
+		"qa_immortal_and_boss_fixtures":
 			_test_immortal_and_boss(assertions)
 		_:
-			assertions.expect_true(false, "registered Gate 5 QA fixture test")
+			assertions.expect_true(false, "registered inventory QA fixture test")
 
 
 func _test_qa_id_launch_and_settings(assertions: Variant, context: Dictionary) -> void:
@@ -40,17 +40,17 @@ func _test_qa_id_launch_and_settings(assertions: Variant, context: Dictionary) -
 		"immortal_100",
 		"boss_299",
 	]
-	assertions.expect_equal(expected_ids, QaScenarioFactory.VALID_IDS, "Gate 5 factory exposes the exact QA ID list")
-	assertions.expect_equal(expected_ids, LaunchArgumentsScript.QA_SCENARIOS, "Gate 5 parser exposes the exact QA ID list")
-	var gate_five_ids: Array[String] = [
+	assertions.expect_equal(expected_ids, QaScenarioFactory.VALID_IDS, "inventory factory exposes the exact QA ID list")
+	assertions.expect_equal(expected_ids, LaunchArgumentsScript.QA_SCENARIOS, "inventory parser exposes the exact QA ID list")
+	var runtime_scenario_ids: Array[String] = [
 		"inventory_controller",
 		"result_controller",
 		"immortal_100",
 		"boss_299",
 	]
-	for scenario_id: String in gate_five_ids:
+	for scenario_id: String in runtime_scenario_ids:
 		var settings_path: String = String(context["test_user_root"]).path_join(
-			"qa-gate05-%s/settings.cfg" % scenario_id
+			"qa-scenario-%s/settings.cfg" % scenario_id
 		)
 		if FileAccess.file_exists(settings_path):
 			assertions.expect_equal(
@@ -60,7 +60,6 @@ func _test_qa_id_launch_and_settings(assertions: Variant, context: Dictionary) -
 			)
 		var parsed: Dictionary = LaunchArgumentsScript.parse_debug(PackedStringArray([
 			"--qa-scenario=" + scenario_id,
-			"--settings-path=" + settings_path,
 		]))
 		assertions.expect_true(parsed.get("valid", false), "%s launch arguments accepted" % scenario_id)
 		assertions.expect_equal(LaunchArgumentsScript.MODE_QA_SCENARIO, parsed.get("mode"), "%s QA launch mode" % scenario_id)
@@ -80,7 +79,6 @@ func _test_qa_id_launch_and_settings(assertions: Variant, context: Dictionary) -
 		settings_store.free()
 	var rejected: Dictionary = LaunchArgumentsScript.parse_debug(PackedStringArray([
 		"--qa-scenario=unknown",
-		"--settings-path=" + String(context["test_path"]),
 	]))
 	assertions.expect_false(rejected.get("valid", true), "unknown QA ID rejected before runtime state")
 	assertions.expect_equal("--qa-scenario", rejected.get("rejected_name"), "unknown QA rejection marker")
@@ -342,7 +340,7 @@ func _test_immortal_and_boss(assertions: Variant) -> void:
 
 func _catalog(assertions: Variant) -> DefinitionCatalog:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "Gate 5 QA DefinitionCatalog valid")
+	assertions.expect_true(catalog.load_and_validate(), "inventory QA DefinitionCatalog valid")
 	return catalog if catalog.is_valid else null
 
 

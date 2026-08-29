@@ -1,4 +1,4 @@
-class_name Gate06PerformanceRunner
+class_name PerformanceRunner
 extends Node
 
 

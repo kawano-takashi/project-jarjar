@@ -7,19 +7,19 @@ const COMBAT_HUD_SCENE: PackedScene = preload("res://scenes/ui/combat_hud.tscn")
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"gate06_fusion_feedback_accessibility_contract",
-		"gate06_combat_and_pickup_feedback_accessibility_contract",
+		"fusion_feedback_accessibility_contract",
+		"combat_and_pickup_feedback_accessibility_contract",
 	])
 
 
 func run_test(test_name: String, assertions: Variant, context: Dictionary) -> void:
 	match test_name:
-		"gate06_fusion_feedback_accessibility_contract":
+		"fusion_feedback_accessibility_contract":
 			await _test_fusion_feedback_accessibility(assertions, context)
-		"gate06_combat_and_pickup_feedback_accessibility_contract":
+		"combat_and_pickup_feedback_accessibility_contract":
 			await _test_combat_and_pickup_feedback(assertions, context)
 		_:
-			assertions.expect_true(false, "registered Gate 6 fusion accessibility test")
+			assertions.expect_true(false, "registered release readiness fusion accessibility test")
 
 
 func _test_fusion_feedback_accessibility(
@@ -29,7 +29,7 @@ func _test_fusion_feedback_accessibility(
 	var catalog := DefinitionCatalog.new()
 	assertions.expect_true(
 		catalog.load_and_validate(),
-		"Gate 6 fusion accessibility catalog valid: %s" % catalog.error_text,
+		"release readiness fusion accessibility catalog valid: %s" % catalog.error_text,
 	)
 	if not catalog.is_valid:
 		return

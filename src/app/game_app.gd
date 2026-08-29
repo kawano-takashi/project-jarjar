@@ -24,7 +24,6 @@ var _definition_catalog: DefinitionCatalog = null
 var _active_screen: Node = null
 var _smoke_frames_remaining: int = 0
 var _logical_phase: GameTypes.RunPhase = GameTypes.RunPhase.BOOT
-var _prepared_evidence_id: String = ""
 var _tutorial_controller: RefCounted = TutorialControllerScript.new()
 var _tutorial_overlay: CanvasLayer = null
 var _audio_pool: Node = null
@@ -79,7 +78,9 @@ func _initialize_settings_for_launch(settings_store: Variant) -> Error:
 		settings_store.initialize_ephemeral()
 		if mode in [
 			LaunchArgumentsScript.MODE_RELEASE_SMOKE,
+			LaunchArgumentsScript.MODE_SMOKE_QUIT,
 			LaunchArgumentsScript.MODE_QA_SCENARIO,
+			LaunchArgumentsScript.MODE_PERFORMANCE,
 		]
 		else settings_store.initialize_for_game(_launch["settings_path"])
 	)
@@ -109,8 +110,6 @@ func _ready() -> void:
 		&"fusion": AudioFactoryScript.fusion(),
 	}
 	match _launch.get("mode", LaunchArgumentsScript.MODE_NORMAL):
-		LaunchArgumentsScript.MODE_EVIDENCE:
-			_start_evidence_mode(_launch["evidence"])
 		LaunchArgumentsScript.MODE_QA_SCENARIO:
 			_start_qa_mode(_launch["qa_scenario"])
 		LaunchArgumentsScript.MODE_RELEASE_SMOKE:
@@ -208,7 +207,7 @@ func _show_combat_arena(paused: bool) -> bool:
 	return true
 
 
-func _show_reward_reveal(evidence_mode: String = "") -> void:
+func _show_reward_reveal() -> void:
 	if run_state == null or run_state.phase != GameTypes.RunPhase.REWARD_REVEAL:
 		return
 	_clear_active_screen()
@@ -217,8 +216,6 @@ func _show_reward_reveal(evidence_mode: String = "") -> void:
 	reward_screen.reveal_completed.connect(_on_reward_reveal_completed)
 	reward_screen.audio_event_requested.connect(_play_audio_event)
 	reward_screen.initialize(run_state)
-	if not evidence_mode.is_empty():
-		reward_screen.set_evidence_mode(evidence_mode)
 	add_child(reward_screen)
 	_logical_phase = GameTypes.RunPhase.REWARD_REVEAL
 	_tutorial_controller.enter_reward(run_state.wave_number)
@@ -248,20 +245,12 @@ func _on_reward_reveal_completed() -> void:
 	_show_inventory()
 
 
-func _show_inventory(evidence_mode: String = "") -> bool:
+func _show_inventory() -> bool:
 	if run_state == null or run_state.phase != GameTypes.RunPhase.INVENTORY:
 		return false
 	var screen: Control = _instantiate_control_scene(INVENTORY_SCENE_PATH)
 	if screen == null:
 		return false
-	if not evidence_mode.is_empty():
-		if not screen.has_method("set_evidence_mode"):
-			screen.free()
-			return false
-		var mode_accepted: bool = bool(screen.call("set_evidence_mode", evidence_mode))
-		if not mode_accepted:
-			screen.free()
-			return false
 	_clear_active_screen()
 	_active_screen = screen
 	screen.connect("item_move_requested", _on_inventory_item_move_requested)
@@ -382,12 +371,8 @@ func _on_inventory_continue_requested() -> void:
 	_show_combat_arena(false)
 
 
-func _show_result(evidence_mode: String = "") -> bool:
-	return _show_run_summary(
-		RESULT_SCENE_PATH,
-		GameTypes.RunPhase.RESULT,
-		evidence_mode,
-	)
+func _show_result() -> bool:
+	return _show_run_summary(RESULT_SCENE_PATH, GameTypes.RunPhase.RESULT)
 
 
 func _show_failed() -> bool:
@@ -397,21 +382,12 @@ func _show_failed() -> bool:
 func _show_run_summary(
 	scene_path: String,
 	phase: GameTypes.RunPhase,
-	evidence_mode: String = "",
 ) -> bool:
 	if run_state == null or run_state.phase != phase:
 		return false
 	var screen: Control = _instantiate_control_scene(scene_path)
 	if screen == null:
 		return false
-	if not evidence_mode.is_empty():
-		if not screen.has_method("set_evidence_mode"):
-			screen.free()
-			return false
-		var mode_accepted: bool = bool(screen.call("set_evidence_mode", evidence_mode))
-		if not mode_accepted:
-			screen.free()
-			return false
 	_clear_active_screen()
 	_active_screen = screen
 	screen.connect("retry_same_seed_requested", _retry_same_seed)
@@ -582,8 +558,14 @@ func _start_performance_mode() -> void:
 	runner.connect("completed", _on_performance_completed)
 	add_child(runner)
 	var output_directory: String = ProjectSettings.globalize_path(
-		"res://artifacts/gate-06"
+		"res://artifacts/performance"
 	)
+	if not DirAccess.dir_exists_absolute(output_directory):
+		var directory_error := DirAccess.make_dir_recursive_absolute(output_directory)
+		if directory_error != OK:
+			print("PERFORMANCE_FAILED reasons=output_directory code=%d" % directory_error)
+			get_tree().quit(1)
+			return
 	var initialize_error: Error = runner.call(
 		"initialize",
 		combat_simulation,
@@ -700,486 +682,6 @@ func _start_qa_mode(scenario_id: String) -> void:
 			_show_failed()
 		_:
 			_show_combat_arena(false)
-
-
-func _start_evidence_mode(evidence_id: String) -> void:
-	if evidence_id.begins_with("gate_05:"):
-		_start_gate_five_evidence(evidence_id)
-		return
-	if evidence_id.begins_with("gate_06:"):
-		_start_gate_six_evidence(evidence_id)
-		return
-	var first_wave: WaveDefinition = _definition_catalog.wave(1)
-	run_state = RunStateFactoryScript.create(20260827, first_wave)
-	combat_simulation = CombatSimulation.new()
-	combat_simulation.initialize(run_state, _definition_catalog)
-	combat_simulation.freeze_enemy_ai = true
-	combat_simulation.freeze_enemy_timers = true
-	combat_simulation.freeze_normal_spawn = true
-	combat_simulation.freeze_countdown = true
-	match evidence_id:
-		"gate_03:arena_combat":
-			combat_simulation.evidence_caption = "TRACKER  •  FAST  •  ARMORED  •  RANGED"
-			_build_arena_combat_evidence()
-		"gate_03:weapon_shapes":
-			combat_simulation.evidence_caption = "弓：軌道  ／  杖：着弾範囲  ／  剣：120°扇形"
-			_build_weapon_shapes_evidence()
-		"gate_03:boss_gate":
-			combat_simulation.begin_wave(8)
-			combat_simulation.evidence_caption = "W8 BOSS GATE"
-			combat_simulation.freeze_enemy_ai = true
-			combat_simulation.freeze_enemy_timers = true
-			combat_simulation.freeze_normal_spawn = true
-			combat_simulation.freeze_countdown = true
-			var evidence_boss: EnemyEntity = combat_simulation.enemy_system.enemy_store.get_by_id(0)
-			if evidence_boss != null:
-				evidence_boss.position = Vector2(5.0, 2.0)
-			run_state.wave_kills = 299
-			run_state.non_boss_spawned = 299
-			run_state.boss_defeated = false
-		"gate_04:chest_absorb":
-			combat_simulation.evidence_caption = "獲得済み宝箱  •  0.25秒で自動吸収"
-			for chest_index in range(5):
-				var chest_position := Vector2(
-					-2.5 + float(chest_index) * 1.25,
-					0.3 + (-0.5 if chest_index % 2 == 0 else 0.5),
-				)
-				combat_simulation.loot_service.acquire_fixed_chests(
-					1,
-					chest_position,
-					run_state.physics_tick,
-				)
-			combat_simulation.chest_visual_pool.advance(0.12)
-		"gate_04:epic_prealert", "gate_04:reward_grid":
-			var factory_script: Variant = load("res://src/debug/qa_scenario_factory.gd")
-			var result: Dictionary = factory_script.build("reward_controls", _definition_catalog)
-			if not result.get("valid", false):
-				print("EVIDENCE_CAPTURE_FAILED reason=reward_fixture")
-				get_tree().quit(1)
-				return
-			run_state = result["state"] as RunState
-			combat_simulation = result["simulation"] as CombatSimulation
-			_show_reward_reveal(evidence_id.trim_prefix("gate_04:"))
-			_attach_evidence_capture()
-			return
-		_:
-			_show_title()
-			_attach_evidence_capture()
-			return
-	_show_combat_arena(true)
-	_attach_evidence_capture()
-
-
-func _start_gate_five_evidence(evidence_id: String) -> void:
-	_prepared_evidence_id = ""
-	var scenario_id: String
-	match evidence_id:
-		"gate_05:inventory_full", "gate_05:fusion_unique_warning":
-			scenario_id = "inventory_controller"
-		"gate_05:broken_build":
-			scenario_id = "immortal_100"
-		"gate_05:final_result":
-			scenario_id = "result_controller"
-		_:
-			print("EVIDENCE_ARGUMENT_REJECTED name=--evidence")
-			get_tree().quit(2)
-			return
-	var factory_script: Variant = load("res://src/debug/qa_scenario_factory.gd")
-	var result: Dictionary = factory_script.build(scenario_id, _definition_catalog)
-	if not result.get("valid", false):
-		print("EVIDENCE_CAPTURE_FAILED reason=gate05_fixture")
-		get_tree().quit(1)
-		return
-	run_state = result["state"] as RunState
-	combat_simulation = result["simulation"] as CombatSimulation
-	var prepared: bool = false
-	match evidence_id:
-		"gate_05:inventory_full":
-			prepared = _show_inventory("inventory_full")
-		"gate_05:fusion_unique_warning":
-			prepared = _show_inventory("fusion_unique_warning")
-		"gate_05:broken_build":
-			prepared = (
-				_configure_broken_build_evidence()
-				and _show_combat_arena(true)
-			)
-		"gate_05:final_result":
-			prepared = _show_result("final_result")
-	if not prepared:
-		_fail_evidence_capture("gate05_screen_setup")
-		return
-	_prepared_evidence_id = evidence_id
-	_attach_evidence_capture()
-
-
-func _start_gate_six_evidence(evidence_id: String) -> void:
-	_prepared_evidence_id = ""
-	var prepared: bool = false
-	match evidence_id:
-		"gate_06:tutorial_move":
-			var first_wave: WaveDefinition = _definition_catalog.wave(1)
-			run_state = RunStateFactoryScript.create(20260827, first_wave)
-			combat_simulation = CombatSimulation.new()
-			combat_simulation.initialize(run_state, _definition_catalog)
-			combat_simulation.evidence_caption = (
-				"TUTORIAL STOP  •  TIMER 60.0  •  PHYSICS TICK 0  •  SPAWN 0"
-			)
-			_tutorial_controller.begin_run(false)
-			prepared = _show_combat_arena(true)
-		"gate_06:accessibility_reward":
-			var settings_store: Variant = get_node_or_null("/root/SettingsStore")
-			if settings_store != null:
-				settings_store.reduce_motion = true
-				settings_store.reduce_flashes = true
-				settings_store.tutorial_seen = true
-			var reward_fixture: Dictionary = _build_qa_fixture("reward_controls")
-			if bool(reward_fixture.get("valid", false)):
-				run_state = reward_fixture["state"] as RunState
-				combat_simulation = reward_fixture["simulation"] as CombatSimulation
-				var legendary_rewards: Array[RewardRoll] = []
-				for reward: RewardRoll in run_state.unopened_rewards:
-					if reward.rarity_for_presentation == GameTypes.Rarity.LEGENDARY:
-						legendary_rewards.append(reward)
-				run_state.unopened_rewards = legendary_rewards
-				if legendary_rewards.size() == 1:
-					_show_reward_reveal()
-				if legendary_rewards.size() == 1 and _active_screen is RewardRevealScreen:
-					var reward_screen := _active_screen as RewardRevealScreen
-					reward_screen.set_automatic_progression(false)
-					reward_screen.test_tick(RewardRevealController.NORMAL_INTERVAL_SECONDS)
-					reward_screen.test_tick(0.20)
-					prepared = true
-		"gate_06:full_load":
-			var first_wave: WaveDefinition = _definition_catalog.wave(1)
-			run_state = RunStateFactoryScript.create(5002000, first_wave)
-			combat_simulation = CombatSimulation.new()
-			combat_simulation.initialize(run_state, _definition_catalog)
-			prepared = (
-				combat_simulation.prepare_performance_fixture(500, 1200, 800)
-				and _show_combat_arena(true)
-			)
-		"gate_06:release_result":
-			var result_fixture: Dictionary = _build_qa_fixture("result_controller")
-			if bool(result_fixture.get("valid", false)):
-				run_state = result_fixture["state"] as RunState
-				combat_simulation = result_fixture["simulation"] as CombatSimulation
-				prepared = _show_result()
-		_:
-			print("EVIDENCE_ARGUMENT_REJECTED name=--evidence")
-			get_tree().quit(2)
-			return
-	if not prepared:
-		_fail_evidence_capture("gate06_screen_setup")
-		return
-	_prepared_evidence_id = evidence_id
-	_attach_evidence_capture()
-
-
-func _build_qa_fixture(scenario_id: String) -> Dictionary:
-	var factory_script: Variant = load("res://src/debug/qa_scenario_factory.gd")
-	if factory_script == null:
-		return {"valid": false}
-	return factory_script.build(scenario_id, _definition_catalog)
-
-
-func _configure_broken_build_evidence() -> bool:
-	if run_state == null or combat_simulation == null:
-		return false
-	var bell: SkillState = run_state.skill_library.get(
-		&"bell_of_retribution",
-		null,
-	) as SkillState
-	if bell == null:
-		return false
-	var starfall := SkillState.new()
-	starfall.skill_id = &"starfall"
-	starfall.level = 2
-	starfall.equipped_slot = 1
-	starfall.trigger_progress = 2.5
-	run_state.skill_library[starfall.skill_id] = starfall
-	var pending := PendingSkillActivation.new()
-	pending.activation_serial = run_state.next_activation_serial
-	run_state.next_activation_serial += 1
-	pending.origin_event_serial = -1
-	bell.pending_queue.append(pending)
-	combat_simulation.evidence_caption = "被ダメージ軽減 100%  •  火力 50%"
-	return true
-
-
-func validate_evidence_capture_state(evidence_id: String) -> Dictionary:
-	if (
-		_launch.get("mode", LaunchArgumentsScript.MODE_NORMAL)
-		!= LaunchArgumentsScript.MODE_EVIDENCE
-		or str(_launch.get("evidence", "")) != evidence_id
-	):
-		return _evidence_validation_failure("evidence_argument")
-	if _prepared_evidence_id != evidence_id:
-		return _evidence_validation_failure("evidence_not_prepared")
-	if (
-		run_state == null
-		or _active_screen == null
-		or not is_instance_valid(_active_screen)
-		or not _active_screen.is_inside_tree()
-	):
-		return _evidence_validation_failure("evidence_active_screen")
-	if _active_screen is CanvasItem and not (_active_screen as CanvasItem).is_visible_in_tree():
-		return _evidence_validation_failure("evidence_screen_hidden")
-
-	match evidence_id:
-		"gate_05:inventory_full":
-			return _validate_inventory_evidence("inventory_full", false)
-		"gate_05:fusion_unique_warning":
-			return _validate_inventory_evidence("fusion_unique_warning", true)
-		"gate_05:broken_build":
-			return _validate_broken_build_evidence()
-		"gate_05:final_result":
-			return _validate_final_result_evidence()
-		"gate_06:tutorial_move":
-			return _validate_tutorial_move_evidence()
-		"gate_06:accessibility_reward":
-			return _validate_accessibility_reward_evidence()
-		"gate_06:full_load":
-			return _validate_full_load_evidence()
-		"gate_06:release_result":
-			return _validate_final_result_evidence()
-	return _evidence_validation_failure("evidence_unknown_state")
-
-
-func _validate_tutorial_move_evidence() -> Dictionary:
-	if (
-		run_state.phase != GameTypes.RunPhase.COMBAT
-		or run_state.wave_number != 1
-		or run_state.physics_tick != 0
-		or not is_equal_approx(run_state.time_remaining, 60.0)
-		or run_state.non_boss_spawned != 0
-		or not _tutorial_controller.should_gate_combat(1)
-	):
-		return _evidence_validation_failure("gate06_tutorial_state")
-	if (
-		_tutorial_overlay == null
-		or not _tutorial_overlay.visible
-		or _tutorial_overlay.call("message_text") != TutorialControllerScript.MOVE_MESSAGE
-	):
-		return _evidence_validation_failure("gate06_tutorial_overlay")
-	return {"valid": true, "reason": ""}
-
-
-func _validate_accessibility_reward_evidence() -> Dictionary:
-	if run_state.phase != GameTypes.RunPhase.REWARD_REVEAL:
-		return _evidence_validation_failure("gate06_accessibility_phase")
-	if not _active_screen is RewardRevealScreen:
-		return _evidence_validation_failure("gate06_accessibility_screen")
-	var presentation: Dictionary = (
-		(_active_screen as RewardRevealScreen).reveal_controller().presentation_state()
-	)
-	var prealert_reward_ids: PackedStringArray = presentation.get(
-		"prealert_reward_ids",
-		PackedStringArray(),
-	) as PackedStringArray
-	var rarity_label := (_active_screen as RewardRevealScreen).get_node_or_null(
-		"%CurrentRarity"
-	) as Label
-	var accessibility_label := (_active_screen as RewardRevealScreen).get_node_or_null(
-		"%AccessibilityStatus"
-	) as Label
-	if (
-		not bool(presentation.get("prealert_active", false))
-		or bool(presentation.get("aggregate_prealert", true))
-		or prealert_reward_ids.size() != 1
-		or not bool(presentation.get("reduce_motion", false))
-		or not bool(presentation.get("reduce_flashes", false))
-		or not is_zero_approx(float(presentation.get("shake_offset", 1.0)))
-		or int(presentation.get("stage_light_step", -1)) != 0
-		or float(presentation.get("scale_multiplier", 0.0)) <= 1.0
-		or int(presentation.get("outline_thickness", 0)) <= 3
-		or rarity_label == null
-		or rarity_label.text != "LEGENDARY"
-		or accessibility_label == null
-		or accessibility_label.text != "動き軽減 ON・点滅軽減 ON"
-	):
-		return _evidence_validation_failure("gate06_accessibility_values")
-	return {"valid": true, "reason": ""}
-
-
-func _validate_full_load_evidence() -> Dictionary:
-	if run_state.phase != GameTypes.RunPhase.COMBAT or combat_simulation == null:
-		return _evidence_validation_failure("gate06_full_load_phase")
-	var metrics: Dictionary = combat_simulation.performance_fixture_metrics()
-	if (
-		int(metrics.get("active_enemy", -1)) != 500
-		or int(metrics.get("active_projectile", -1)) != 1200
-		or int(metrics.get("active_vfx", -1)) != 800
-		or int(metrics.get("enemy_pool_overflow", -1)) != 0
-		or int(metrics.get("projectile_pool_overflow", -1)) != 0
-		or int(metrics.get("vfx_pool_overflow", -1)) != 0
-	):
-		return _evidence_validation_failure("gate06_full_load_counts")
-	return {"valid": true, "reason": ""}
-
-
-func _validate_inventory_evidence(mode: String, expect_warning: bool) -> Dictionary:
-	if run_state.phase != GameTypes.RunPhase.INVENTORY:
-		return _evidence_validation_failure("gate05_inventory_phase")
-	if not _active_screen.has_method("debug_state"):
-		return _evidence_validation_failure("gate05_inventory_debug")
-	var debug_value: Variant = _active_screen.call("debug_state")
-	if not debug_value is Dictionary:
-		return _evidence_validation_failure("gate05_inventory_debug")
-	var debug_state: Dictionary = debug_value as Dictionary
-	if str(debug_state.get("evidence_mode", "")) != mode:
-		return _evidence_validation_failure("gate05_inventory_mode")
-	if _inventory_item_count() != RunState.INVENTORY_CAPACITY:
-		return _evidence_validation_failure("gate05_inventory_count")
-	if run_state.overflow.size() != 4 or int(debug_state.get("overflow_count", -1)) != 4:
-		return _evidence_validation_failure("gate05_overflow_count")
-	if expect_warning:
-		var expected_materials := PackedStringArray([
-			"qa-inventory-18",
-			"qa-inventory-19",
-			"qa-inventory-33",
-		])
-		if (
-			not bool(debug_state.get("fusion_open", false))
-			or not bool(debug_state.get("confirmation_open", false))
-			or debug_state.get("fusion_material_ids", PackedStringArray()) != expected_materials
-		):
-			return _evidence_validation_failure("gate05_unique_warning")
-	elif (
-		bool(debug_state.get("fusion_open", false))
-		or bool(debug_state.get("confirmation_open", false))
-	):
-		return _evidence_validation_failure("gate05_inventory_overlay")
-	return {"valid": true, "reason": ""}
-
-
-func _validate_broken_build_evidence() -> Dictionary:
-	if (
-		run_state.phase != GameTypes.RunPhase.COMBAT
-		or not _active_screen is ArenaPresenter
-		or combat_simulation == null
-		or combat_simulation.state != run_state
-	):
-		return _evidence_validation_failure("gate05_broken_build_phase")
-	if not is_equal_approx(
-		StatCalculator.effective_damage_reduction_pct(run_state.equipped),
-		100.0,
-	):
-		return _evidence_validation_failure("gate05_broken_build_reduction")
-	var snapshot: CombatSnapshot = combat_simulation.build_snapshot()
-	var skill_slots: Array = snapshot.hud_values.get("skill_slots", []) as Array
-	if skill_slots.size() != 2:
-		return _evidence_validation_failure("gate05_broken_build_skills")
-	var first_slot: Dictionary = skill_slots[0] as Dictionary
-	var second_slot: Dictionary = skill_slots[1] as Dictionary
-	if (
-		str(first_slot.get("skill_id", "")) != "bell_of_retribution"
-		or int(first_slot.get("pending_count", 0)) != 1
-		or str(second_slot.get("skill_id", "")) != "starfall"
-	):
-		return _evidence_validation_failure("gate05_broken_build_skills")
-	var hud: Node = _active_screen.get_node_or_null("%CombatHUD")
-	if hud == null:
-		return _evidence_validation_failure("gate05_broken_build_hud")
-	var first_label := hud.get_node_or_null("%SkillSlot0Value") as Label
-	var second_label := hud.get_node_or_null("%SkillSlot1Value") as Label
-	if (
-		first_label == null
-		or second_label == null
-		or not "報復の鐘" in first_label.text
-		or not "予約1" in first_label.text
-		or not "星落とし" in second_label.text
-		or not "予約0" in second_label.text
-	):
-		return _evidence_validation_failure("gate05_broken_build_hud")
-	return {"valid": true, "reason": ""}
-
-
-func _validate_final_result_evidence() -> Dictionary:
-	if run_state.phase != GameTypes.RunPhase.RESULT:
-		return _evidence_validation_failure("gate05_result_phase")
-	if not _active_screen.has_method("debug_state"):
-		return _evidence_validation_failure("gate05_result_debug")
-	var debug_value: Variant = _active_screen.call("debug_state")
-	if not debug_value is Dictionary:
-		return _evidence_validation_failure("gate05_result_debug")
-	var debug_state: Dictionary = debug_value as Dictionary
-	if (
-		str(debug_state.get("screen", "")) != "result"
-		or int(debug_state.get("run_seed", -1)) != 20260827
-		or int(debug_state.get("combat_score", -1)) != 9000
-		or int(debug_state.get("final_build_score", -1)) != 3055
-		or int(debug_state.get("total", -1)) != 12055
-	):
-		return _evidence_validation_failure("gate05_result_values")
-	var run_text: String = str(debug_state.get("run_text", ""))
-	var score_text: String = str(debug_state.get("score_text", ""))
-	if (
-		not "SEED  20260827" in run_text
-		or not "戦闘由来小計  9000" in score_text
-		or not "最終ビルド小計  3055" in score_text
-		or not "合計  12055" in score_text
-	):
-		return _evidence_validation_failure("gate05_result_text")
-	return {"valid": true, "reason": ""}
-
-
-func _inventory_item_count() -> int:
-	var count: int = 0
-	for item: ItemInstance in run_state.inventory:
-		if item != null:
-			count += 1
-	return count
-
-
-func _evidence_validation_failure(reason: String) -> Dictionary:
-	return {"valid": false, "reason": reason}
-
-
-func _build_arena_combat_evidence() -> void:
-	combat_simulation.player_position = Vector2(-1.5, 0.5)
-	combat_simulation.spawn_fixture_enemy(GameTypes.EnemyType.TRACKER, Vector2(-7.0, -3.0))
-	combat_simulation.spawn_fixture_enemy(GameTypes.EnemyType.FAST, Vector2(-3.0, -4.5))
-	combat_simulation.spawn_fixture_enemy(GameTypes.EnemyType.ARMORED, Vector2(3.0, -2.0))
-	combat_simulation.spawn_fixture_enemy(GameTypes.EnemyType.RANGED, Vector2(7.0, 2.5))
-
-
-func _build_weapon_shapes_evidence() -> void:
-	combat_simulation.player_position = Vector2.ZERO
-	for index: int in range(25):
-		combat_simulation.add_fixture_vfx(
-			Vector2(-11.0 + float(index) * 0.75, -4.5),
-			0.18,
-			Color(1.0, 0.72, 0.2),
-		)
-	for index: int in range(40):
-		var angle: float = TAU * float(index) / 40.0
-		combat_simulation.add_fixture_vfx(
-			Vector2(-4.0, 2.5) + Vector2(cos(angle), sin(angle)) * 2.25,
-			0.2,
-			Color(0.35, 0.75, 1.0),
-		)
-	for ray_index: int in range(7):
-		var ray_angle: float = deg_to_rad(-60.0 + float(ray_index) * 20.0)
-		for step_index: int in range(1, 8):
-			combat_simulation.add_fixture_vfx(
-				Vector2(5.0, 2.0) + Vector2(cos(ray_angle), sin(ray_angle)) * float(step_index) * 0.34,
-				0.14,
-				Color(1.0, 0.35, 0.3),
-			)
-
-
-func _attach_evidence_capture() -> bool:
-	var evidence_scene_resource := load("res://scenes/debug/evidence_scene.tscn")
-	if not evidence_scene_resource is PackedScene:
-		_fail_evidence_capture("scene")
-		return false
-	add_child((evidence_scene_resource as PackedScene).instantiate())
-	return true
-
-
-func _fail_evidence_capture(reason: String) -> void:
-	print("EVIDENCE_CAPTURE_FAILED reason=%s" % reason)
-	get_tree().quit(1)
 
 
 func _clear_active_screen() -> void:
