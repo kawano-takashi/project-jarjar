@@ -12,15 +12,11 @@
 `TEST_SUMMARY passed=105 failed=0`、通常Releaseの連続E2Eは人間確認を含めて完了扱いとなった。
 ただし、ユーザー最終調整と正式プレイテストが未完了のため、Gate 6合格またはMVP完成ではない。
 
-現在の `build/windows/ProjectJARJAR.exe`、`ProjectJARJAR.console.exe`、
-`ProjectJARJAR.pck` は最終調整前の比較用であり、正式プレイテストには使わない。参考identityは
-`exe_sha256=4a9eaded8955ef789ab02651ed9d2dde80328fbb342bd2a6db4db33e86305668;pck_sha256=cc092adf0d93ba9a11023f8634631821701462eaed37bb55121aab2243d7502b`。
-
 ## 次の作業
 
 1. ユーザーがエフェクト、文言その他のMVP最終調整を行う。
 2. 調整完了の明示後、全回帰、GDScript検査、性能試験、Release export、pack audit、smoke、手動QAを実施する。
-3. 新しい候補HEAD、Release build identity、balance revisionを固定し、`artifacts/gate-06/playtest-target.txt`へ記録する。
+3. 新しい候補HEAD、Release build identity、balance revisionを固定し、`artifacts/playtest-target.txt`へ記録する。
 4. 新identity用の `docs/final-qa.md` を新規作成し、手動QAと自動検証結果を記録する。
 5. その後だけ `docs/playtest-protocol.md` を有効化し、未経験者5人以上が各3runを実施する。
 

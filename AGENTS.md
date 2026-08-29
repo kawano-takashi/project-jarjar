@@ -9,10 +9,7 @@ $env:JARJAR_GODOT = (Resolve-Path -LiteralPath (Get-Command godot.exe -CommandTy
 $jarjarVersion = ((& $env:JARJAR_GODOT --version 2>&1) -join "`n").Trim()
 if (-not $jarjarVersion.StartsWith("4.7.2.stable.official")) { throw "Godot 4.7.2-stable Standard is required." }
 
-# GDScriptのPython構文混入検査
-python.exe .\.codex\skills\godot-gdscript-guard\scripts\gdscript_guard.py --project .
-
-# 全回帰テスト（期待値: TEST_SUMMARY passed=105 failed=0）
+# 全回帰テスト
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\run_gate_checks.ps1 -GateNumber 6 -Suite all
 
 # Windows Release export。ユーザー最終調整完了後だけ正式buildとして実行する。

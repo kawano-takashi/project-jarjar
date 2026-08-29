@@ -8,7 +8,7 @@
 ## 正式対象の固定条件
 
 ユーザー最終調整後に全検証とRelease exportを再実施し、
-`artifacts/gate-06/playtest-target.txt`へ
+`artifacts/playtest-target.txt`へ
 `candidate_head=<40hex>`、`release_build_identity=<identity>`、`balance_revision=<integer>`を
 記録する。`docs/project-status.md`が「正式playtest対象固定済み」へ更新され、同じ3値が一致するまで
 下記手順を開始しない。EXE/PCK、identity、balance revision、または候補HEADが
@@ -119,6 +119,6 @@ RESULTへ遷移する瞬間までを計測する。W8最終整理を含む。REW
 
 `Gate 6のプレイテスト集計を再開 H`
 
-`H`は`artifacts/gate-06/playtest-target.txt`へ記録した40文字候補HEADへ置換する。再開時に
+`H`は`artifacts/playtest-target.txt`へ記録した40文字候補HEADへ置換する。再開時に
 現在HEAD、target記録、identity、balance revision、初見資格`yes`、全CSV制約を再検証する。
 不一致が1件でもあれば集計しない。
