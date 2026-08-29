@@ -847,6 +847,37 @@ func _test_qa_scenarios(assertions: Variant) -> void:
 			"%s uses seeded normal display name" % weapon_id,
 		)
 		assertions.expect_equal(20, (weapon_result["simulation"] as CombatSimulation).enemy_system.enemy_store.active_count(), "%s has 20 trackers" % weapon_id)
+	var wood_result: Dictionary = QaScenarioFactory.build("weapon_wood_stick", catalog)
+	var wood_state: RunState = wood_result["state"] as RunState
+	var wood_simulation: CombatSimulation = wood_result["simulation"] as CombatSimulation
+	var wood_weapon: ItemInstance = wood_state.equipped[GameTypes.EquipmentSlot.MAIN_WEAPON] as ItemInstance
+	var wood_hands: ItemInstance = wood_state.equipped[GameTypes.EquipmentSlot.HANDS] as ItemInstance
+	assertions.expect_equal(GameTypes.MainWeaponType.UNCLASSIFIED, wood_weapon.main_weapon_type, "wood QA keeps initial wood stick equipped")
+	assertions.expect_true(wood_hands != null and wood_hands.unique_id == &"echo_gauntlet", "wood QA equips Echo Gauntlet")
+	assertions.expect_float(0.0, wood_simulation.main_weapon_damage_override, "wood QA fixes weapon damage to zero")
+	var wood_ids: Array[int] = wood_simulation.enemy_system.enemy_store.snapshot_ids_sorted()
+	assertions.expect_equal(20, wood_ids.size(), "wood QA has 20 persistent trackers")
+	if not wood_ids.is_empty():
+		assertions.expect_equal(
+			Vector2(1.0, 0.0),
+			wood_simulation.enemy_system.enemy_store.get_by_id(wood_ids[0]).position,
+			"wood QA nearest target is fixed inside 1.8-meter range",
+		)
+
+	var sword_result: Dictionary = QaScenarioFactory.build("weapon_sword", catalog)
+	var sword_state: RunState = sword_result["state"] as RunState
+	var sword_simulation: CombatSimulation = sword_result["simulation"] as CombatSimulation
+	var sword_hands: ItemInstance = sword_state.equipped[GameTypes.EquipmentSlot.HANDS] as ItemInstance
+	assertions.expect_true(sword_hands != null and sword_hands.unique_id == &"echo_gauntlet", "sword QA equips Echo Gauntlet")
+	assertions.expect_float(0.0, sword_simulation.main_weapon_damage_override, "sword QA fixes weapon damage to zero")
+	var sword_ids: Array[int] = sword_simulation.enemy_system.enemy_store.snapshot_ids_sorted()
+	assertions.expect_equal(20, sword_ids.size(), "sword QA has 20 persistent trackers")
+	if not sword_ids.is_empty():
+		assertions.expect_equal(
+			Vector2(1.8, 0.0),
+			sword_simulation.enemy_system.enemy_store.get_by_id(sword_ids[0]).position,
+			"sword QA nearest target is fixed inside 2.4-meter range",
+		)
 	var pre_death: Dictionary = QaScenarioFactory.build("pre_quota_death", catalog)
 	var pre_death_reward: RewardRoll = (pre_death["state"] as RunState).unopened_rewards[0]
 	assertions.expect_equal(

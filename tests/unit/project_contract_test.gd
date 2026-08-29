@@ -251,9 +251,9 @@ func _test_project_settings_contract(assertions: Variant) -> void:
 
 	var config := ConfigFile.new()
 	assertions.expect_equal(OK, config.load("res://project.godot"), "project.godot readable")
-	assertions.expect_equal(false, config.get_value("debug", "file_logging/enable_file_logging", null), "file logging explicitly disabled")
+	assertions.expect_false(config.has_section_key("debug", "file_logging/enable_file_logging"), "default file logging value omitted")
 	assertions.expect_equal(false, config.get_value("debug", "file_logging/enable_file_logging.pc", null), "PC file logging explicitly disabled")
-	assertions.expect_equal(60, config.get_value("physics", "common/physics_ticks_per_second", null), "physics 60Hz explicitly configured")
+	assertions.expect_false(config.has_section_key("physics", "common/physics_ticks_per_second"), "default physics tick value omitted")
 	assertions.expect_equal(PackedStringArray(["SettingsStore"]), config.get_section_keys("autoload"), "sole autoload")
 	var main_scene := ResourceLoader.load("res://scenes/main.tscn") as PackedScene
 	assertions.expect_true(main_scene != null, "main scene loads")

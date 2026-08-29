@@ -27,6 +27,7 @@ func test_names() -> PackedStringArray:
 		"boss_summon_full_born_tick_lifecycle_contract",
 		"enemy_and_ally_projectile_born_tick_contract",
 		"vfx_pool_lifecycle_and_overflow_contract",
+		"melee_trail_combat_contract",
 		"multimesh_only_runtime_entity_contract",
 	])
 
@@ -41,6 +42,8 @@ func run_test(test_name: String, assertions: Variant, context: Dictionary) -> vo
 			_test_enemy_and_ally_projectile_born_tick(assertions)
 		"vfx_pool_lifecycle_and_overflow_contract":
 			_test_vfx_pool_lifecycle_and_overflow(assertions)
+		"melee_trail_combat_contract":
+			_test_melee_trail_combat(assertions)
 		"multimesh_only_runtime_entity_contract":
 			await _test_multimesh_only_runtime_entities(assertions, context)
 		_:
@@ -364,6 +367,233 @@ func _test_vfx_pool_lifecycle_and_overflow(assertions: Variant) -> void:
 	lifetime_pool.advance(0.75, 12)
 	assertions.expect_false(lifetime_vfx.active, "short-lived VFX returns to pool at expiry")
 
+	var melee_pool := VfxPool.new()
+	var wood: VfxState = melee_pool.acquire_melee_trail(
+		&"wood_stick",
+		Vector2(2.0, 3.0),
+		Vector2.RIGHT,
+		1.8,
+		false,
+		20,
+	)
+	var sword: VfxState = melee_pool.acquire_melee_trail(
+		&"sword",
+		Vector2.ZERO,
+		Vector2.UP,
+		2.4,
+		false,
+		20,
+	)
+	var echo: VfxState = melee_pool.acquire_melee_trail(
+		&"wood_stick",
+		Vector2.ZERO,
+		Vector2.LEFT,
+		1.8,
+		true,
+		20,
+	)
+	assertions.expect_true(wood != null and sword != null and echo != null, "melee trail API acquires supported effects")
+	if wood != null and sword != null and echo != null:
+		assertions.expect_equal(VfxState.EffectKind.WOOD_STICK_TRAIL, wood.effect_kind, "wood trail kind")
+		assertions.expect_equal(VfxState.EffectKind.SWORD_TRAIL, sword.effect_kind, "sword trail kind")
+		assertions.expect_equal(VfxPool.WOOD_STICK_COLOR, wood.color, "wood trail base color")
+		assertions.expect_equal(VfxPool.SWORD_COLOR, sword.color, "sword trail base color")
+		assertions.expect_equal(VfxPool.ECHO_COLOR, echo.color, "echo trail violet base color")
+		assertions.expect_float(1.0, wood.sweep_sign, "first melee trail sweeps left to right")
+		assertions.expect_float(-1.0, sword.sweep_sign, "second melee trail reverses sweep")
+		assertions.expect_float(1.0, echo.sweep_sign, "echo participates in shared alternation")
+		assertions.expect_float(1.8, wood.scale_m, "wood trail uses definition range")
+		assertions.expect_float(2.4, sword.scale_m, "sword trail uses definition range")
+		assertions.expect_float(VfxPool.MELEE_TRAIL_LIFETIME_SECONDS, wood.total_lifetime, "melee trail lifetime")
+		assertions.expect_float(0.18, wood.total_lifetime, "melee trail lasts 0.18 seconds")
+		assertions.expect_float(
+			VfxPool.MELEE_TRAIL_LIFETIME_SECONDS,
+			VfxPool.MELEE_TRAIL_SWEEP_SECONDS + VfxPool.MELEE_TRAIL_FADE_SECONDS,
+			"0.12-second sweep plus 0.06-second fade",
+		)
+		var wood_transform: Transform3D = wood.current_transform(0.03)
+		assertions.expect_equal(Vector3(2.0, 0.03, 3.0), wood_transform.origin, "trail transform keeps attack origin at floor height")
+		assertions.expect_float(1.8, wood_transform.basis.x.length(), "trail transform scales lateral range")
+		assertions.expect_float(1.8, wood_transform.basis.z.length(), "trail transform scales forward range")
+	assertions.expect_equal(
+		null,
+		melee_pool.acquire_melee_trail(&"bow", Vector2.ZERO, Vector2.RIGHT, 14.0, false, 20),
+		"unsupported weapon acquires no melee trail",
+	)
+	assertions.expect_equal(3, melee_pool.active_count(), "unsupported weapon changes no VFX slot")
+	assertions.expect_equal(0, melee_pool.overflow_count, "unsupported weapon is not pool overflow")
+	melee_pool.clear()
+	var reset_trail: VfxState = melee_pool.acquire_melee_trail(
+		&"sword",
+		Vector2.ZERO,
+		Vector2.RIGHT,
+		2.4,
+		false,
+		21,
+	)
+	assertions.expect_float(1.0, reset_trail.sweep_sign, "wave clear resets melee alternation")
+
+
+func _test_melee_trail_combat(assertions: Variant) -> void:
+	var wood := _new_simulation(1)
+	_freeze_fixture(wood)
+	wood.enemy_system.enemy_store.clear()
+	wood.main_weapon_damage_override = 0.0
+	wood.weapon_system.attack_elapsed = wood.weapon_system.effective_interval()
+	wood.step(Vector2.ZERO, 0.0)
+	assertions.expect_equal(0, wood.vfx_pool.active_count(), "wood stick air swing creates no trail without a target")
+
+	var wood_target: EnemyEntity = wood.spawn_fixture_enemy(
+		GameTypes.EnemyType.TRACKER,
+		Vector2(1.6, 0.0),
+	)
+	assertions.expect_true(wood_target != null, "wood trail target fixture created")
+	if wood_target == null:
+		return
+	var combat_rng_before: int = wood.state.rng_streams.combat_rng.state
+	wood.weapon_system.attack_elapsed = wood.weapon_system.effective_interval()
+	var first_snapshot: CombatSnapshot = wood.step(Vector2.ZERO, 0.0)
+	assertions.expect_equal(1, wood.vfx_pool.active_count(), "generated wood attack creates one trail")
+	assertions.expect_equal(1, first_snapshot.vfx_transforms.size(), "snapshot contains wood trail transform")
+	assertions.expect_equal(1, first_snapshot.vfx_colors.size(), "snapshot aligns wood trail color")
+	assertions.expect_equal(1, first_snapshot.vfx_custom_data.size(), "snapshot aligns wood trail custom data")
+	var first_wood: VfxState = _active_vfx_states(wood.vfx_pool)[0]
+	assertions.expect_equal(VfxState.EffectKind.WOOD_STICK_TRAIL, first_wood.effect_kind, "combat emits wood trail kind")
+	assertions.expect_equal(Vector2.ZERO, first_wood.position, "trail records attack position")
+	assertions.expect_equal(Vector2.RIGHT, first_wood.direction, "trail records auto-aim direction")
+	assertions.expect_float(1.8, first_wood.scale_m, "wood combat trail reaches 1.8 meters")
+	assertions.expect_equal(VfxPool.WOOD_STICK_COLOR, first_wood.color, "wood combat trail uses yellow-orange")
+	assertions.expect_equal(Vector3(0.0, 0.03, 0.0), first_snapshot.vfx_transforms[0].origin, "wood trail is fixed 0.03 meters above floor")
+	assertions.expect_equal(combat_rng_before, wood.state.rng_streams.combat_rng.state, "melee trail consumes no combat RNG")
+
+	wood.player_position = Vector2(4.0, 3.0)
+	assertions.expect_equal(
+		Vector3(0.0, 0.03, 0.0),
+		wood.build_snapshot().vfx_transforms[0].origin,
+		"existing trail does not follow the player",
+	)
+	wood.player_position = Vector2.ZERO
+	wood.weapon_system.attack_elapsed = wood.weapon_system.effective_interval()
+	wood.step(Vector2.ZERO, 0.0)
+	var overlapping_wood: Array[VfxState] = _active_vfx_states(wood.vfx_pool)
+	assertions.expect_equal(2, overlapping_wood.size(), "rapid melee attacks remain independently visible")
+	assertions.expect_float(1.0, overlapping_wood[0].sweep_sign, "first combat trail sweep sign")
+	assertions.expect_float(-1.0, overlapping_wood[1].sweep_sign, "second combat trail alternates sign")
+
+	wood.freeze_all_updates = true
+	var paused_remaining: float = overlapping_wood[0].remaining_lifetime
+	wood.step(Vector2.ZERO, 0.10)
+	assertions.expect_float(paused_remaining, overlapping_wood[0].remaining_lifetime, "paused simulation freezes trail progress")
+	wood.freeze_all_updates = false
+
+	var accessibility_cases: Array[Dictionary] = [
+		{"motion": false, "flashes": false},
+		{"motion": true, "flashes": false},
+		{"motion": false, "flashes": true},
+		{"motion": true, "flashes": true},
+	]
+	for test_case: Dictionary in accessibility_cases:
+		var reduce_motion: bool = bool(test_case["motion"])
+		var reduce_flashes: bool = bool(test_case["flashes"])
+		wood.configure_accessibility(reduce_motion, reduce_flashes)
+		var accessibility_snapshot: CombatSnapshot = wood.build_snapshot()
+		var custom_data: Color = accessibility_snapshot.vfx_custom_data[0]
+		assertions.expect_float(1.0 if reduce_motion else 0.0, custom_data.b, "Reduce Motion flag updates existing trail immediately")
+		assertions.expect_float(1.0 if reduce_flashes else 0.0, custom_data.a, "Reduce Flashes flag updates existing trail immediately")
+		assertions.expect_equal(VfxPool.WOOD_STICK_COLOR, accessibility_snapshot.vfx_colors[0], "accessibility preserves trail base color")
+		assertions.expect_equal(2, accessibility_snapshot.active_vfx_count, "accessibility never hides existing trails")
+	var shader_source := FileAccess.get_file_as_string("res://src/gameplay/melee_trail.gdshader")
+	assertions.expect_true("reveal = mix(reveal, 1.0, reduce_motion);" in shader_source, "Reduce Motion displays the completed static trail")
+	assertions.expect_true("mix(1.0, 0.6, reduce_flashes)" in shader_source, "Reduce Flashes applies 60 percent opacity")
+	assertions.expect_true("mix(1.25, 0.35, reduce_flashes)" in shader_source, "Reduce Flashes lowers emission from 1.25 to 0.35")
+
+	wood.vfx_pool.advance(VfxPool.MELEE_TRAIL_SWEEP_SECONDS, wood.state.physics_tick + 1)
+	assertions.expect_true(
+		absf(overlapping_wood[0].normalized_progress() - 2.0 / 3.0) < 0.001,
+		"trail reaches completed sweep after 0.12 seconds",
+	)
+	wood.vfx_pool.advance(VfxPool.MELEE_TRAIL_FADE_SECONDS, wood.state.physics_tick + 2)
+	assertions.expect_equal(0, wood.vfx_pool.active_count(), "trail returns to pool after final 0.06-second fade")
+
+	for ranged_type: GameTypes.MainWeaponType in [
+		GameTypes.MainWeaponType.BOW,
+		GameTypes.MainWeaponType.STAFF,
+	]:
+		var ranged := _new_weapon_simulation(ranged_type)
+		_freeze_fixture(ranged)
+		ranged.spawn_fixture_enemy(GameTypes.EnemyType.TRACKER, Vector2(1.0, 0.0))
+		ranged.weapon_system.attack_elapsed = ranged.weapon_system.effective_interval()
+		ranged.step(Vector2.ZERO, 0.0)
+		assertions.expect_equal(0, ranged.vfx_pool.active_count(), "%s creates no melee trail" % GameTypes.main_weapon_type_to_key(ranged_type))
+
+	var sword := _new_weapon_simulation(GameTypes.MainWeaponType.SWORD)
+	_freeze_fixture(sword)
+	sword.main_weapon_damage_override = 0.0
+	sword.spawn_fixture_enemy(GameTypes.EnemyType.TRACKER, Vector2(2.0, 0.0))
+	sword.weapon_system.attack_elapsed = sword.weapon_system.effective_interval()
+	sword.step(Vector2.ZERO, 0.0)
+	var sword_trails: Array[VfxState] = _active_vfx_states(sword.vfx_pool)
+	assertions.expect_equal(1, sword_trails.size(), "generated sword attack creates one trail")
+	if not sword_trails.is_empty():
+		assertions.expect_equal(VfxState.EffectKind.SWORD_TRAIL, sword_trails[0].effect_kind, "combat emits sword trail kind")
+		assertions.expect_float(2.4, sword_trails[0].scale_m, "sword combat trail reaches 2.4 meters")
+		assertions.expect_equal(VfxPool.SWORD_COLOR, sword_trails[0].color, "sword combat trail uses white-blue")
+
+	var catalog: DefinitionCatalog = _catalog()
+	var echo_fixture: Dictionary = QaScenarioFactory.build("weapon_wood_stick", catalog)
+	assertions.expect_true(echo_fixture.get("valid", false), "wood echo QA fixture valid")
+	if not echo_fixture.get("valid", false):
+		return
+	var echo_simulation: CombatSimulation = echo_fixture["simulation"] as CombatSimulation
+	var echo_rng_before: int = echo_simulation.state.rng_streams.combat_rng.state
+	for _attack_index: int in range(3):
+		echo_simulation.weapon_system.attack_elapsed = echo_simulation.weapon_system.effective_interval()
+		echo_simulation.step(Vector2.ZERO, 0.0)
+	assertions.expect_equal(1, echo_simulation.state.scheduled_proc_replays.size(), "third generated melee attack schedules one echo")
+	var scheduled_echo: ScheduledProcReplay = echo_simulation.state.scheduled_proc_replays[0]
+	scheduled_echo.due_physics_tick = echo_simulation.state.physics_tick + 1
+	echo_simulation.weapon_system.attack_elapsed = 0.0
+	echo_simulation.step(Vector2.ZERO, 0.0)
+	var echo_trails: Array[VfxState] = _active_vfx_states(echo_simulation.vfx_pool)
+	assertions.expect_equal(4, echo_trails.size(), "actual echo creates a fourth independent trail")
+	if echo_trails.size() == 4:
+		assertions.expect_equal(VfxPool.ECHO_COLOR, echo_trails[3].color, "actual echo changes only trail color to violet")
+		assertions.expect_equal(VfxState.EffectKind.WOOD_STICK_TRAIL, echo_trails[3].effect_kind, "echo keeps original melee shape")
+		for index: int in range(4):
+			assertions.expect_float(1.0 if index % 2 == 0 else -1.0, echo_trails[index].sweep_sign, "normal and echo trails share alternation %d" % index)
+	assertions.expect_equal(20, echo_simulation.enemy_system.enemy_store.active_count(), "damage-zero wood QA enemies survive repeated attacks and echo")
+	assertions.expect_equal(echo_rng_before, echo_simulation.state.rng_streams.combat_rng.state, "normal and echo trail order uses no combat RNG")
+
+	var failed_fixture: Dictionary = QaScenarioFactory.build("weapon_wood_stick", catalog)
+	var failed_simulation: CombatSimulation = failed_fixture["simulation"] as CombatSimulation
+	for _attack_index: int in range(3):
+		failed_simulation.weapon_system.attack_elapsed = failed_simulation.weapon_system.effective_interval()
+		failed_simulation.step(Vector2.ZERO, 0.0)
+	var failed_echo: ScheduledProcReplay = failed_simulation.state.scheduled_proc_replays[0]
+	failed_echo.due_physics_tick = failed_simulation.state.physics_tick + 1
+	failed_simulation.enemy_system.enemy_store.clear()
+	failed_simulation.weapon_system.attack_elapsed = 0.0
+	failed_simulation.step(Vector2.ZERO, 0.0)
+	assertions.expect_equal(3, failed_simulation.vfx_pool.active_count(), "failed wood echo creates no trail")
+
+	var overflow := _new_simulation(1)
+	_freeze_fixture(overflow)
+	overflow.main_weapon_damage_override = 1.0
+	var overflow_target: EnemyEntity = overflow.spawn_fixture_enemy(
+		GameTypes.EnemyType.TRACKER,
+		Vector2(1.0, 0.0),
+	)
+	for slot: VfxState in overflow.vfx_pool.slots:
+		slot.active = true
+		slot.total_lifetime = 1.0
+		slot.remaining_lifetime = 1.0
+		slot.born_physics_tick = overflow.state.physics_tick + 1
+	var hp_before: float = overflow_target.hp
+	overflow.weapon_system.attack_elapsed = overflow.weapon_system.effective_interval()
+	overflow.step(Vector2.ZERO, 0.0)
+	assertions.expect_equal(1, overflow.vfx_pool.overflow_count, "full VFX pool records one melee overflow")
+	assertions.expect_float(hp_before - 1.0, overflow_target.hp, "VFX overflow does not block attack damage")
+
 
 func _test_multimesh_only_runtime_entities(assertions: Variant, context: Dictionary) -> void:
 	var simulation: CombatSimulation = _new_simulation(1)
@@ -379,7 +609,15 @@ func _test_multimesh_only_runtime_entities(assertions: Variant, context: Diction
 			0,
 		)
 	for index: int in range(8):
-		simulation.add_fixture_vfx(Vector2(float(index), 0.0), 1.0, Color.WHITE)
+		var fixture_vfx: VfxState = simulation.add_fixture_vfx(
+			Vector2(float(index), 0.0),
+			1.0,
+			Color(1.0, 0.5, 0.25, 0.75),
+		)
+		if index == 0:
+			fixture_vfx.effect_kind = VfxState.EffectKind.SWORD_TRAIL
+			fixture_vfx.total_lifetime = 0.18
+			fixture_vfx.remaining_lifetime = 0.09
 
 	var enemy_node_count: int = 0
 	for enemy: EnemyEntity in simulation.enemy_system.enemy_store.entities:
@@ -419,6 +657,27 @@ func _test_multimesh_only_runtime_entities(assertions: Variant, context: Diction
 	assertions.expect_equal(64, enemy_instances.multimesh.visible_instance_count, "64 logical enemies render in one MultiMesh")
 	assertions.expect_equal(64, projectile_instances.multimesh.visible_instance_count, "64 logical projectiles render in one MultiMesh")
 	assertions.expect_equal(8, vfx_instances.multimesh.visible_instance_count, "8 logical VFX render in one MultiMesh")
+	assertions.expect_equal(VfxPool.CAPACITY, vfx_instances.multimesh.instance_count, "VFX MultiMesh keeps 4096 slots")
+	assertions.expect_true(vfx_instances.multimesh.use_colors, "VFX MultiMesh enables per-instance colors")
+	assertions.expect_true(vfx_instances.multimesh.use_custom_data, "VFX MultiMesh enables per-instance custom data")
+	assertions.expect_true(vfx_instances.multimesh.mesh is PlaneMesh, "VFX MultiMesh uses one flat plane mesh")
+	var expected_vfx_snapshot: CombatSnapshot = simulation.build_snapshot()
+	assertions.expect_equal(8, expected_vfx_snapshot.vfx_transforms.size(), "VFX snapshot has eight transforms")
+	assertions.expect_equal(8, expected_vfx_snapshot.vfx_colors.size(), "VFX snapshot has eight aligned colors")
+	assertions.expect_equal(8, expected_vfx_snapshot.vfx_custom_data.size(), "VFX snapshot has eight aligned custom-data rows")
+	var presenter_source := FileAccess.get_file_as_string("res://src/gameplay/arena_presenter.gd")
+	assertions.expect_true(
+		"set_instance_transform(index, snapshot.vfx_transforms[index])" in presenter_source,
+		"presenter writes VFX transform from the matching index",
+	)
+	assertions.expect_true(
+		"set_instance_color(index, color)" in presenter_source and "snapshot.vfx_colors[index]" in presenter_source,
+		"presenter writes VFX color from the matching index",
+	)
+	assertions.expect_true(
+		"set_instance_custom_data(index, custom_data)" in presenter_source and "snapshot.vfx_custom_data[index]" in presenter_source,
+		"presenter writes VFX custom data from the matching index",
+	)
 	assertions.expect_equal(0, chest_instances.multimesh.visible_instance_count, "no chest fixture renders before acquisition")
 	tree.root.remove_child(arena)
 	arena.free()
@@ -454,6 +713,21 @@ func _new_weapon_simulation(weapon_type: GameTypes.MainWeaponType) -> CombatSimu
 	var simulation := CombatSimulation.new()
 	simulation.initialize(state, catalog)
 	return simulation
+
+
+func _freeze_fixture(simulation: CombatSimulation) -> void:
+	simulation.freeze_enemy_ai = true
+	simulation.freeze_enemy_timers = true
+	simulation.freeze_normal_spawn = true
+	simulation.freeze_countdown = true
+
+
+func _active_vfx_states(pool: VfxPool) -> Array[VfxState]:
+	var active: Array[VfxState] = []
+	for slot: VfxState in pool.slots:
+		if slot.active:
+			active.append(slot)
+	return active
 
 
 func _acquire_projectile(

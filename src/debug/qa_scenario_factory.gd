@@ -7,6 +7,7 @@ const QaItemBuilderScript := preload("res://src/debug/qa_item_builder.gd")
 const ItemFactoryScript := preload("res://src/loot/item_factory.gd")
 const NameGeneratorScript := preload("res://src/loot/name_generator.gd")
 const VALID_IDS: Array[String] = [
+	"weapon_wood_stick",
 	"weapon_bow",
 	"weapon_staff",
 	"weapon_sword",
@@ -35,6 +36,8 @@ static func build(scenario_id: String, catalog: DefinitionCatalog) -> Dictionary
 	var simulation := CombatSimulation.new()
 	var fixture_valid: bool = true
 	match scenario_id:
+		"weapon_wood_stick":
+			fixture_valid = _equip_qa_echo_gauntlet(state, catalog)
 		"weapon_bow":
 			fixture_valid = _equip_qa_weapon(
 				state,
@@ -56,6 +59,8 @@ static func build(scenario_id: String, catalog: DefinitionCatalog) -> Dictionary
 				GameTypes.MainWeaponType.SWORD,
 				"qa-weapon-sword",
 			)
+			if fixture_valid:
+				fixture_valid = _equip_qa_echo_gauntlet(state, catalog)
 		"inventory_controller":
 			fixture_valid = _prepare_inventory_controller(state, catalog)
 		"result_controller":
@@ -73,7 +78,7 @@ static func build(scenario_id: String, catalog: DefinitionCatalog) -> Dictionary
 		)}
 	simulation.initialize(state, catalog)
 	match scenario_id:
-		"weapon_bow", "weapon_staff", "weapon_sword":
+		"weapon_wood_stick", "weapon_bow", "weapon_staff", "weapon_sword":
 			_build_weapon_fixture(scenario_id, simulation)
 		"pre_quota_death":
 			fixture_valid = _build_death_fixture(
@@ -621,22 +626,58 @@ static func _equip_qa_weapon(
 	return true
 
 
+static func _equip_qa_echo_gauntlet(
+	state: RunState,
+	catalog: DefinitionCatalog,
+) -> bool:
+	var affixes: Array[AffixRoll] = []
+	var gauntlet: ItemInstance = QaItemBuilderScript.build(
+		catalog,
+		"qa-echo-gauntlet",
+		GameTypes.EquipmentSlot.HANDS,
+		GameTypes.Rarity.COMMON,
+		GameTypes.MainWeaponType.UNCLASSIFIED,
+		affixes,
+		&"echo_gauntlet",
+		false,
+	)
+	if gauntlet == null:
+		return false
+	state.equipped[GameTypes.EquipmentSlot.HANDS] = gauntlet
+	return true
+
+
 static func _build_weapon_fixture(scenario_id: String, simulation: CombatSimulation) -> void:
 	simulation.freeze_enemy_ai = true
 	simulation.freeze_enemy_timers = true
 	simulation.freeze_normal_spawn = true
 	simulation.freeze_countdown = true
+	if scenario_id in ["weapon_wood_stick", "weapon_sword"]:
+		simulation.main_weapon_damage_override = 0.0
 	for index: int in range(20):
 		var position: Vector2
 		match scenario_id:
+			"weapon_wood_stick":
+				if index == 0:
+					position = Vector2(1.0, 0.0)
+				else:
+					var wood_angle: float = deg_to_rad(
+						125.0 + 110.0 * float(index - 1) / 18.0
+					)
+					position = Vector2(cos(wood_angle), sin(wood_angle)) * 4.0
 			"weapon_bow":
 				position = Vector2(10.0, (float(index) - 9.5) * 0.08)
 			"weapon_staff":
 				var staff_angle: float = TAU * float(index) / 20.0
 				position = Vector2(10.0, 0.0) + Vector2(cos(staff_angle), sin(staff_angle)) * 2.0
 			_:
-				var sword_angle: float = deg_to_rad(-55.0 + 110.0 * float(index) / 19.0)
-				position = Vector2(cos(sword_angle), sin(sword_angle)) * 2.0
+				if index == 0:
+					position = Vector2(1.8, 0.0)
+				else:
+					var sword_angle: float = deg_to_rad(
+						125.0 + 110.0 * float(index - 1) / 18.0
+					)
+					position = Vector2(cos(sword_angle), sin(sword_angle)) * 4.0
 		simulation.spawn_fixture_enemy(GameTypes.EnemyType.TRACKER, position)
 
 

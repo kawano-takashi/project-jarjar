@@ -3,7 +3,7 @@ extends SceneTree
 
 const TEST_TIMEOUT_MS: int = 600000
 const TEST_SETTINGS_ROOT: String = "res://artifacts/gdscript-tests/settings"
-const PREFLIGHT_EXTENSIONS: Array[String] = ["gd", "tscn", "tres"]
+const PREFLIGHT_EXTENSIONS: Array[String] = ["gd", "gdshader", "tscn", "tres"]
 const IGNORED_ROOT_DIRECTORIES: Array[String] = [
 	".codex",
 	".git",

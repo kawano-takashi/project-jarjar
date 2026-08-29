@@ -22,7 +22,6 @@ SettingsStore="*res://src/core/settings_store.gd"
 
 [debug]
 
-file_logging/enable_file_logging=false
 file_logging/enable_file_logging.pc=false
 gdscript/warnings/unassigned_variable=2
 gdscript/warnings/unassigned_variable_op_assign=2
@@ -153,10 +152,6 @@ reward_open_all={
 , Object(InputEventJoypadButton,"resource_local_to_scene":false,"resource_name":"","device":-1,"button_index":3,"pressure":0.0,"pressed":false,"script":null)
 ]
 }
-
-[physics]
-
-common/physics_ticks_per_second=60
 
 [rendering]
 

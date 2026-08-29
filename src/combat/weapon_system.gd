@@ -120,9 +120,12 @@ func try_primary_attack_detailed(
 	var hits: Array[Dictionary] = []
 	var result: Dictionary = {
 		"generated": false,
+		"weapon_id": &"",
+		"origin": player_position,
 		"source_effect_id": &"",
 		"damage_snapshot": 0.0,
 		"direction": Vector2.ZERO,
+		"range_m": 0.0,
 		"aim_distance": 0.0,
 		"target_entity_id": -1,
 		"hits": hits,
@@ -130,6 +133,8 @@ func try_primary_attack_detailed(
 	if not is_attack_ready(coward_stationary_active):
 		return result
 	var definition: WeaponDefinition = current_definition()
+	result["weapon_id"] = definition.weapon_id
+	result["range_m"] = definition.range_m
 	var target: EnemyEntity = _nearest_target(
 		player_position,
 		definition.range_m,
@@ -257,6 +262,10 @@ func replay_weapon(
 	var hits: Array[Dictionary] = []
 	var result: Dictionary = {
 		"generated": false,
+		"weapon_id": &"",
+		"origin": player_position,
+		"direction": Vector2.ZERO,
+		"range_m": 0.0,
 		"event": null,
 		"hits": hits,
 	}
@@ -273,6 +282,9 @@ func replay_weapon(
 	var direction: Vector2 = replay.direction.normalized()
 	if direction == Vector2.ZERO:
 		direction = Vector2.RIGHT
+	result["weapon_id"] = weapon_id
+	result["direction"] = direction
+	result["range_m"] = definition.range_m
 	match weapon_id:
 		WOOD_STICK_ID:
 			var target: EnemyEntity = enemy_store.get_by_id(replay.target_entity_id)

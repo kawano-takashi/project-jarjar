@@ -9,6 +9,7 @@ const MODE_PERFORMANCE: StringName = &"performance"
 const MODE_RELEASE_SMOKE: StringName = &"release_smoke"
 const MODE_RELEASE_PACK_AUDIT: StringName = &"release_pack_audit"
 const QA_SCENARIOS: Array[String] = [
+	"weapon_wood_stick",
 	"weapon_bow",
 	"weapon_staff",
 	"weapon_sword",

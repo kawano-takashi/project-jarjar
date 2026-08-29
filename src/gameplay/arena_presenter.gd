@@ -128,7 +128,7 @@ func _apply_snapshot(snapshot: CombatSnapshot, delta: float) -> void:
 	)
 	_copy_transform_prefix(snapshot.enemy_transforms, _enemy_instances)
 	_copy_transform_prefix(snapshot.projectile_transforms, _projectile_instances)
-	_copy_transform_prefix(snapshot.vfx_transforms, _vfx_instances)
+	_copy_vfx_prefix(snapshot, _vfx_instances)
 	_copy_transform_prefix(snapshot.chest_transforms, _chest_instances)
 	_combat_hud.update_from_snapshot(snapshot)
 	_update_camera(snapshot.player_position, delta)
@@ -144,6 +144,31 @@ func _copy_transform_prefix(
 	var visible_count := mini(transforms.size(), multimesh.instance_count)
 	for index: int in range(visible_count):
 		multimesh.set_instance_transform(index, transforms[index])
+	multimesh.visible_instance_count = visible_count
+
+
+func _copy_vfx_prefix(
+	snapshot: CombatSnapshot,
+	instance: MultiMeshInstance3D,
+) -> void:
+	var multimesh: MultiMesh = instance.multimesh
+	if multimesh == null:
+		return
+	var visible_count := mini(snapshot.vfx_transforms.size(), multimesh.instance_count)
+	for index: int in range(visible_count):
+		multimesh.set_instance_transform(index, snapshot.vfx_transforms[index])
+		var color := (
+			snapshot.vfx_colors[index]
+			if index < snapshot.vfx_colors.size()
+			else Color.WHITE
+		)
+		var custom_data := (
+			snapshot.vfx_custom_data[index]
+			if index < snapshot.vfx_custom_data.size()
+			else Color(0.0, 0.0, 0.0, 0.0)
+		)
+		multimesh.set_instance_color(index, color)
+		multimesh.set_instance_custom_data(index, custom_data)
 	multimesh.visible_instance_count = visible_count
 
 

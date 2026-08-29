@@ -1,7 +1,8 @@
-[gd_scene load_steps=22 format=3]
+[gd_scene load_steps=23 format=3]
 
 [ext_resource type="Script" path="res://src/gameplay/arena_presenter.gd" id="1_presenter"]
 [ext_resource type="PackedScene" path="res://scenes/ui/combat_hud.tscn" id="2_hud"]
+[ext_resource type="Shader" path="res://src/gameplay/melee_trail.gdshader" id="3_melee_trail"]
 
 [sub_resource type="StandardMaterial3D" id="FloorMaterial"]
 albedo_color = Color(0.12, 0.18, 0.17, 1)
@@ -69,20 +70,17 @@ mesh = SubResource("ProjectileMesh")
 instance_count = 4096
 visible_instance_count = 0
 
-[sub_resource type="StandardMaterial3D" id="VfxMaterial"]
-transparency = 1
-albedo_color = Color(0.42, 0.9, 1, 0.72)
-emission_enabled = true
-emission = Color(0.08, 0.55, 0.8, 1)
-emission_energy_multiplier = 2.2
-roughness = 0.2
+[sub_resource type="ShaderMaterial" id="VfxMaterial"]
+shader = ExtResource("3_melee_trail")
 
-[sub_resource type="BoxMesh" id="VfxMesh"]
+[sub_resource type="PlaneMesh" id="VfxMesh"]
 material = SubResource("VfxMaterial")
-size = Vector3(0.22, 0.08, 0.22)
+size = Vector2(2, 2)
 
 [sub_resource type="MultiMesh" id="VfxMultiMesh"]
 transform_format = 1
+use_colors = true
+use_custom_data = true
 mesh = SubResource("VfxMesh")
 instance_count = 4096
 visible_instance_count = 0
@@ -140,6 +138,7 @@ multimesh = SubResource("ProjectileMultiMesh")
 
 [node name="VfxInstances" type="MultiMeshInstance3D" parent="."]
 unique_name_in_owner = true
+cast_shadow = 0
 multimesh = SubResource("VfxMultiMesh")
 
 [node name="ChestInstances" type="MultiMeshInstance3D" parent="."]

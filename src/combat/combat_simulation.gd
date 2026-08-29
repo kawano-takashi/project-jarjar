@@ -6,6 +6,7 @@ const PLAYER_SPEED: float = 5.0
 const PLAYER_RADIUS: float = 0.45
 const ARENA_MIN: Vector2 = Vector2(-15.0, -9.0)
 const ARENA_MAX: Vector2 = Vector2(15.0, 9.0)
+const VFX_HEIGHT_M: float = 0.03
 
 var state: RunState = null
 var catalog: DefinitionCatalog = null
@@ -150,6 +151,7 @@ func step(move_input: Vector2, delta: float) -> CombatSnapshot:
 				enemy_system.uniform_grid,
 				current_tick,
 			)
+			_emit_melee_trail(replay_result, true, current_tick)
 		else:
 			replay_result = skill_system.resolve_scheduled_skill(
 				replay,
@@ -183,6 +185,7 @@ func step(move_input: Vector2, delta: float) -> CombatSnapshot:
 			main_weapon_damage_override,
 		)
 		skill_system.register_primary_attack(primary_result, current_tick)
+		_emit_melee_trail(primary_result, false, current_tick)
 		_apply_resolution_hits(primary_result)
 
 	var pending_candidates: Array[Dictionary] = skill_system.pending_activation_snapshot()
@@ -251,6 +254,8 @@ func step_tutorial_movement(move_input: Vector2, delta: float) -> CombatSnapshot
 
 
 func configure_accessibility(reduce_motion: bool, reduce_flashes: bool) -> void:
+	vfx_pool.reduce_motion = reduce_motion
+	vfx_pool.reduce_flashes = reduce_flashes
 	chest_visual_pool.reduce_motion = reduce_motion
 	chest_visual_pool.reduce_flashes = reduce_flashes
 
@@ -280,12 +285,16 @@ func build_snapshot() -> CombatSnapshot:
 			Vector3(projectile.position.x, 0.35, projectile.position.y),
 		))
 	var vfx_transforms: Array[Transform3D] = []
+	var vfx_colors: Array[Color] = []
+	var vfx_custom_data: Array[Color] = []
 	for vfx: VfxState in vfx_pool.slots:
 		if not vfx.active:
 			continue
-		vfx_transforms.append(Transform3D(
-			Basis.IDENTITY.scaled(Vector3(vfx.scale_m, 1.0, vfx.scale_m)),
-			Vector3(vfx.position.x, 0.12, vfx.position.y),
+		vfx_transforms.append(vfx.current_transform(VFX_HEIGHT_M))
+		vfx_colors.append(vfx.color)
+		vfx_custom_data.append(vfx.shader_custom_data(
+			vfx_pool.reduce_motion,
+			vfx_pool.reduce_flashes,
 		))
 	var chest_transforms: Array[Transform3D] = chest_visual_pool.transforms()
 	return CombatSnapshot.new(
@@ -295,6 +304,29 @@ func build_snapshot() -> CombatSnapshot:
 		vfx_transforms,
 		_build_hud_values(),
 		chest_transforms,
+		vfx_colors,
+		vfx_custom_data,
+	)
+
+
+func _emit_melee_trail(
+	attack_result: Dictionary,
+	is_echo: bool,
+	current_tick: int,
+) -> void:
+	if not bool(attack_result.get("generated", false)):
+		return
+	var weapon_id: StringName = attack_result.get("weapon_id", &"")
+	var origin: Vector2 = attack_result.get("origin", Vector2.ZERO)
+	var direction: Vector2 = attack_result.get("direction", Vector2.ZERO)
+	var range_m: float = float(attack_result.get("range_m", 0.0))
+	vfx_pool.acquire_melee_trail(
+		weapon_id,
+		origin,
+		direction,
+		range_m,
+		is_echo,
+		current_tick,
 	)
 
 

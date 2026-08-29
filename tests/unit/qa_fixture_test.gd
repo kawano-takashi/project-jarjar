@@ -28,6 +28,7 @@ func run_test(test_name: String, assertions: Variant, context: Dictionary) -> vo
 
 func _test_qa_id_launch_and_settings(assertions: Variant, context: Dictionary) -> void:
 	var expected_ids: Array[String] = [
+		"weapon_wood_stick",
 		"weapon_bow",
 		"weapon_staff",
 		"weapon_sword",
