@@ -4,6 +4,7 @@ extends Control
 
 signal item_move_requested(source: Dictionary, target: Dictionary)
 signal item_lock_requested(item_id: String)
+signal sort_requested
 signal discard_requested(item_ids: PackedStringArray, unique_confirmed: bool)
 signal fusion_requested(
 	material_ids: PackedStringArray,
@@ -28,6 +29,29 @@ const FUSION_FEEDBACK_TINT := Color(1.0, 0.82, 0.48, 1.0)
 const FUSION_FEEDBACK_OUTLINE_COLOR := Color(0.10, 0.05, 0.02, 1.0)
 const FUSION_FEEDBACK_OUTLINE_SIZE: int = 4
 const FUSION_SUCCESS_FALLBACK_TEXT: String = "合成成功"
+const SORT_ACTION_FOCUS_ID: String = "action_sort"
+const SORT_ACTION_LABEL: String = "高レア順に整理\n実行 A／Enter"
+const UNKNOWN_AFFIX_LABEL: String = "不明な効果"
+const AFFIX_LABELS: Dictionary = {
+	&"damage_pct": "与ダメージ",
+	&"attack_speed_pct": "攻撃速度",
+	&"cooldown_reduction_pct": "クールダウン短縮",
+	&"area_pct": "効果範囲",
+	&"pierce": "貫通数",
+	&"max_hp": "最大HP",
+	&"damage_reduction_pct": "被ダメージ軽減",
+	&"move_speed_pct": "移動速度",
+	&"skill_power_pct": "スキルダメージ",
+}
+const PERCENT_AFFIX_IDS: Array[StringName] = [
+	&"damage_pct",
+	&"attack_speed_pct",
+	&"cooldown_reduction_pct",
+	&"area_pct",
+	&"damage_reduction_pct",
+	&"move_speed_pct",
+	&"skill_power_pct",
+]
 const ACTION_LABELS: Array[String] = [
 	"一括選択\n実行 A／Enter",
 	"廃棄\n実行 A／Enter",
@@ -64,6 +88,7 @@ var _equip_cards: Array[InventoryCardButton] = []
 var _grid_cards: Array[InventoryCardButton] = []
 var _overflow_cards: Array[InventoryCardButton] = []
 var _action_buttons: Array[Button] = []
+var _sort_button: Button = null
 var _skill_cards: Array[InventoryCardButton] = []
 
 var _pointer_event_count: int = 0
@@ -462,6 +487,14 @@ func _build_fixed_controls() -> void:
 		button.pressed.connect(_on_action_pressed.bind(index))
 		_action_row.add_child(button)
 		_action_buttons.append(button)
+		if index == 0:
+			_sort_button = Button.new()
+			_sort_button.name = "SortByRarity"
+			_sort_button.custom_minimum_size = Vector2(235.0, 58.0)
+			_sort_button.focus_mode = Control.FOCUS_ALL
+			_sort_button.text = SORT_ACTION_LABEL
+			_sort_button.pressed.connect(_request_inventory_sort)
+			_action_row.add_child(_sort_button)
 	for index: int in range(6):
 		var card: InventoryCardButton = _new_card(Vector2(235.0, 84.0))
 		_skill_row.add_child(card)
@@ -743,19 +776,37 @@ func _configure_normal_focus_graph() -> void:
 			"grid_%d" % (row * INVENTORY_COLUMNS + (column + 1) % INVENTORY_COLUMNS),
 		)
 	_add_overflow_to_graph(controls, graph)
-	for index: int in range(_action_buttons.size()):
-		var focus_id := "action_%d" % index
-		controls[focus_id] = _action_buttons[index]
+	var action_focus_ids := PackedStringArray([
+		"action_0",
+		SORT_ACTION_FOCUS_ID,
+		"action_1",
+		"action_2",
+		"action_3",
+		"action_4",
+		"action_5",
+	])
+	for action_position: int in range(action_focus_ids.size()):
+		var focus_id: String = action_focus_ids[action_position]
+		var column: int = (
+			1
+			if focus_id == SORT_ACTION_FOCUS_ID
+			else focus_id.trim_prefix("action_").to_int()
+		)
+		controls[focus_id] = (
+			_sort_button
+			if focus_id == SORT_ACTION_FOCUS_ID
+			else _action_buttons[column]
+		)
 		var top: String = (
-			"overflow_%d" % mini(index, _overflow_cards.size() - 1)
+			"overflow_%d" % mini(column, _overflow_cards.size() - 1)
 			if not _overflow_cards.is_empty()
-			else "grid_%d" % ((INVENTORY_ROWS - 1) * INVENTORY_COLUMNS + index)
+			else "grid_%d" % ((INVENTORY_ROWS - 1) * INVENTORY_COLUMNS + column)
 		)
 		graph[focus_id] = _graph_entry(
 			top,
-			"skill_%d" % index,
-			"action_%d" % posmod(index - 1, _action_buttons.size()),
-			"action_%d" % ((index + 1) % _action_buttons.size()),
+			"skill_%d" % column,
+			action_focus_ids[posmod(action_position - 1, action_focus_ids.size())],
+			action_focus_ids[(action_position + 1) % action_focus_ids.size()],
 		)
 	for index: int in range(_skill_cards.size()):
 		var focus_id := "skill_%d" % index
@@ -880,10 +931,20 @@ func _activate_focus_id(focus_id: String) -> void:
 		_on_item_card_pressed(&"inventory", focus_id.trim_prefix("grid_").to_int())
 	elif focus_id.begins_with("overflow_"):
 		_on_item_card_pressed(&"overflow", focus_id.trim_prefix("overflow_").to_int())
+	elif focus_id == SORT_ACTION_FOCUS_ID:
+		_request_inventory_sort()
 	elif focus_id.begins_with("action_"):
 		_on_action_pressed(focus_id.trim_prefix("action_").to_int())
 	elif focus_id.begins_with("skill_"):
 		_on_skill_card_pressed(focus_id.trim_prefix("skill_").to_int())
+
+
+func _request_inventory_sort() -> void:
+	if _modal_focus.has_active_modal():
+		return
+	_controller.cancel_lift()
+	_pending_command_kind = &"sort"
+	sort_requested.emit()
 
 
 func _open_bulk_dialog() -> void:
@@ -1162,7 +1223,7 @@ func _update_comparison(item: ItemInstance) -> void:
 	for affix_id: StringName in ids:
 		var delta: float = float(item_values.get(affix_id, 0.0)) - float(equipped_values.get(affix_id, 0.0))
 		var shape: String = "▲" if delta > 0.0 else ("▼" if delta < 0.0 else "◆")
-		deltas.append("%s %s %+.1f" % [shape, affix_id, delta])
+		deltas.append("%s %s" % [shape, _format_affix_effect(affix_id, delta)])
 	_comparison_label.text = "%s\n比較: %s" % [
 		_item_details(item),
 		" / ".join(deltas) if not deltas.is_empty() else "特性差なし",
@@ -1198,12 +1259,28 @@ func _item_details(item: ItemInstance) -> String:
 		return "空き"
 	var affixes: Array[String] = []
 	for affix: AffixRoll in item.affixes:
-		affixes.append("%s %.1f" % [affix.affix_id, affix.value])
+		affixes.append(_format_affix_effect(affix.affix_id, affix.value))
 	return "%s  %s\n%s" % [
 		_controller.rarity_label(item.rarity),
 		item.display_name,
 		" / ".join(affixes) if not affixes.is_empty() else "特性なし",
 	]
+
+
+func _format_affix_effect(affix_id: StringName, value: float) -> String:
+	var label: String = str(AFFIX_LABELS.get(affix_id, UNKNOWN_AFFIX_LABEL))
+	return "%s %s" % [
+		label,
+		_format_effect_value(value, PERCENT_AFFIX_IDS.has(affix_id)),
+	]
+
+
+func _format_effect_value(value: float, is_percent: bool) -> String:
+	var magnitude: String = ("%.1f" % absf(value)).trim_suffix(".0")
+	var value_prefix: String = ""
+	if magnitude != "0":
+		value_prefix = "+" if value > 0.0 else "-"
+	return "%s%s%s" % [value_prefix, magnitude, "%" if is_percent else ""]
 
 
 func _skill_card_text(skill_id: StringName) -> String:

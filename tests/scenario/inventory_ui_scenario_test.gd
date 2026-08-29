@@ -17,6 +17,8 @@ var _catalog: DefinitionCatalog = null
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
 		"inventory_focus_modal_overflow_contract",
+		"inventory_rarity_sort_button_contract",
+		"inventory_japanese_effect_presentation_contract",
 		"inventory_controller_mouse_bulk_fusion_and_discard_contract",
 		"fusion_dialog_exact_controller_contract",
 		"inventory_exact_skill_sequence_and_crown_contract",
@@ -28,6 +30,10 @@ func run_test(test_name: String, assertions: Variant, context: Dictionary) -> vo
 	match test_name:
 		"inventory_focus_modal_overflow_contract":
 			await _test_focus_modal_overflow(assertions, context)
+		"inventory_rarity_sort_button_contract":
+			await _test_rarity_sort_button(assertions, context)
+		"inventory_japanese_effect_presentation_contract":
+			await _test_japanese_effect_presentation(assertions, context)
 		"inventory_controller_mouse_bulk_fusion_and_discard_contract":
 			await _test_controller_mouse_bulk_fusion_and_discard(assertions, context)
 		"fusion_dialog_exact_controller_contract":
@@ -53,6 +59,7 @@ func _test_focus_modal_overflow(
 	_assert_neighbor_spec(assertions, screen, "grid_0", "equip_0", "grid_6", "grid_5", "grid_1", "G0,0")
 	_assert_neighbor_spec(assertions, screen, "grid_35", "grid_29", "overflow_3", "grid_34", "grid_30", "G5,5")
 	_assert_neighbor_spec(assertions, screen, "overflow_0", "grid_30", "action_0", "overflow_3", "overflow_1", "O0")
+	_assert_neighbor_spec(assertions, screen, "action_sort", "overflow_1", "skill_1", "action_0", "action_1", "sort action")
 	_assert_neighbor_spec(assertions, screen, "action_5", "overflow_3", "skill_5", "action_4", "action_0", "A5")
 	_assert_neighbor_spec(assertions, screen, "skill_0", "action_0", "equip_0", "skill_5", "skill_1", "K0")
 	_assert_focus_graph(assertions, screen, "normal inventory")
@@ -235,6 +242,245 @@ func _test_focus_modal_overflow(
 	assertions.expect_true(int(long_fusion.debug_state()["candidate_scroll"]) > 0, "candidate focus scrolls only the candidate list")
 	overflow_screen.test_cancel()
 	_cleanup_fixture(overflow_fixture, context)
+
+
+func _test_rarity_sort_button(
+	assertions: Variant,
+	context: Dictionary,
+) -> void:
+	var controller_fixture: Dictionary = await _spawn_inventory(assertions, context)
+	var mouse_fixture: Dictionary = await _spawn_inventory(assertions, context)
+	if controller_fixture.is_empty() or mouse_fixture.is_empty():
+		_cleanup_fixture(controller_fixture, context)
+		_cleanup_fixture(mouse_fixture, context)
+		return
+	var controller_screen: InventoryScreen = controller_fixture["screen"]
+	var mouse_screen: InventoryScreen = mouse_fixture["screen"]
+	var controller_state: RunState = controller_fixture["state"]
+	var mouse_state: RunState = mouse_fixture["state"]
+	var sort_button: Button = controller_screen.focus_control("action_sort") as Button
+	assertions.expect_true(sort_button != null, "rarity sort button is registered")
+	if sort_button == null:
+		_cleanup_fixture(controller_fixture, context)
+		_cleanup_fixture(mouse_fixture, context)
+		return
+	assertions.expect_equal(
+		InventoryScreen.SORT_ACTION_LABEL,
+		sort_button.text,
+		"rarity sort button exposes the exact operation label",
+	)
+	assertions.expect_false(sort_button.disabled, "rarity sort button is always enabled")
+	var focus_ids: PackedStringArray = controller_screen.focus_ids()
+	assertions.expect_equal(
+		focus_ids.find("action_0") + 1,
+		focus_ids.find("action_sort"),
+		"rarity sort follows bulk selection in Tab order",
+	)
+	assertions.expect_equal(
+		focus_ids.find("action_sort") + 1,
+		focus_ids.find("action_1"),
+		"discard follows rarity sort in Tab order",
+	)
+
+	for screen: InventoryScreen in [controller_screen, mouse_screen]:
+		screen.test_focus("grid_0")
+		screen.test_open_bulk()
+		screen.test_select_bulk(GameTypes.Rarity.COMMON)
+	var controller_marks_before: PackedStringArray = controller_screen.debug_state()["marked_item_ids"]
+	var mouse_marks_before: PackedStringArray = mouse_screen.debug_state()["marked_item_ids"]
+	var controller_last_item_before: String = str(controller_screen.debug_state()["last_item_focus_id"])
+	var mouse_last_item_before: String = str(mouse_screen.debug_state()["last_item_focus_id"])
+	var controller_overflow_before: PackedStringArray = _item_ids(controller_state.overflow)
+	var mouse_overflow_before: PackedStringArray = _item_ids(mouse_state.overflow)
+
+	controller_screen.test_focus("grid_0")
+	controller_screen.test_accept()
+	assertions.expect_false(
+		(controller_screen.debug_state()["held_item_source"] as Dictionary).is_empty(),
+		"controller fixture starts with a lifted item",
+	)
+	controller_screen.test_focus("action_sort")
+	controller_screen.test_accept()
+
+	mouse_screen.test_focus("skill_2")
+	mouse_screen.test_accept()
+	assertions.expect_false(
+		(mouse_screen.debug_state()["held_skill_source"] as Dictionary).is_empty(),
+		"mouse fixture starts with a lifted skill",
+	)
+	mouse_screen.test_focus("action_sort")
+	var mouse_sort_button: Button = mouse_screen.focus_control("action_sort") as Button
+	mouse_sort_button.emit_signal("pressed")
+
+	var expected_ids := PackedStringArray(["qa-inventory-35"])
+	for index: int in range(27, 33):
+		expected_ids.append("qa-inventory-%02d" % index)
+	for index: int in range(18, 27):
+		expected_ids.append("qa-inventory-%02d" % index)
+	expected_ids.append("qa-inventory-33")
+	for index: int in range(18):
+		expected_ids.append("qa-inventory-%02d" % index)
+	expected_ids.append("qa-inventory-34")
+	assertions.expect_equal(expected_ids, _inventory_ids(controller_state), "controller sort uses exact rarity order")
+	assertions.expect_equal(expected_ids, _inventory_ids(mouse_state), "mouse sort matches controller order")
+	assertions.expect_equal(controller_overflow_before, _item_ids(controller_state.overflow), "controller sort preserves overflow")
+	assertions.expect_equal(mouse_overflow_before, _item_ids(mouse_state.overflow), "mouse sort preserves overflow")
+	assertions.expect_true(controller_state.inventory[35].locked, "controller sort preserves the locked Common item")
+	assertions.expect_equal(&"bloodied_dagger", controller_state.inventory[16].unique_id, "controller sort preserves the Rare unique item")
+
+	for result_case: Dictionary in [
+		{
+			"label": "controller",
+			"screen": controller_screen,
+			"marks": controller_marks_before,
+			"last_item": controller_last_item_before,
+		},
+		{
+			"label": "mouse",
+			"screen": mouse_screen,
+			"marks": mouse_marks_before,
+			"last_item": mouse_last_item_before,
+		},
+	]:
+		var label: String = str(result_case["label"])
+		var screen: InventoryScreen = result_case["screen"] as InventoryScreen
+		var debug: Dictionary = screen.debug_state()
+		assertions.expect_equal("action_sort", debug["focus_id"], "%s sort preserves button focus" % label)
+		assertions.expect_equal(
+			InventoryService.SORT_COMPLETE_MESSAGE,
+			debug["status"],
+			"%s sort displays the exact completion message" % label,
+		)
+		assertions.expect_equal(result_case["marks"], debug["marked_item_ids"], "%s sort preserves marks" % label)
+		assertions.expect_equal(result_case["last_item"], debug["last_item_focus_id"], "%s sort preserves last item" % label)
+		assertions.expect_true((debug["held_item_source"] as Dictionary).is_empty(), "%s sort clears item lift" % label)
+		assertions.expect_true((debug["held_skill_source"] as Dictionary).is_empty(), "%s sort clears skill lift" % label)
+		assertions.expect_false(bool(debug["confirmation_open"]), "%s sort opens no confirmation" % label)
+		assertions.expect_equal(0, debug["modal_stack_size"], "%s sort leaves no active modal" % label)
+		assertions.expect_equal(&"", debug["pending_command_kind"], "%s sort completes synchronously" % label)
+
+	var sorted_before: PackedStringArray = _inventory_ids(controller_state)
+	controller_screen.test_accept()
+	assertions.expect_equal(sorted_before, _inventory_ids(controller_state), "repeated UI sort is idempotent")
+	assertions.expect_equal(
+		InventoryService.SORT_COMPLETE_MESSAGE,
+		controller_screen.debug_state()["status"],
+		"repeated UI sort keeps the same completion message",
+	)
+	assertions.expect_equal("action_sort", controller_screen.debug_state()["focus_id"], "repeated UI sort keeps focus")
+	_cleanup_fixture(controller_fixture, context)
+	_cleanup_fixture(mouse_fixture, context)
+
+
+func _test_japanese_effect_presentation(
+	assertions: Variant,
+	context: Dictionary,
+) -> void:
+	var catalog: DefinitionCatalog = _loaded_catalog(assertions)
+	if catalog == null:
+		return
+	var qa: Dictionary = QaScenarioFactory.build("inventory_controller", catalog)
+	assertions.expect_true(qa.get("valid", false), "Japanese effect presentation fixture valid")
+	if not qa.get("valid", false):
+		return
+	var state: RunState = qa["state"] as RunState
+	var item: ItemInstance = state.inventory[0]
+	var unknown_item: ItemInstance = state.inventory[1]
+	var equipped: ItemInstance = state.equipped.get(
+		GameTypes.EquipmentSlot.MAIN_WEAPON
+	) as ItemInstance
+	assertions.expect_true(
+		item != null and unknown_item != null and equipped != null,
+		"Japanese effect presentation items exist",
+	)
+	if item == null or unknown_item == null or equipped == null:
+		return
+
+	var effect_cases: Array[Dictionary] = [
+		{"id": &"damage_pct", "value": 14.5, "text": "与ダメージ +14.5%"},
+		{"id": &"attack_speed_pct", "value": 8.0, "text": "攻撃速度 +8%"},
+		{"id": &"cooldown_reduction_pct", "value": 10.0, "text": "クールダウン短縮 +10%"},
+		{"id": &"area_pct", "value": 30.0, "text": "効果範囲 +30%"},
+		{"id": &"pierce", "value": 2.0, "text": "貫通数 +2"},
+		{"id": &"max_hp", "value": 18.0, "text": "最大HP +18"},
+		{"id": &"damage_reduction_pct", "value": 9.0, "text": "被ダメージ軽減 +9%"},
+		{"id": &"move_speed_pct", "value": 10.0, "text": "移動速度 +10%"},
+		{"id": &"skill_power_pct", "value": 18.0, "text": "スキルダメージ +18%"},
+	]
+	item.display_name = "日本語効果テスト"
+	item.affixes.clear()
+	for effect_case: Dictionary in effect_cases:
+		item.affixes.append(_effect_affix(
+			effect_case["id"] as StringName,
+			float(effect_case["value"]),
+		))
+	var equipped_affixes: Array[AffixRoll] = [
+		_effect_affix(&"damage_pct", 20.0),
+		_effect_affix(&"attack_speed_pct", 8.0),
+		_effect_affix(&"max_hp", 10.0),
+	]
+	equipped.affixes = equipped_affixes
+	unknown_item.display_name = "未知効果テスト"
+	var unknown_affixes: Array[AffixRoll] = [_effect_affix(&"future_effect", 2.0)]
+	unknown_item.affixes = unknown_affixes
+
+	var fixture: Dictionary = await _spawn_inventory(assertions, context, state)
+	if fixture.is_empty():
+		return
+	var screen: InventoryScreen = fixture["screen"]
+	var item_card: InventoryCardButton = screen.focus_control("grid_0") as InventoryCardButton
+	assertions.expect_true(item_card != null, "Japanese effect item card exists")
+	var tooltip: String = item_card.tooltip_text if item_card != null else ""
+	for effect_case: Dictionary in effect_cases:
+		assertions.expect_true(
+			str(effect_case["text"]) in tooltip,
+			"tooltip presents %s" % effect_case["id"],
+		)
+		assertions.expect_false(
+			str(effect_case["id"]) in tooltip,
+			"tooltip hides internal ID %s" % effect_case["id"],
+		)
+
+	screen.test_focus("grid_0")
+	var comparison: String = str(screen.debug_state()["comparison"])
+	assertions.expect_true("▼ 与ダメージ -5.5%" in comparison, "comparison presents a negative percentage delta")
+	assertions.expect_true("◆ 攻撃速度 0%" in comparison, "comparison presents a zero percentage delta")
+	assertions.expect_true("▲ 最大HP +8" in comparison, "comparison presents a positive absolute delta")
+	for effect_case: Dictionary in effect_cases:
+		assertions.expect_false(
+			str(effect_case["id"]) in comparison,
+			"comparison hides internal ID %s" % effect_case["id"],
+		)
+
+	var unknown_card: InventoryCardButton = screen.focus_control("grid_1") as InventoryCardButton
+	var unknown_tooltip: String = unknown_card.tooltip_text if unknown_card != null else ""
+	assertions.expect_true("不明な効果 +2" in unknown_tooltip, "unknown effect uses the Japanese fallback")
+	assertions.expect_false("future_effect" in unknown_tooltip, "unknown effect hides its internal ID")
+	screen.test_focus("grid_1")
+	var unknown_comparison: String = str(screen.debug_state()["comparison"])
+	assertions.expect_true("不明な効果 +2" in unknown_comparison, "comparison uses the unknown-effect fallback")
+	assertions.expect_false("future_effect" in unknown_comparison, "comparison hides an unknown internal ID")
+
+	screen.test_focus("grid_0")
+	screen.test_focus("action_2")
+	screen.test_accept()
+	assertions.expect_true(
+		screen.test_fusion_candidate_focus(item.item_id),
+		"Japanese effect fusion candidate receives focus",
+	)
+	var fusion_dialog: FusionDialog = screen.get_node("%FusionDialog") as FusionDialog
+	var candidate_details: String = str(fusion_dialog.debug_state()["candidate_details"])
+	for effect_case: Dictionary in effect_cases:
+		assertions.expect_true(
+			str(effect_case["text"]) in candidate_details,
+			"fusion details present %s" % effect_case["id"],
+		)
+		assertions.expect_false(
+			str(effect_case["id"]) in candidate_details,
+			"fusion details hide internal ID %s" % effect_case["id"],
+		)
+	screen.test_cancel()
+	_cleanup_fixture(fixture, context)
 
 func _test_controller_mouse_bulk_fusion_and_discard(
 	assertions: Variant,
@@ -930,6 +1176,7 @@ func _spawn_summary(
 func _connect_commands(screen: InventoryScreen, state: RunState, catalog: DefinitionCatalog) -> void:
 	screen.item_move_requested.connect(_apply_item_move.bind(state, screen))
 	screen.item_lock_requested.connect(_apply_item_lock.bind(state, screen))
+	screen.sort_requested.connect(_apply_inventory_sort.bind(state, screen))
 	screen.discard_requested.connect(_apply_discard.bind(state, screen))
 	screen.fusion_requested.connect(_apply_fusion.bind(state, catalog, screen))
 	screen.skill_move_requested.connect(_apply_skill_move.bind(state, screen))
@@ -953,6 +1200,10 @@ func _apply_item_move(
 
 func _apply_item_lock(item_id: String, state: RunState, screen: InventoryScreen) -> void:
 	screen.apply_command_result(&"item_lock", InventoryService.toggle_lock(state, item_id))
+
+
+func _apply_inventory_sort(state: RunState, screen: InventoryScreen) -> void:
+	screen.apply_command_result(&"sort", InventoryService.sort_inventory_by_rarity(state))
 
 
 func _apply_discard(
@@ -1110,6 +1361,13 @@ func _assert_skill_slots(
 		assertions.expect_true(int(occupied.get(slot_index, 0)) <= 1, "%s slot %d has at most one skill" % [label, slot_index])
 
 
+func _effect_affix(affix_id: StringName, value: float) -> AffixRoll:
+	var affix := AffixRoll.new()
+	affix.affix_id = affix_id
+	affix.value = value
+	return affix
+
+
 func _overflow_state(assertions: Variant, count: int) -> RunState:
 	var catalog: DefinitionCatalog = _loaded_catalog(assertions)
 	if catalog == null:
@@ -1136,8 +1394,12 @@ func _overflow_state(assertions: Variant, count: int) -> RunState:
 
 
 func _inventory_ids(state: RunState) -> PackedStringArray:
+	return _item_ids(state.inventory)
+
+
+func _item_ids(items: Array[ItemInstance]) -> PackedStringArray:
 	var result := PackedStringArray()
-	for item: ItemInstance in state.inventory:
+	for item: ItemInstance in items:
 		result.append(item.item_id if item != null else "")
 	return result
 

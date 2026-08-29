@@ -250,6 +250,7 @@ func _show_inventory() -> bool:
 	_active_screen = screen
 	screen.connect("item_move_requested", _on_inventory_item_move_requested)
 	screen.connect("item_lock_requested", _on_inventory_item_lock_requested)
+	screen.connect("sort_requested", _on_inventory_sort_requested)
 	screen.connect("discard_requested", _on_inventory_discard_requested)
 	screen.connect("fusion_requested", _on_inventory_fusion_requested)
 	screen.connect("skill_move_requested", _on_inventory_skill_move_requested)
@@ -277,6 +278,13 @@ func _on_inventory_item_lock_requested(item_id: String) -> void:
 	_apply_inventory_command_result(
 		&"item_lock",
 		InventoryService.toggle_lock(run_state, item_id),
+	)
+
+
+func _on_inventory_sort_requested() -> void:
+	_apply_inventory_command_result(
+		&"sort",
+		InventoryService.sort_inventory_by_rarity(run_state),
 	)
 
 

@@ -10,6 +10,13 @@ const KIND_EQUIPPED: StringName = &"equipped"
 const MAIN_WEAPON_REQUIRED_MESSAGE: String = (
 	"主武器は外せません。別の主武器と交換してください"
 )
+const SORT_COMPLETE_MESSAGE: String = "高レア順に整理しました"
+const SORT_RARITY_ORDER: Array[GameTypes.Rarity] = [
+	GameTypes.Rarity.LEGENDARY,
+	GameTypes.Rarity.EPIC,
+	GameTypes.Rarity.RARE,
+	GameTypes.Rarity.COMMON,
+]
 
 
 static func first_empty_index(state: RunState) -> int:
@@ -45,6 +52,37 @@ static func refill_from_overflow(state: RunState) -> int:
 		moved_count += 1
 		empty_index = first_empty_index(state)
 	return moved_count
+
+
+static func sort_inventory_by_rarity(state: RunState) -> Dictionary:
+	if not _has_valid_inventory(state):
+		return _failure(&"invalid_state", "インベントリ状態が不正です")
+	for item: ItemInstance in state.inventory:
+		if item != null and item.rarity not in GameTypes.Rarity.values():
+			return _failure(&"invalid_rarity", "装備のレアリティが不正です")
+
+	var sorted_items: Array[ItemInstance] = []
+	for rarity: GameTypes.Rarity in SORT_RARITY_ORDER:
+		for item: ItemInstance in state.inventory:
+			if item != null and item.rarity == rarity:
+				sorted_items.append(item)
+
+	var no_op: bool = true
+	for index: int in range(RunState.INVENTORY_CAPACITY):
+		var sorted_item: ItemInstance = (
+			sorted_items[index]
+			if index < sorted_items.size()
+			else null
+		)
+		if state.inventory[index] != sorted_item:
+			no_op = false
+		state.inventory[index] = sorted_item
+	return {
+		"success": true,
+		"error": &"",
+		"message": SORT_COMPLETE_MESSAGE,
+		"no_op": no_op,
+	}
 
 
 static func find_item(state: RunState, item_id: String) -> Dictionary:

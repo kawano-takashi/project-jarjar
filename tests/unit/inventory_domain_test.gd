@@ -24,6 +24,7 @@ var _catalog: DefinitionCatalog = null
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
 		"inventory_capacity_order_and_refill_contract",
+		"inventory_rarity_sort_stability_and_isolation_contract",
 		"equipment_move_and_unique_side_effect_contract",
 		"lock_compare_select_and_discard_contract",
 		"reward_skill_wild_and_autoequip_contract",
@@ -38,6 +39,8 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 	match test_name:
 		"inventory_capacity_order_and_refill_contract":
 			_test_inventory_capacity_order_and_refill(assertions)
+		"inventory_rarity_sort_stability_and_isolation_contract":
+			_test_inventory_rarity_sort_stability_and_isolation(assertions)
 		"equipment_move_and_unique_side_effect_contract":
 			_test_equipment_move_and_unique_side_effect(assertions)
 		"lock_compare_select_and_discard_contract":
@@ -121,6 +124,143 @@ func _test_inventory_capacity_order_and_refill(assertions: Variant) -> void:
 	assertions.expect_false(bool(reorder["success"]), "manual overflow-to-overflow reorder rejected")
 	assertions.expect_equal(&"overflow_reorder", reorder["error"], "overflow reorder error is stable")
 	assertions.expect_equal(overflow_before, _item_ids(state.overflow), "rejected reorder is state invariant")
+
+
+func _test_inventory_rarity_sort_stability_and_isolation(assertions: Variant) -> void:
+	var catalog: DefinitionCatalog = _loaded_catalog(assertions)
+	if catalog == null:
+		return
+	var state: RunState = _new_state(509, catalog)
+	var common_a: ItemInstance = _item(
+		"sort-common-a",
+		GameTypes.EquipmentSlot.HANDS,
+		GameTypes.Rarity.COMMON,
+	)
+	var rare_a: ItemInstance = _item(
+		"sort-rare-a",
+		GameTypes.EquipmentSlot.HEAD,
+		GameTypes.Rarity.RARE,
+	)
+	var legendary_a: ItemInstance = _item(
+		"sort-legendary-a",
+		GameTypes.EquipmentSlot.BODY,
+		GameTypes.Rarity.LEGENDARY,
+	)
+	var epic_unique: ItemInstance = _item(
+		"sort-epic-unique",
+		GameTypes.EquipmentSlot.SUB_WEAPON,
+		GameTypes.Rarity.EPIC,
+		GameTypes.MainWeaponType.UNCLASSIFIED,
+		&"bloodied_dagger",
+	)
+	var common_b: ItemInstance = _item(
+		"sort-common-b",
+		GameTypes.EquipmentSlot.FEET,
+		GameTypes.Rarity.COMMON,
+	)
+	var epic_b: ItemInstance = _item(
+		"sort-epic-b",
+		GameTypes.EquipmentSlot.MAIN_WEAPON,
+		GameTypes.Rarity.EPIC,
+		GameTypes.MainWeaponType.BOW,
+	)
+	var legendary_locked: ItemInstance = _item(
+		"sort-legendary-locked",
+		GameTypes.EquipmentSlot.HANDS,
+		GameTypes.Rarity.LEGENDARY,
+		GameTypes.MainWeaponType.UNCLASSIFIED,
+		&"",
+		true,
+	)
+	var rare_b: ItemInstance = _item(
+		"sort-rare-b",
+		GameTypes.EquipmentSlot.BODY,
+		GameTypes.Rarity.RARE,
+	)
+	state.inventory[0] = common_a
+	state.inventory[1] = rare_a
+	state.inventory[3] = legendary_a
+	state.inventory[4] = epic_unique
+	state.inventory[5] = common_b
+	state.inventory[7] = epic_b
+	state.inventory[8] = legendary_locked
+	state.inventory[11] = rare_b
+	state.overflow.append(_item(
+		"sort-overflow-common",
+		GameTypes.EquipmentSlot.HEAD,
+		GameTypes.Rarity.COMMON,
+	))
+	state.overflow.append(_item(
+		"sort-overflow-legendary",
+		GameTypes.EquipmentSlot.FEET,
+		GameTypes.Rarity.LEGENDARY,
+	))
+
+	var overflow_before: PackedStringArray = _item_ids(state.overflow)
+	var overflow_first_before: ItemInstance = state.overflow[0]
+	var equipped_before: ItemInstance = state.equipped[GameTypes.EquipmentSlot.MAIN_WEAPON]
+	var rng_before: Dictionary = _rng_snapshot(state)
+	var drop_serial_before: int = state.drop_serial
+	var score_before: Dictionary = state.score_breakdown.duplicate(true)
+	var result: Dictionary = InventoryServiceScript.sort_inventory_by_rarity(state)
+	assertions.expect_true(bool(result["success"]), "rarity sort succeeds")
+	assertions.expect_equal(&"", result["error"], "rarity sort has no error")
+	assertions.expect_equal(
+		InventoryServiceScript.SORT_COMPLETE_MESSAGE,
+		result["message"],
+		"rarity sort exposes the exact completion message",
+	)
+	assertions.expect_false(bool(result["no_op"]), "first rarity sort changes interleaved slots")
+
+	var expected_ids := PackedStringArray([
+		"sort-legendary-a",
+		"sort-legendary-locked",
+		"sort-epic-unique",
+		"sort-epic-b",
+		"sort-rare-a",
+		"sort-rare-b",
+		"sort-common-a",
+		"sort-common-b",
+	])
+	while expected_ids.size() < RunState.INVENTORY_CAPACITY:
+		expected_ids.append("<null>")
+	assertions.expect_equal(
+		expected_ids,
+		_inventory_ids(state),
+		"rarity sort is descending, stable, and compacts empty slots",
+	)
+	assertions.expect_true(state.inventory[0] == legendary_a, "rarity sort preserves exact item references")
+	assertions.expect_true(legendary_locked.locked, "rarity sort preserves lock state")
+	assertions.expect_equal(&"bloodied_dagger", epic_unique.unique_id, "rarity sort preserves unique identity")
+	assertions.expect_equal(overflow_before, _item_ids(state.overflow), "rarity sort leaves overflow order unchanged")
+	assertions.expect_true(state.overflow[0] == overflow_first_before, "rarity sort preserves overflow references")
+	assertions.expect_true(
+		state.equipped[GameTypes.EquipmentSlot.MAIN_WEAPON] == equipped_before,
+		"rarity sort leaves equipped items unchanged",
+	)
+	assertions.expect_equal(rng_before, _rng_snapshot(state), "rarity sort consumes no RNG")
+	assertions.expect_equal(drop_serial_before, state.drop_serial, "rarity sort consumes no drop serial")
+	assertions.expect_equal(score_before, state.score_breakdown, "rarity sort changes no score")
+
+	var sorted_before: PackedStringArray = _inventory_ids(state)
+	var repeated: Dictionary = InventoryServiceScript.sort_inventory_by_rarity(state)
+	assertions.expect_true(bool(repeated["success"]), "repeated rarity sort succeeds")
+	assertions.expect_true(bool(repeated["no_op"]), "repeated rarity sort reports no-op")
+	assertions.expect_equal(
+		InventoryServiceScript.SORT_COMPLETE_MESSAGE,
+		repeated["message"],
+		"repeated rarity sort keeps the same completion message",
+	)
+	assertions.expect_equal(sorted_before, _inventory_ids(state), "repeated rarity sort is idempotent")
+
+	var invalid_state: RunState = _new_state(510, catalog)
+	invalid_state.inventory[0] = common_a
+	invalid_state.inventory.resize(RunState.INVENTORY_CAPACITY - 1)
+	var invalid_before: PackedStringArray = _inventory_ids(invalid_state)
+	var rejected: Dictionary = InventoryServiceScript.sort_inventory_by_rarity(invalid_state)
+	assertions.expect_false(bool(rejected["success"]), "structurally invalid inventory sort fails")
+	assertions.expect_equal(&"invalid_state", rejected["error"], "invalid inventory sort error is stable")
+	assertions.expect_equal(invalid_before, _inventory_ids(invalid_state), "invalid inventory sort changes no slot")
 
 
 func _test_equipment_move_and_unique_side_effect(assertions: Variant) -> void:

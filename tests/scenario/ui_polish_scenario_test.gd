@@ -66,17 +66,37 @@ func _test_ui_polish_contract(assertions: Variant, context: Dictionary) -> void:
 	var inventory_qa: Dictionary = QaScenarioFactory.build("inventory_controller", catalog)
 	assertions.expect_true(inventory_qa.get("valid", false), "inventory UI polish fixture valid")
 	if inventory_qa.get("valid", false):
+		var inventory_state: RunState = inventory_qa["state"] as RunState
 		var inventory := INVENTORY_SCENE.instantiate() as InventoryScreen
-		inventory.initialize(inventory_qa["state"] as RunState, catalog)
+		inventory.initialize(inventory_state, catalog)
 		await _attach_screen(inventory, tree)
 		await _assert_screen_contract(assertions, inventory, "INVENTORY", tree)
+		assertions.expect_equal(
+			4,
+			inventory_state.inventory[35].affixes.size(),
+			"inventory UI polish fixture exposes a four-effect item",
+		)
+		inventory.test_focus("grid_35")
+		await tree.process_frame
+		await _assert_screen_contract(
+			assertions,
+			inventory,
+			"INVENTORY_FOUR_EFFECT_COMPARISON",
+			tree,
+		)
+		inventory.test_focus("grid_27")
 		inventory.test_focus("action_2")
 		inventory.test_accept()
+		await tree.process_frame
+		assertions.expect_true(
+			inventory.test_fusion_candidate_focus("qa-inventory-27"),
+			"inventory UI polish focuses an Epic fusion candidate",
+		)
 		await tree.process_frame
 		await _assert_screen_contract(
 			assertions,
 			inventory.get_node("%FusionDialog") as Control,
-			"FUSION_DIALOG",
+			"FUSION_DIALOG_EPIC_EFFECTS",
 			tree,
 		)
 		inventory.test_cancel()
