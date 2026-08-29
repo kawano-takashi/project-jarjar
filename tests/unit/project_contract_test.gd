@@ -219,8 +219,9 @@ func _test_title_focus_contract(assertions: Variant, context: Dictionary) -> voi
 func _test_project_settings_contract(assertions: Variant) -> void:
 	assertions.expect_equal("4.7.2-stable", FileAccess.get_file_as_string("res://.godot-version").strip_edges(), "Godot version file")
 	var gitignore := FileAccess.get_file_as_string("res://.gitignore")
-	for ignored_entry in [".godot/", "tools/", "build/", "artifacts/", "work/", "*.log", ".godot/export_credentials.cfg"]:
+	for ignored_entry in [".godot/", "build/", "artifacts/", "work/", "*.log", ".godot/export_credentials.cfg"]:
 		assertions.expect_true(ignored_entry in gitignore.split("\n"), "gitignore contains %s" % ignored_entry)
+	assertions.expect_false("tools/" in gitignore.split("\n"), "repo-local export templates are not ignored")
 	assertions.expect_equal("gl_compatibility", ProjectSettings.get_setting("rendering/renderer/rendering_method"), "desktop renderer")
 	assertions.expect_equal("gl_compatibility", ProjectSettings.get_setting("rendering/renderer/rendering_method.mobile"), "mobile renderer")
 	assertions.expect_equal(60, ProjectSettings.get_setting("physics/common/physics_ticks_per_second"), "physics 60Hz")
@@ -254,14 +255,14 @@ func _test_project_settings_contract(assertions: Variant) -> void:
 	assertions.expect_false(export_config.get_value("preset.0.options", "binary_format/embed_pck", true), "PCK separated")
 	assertions.expect_equal(2, export_config.get_value("preset.0.options", "debug/export_console_wrapper", -1), "console wrapper debug and release")
 	assertions.expect_equal(
-		"res://tools/export_templates/4.7.2.stable/windows_debug_x86_64.exe",
+		"",
 		export_config.get_value("preset.0.options", "custom_template/debug", ""),
-		"fixed debug export template",
+		"default debug export template",
 	)
 	assertions.expect_equal(
-		"res://tools/export_templates/4.7.2.stable/windows_release_x86_64.exe",
+		"",
 		export_config.get_value("preset.0.options", "custom_template/release", ""),
-		"fixed release export template",
+		"default release export template",
 	)
 	var exclude_filter: String = export_config.get_value("preset.0", "exclude_filter", "")
 	for required_filter in ["tests/*", "src/debug/*", "scenes/debug/*", "outputs/*", "docs/*"]:

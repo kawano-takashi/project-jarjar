@@ -1,12 +1,11 @@
 # Project JARJAR
 
-Godot 4.7.2-stable で開発する、見下ろし型3DローグライトのMVPです。
+Godot 4.7.2-stableで開発する、見下ろし型3DローグライトのWindows向けMVPです。
 
-## Gate 1
+現在はプレイ可能なMVP基準版まで実装済みで、ユーザーによるエフェクト・文言等の最終調整を待っています。正式な5人×3runのプレイテスト対象はまだ固定していません。
 
-工程1では、PATH上のStandard Godot 4.7.2、固定Export Templates、プロジェクト設定、SettingsStore、起動引数の安全な検証、タイトル画面、独自テストrunner、Windows Debug exportを固定しています。ゲーム本編のenumとドメインモデルは工程2以降で実装します。
+- 現在の状態と次の作業: [docs/project-status.md](docs/project-status.md)
+- コーディングエージェント向け制約: [AGENTS.md](AGENTS.md)
+- 正式対象固定後のプレイテスト手順: [docs/playtest-protocol.md](docs/playtest-protocol.md)
 
-```powershell
-$env:JARJAR_GODOT = (Resolve-Path -LiteralPath (Get-Command godot.exe -CommandType Application -ErrorAction Stop).Source).Path
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\tests\run_gate_checks.ps1' -GateNumber 1 -Suite all
-```
+プロジェクトはPATH上のGodot 4.7.2-stable Standardで開いてください。

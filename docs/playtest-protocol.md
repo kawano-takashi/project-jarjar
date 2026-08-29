@@ -2,23 +2,16 @@
 
 **状態: 使用禁止（ユーザー最終調整待ち）**
 
-2026-08-28の最終調整前QAと通常Release E2Eは完了扱いとなったが、正式プレイテスト対象は
-まだ固定していない。ユーザーによるエフェクト、文言その他のMVP最終調整後に、全検証と
-Release exportを再実施し、新しい候補HEADとRelease build identityを固定してから使用する。
+現在フェーズは `docs/project-status.md` を正とする。正式プレイテスト対象はまだ固定していないため、
 現時点では候補者を採用せず、資格確認も結果収集も行わない。
 
-## 最終調整前の参考対象（正式プレイテストへ使用しない）
+## 正式対象の固定条件
 
-- Gate 5承認済みHEAD: `8bf0a4545de6f4b0ecb754afa0a149c2327b4b9f`
-- balance revision: `0`
-- Release EXE: `Z:\work\60_project_godot\project-jarjar\build\windows\ProjectJARJAR.exe`
-- Release PCK: `Z:\work\60_project_godot\project-jarjar\build\windows\ProjectJARJAR.pck`
-- Release build identity: `exe_sha256=4a9eaded8955ef789ab02651ed9d2dde80328fbb342bd2a6db4db33e86305668;pck_sha256=cc092adf0d93ba9a11023f8634631821701462eaed37bb55121aab2243d7502b`
-- 正式playtest target: 未生成
-
-最終調整後にこの節を正式対象へ更新し、`artifacts/gate-06/playtest-target.txt`へ
+ユーザー最終調整後に全検証とRelease exportを再実施し、
+`artifacts/gate-06/playtest-target.txt`へ
 `candidate_head=<40hex>`、`release_build_identity=<identity>`、`balance_revision=<integer>`を
-記録するまで、下記手順を開始しない。EXE/PCK、identity、balance revision、または候補HEADが
+記録する。`docs/project-status.md`が「正式playtest対象固定済み」へ更新され、同じ3値が一致するまで
+下記手順を開始しない。EXE/PCK、identity、balance revision、または候補HEADが
 変わった場合、以前の対象やデータを流用しない。
 
 ## 初見資格
