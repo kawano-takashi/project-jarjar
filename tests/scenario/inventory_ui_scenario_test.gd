@@ -17,6 +17,7 @@ var _catalog: DefinitionCatalog = null
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
 		"inventory_focus_modal_overflow_contract",
+		"inventory_icon_card_presentation_contract",
 		"inventory_rarity_sort_button_contract",
 		"inventory_japanese_effect_presentation_contract",
 		"inventory_controller_mouse_bulk_fusion_and_discard_contract",
@@ -30,6 +31,8 @@ func run_test(test_name: String, assertions: Variant, context: Dictionary) -> vo
 	match test_name:
 		"inventory_focus_modal_overflow_contract":
 			await _test_focus_modal_overflow(assertions, context)
+		"inventory_icon_card_presentation_contract":
+			await _test_icon_card_presentation(assertions, context)
 		"inventory_rarity_sort_button_contract":
 			await _test_rarity_sort_button(assertions, context)
 		"inventory_japanese_effect_presentation_contract":
@@ -114,8 +117,9 @@ func _test_focus_modal_overflow(
 	var fusion_dialog: FusionDialog = screen.get_node("%FusionDialog") as FusionDialog
 	var candidate_count: int = int(fusion_dialog.debug_state()["candidate_count"])
 	assertions.expect_true(candidate_count > 4, "FusionDialog owns a non-empty candidate grid")
-	_assert_neighbor_spec(assertions, screen, "FR", "FA3", "FC0", "FR", "FR", "FR")
-	_assert_neighbor_spec(assertions, screen, "FC0", "FR", "FC4", "FC3", "FC1", "Fusion candidate 0")
+	_assert_neighbor_spec(assertions, screen, "FR", "FA3", "F0", "FR", "FR", "FR")
+	_assert_neighbor_spec(assertions, screen, "F0", "FR", "FC0", "F2", "F1", "Fusion material 0")
+	_assert_neighbor_spec(assertions, screen, "FC0", "F0", "FC8", "FC7", "FC1", "Fusion candidate 0")
 	_assert_neighbor_spec(
 		assertions,
 		screen,
@@ -128,7 +132,7 @@ func _test_focus_modal_overflow(
 	)
 	assertions.expect_false("grid_0" in screen.focus_ids(), "fusion public focus set excludes background grid")
 	assertions.expect_false("overflow_0" in screen.focus_ids(), "fusion public focus set excludes background overflow")
-	assertions.expect_false("F0" in screen.focus_ids(), "empty material slot is not focusable")
+	assertions.expect_true("F0" in screen.focus_ids(), "empty material slot remains accessible and focusable")
 	assertions.expect_false(fusion_dialog.mouse_force_pass_scroll_events, "fusion blocker does not pass wheel events")
 	assertions.expect_false((fusion_dialog.get_node("%FusionCandidateScroll") as ScrollContainer).mouse_force_pass_scroll_events, "candidate scroll does not pass wheel events to the background")
 	var outside_click := InputEventMouseButton.new()
@@ -141,7 +145,7 @@ func _test_focus_modal_overflow(
 	background_grid_0.grab_focus()
 	assertions.expect_equal("FR", screen.debug_state()["focus_id"], "direct background grab_focus cannot steal modal focus")
 	assertions.expect_true(fusion_dialog.test_tab(true), "Tab advances inside FusionDialog")
-	assertions.expect_equal("FC0", screen.debug_state()["focus_id"], "Tab skips empty material slots")
+	assertions.expect_equal("F0", screen.debug_state()["focus_id"], "Tab visits the first empty material slot")
 	assertions.expect_true(fusion_dialog.test_tab(false), "Shift+Tab reverses inside FusionDialog")
 	assertions.expect_equal("FR", screen.debug_state()["focus_id"], "Shift+Tab wraps back to rarity")
 	_assert_focus_graph(assertions, screen, "fusion modal")
@@ -200,11 +204,11 @@ func _test_focus_modal_overflow(
 		var empty_dialog: FusionDialog = empty_candidate_screen.get_node("%FusionDialog") as FusionDialog
 		assertions.expect_equal(0, empty_dialog.debug_state()["candidate_count"], "empty candidate state renders an explicit empty list")
 		assertions.expect_equal(
-			PackedStringArray(["FR", "FA0", "FA1", "FA2", "FA3"]),
+			PackedStringArray(["FR", "F0", "F1", "F2", "FA0", "FA1", "FA2", "FA3"]),
 			empty_dialog.focus_order(),
-			"empty candidates and material slots are absent from Tab order",
+			"empty material slots remain in the exact Tab order",
 		)
-		_assert_neighbor_spec(assertions, empty_candidate_screen, "FR", "FA3", "FA0", "FR", "FR", "empty FusionDialog FR")
+		_assert_neighbor_spec(assertions, empty_candidate_screen, "FR", "FA3", "F0", "FR", "FR", "empty FusionDialog FR")
 		empty_candidate_screen.test_cancel()
 		_cleanup_fixture(empty_candidate_fixture, context)
 
@@ -233,15 +237,146 @@ func _test_focus_modal_overflow(
 	await (context["tree"] as SceneTree).process_frame
 	var long_fusion: FusionDialog = overflow_screen.get_node("%FusionDialog") as FusionDialog
 	var long_ids: PackedStringArray = long_fusion.debug_state()["candidate_item_ids"] as PackedStringArray
+	assertions.expect_equal(8, long_fusion.debug_state()["candidate_columns"], "long fusion list remains eight columns")
 	assertions.expect_equal(40, long_ids.slice(long_ids.size() - 40).size(), "all 40 temporary-receipt candidates remain available")
 	assertions.expect_equal("qa-overflow-long-00", long_ids[long_ids.size() - 40], "temporary candidates follow normal inventory candidates")
 	assertions.expect_equal("qa-overflow-long-39", long_ids[-1], "temporary candidate order is stable through O39")
+	_assert_neighbor_spec(assertions, overflow_screen, "F0", "FR", "FC0", "F2", "F1", "long fusion material 0")
+	_assert_neighbor_spec(assertions, overflow_screen, "F1", "FR", "FC3", "F0", "F2", "long fusion material 1")
+	_assert_neighbor_spec(assertions, overflow_screen, "F2", "FR", "FC6", "F1", "F0", "long fusion material 2")
+	_assert_neighbor_spec(assertions, overflow_screen, "FC2", "F1", "FC10", "FC1", "FC3", "long fusion first-row column 2")
+	_assert_neighbor_spec(assertions, overflow_screen, "FC5", "F2", "FC13", "FC4", "FC6", "long fusion first-row column 5")
+	_assert_neighbor_spec(assertions, overflow_screen, "FC50", "FC42", "FA1", "FC49", "FC51", "long fusion bottom column 2")
+	_assert_neighbor_spec(assertions, overflow_screen, "FC55", "FC47", "FA3", "FC54", "FC48", "long fusion bottom column 7")
 	assertions.expect_true(overflow_screen.test_fusion_candidate_focus("qa-overflow-long-39"), "last temporary candidate can receive focus")
 	await (context["tree"] as SceneTree).process_frame
 	_assert_fusion_candidate_vertically_visible(assertions, long_fusion, "qa-overflow-long-39")
 	assertions.expect_true(int(long_fusion.debug_state()["candidate_scroll"]) > 0, "candidate focus scrolls only the candidate list")
 	overflow_screen.test_cancel()
 	_cleanup_fixture(overflow_fixture, context)
+
+
+func _test_icon_card_presentation(assertions: Variant, context: Dictionary) -> void:
+	var fixture: Dictionary = await _spawn_inventory(assertions, context)
+	if fixture.is_empty():
+		return
+	var screen: InventoryScreen = fixture["screen"]
+	var state: RunState = fixture["state"]
+	var equipped_bow: Dictionary = screen.item_card_presentation("equip_0")
+	assertions.expect_equal(Vector2(96.0, 96.0), equipped_bow["minimum_size"], "equipped card is 96px square")
+	assertions.expect_equal("res://assets/ui/inventory_icons/weapon_bow.png", equipped_bow["icon_path"], "equipped bow uses the bow icon")
+	assertions.expect_equal(Color(0.72, 0.76, 0.78, 1.0), equipped_bow["icon_color"], "equipped Common icon uses the shared gray")
+	assertions.expect_equal("", equipped_bow["text"], "equipped icon card contains no visible text")
+	assertions.expect_equal(64, equipped_bow["icon_max_width"], "equipped icon is capped at 64px")
+	assertions.expect_equal(CanvasItem.TEXTURE_FILTER_NEAREST, equipped_bow["texture_filter"], "equipped icon uses Nearest filtering")
+	assertions.expect_true("主武器／弓" in str(equipped_bow["tooltip"]), "equipped tooltip contains the item type")
+	assertions.expect_true("装備中 E0" in str(equipped_bow["accessibility_name"]), "equipped accessibility name contains its location")
+
+	var grid_bow: Dictionary = screen.item_card_presentation("grid_0")
+	var grid_staff: Dictionary = screen.item_card_presentation("grid_6")
+	var grid_sword: Dictionary = screen.item_card_presentation("grid_12")
+	assertions.expect_equal(Vector2(76.0, 76.0), grid_bow["minimum_size"], "normal inventory card is 76px square")
+	assertions.expect_equal("res://assets/ui/inventory_icons/weapon_bow.png", grid_bow["icon_path"], "normal bow uses the bow icon")
+	assertions.expect_equal("res://assets/ui/inventory_icons/weapon_staff.png", grid_staff["icon_path"], "normal staff uses the staff icon")
+	assertions.expect_equal("res://assets/ui/inventory_icons/weapon_sword.png", grid_sword["icon_path"], "normal sword uses the sword icon")
+	assertions.expect_equal(PackedInt32Array([1, 1, 1, 1]), grid_bow["corner_radii"], "Common card uses the shared square shape")
+
+	var unique_card_control := screen.focus_control("grid_33") as InventoryCardButton
+	assertions.expect_true(unique_card_control != null, "unique inventory card is available for modal ordering")
+	var background_unique_badge := (
+		unique_card_control.get_node("UniqueBadge") as Label
+		if unique_card_control != null
+		else null
+	)
+	var unique_card: Dictionary = screen.item_card_presentation("grid_33")
+	assertions.expect_equal("res://assets/ui/inventory_icons/slot_sub_weapon.png", unique_card["icon_path"], "unique catalyst reuses the catalyst icon")
+	assertions.expect_equal(Color(0.25, 0.67, 1.0, 1.0), unique_card["icon_color"], "Rare icon uses the shared blue")
+	assertions.expect_equal(PackedInt32Array([9, 9, 9, 9]), unique_card["corner_radii"], "Rare card uses the shared rounded-square shape")
+	assertions.expect_true(unique_card["unique_badge"], "unique item shows a top-left star")
+	assertions.expect_true("名前:" in str(unique_card["tooltip"]), "unique tooltip includes its name")
+	assertions.expect_true("A／Enter" in str(unique_card["accessibility_description"]), "unique accessibility description includes current operations")
+	var unique_drag: Dictionary = unique_card["drag_preview"] as Dictionary
+	assertions.expect_equal(unique_card["icon_path"], unique_drag["icon_path"], "drag preview keeps the same icon")
+	assertions.expect_equal(unique_card["icon_color"], unique_drag["icon_color"], "drag preview keeps the same rarity color")
+	assertions.expect_equal(unique_card["unique_badge"], unique_drag["unique_badge"], "drag preview keeps the unique badge")
+
+	var locked_card: Dictionary = screen.item_card_presentation("grid_34")
+	assertions.expect_true(locked_card["lock_badge"], "locked item shows a top-right lock")
+	var legendary_card: Dictionary = screen.item_card_presentation("grid_35")
+	assertions.expect_equal(Color(1.0, 0.68, 0.18, 1.0), legendary_card["icon_color"], "Legendary icon uses the shared orange")
+	assertions.expect_equal(PackedInt32Array([28, 28, 28, 28]), legendary_card["corner_radii"], "Legendary card uses the shared round shape")
+	var overflow_card: Dictionary = screen.item_card_presentation("overflow_0")
+	assertions.expect_equal(Vector2(96.0, 96.0), overflow_card["minimum_size"], "temporary-receipt card is 96px square")
+	assertions.expect_equal("res://assets/ui/inventory_icons/weapon_staff.png", overflow_card["icon_path"], "temporary staff uses the staff icon")
+	assertions.expect_true("一時受取 O0" in str(overflow_card["tooltip"]), "temporary tooltip contains its exact location")
+
+	screen.test_focus("grid_33")
+	var details_text: String = str(screen.debug_state()["comparison"])
+	for expected_text: String in ["種類:", "レアリティ:", "名前:", "効果:", "装備比較:", "保管位置:", "状態:", "配置可否:", "操作:"]:
+		assertions.expect_true(expected_text in details_text, "right details contain %s" % expected_text)
+
+	screen.test_focus("action_2")
+	screen.test_accept()
+	await (context["tree"] as SceneTree).process_frame
+	var fusion_dialog := screen.get_node("%FusionDialog") as FusionDialog
+	assertions.expect_true(fusion_dialog.visible, "fusion dialog is visible for modal ordering")
+	if background_unique_badge != null:
+		assertions.expect_equal(0, background_unique_badge.z_index, "background unique star uses the card canvas order")
+		assertions.expect_true(background_unique_badge.z_as_relative, "background unique star remains relative to its card")
+		assertions.expect_true(background_unique_badge.is_visible_in_tree(), "background unique star is dimmed instead of explicitly hidden")
+		assertions.expect_true(
+			fusion_dialog.is_greater_than(background_unique_badge),
+			"fusion dialog renders after the background unique star",
+		)
+	var fusion_debug: Dictionary = fusion_dialog.debug_state()
+	assertions.expect_equal(8, fusion_debug["candidate_columns"], "fusion candidate grid uses eight columns")
+	var unique_candidate_index: int = (fusion_debug["candidate_item_ids"] as PackedStringArray).find("qa-inventory-33")
+	var candidate_presentations: Array = fusion_debug["candidate_presentations"] as Array
+	assertions.expect_true(unique_candidate_index >= 0, "unique item remains a fusion candidate")
+	if unique_candidate_index >= 0:
+		var candidate: Dictionary = candidate_presentations[unique_candidate_index] as Dictionary
+		assertions.expect_equal(Vector2(96.0, 96.0), candidate["minimum_size"], "fusion candidate is 96px square")
+		assertions.expect_equal(unique_card["icon_path"], candidate["icon_path"], "fusion candidate reuses the inventory icon")
+		assertions.expect_true(candidate["unique_badge"], "fusion candidate keeps the unique star")
+	screen.test_fusion_candidate_focus("qa-inventory-18")
+	screen.test_accept()
+	fusion_debug = fusion_dialog.debug_state()
+	var material_presentations: Array = fusion_debug["material_presentations"] as Array
+	var first_material: Dictionary = material_presentations[0] as Dictionary
+	assertions.expect_equal(Vector2(96.0, 96.0), first_material["minimum_size"], "fusion material is 96px square")
+	assertions.expect_equal("1", first_material["state_badge"], "fusion material shows its selected material number")
+	assertions.expect_true("合成材料枠1" in str(first_material["accessibility_name"]), "fusion material accessibility identifies its slot")
+	screen.test_cancel()
+
+	screen.test_focus("grid_34")
+	screen.test_lock()
+	assertions.expect_false(screen.item_card_presentation("grid_34")["lock_badge"], "lock removal immediately redraws the card")
+	screen.test_lock()
+	assertions.expect_true(screen.item_card_presentation("grid_34")["lock_badge"], "lock restoration immediately redraws the card")
+	screen.test_focus("grid_0")
+	screen.test_open_bulk()
+	screen.test_select_bulk(GameTypes.Rarity.COMMON)
+	assertions.expect_equal("✓", screen.item_card_presentation("grid_0")["state_badge"], "bulk selection immediately draws the check badge")
+	screen.test_focus("action_sort")
+	screen.test_accept()
+	var sorted_first: Dictionary = screen.item_card_presentation("grid_0")
+	assertions.expect_equal("res://assets/ui/inventory_icons/slot_feet.png", sorted_first["icon_path"], "sort redraws the new first item icon")
+	assertions.expect_equal(Color(1.0, 0.68, 0.18, 1.0), sorted_first["icon_color"], "sort redraws the new first item rarity color")
+
+	state.equipped[GameTypes.EquipmentSlot.MAIN_WEAPON] = null
+	state.inventory[5] = null
+	screen.refresh_from_state(true)
+	var empty_main: Dictionary = screen.item_card_presentation("equip_0")
+	assertions.expect_equal("res://assets/ui/inventory_icons/weapon_stick.png", empty_main["icon_path"], "empty main weapon shows the wood-stick icon")
+	assertions.expect_true(empty_main["muted"], "empty main weapon icon is muted")
+	assertions.expect_true("空き" in str(empty_main["accessibility_name"]), "empty equipped slot has a complete accessibility name")
+	var empty_grid: Dictionary = screen.item_card_presentation("grid_5")
+	assertions.expect_equal("", empty_grid["icon_path"], "empty normal slot stays iconless")
+	assertions.expect_true(empty_grid["muted"], "empty normal slot uses the empty presentation")
+	screen.test_focus("equip_0")
+	assertions.expect_true("主武器／木の棒" in str(screen.debug_state()["comparison"]), "empty main weapon details identify the placeholder type")
+	assertions.expect_true("配置可否:" in str(screen.debug_state()["comparison"]), "empty slot details show placement availability")
+	_cleanup_fixture(fixture, context)
 
 
 func _test_rarity_sort_button(
@@ -506,6 +641,16 @@ func _test_controller_mouse_bulk_fusion_and_discard(
 		{"kind": &"inventory", "index": 6},
 	)
 	assertions.expect_equal(_inventory_ids(controller_state), _inventory_ids(mouse_state), "mouse drag and controller lift produce identical inventory")
+	assertions.expect_equal(
+		"res://assets/ui/inventory_icons/weapon_staff.png",
+		controller_screen.item_card_presentation("grid_0")["icon_path"],
+		"controller move redraws the staff icon at its new position",
+	)
+	assertions.expect_equal(
+		controller_screen.item_card_presentation("grid_0")["icon_path"],
+		mouse_screen.item_card_presentation("grid_0")["icon_path"],
+		"mouse move redraws the same icon as controller movement",
+	)
 	assertions.expect_equal(0, controller_screen.debug_state()["pointer_event_count"], "controller item move emits zero pointer events")
 	assertions.expect_true(int(mouse_screen.debug_state()["pointer_event_count"]) > 0, "mouse item move records pointer activity")
 
@@ -546,6 +691,12 @@ func _test_controller_mouse_bulk_fusion_and_discard(
 	assertions.expect_equal(null, mouse_state.equipped[GameTypes.EquipmentSlot.SUB_WEAPON], "mouse returns equipped item to empty inventory slot")
 	assertions.expect_equal(mouse_sub_before.item_id, mouse_state.inventory[5].item_id, "mouse unequip preserves exact item")
 	assertions.expect_equal(_inventory_ids(controller_state), _inventory_ids(mouse_state), "mouse and controller unequip results match")
+	assertions.expect_true(controller_screen.item_card_presentation("equip_1")["muted"], "controller unequip redraws an empty muted equipment slot")
+	assertions.expect_equal(
+		"res://assets/ui/inventory_icons/slot_sub_weapon.png",
+		controller_screen.item_card_presentation("grid_5")["icon_path"],
+		"controller unequip redraws the catalyst icon in normal storage",
+	)
 
 	var before_cancel: PackedStringArray = _inventory_ids(controller_state)
 	controller_screen.test_focus("grid_1")
@@ -867,13 +1018,28 @@ func _test_fusion_dialog_exact_controller(
 	assertions.expect_equal(unique_candidate, rare_dialog.focus_control(unique_candidate_id), "selected candidate keeps the same control and list position")
 	assertions.expect_equal(unique_candidate_position, unique_candidate.position, "selected candidate stays at its original grid position")
 	assertions.expect_true(unique_candidate.button_pressed, "selected candidate has persistent highlighted state")
-	assertions.expect_true("✓ 材料3" in unique_candidate.text, "selected candidate shows check and material number")
+	var unique_presentation: Dictionary = (unique_candidate as InventoryCardButton).presentation_snapshot()
+	assertions.expect_equal("", unique_presentation["text"], "selected candidate keeps card text empty")
+	assertions.expect_equal("3", unique_presentation["state_badge"], "selected candidate shows material number badge")
+	assertions.expect_true(unique_presentation["unique_badge"], "selected unique candidate shows the star badge")
+	var candidate_unique_badge := unique_candidate.get_node("UniqueBadge") as Label
+	var unique_material := rare_dialog.focus_control("F2") as InventoryCardButton
+	assertions.expect_true(unique_material != null, "third material card contains the selected unique item")
+	var material_unique_badge := unique_material.get_node("UniqueBadge") as Label
+	var material_number_badge := unique_material.get_node("StateBadge") as Label
 	assertions.expect_equal(rare_before, _run_state_signature(rare_state), "selecting F materials does not remove or mutate source slots before commit")
 	assertions.expect_true((rare_screen.get_node("%FusionDialog") as FusionDialog).debug_state()["confirm_enabled"], "FA2 enables for exact three Rare materials")
 	rare_screen.test_focus("FA2")
 	rare_screen.test_accept()
 	await (context["tree"] as SceneTree).process_frame
 	assertions.expect_true(rare_screen.debug_state()["confirmation_open"], "Rare fusion containing unique opens named confirmation")
+	var confirmation_dialog := rare_screen.get_node("%ConfirmationDialog") as JarjarConfirmationDialog
+	for lower_badge: Label in [candidate_unique_badge, material_unique_badge, material_number_badge]:
+		assertions.expect_equal(0, lower_badge.z_index, "%s uses local canvas order below confirmation" % lower_badge.name)
+		assertions.expect_true(
+			confirmation_dialog.is_greater_than(lower_badge),
+			"confirmation dialog renders after %s" % lower_badge.name,
+		)
 	var rare_confirm: Control = rare_dialog.focus_control("FA2")
 	assertions.expect_equal(Control.FOCUS_NONE, rare_confirm.get_focus_mode_with_override(), "nested confirmation disables lower FusionDialog focus")
 	rare_confirm.grab_focus()
@@ -896,6 +1062,11 @@ func _test_fusion_dialog_exact_controller(
 	assertions.expect_true(rare_screen.debug_state()["fusion_open"], "confirmed unique fusion keeps FusionDialog open")
 	assertions.expect_equal(GameTypes.Rarity.RARE, rare_screen.debug_state()["fusion_rarity"], "confirmed unique fusion preserves Rare selection")
 	assertions.expect_equal(PackedStringArray(), rare_screen.debug_state()["fusion_material_ids"], "confirmed unique fusion clears materials")
+	var cleared_materials: Array = (rare_dialog.debug_state()["material_presentations"] as Array)
+	for cleared_material_value: Variant in cleared_materials:
+		var cleared_material: Dictionary = cleared_material_value as Dictionary
+		assertions.expect_equal("", cleared_material["icon_path"], "fusion success clears each material icon")
+		assertions.expect_true(cleared_material["muted"], "fusion success redraws each material slot as empty")
 	assertions.expect_equal("FA0", rare_screen.debug_state()["focus_id"], "confirmed unique fusion focuses auto-fill")
 	for consumed_id: String in ["qa-inventory-18", "qa-inventory-19", "qa-inventory-33"]:
 		assertions.expect_false(rare_screen.test_fusion_candidate_focus(consumed_id), "confirmed unique fusion removes candidate %s" % consumed_id)

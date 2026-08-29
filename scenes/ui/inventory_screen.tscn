@@ -105,8 +105,9 @@ size_flags_vertical = 3
 theme_override_constants/separation = 12
 
 [node name="GridPanel" type="PanelContainer" parent="Margin/Content/Middle"]
+custom_minimum_size = Vector2(494, 0)
 layout_mode = 2
-size_flags_horizontal = 3
+size_flags_horizontal = 0
 theme_override_styles/panel = SubResource("StylePanel")
 
 [node name="InventoryGrid" type="GridContainer" parent="Margin/Content/Middle/GridPanel"]
@@ -117,8 +118,9 @@ theme_override_constants/v_separation = 4
 columns = 6
 
 [node name="ComparePanel" type="PanelContainer" parent="Margin/Content/Middle"]
-custom_minimum_size = Vector2(390, 0)
+custom_minimum_size = Vector2(600, 0)
 layout_mode = 2
+size_flags_horizontal = 3
 theme_override_styles/panel = SubResource("StyleCompare")
 
 [node name="ComparisonText" type="Label" parent="Margin/Content/Middle/ComparePanel"]
@@ -131,13 +133,13 @@ autowrap_mode = 2
 
 [node name="OverflowPanel" type="PanelContainer" parent="Margin/Content"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 118)
+custom_minimum_size = Vector2(0, 110)
 layout_mode = 2
 theme_override_styles/panel = SubResource("StylePanel")
 
 [node name="OverflowScroll" type="ScrollContainer" parent="Margin/Content/OverflowPanel"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(904, 108)
+custom_minimum_size = Vector2(904, 100)
 layout_mode = 2
 size_flags_horizontal = 4
 focus_mode = 0

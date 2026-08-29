@@ -23,6 +23,10 @@ const EQUIPMENT_COUNT: int = 6
 const INVENTORY_COLUMNS: int = 6
 const INVENTORY_ROWS: int = 6
 const INVENTORY_COUNT: int = INVENTORY_COLUMNS * INVENTORY_ROWS
+const NORMAL_ITEM_CARD_SIZE := Vector2(76.0, 76.0)
+const LARGE_ITEM_CARD_SIZE := Vector2(96.0, 96.0)
+const FUSION_MATERIAL_COUNT: int = 3
+const InventoryItemVisualsScript := preload("res://src/ui/inventory_item_visuals.gd")
 const FUSION_FEEDBACK_DURATION_SECONDS: float = 0.40
 const FUSION_FEEDBACK_SCALE: float = 1.06
 const FUSION_FEEDBACK_TINT := Color(1.0, 0.82, 0.48, 1.0)
@@ -206,6 +210,16 @@ func neighbor_specification(focus_id: String) -> Dictionary:
 
 func initial_focus_control() -> Control:
 	return _equip_cards[0] if not _equip_cards.is_empty() else null
+
+
+func item_card_presentation(focus_id: String) -> Dictionary:
+	var card := _focus_controller.control_for_id(focus_id) as InventoryCardButton
+	if card == null:
+		return {}
+	var result: Dictionary = card.presentation_snapshot()
+	result["minimum_size"] = card.custom_minimum_size
+	result["drag_preview"] = card.drag_preview_snapshot()
+	return result
 
 
 func debug_state() -> Dictionary:
@@ -470,12 +484,12 @@ func _input(event: InputEvent) -> void:
 
 func _build_fixed_controls() -> void:
 	for index: int in range(EQUIPMENT_COUNT):
-		var card: InventoryCardButton = _new_card(Vector2(210.0, 96.0))
+		var card: InventoryCardButton = _new_card(LARGE_ITEM_CARD_SIZE)
 		_equip_row.add_child(card)
 		_equip_cards.append(card)
 		_connect_item_card(card, &"equipped", index)
 	for index: int in range(INVENTORY_COUNT):
-		var card: InventoryCardButton = _new_card(Vector2(154.0, 76.0))
+		var card: InventoryCardButton = _new_card(NORMAL_ITEM_CARD_SIZE)
 		_grid.add_child(card)
 		_grid_cards.append(card)
 		_connect_item_card(card, &"inventory", index)
@@ -545,6 +559,7 @@ func _refresh_from_state(preserve_focus: bool) -> void:
 	else:
 		_focus_controller.focus_initial_deferred()
 	_track_current_focus.call_deferred()
+	_refresh_current_item_details.call_deferred()
 
 
 func _render_header() -> void:
@@ -560,15 +575,12 @@ func _render_header() -> void:
 
 func _render_equipment() -> void:
 	for index: int in range(_equip_cards.size()):
-		_render_item_card(_equip_cards[index], &"equipped", index, "E%d" % index)
+		_render_item_card(_equip_cards[index], &"equipped", index)
 
 
 func _render_inventory() -> void:
 	for index: int in range(_grid_cards.size()):
-		_render_item_card(_grid_cards[index], &"inventory", index, "G%d,%d" % [
-			floori(float(index) / float(INVENTORY_COLUMNS)),
-			index % INVENTORY_COLUMNS,
-		])
+		_render_item_card(_grid_cards[index], &"inventory", index)
 
 
 func _rebuild_overflow() -> void:
@@ -580,11 +592,11 @@ func _rebuild_overflow() -> void:
 	var overflow_count: int = state.overflow.size() if state != null else 0
 	_overflow_panel.visible = overflow_count > 0
 	for index: int in range(overflow_count):
-		var card: InventoryCardButton = _new_card(Vector2(144.0, 104.0))
+		var card: InventoryCardButton = _new_card(LARGE_ITEM_CARD_SIZE)
 		_overflow_row.add_child(card)
 		_overflow_cards.append(card)
 		_connect_item_card(card, &"overflow", index)
-		_render_item_card(card, &"overflow", index, "O%d" % index)
+		_render_item_card(card, &"overflow", index)
 
 
 func _render_actions() -> void:
@@ -611,6 +623,7 @@ func _render_skills() -> void:
 	var crown_sealed: bool = _is_crown_sealed()
 	for index: int in range(_skill_cards.size()):
 		var card: InventoryCardButton = _skill_cards[index]
+		card.clear_item_visual()
 		var focus_id := "skill_%d" % index
 		var skill_id: StringName = &""
 		var source_kind: StringName = &"slot" if index < 2 else &"catalog"
@@ -667,8 +680,7 @@ func _render_fusion() -> void:
 	var state: RunState = _controller.state
 	_fusion_dialog.update_view(
 		_controller.rarity_label(_controller.fusion_rarity),
-		_controller.fusion_material_ids,
-		_controller.fusion_material_names(),
+		_fusion_material_entries(),
 		_controller.fusion_use_wild,
 		state.wild_material_count if state != null else 0,
 		_controller.fusion_is_valid(),
@@ -686,33 +698,72 @@ func _fusion_candidate_entries() -> Array[Dictionary]:
 			continue
 		var kind := StringName(location.get("kind", &""))
 		var index: int = int(location.get("index", -1))
-		var source_label: String = (
-			"通常枠 G%d,%d" % [
-				floori(float(index) / float(INVENTORY_COLUMNS)),
-				index % INVENTORY_COLUMNS,
-			]
-			if kind == &"inventory"
-			else "一時受取 O%d" % index
-		)
 		var selected_slot: int = _controller.fusion_material_ids.find(item.item_id)
-		var selected_badge: String = "✓ 材料%d　" % (selected_slot + 1) if selected_slot >= 0 else ""
-		var unique_badge: String = "⚠ ユニーク　" if not item.unique_id.is_empty() else ""
-		var details: String = "%s\n保管位置: %s" % [_item_details(item), source_label]
+		var material_number: int = selected_slot + 1 if selected_slot >= 0 else 0
+		var details: String = _full_item_details(
+			item,
+			kind,
+			index,
+			false,
+			"A／Enter: 合成材料の選択を切替 / ドラッグ: 材料枠へ投入",
+		)
 		if selected_slot >= 0:
-			details += "\n選択中: 材料枠%d" % (selected_slot + 1)
+			details += "\n合成選択: 材料枠%d" % material_number
 		if not item.unique_id.is_empty():
 			details += "\n⚠ 合成すると固定名と固有効果が失われます。"
 		result.append({
 			"item_id": item.item_id,
+			"item": item,
 			"source": {"kind": kind, "index": index},
-			"selected_slot": selected_slot,
-			"text": "%s%s%s\n%s\nA／Enter 切替" % [
-				selected_badge,
-				unique_badge,
-				_controller.rarity_label(item.rarity),
-				item.display_name,
-			],
+			"material_number": material_number,
 			"details": details,
+			"accessibility_name": _item_accessibility_name(item, kind, index, false)
+				+ ("、合成材料%dとして選択中" % material_number if material_number > 0 else ""),
+		})
+	return result
+
+
+func _fusion_material_entries() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for slot_index: int in range(FUSION_MATERIAL_COUNT):
+		var item_id: String = (
+			_controller.fusion_material_ids[slot_index]
+			if slot_index < _controller.fusion_material_ids.size()
+			else ""
+		)
+		var source: Dictionary = _controller.find_item(item_id) if not item_id.is_empty() else {}
+		var item: ItemInstance = source.get("item") as ItemInstance
+		var details: String
+		var entry_accessibility_name: String
+		if item == null:
+			details = "合成材料枠%d\n空き\n配置可否: 対象レアリティの装備をドロップ可能\n操作: 候補で A／Enter、または装備をドロップして配置" % (slot_index + 1)
+			entry_accessibility_name = "合成材料枠%d、空き、対象レアリティの装備を配置可能" % (slot_index + 1)
+		else:
+			var source_kind := StringName(source.get("kind", &""))
+			var source_index: int = int(source.get("index", -1))
+			details = _full_item_details(
+				item,
+				source_kind,
+				source_index,
+				false,
+				"A／Enter: 材料枠から外す / ドラッグ: 取り外し領域へ移動",
+			)
+			details += "\n選択位置: 合成材料枠%d" % (slot_index + 1)
+			entry_accessibility_name = "%s、合成材料枠%dとして選択中" % [
+				_item_accessibility_name(item, source_kind, source_index, false),
+				slot_index + 1,
+			]
+		result.append({
+			"slot_index": slot_index,
+			"item_id": item_id,
+			"item": item,
+			"source": {
+				"kind": source.get("kind", &""),
+				"index": source.get("index", -1),
+			},
+			"material_number": slot_index + 1 if item != null else 0,
+			"details": details,
+			"accessibility_name": entry_accessibility_name,
 		})
 	return result
 
@@ -721,16 +772,24 @@ func _render_item_card(
 	card: InventoryCardButton,
 	kind: StringName,
 	index: int,
-	token: String,
 ) -> void:
 	var item: ItemInstance = _controller.item_at(kind, index)
 	var item_id: String = item.item_id if item != null else ""
 	var marked: bool = _controller.marked_item_ids.has(item_id)
-	card.text = "%s　A／Enter\n%s" % [
-		token,
-		_item_card_text(item, marked),
-	]
-	card.tooltip_text = _item_details(item)
+	var texture: Texture2D = InventoryItemVisualsScript.icon_for_item(item)
+	if item == null and kind == &"equipped":
+		texture = InventoryItemVisualsScript.icon_for_slot(index)
+	var details: String = _full_item_details(item, kind, index, marked)
+	card.configure_item_visual(
+		texture,
+		item.rarity if item != null else -2,
+		item != null and not item.unique_id.is_empty(),
+		item != null and item.locked,
+		"✓" if marked else "",
+		item == null,
+		_item_accessibility_name(item, kind, index, marked),
+		details,
+	)
 	card.configure_drag(
 		{
 			"drag_type": &"item",
@@ -839,6 +898,7 @@ func _connect_item_card(card: InventoryCardButton, kind: StringName, index: int)
 	card.drop_received.connect(_on_card_drop_received)
 	card.pointer_event.connect(_on_pointer_event)
 	card.focus_entered.connect(_on_item_focus_entered.bind(kind, index))
+	card.mouse_entered.connect(_on_item_hovered.bind(kind, index))
 
 
 func _on_item_card_pressed(kind: StringName, index: int) -> void:
@@ -1164,10 +1224,16 @@ func _on_item_focus_entered(kind: StringName, index: int) -> void:
 	_on_focus_entered(focus_id, item.item_id if item != null else "")
 	if item != null and kind in [&"inventory", &"overflow"]:
 		_controller.set_last_item_focus(item.item_id)
-	_update_comparison(item)
+	_update_comparison(item, kind, index)
 	if kind == &"overflow":
 		_ensure_overflow_visible.bind(index).call_deferred()
 	_render_actions()
+
+
+func _on_item_hovered(kind: StringName, index: int) -> void:
+	if _modal_focus.has_active_modal():
+		return
+	_update_comparison(_controller.item_at(kind, index), kind, index)
 
 
 func _on_focus_entered(focus_id: String, _item_id: String) -> void:
@@ -1196,14 +1262,24 @@ func _ensure_overflow_visible(index: int) -> void:
 	_overflow_scroll.scroll_horizontal = maxi(0, target_scroll)
 
 
-func _update_comparison(item: ItemInstance) -> void:
-	if item == null or _controller.state == null:
+func _update_comparison(
+	item: ItemInstance,
+	kind: StringName = &"",
+	index: int = -1,
+) -> void:
+	if kind.is_empty():
 		_comparison_label.text = "アイテムへfocusまたはhoverすると比較を表示します"
 		return
+	var marked: bool = item != null and _controller.marked_item_ids.has(item.item_id)
+	_comparison_label.text = _full_item_details(item, kind, index, marked)
+
+
+func _comparison_summary(item: ItemInstance) -> String:
+	if item == null or _controller.state == null:
+		return "比較対象なし"
 	var equipped: ItemInstance = _controller.state.equipped.get(item.slot) as ItemInstance
 	if equipped == item:
-		_comparison_label.text = "%s\n現在装備中" % _item_details(item)
-		return
+		return "現在装備中"
 	var deltas: Array[String] = []
 	var equipped_values: Dictionary[StringName, float] = {}
 	if equipped != null:
@@ -1224,10 +1300,7 @@ func _update_comparison(item: ItemInstance) -> void:
 		var delta: float = float(item_values.get(affix_id, 0.0)) - float(equipped_values.get(affix_id, 0.0))
 		var shape: String = "▲" if delta > 0.0 else ("▼" if delta < 0.0 else "◆")
 		deltas.append("%s %s" % [shape, _format_affix_effect(affix_id, delta)])
-	_comparison_label.text = "%s\n比較: %s" % [
-		_item_details(item),
-		" / ".join(deltas) if not deltas.is_empty() else "特性差なし",
-	]
+	return " / ".join(deltas) if not deltas.is_empty() else "特性差なし"
 
 
 func _new_card(minimum_size: Vector2) -> InventoryCardButton:
@@ -1235,36 +1308,144 @@ func _new_card(minimum_size: Vector2) -> InventoryCardButton:
 	card.custom_minimum_size = minimum_size
 	card.focus_mode = Control.FOCUS_ALL
 	card.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	card.mouse_entered.connect(func() -> void:
-		var item_id := str(card.drag_payload.get("item_id", ""))
-		var item: ItemInstance = _controller.find_item(item_id).get("item") as ItemInstance
-		_update_comparison(item)
-	)
 	return card
 
 
-func _item_card_text(item: ItemInstance, marked: bool) -> String:
-	if item == null:
-		return "— 空き —"
-	return "%s%s%s\n%s" % [
-		"✓ " if marked else "",
-		"🔒 " if item.locked else "",
-		_controller.rarity_label(item.rarity),
-		item.display_name,
-	]
+func _full_item_details(
+	item: ItemInstance,
+	kind: StringName,
+	index: int,
+	marked: bool,
+	custom_operations: String = "",
+) -> String:
+	var details: String = _item_details(item, kind, index, marked, custom_operations)
+	if item != null:
+		details += "\n装備比較: %s" % _comparison_summary(item)
+	return details
 
 
-func _item_details(item: ItemInstance) -> String:
+func _item_details(
+	item: ItemInstance,
+	kind: StringName,
+	index: int,
+	marked: bool,
+	custom_operations: String = "",
+) -> String:
+	var lines: Array[String] = []
+	lines.append("保管位置: %s" % _location_label(kind, index))
 	if item == null:
-		return "空き"
-	var affixes: Array[String] = []
-	for affix: AffixRoll in item.affixes:
-		affixes.append(_format_affix_effect(affix.affix_id, affix.value))
-	return "%s  %s\n%s" % [
-		_controller.rarity_label(item.rarity),
-		item.display_name,
-		" / ".join(affixes) if not affixes.is_empty() else "特性なし",
-	]
+		lines.append("種類: %s" % _empty_slot_type_label(kind, index))
+		lines.append("状態: 空き")
+		lines.append("配置可否: %s" % _placement_text(kind, index))
+		lines.append("操作: %s" % (
+			custom_operations if not custom_operations.is_empty() else _item_operations(item, kind)
+		))
+		return "\n".join(lines)
+	lines.append("種類: %s" % InventoryItemVisualsScript.item_type_label(item))
+	lines.append("レアリティ: %s" % _controller.rarity_label(item.rarity))
+	lines.append("名前: %s" % item.display_name)
+	if item.affixes.is_empty():
+		lines.append("効果: 特性なし")
+	else:
+		lines.append("効果:")
+		for affix: AffixRoll in item.affixes:
+			lines.append("・%s" % _format_affix_effect(affix.affix_id, affix.value))
+	lines.append("状態: %s" % _item_state_text(item, marked))
+	lines.append("配置可否: %s" % _placement_text(kind, index))
+	lines.append("操作: %s" % (
+		custom_operations if not custom_operations.is_empty() else _item_operations(item, kind)
+	))
+	return "\n".join(lines)
+
+
+func _item_accessibility_name(
+	item: ItemInstance,
+	kind: StringName,
+	index: int,
+	marked: bool,
+) -> String:
+	return _full_item_details(item, kind, index, marked).replace("\n", "、")
+
+
+func _item_state_text(item: ItemInstance, marked: bool) -> String:
+	var states: Array[String] = []
+	if not item.unique_id.is_empty():
+		states.append("ユニーク★")
+	if item.locked:
+		states.append("ロック中")
+	if marked:
+		states.append("一括選択中✓")
+	return " / ".join(states) if not states.is_empty() else "なし"
+
+
+func _location_label(kind: StringName, index: int) -> String:
+	match kind:
+		&"equipped":
+			return "装備中 E%d（%s）" % [index, InventoryItemVisualsScript.slot_label(index)]
+		&"inventory":
+			return "通常枠 G%d,%d" % [
+				floori(float(index) / float(INVENTORY_COLUMNS)),
+				index % INVENTORY_COLUMNS,
+			]
+		&"overflow":
+			return "一時受取 O%d" % index
+	return "不明"
+
+
+func _empty_slot_type_label(kind: StringName, index: int) -> String:
+	if kind != &"equipped":
+		return "装備（任意種類）"
+	if index == GameTypes.EquipmentSlot.MAIN_WEAPON:
+		return "主武器／木の棒"
+	return InventoryItemVisualsScript.slot_label(index)
+
+
+func _placement_text(kind: StringName, index: int) -> String:
+	if kind != &"equipped":
+		return "装備の配置・移動・交換が可能"
+	var slot_label: String = InventoryItemVisualsScript.slot_label(index)
+	if _controller.held_item_source.is_empty():
+		return "対応する%sを配置可能" % slot_label
+	var held_item_id: String = str(_controller.held_item_source.get("item_id", ""))
+	var held_item: ItemInstance = _controller.find_item(held_item_id).get("item") as ItemInstance
+	if held_item == null:
+		return "対応する%sを配置可能" % slot_label
+	return (
+		"配置可能"
+		if held_item.slot == index
+		else "配置不可（%s専用枠）" % slot_label
+	)
+
+
+func _item_operations(item: ItemInstance, kind: StringName) -> String:
+	if item == null:
+		return "持ち上げ中の装備を A／Enter またはドロップで配置"
+	if not _controller.held_item_source.is_empty():
+		return "A／Enter: 配置・交換 / ドロップ: 移動 / B: 持ち上げ取消"
+	var move_text: String = "A／Enter: 持ち上げ / ドラッグ: 移動 / L・X: ロック切替"
+	if kind == &"equipped":
+		move_text += " / 同じ装備枠へ A／Enter: 外す"
+	return move_text
+
+
+func _refresh_current_item_details() -> void:
+	var focus_id: String = _focus_controller.current_focus_id(get_viewport())
+	var location: Dictionary = _location_for_focus_id(focus_id)
+	if location.is_empty():
+		return
+	var kind := StringName(location.get("kind", &""))
+	var index: int = int(location.get("index", -1))
+	_update_comparison(_controller.item_at(kind, index), kind, index)
+
+
+func _location_for_focus_id(focus_id: String) -> Dictionary:
+	if focus_id.begins_with("equip_"):
+		return {"kind": &"equipped", "index": focus_id.trim_prefix("equip_").to_int()}
+	if focus_id.begins_with("grid_"):
+		return {"kind": &"inventory", "index": focus_id.trim_prefix("grid_").to_int()}
+	if focus_id.begins_with("overflow_"):
+		return {"kind": &"overflow", "index": focus_id.trim_prefix("overflow_").to_int()}
+	return {}
 
 
 func _format_affix_effect(affix_id: StringName, value: float) -> String:

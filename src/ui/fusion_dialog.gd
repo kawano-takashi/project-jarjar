@@ -3,7 +3,9 @@ extends Control
 
 
 const UiPolishScript := preload("res://src/ui/ui_polish.gd")
-const CANDIDATE_COLUMNS: int = 4
+const InventoryItemVisualsScript := preload("res://src/ui/inventory_item_visuals.gd")
+const CANDIDATE_COLUMNS: int = 8
+const MATERIAL_COUNT: int = 3
 
 
 signal rarity_step_requested(step: int)
@@ -41,6 +43,7 @@ var _candidate_entries: Array[Dictionary] = []
 var _candidate_cards: Array[InventoryCardButton] = []
 var _candidate_item_ids := PackedStringArray()
 var _material_ids := PackedStringArray()
+var _material_entries: Array[Dictionary] = []
 
 
 func _ready() -> void:
@@ -51,6 +54,19 @@ func _ready() -> void:
 		slot.pressed.connect(_on_material_pressed.bind(index))
 		slot.pointer_event.connect(_on_pointer_event)
 		slot.drop_received.connect(_on_material_item_dropped.bind(index))
+		slot.focus_entered.connect(_on_material_focused.bind(index))
+		slot.mouse_entered.connect(_show_material_details.bind(index))
+		var empty_details: String = "合成材料枠%d\n空き\n配置可否: 対象レアリティの装備をドロップ可能\n操作: 候補で A／Enter、または装備をドロップして配置" % (index + 1)
+		slot.configure_item_visual(
+			null,
+			-2,
+			false,
+			false,
+			"",
+			true,
+			"合成材料枠%d、空き、対象レアリティの装備を配置可能" % (index + 1),
+			empty_details,
+		)
 	_auto_fill.set_meta("focus_id", "FA0")
 	_wild_toggle.set_meta("focus_id", "FA1")
 	_confirm.set_meta("focus_id", "FA2")
@@ -153,8 +169,7 @@ func test_accept() -> void:
 
 func update_view(
 	rarity_label: String,
-	material_ids: PackedStringArray,
-	material_names: PackedStringArray,
+	material_entries: Array[Dictionary],
 	use_wild: bool,
 	wild_available: int,
 	confirm_enabled: bool,
@@ -165,17 +180,39 @@ func update_view(
 	if not is_node_ready():
 		return
 	var previous_focus_id: String = _focus_controller.current_focus_id(get_viewport())
-	_material_ids = material_ids.duplicate()
+	_material_ids = PackedStringArray()
+	_material_entries.clear()
 	_rarity.text = "レアリティ　◀ %s ▶\n←→／方向パッド左右" % rarity_label
 	for index: int in range(_material_slots.size()):
-		var item_id: String = material_ids[index] if index < material_ids.size() else ""
-		var item_name: String = material_names[index] if index < material_names.size() else ""
+		var entry: Dictionary = (
+			material_entries[index]
+			if index < material_entries.size()
+			else {
+				"slot_index": index,
+				"item_id": "",
+				"item": null,
+				"material_number": 0,
+				"details": "合成材料枠%d、空き" % (index + 1),
+				"accessibility_name": "合成材料枠%d、空き" % (index + 1),
+			}
+		)
+		_material_entries.append(entry.duplicate(true))
+		var item_id: String = str(entry.get("item_id", ""))
+		_material_ids.append(item_id)
+		var item: ItemInstance = entry.get("item") as ItemInstance
+		var details: String = str(entry.get("details", ""))
 		var slot: InventoryCardButton = _material_slots[index]
-		slot.text = "材料枠%d　外す A／Enter\n%s" % [
-			index + 1,
-			item_name if not item_name.is_empty() else "空き（フォーカス対象外）",
-		]
-		slot.focus_mode = Control.FOCUS_ALL if not item_id.is_empty() else Control.FOCUS_NONE
+		slot.focus_mode = Control.FOCUS_ALL
+		slot.configure_item_visual(
+			InventoryItemVisualsScript.icon_for_item(item),
+			item.rarity if item != null else -2,
+			item != null and not item.unique_id.is_empty(),
+			item != null and item.locked,
+			str(index + 1) if item != null else "",
+			item == null,
+			str(entry.get("accessibility_name", "合成材料枠%d" % (index + 1))),
+			details,
+		)
 		slot.configure_drag(
 			{
 				"drag_type": &"fusion_material",
@@ -199,6 +236,7 @@ func update_view(
 	_configure_focus_graph()
 	if not previous_focus_id.is_empty():
 		_focus_controller.grab_focus_id(previous_focus_id)
+	_refresh_focused_details()
 
 
 func debug_state() -> Dictionary:
@@ -211,9 +249,12 @@ func debug_state() -> Dictionary:
 		"preview": _preview.text,
 		"status": _status.text,
 		"candidate_count": _candidate_cards.size(),
+		"candidate_columns": CANDIDATE_COLUMNS,
 		"candidate_item_ids": _candidate_item_ids.duplicate(),
 		"candidate_details": _candidate_details.text,
 		"candidate_scroll": _candidate_scroll.scroll_vertical,
+		"material_presentations": _presentation_snapshots(_material_slots),
+		"candidate_presentations": _presentation_snapshots(_candidate_cards),
 		"focus_ids": focus_ids(),
 		"focus_order": focus_order(),
 	}
@@ -265,14 +306,19 @@ func _sync_candidates(candidate_entries: Array[Dictionary]) -> void:
 	for index: int in range(_candidate_cards.size()):
 		var card: InventoryCardButton = _candidate_cards[index]
 		var entry: Dictionary = _candidate_entries[index]
-		var selected_slot: int = int(entry.get("selected_slot", -1))
-		card.text = str(entry.get("text", ""))
-		card.tooltip_text = str(entry.get("details", ""))
-		card.button_pressed = selected_slot >= 0
-		if selected_slot >= 0:
-			card.add_theme_stylebox_override("normal", _selected_candidate_style())
-		else:
-			card.remove_theme_stylebox_override("normal")
+		var item: ItemInstance = entry.get("item") as ItemInstance
+		var material_number: int = int(entry.get("material_number", 0))
+		card.button_pressed = material_number > 0
+		card.configure_item_visual(
+			InventoryItemVisualsScript.icon_for_item(item),
+			item.rarity if item != null else -2,
+			item != null and not item.unique_id.is_empty(),
+			item != null and item.locked,
+			str(material_number) if material_number > 0 else "",
+			item == null,
+			str(entry.get("accessibility_name", "合成候補")),
+			str(entry.get("details", "")),
+		)
 		var source: Dictionary = entry.get("source", {}) as Dictionary
 		card.configure_drag(
 			{
@@ -288,12 +334,7 @@ func _sync_candidates(candidate_entries: Array[Dictionary]) -> void:
 	_candidate_empty.visible = _candidate_cards.is_empty()
 	if _candidate_cards.is_empty():
 		_candidate_details.text = "このレアリティで合成可能な候補はありません。"
-	elif _focused_candidate_is_valid():
-		var focus_id: String = _focus_controller.current_focus_id(get_viewport())
-		var focused_index: int = focus_id.trim_prefix("FC").to_int()
-		if focused_index >= 0 and focused_index < _candidate_item_ids.size():
-			_show_candidate_details(_candidate_item_ids[focused_index])
-	else:
+	elif not _focused_candidate_is_valid() and not _focused_material_is_valid():
 		_candidate_details.text = "候補へフォーカスまたはポインターを合わせると詳細を表示します。"
 
 
@@ -307,10 +348,9 @@ func _rebuild_candidate_cards(candidate_entries: Array[Dictionary]) -> void:
 		var item_id: String = str(entry.get("item_id", ""))
 		var card := InventoryCardButton.new()
 		card.name = "FusionCandidate%d" % index
-		card.custom_minimum_size = Vector2(250.0, 88.0)
+		card.custom_minimum_size = Vector2(96.0, 96.0)
 		card.focus_mode = Control.FOCUS_ALL
 		card.toggle_mode = true
-		card.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		card.set_meta("focus_id", "FC%d" % index)
 		card.pressed.connect(_on_candidate_pressed.bind(item_id))
 		card.pointer_event.connect(_on_pointer_event)
@@ -325,13 +365,10 @@ func _configure_focus_graph() -> void:
 	var controls: Dictionary = {"FR": _rarity}
 	var graph: Dictionary = {}
 	var tab_order := PackedStringArray(["FR"])
-	var occupied_ids := PackedStringArray()
 	for index: int in range(_material_slots.size()):
-		if index < _material_ids.size() and not _material_ids[index].is_empty():
-			var focus_id := "F%d" % index
-			controls[focus_id] = _material_slots[index]
-			occupied_ids.append(focus_id)
-			tab_order.append(focus_id)
+		var focus_id := "F%d" % index
+		controls[focus_id] = _material_slots[index]
+		tab_order.append(focus_id)
 	for index: int in range(_candidate_cards.size()):
 		var focus_id := "FC%d" % index
 		controls[focus_id] = _candidate_cards[index]
@@ -340,21 +377,17 @@ func _configure_focus_graph() -> void:
 		var focus_id := "FA%d" % index
 		controls[focus_id] = _action_control(index)
 		tab_order.append(focus_id)
-	var first_below_rarity: String = _first_id(occupied_ids)
-	if first_below_rarity.is_empty():
-		first_below_rarity = "FC0" if not _candidate_cards.is_empty() else "FA0"
-	graph["FR"] = _graph_entry("FA3", first_below_rarity, "FR", "FR")
-	for index: int in range(occupied_ids.size()):
-		var focus_id: String = occupied_ids[index]
-		var slot_index: int = focus_id.trim_prefix("F").to_int()
-		var below: String = _candidate_id_for_column(slot_index)
+	graph["FR"] = _graph_entry("FA3", "F0", "FR", "FR")
+	for slot_index: int in range(_material_slots.size()):
+		var focus_id := "F%d" % slot_index
+		var below: String = _candidate_id_for_material(slot_index)
 		if below.is_empty():
-			below = "FA%d" % mini(slot_index, 3)
+			below = _action_id_for_material(slot_index)
 		graph[focus_id] = _graph_entry(
 			"FR",
 			below,
-			occupied_ids[posmod(index - 1, occupied_ids.size())],
-			occupied_ids[(index + 1) % occupied_ids.size()],
+			"F%d" % posmod(slot_index - 1, MATERIAL_COUNT),
+			"F%d" % ((slot_index + 1) % MATERIAL_COUNT),
 		)
 	for index: int in range(_candidate_cards.size()):
 		var focus_id := "FC%d" % index
@@ -364,15 +397,13 @@ func _configure_focus_graph() -> void:
 		var row_size: int = mini(CANDIDATE_COLUMNS, _candidate_cards.size() - row_start)
 		var top: String
 		if row == 0:
-			top = _material_id_for_column(column, occupied_ids)
-			if top.is_empty():
-				top = "FR"
+			top = _material_id_for_candidate_column(column)
 		else:
 			top = "FC%d" % (index - CANDIDATE_COLUMNS)
 		var bottom: String = (
 			"FC%d" % (index + CANDIDATE_COLUMNS)
 			if index + CANDIDATE_COLUMNS < _candidate_cards.size()
-			else "FA%d" % mini(column, 3)
+			else _action_id_for_candidate_column(column)
 		)
 		graph[focus_id] = _graph_entry(
 			top,
@@ -382,11 +413,9 @@ func _configure_focus_graph() -> void:
 		)
 	for index: int in range(4):
 		var focus_id := "FA%d" % index
-		var top: String = _last_candidate_id_for_column(index)
+		var top: String = _last_candidate_id_for_action(index)
 		if top.is_empty():
-			top = _material_id_for_column(index, occupied_ids)
-		if top.is_empty():
-			top = "FR"
+			top = _material_id_for_action(index)
 		graph[focus_id] = _graph_entry(
 			top,
 			"FR",
@@ -396,15 +425,17 @@ func _configure_focus_graph() -> void:
 	_focus_controller.configure_graph(controls, graph, "FR", tab_order)
 
 
-func _candidate_id_for_column(column: int) -> String:
+func _candidate_id_for_material(material_index: int) -> String:
 	if _candidate_cards.is_empty():
 		return ""
-	return "FC%d" % mini(column, _candidate_cards.size() - 1)
+	var preferred_columns: Array[int] = [0, 3, 6]
+	return "FC%d" % mini(preferred_columns[material_index], _candidate_cards.size() - 1)
 
 
-func _last_candidate_id_for_column(column: int) -> String:
+func _last_candidate_id_for_action(action_index: int) -> String:
 	if _candidate_cards.is_empty():
 		return ""
+	var column: int = action_index * 2
 	var last_row: int = floori(
 		float(_candidate_cards.size() - 1) / float(CANDIDATE_COLUMNS)
 	)
@@ -414,21 +445,28 @@ func _last_candidate_id_for_column(column: int) -> String:
 	return "FC%d" % index
 
 
-func _material_id_for_column(column: int, occupied_ids: PackedStringArray) -> String:
-	if occupied_ids.is_empty():
-		return ""
-	var preferred := "F%d" % mini(column, _material_slots.size() - 1)
-	if preferred in occupied_ids:
-		return preferred
-	return occupied_ids[mini(column, occupied_ids.size() - 1)]
+func _material_id_for_candidate_column(column: int) -> String:
+	if column <= 1:
+		return "F0"
+	if column <= 4:
+		return "F1"
+	return "F2"
+
+
+func _action_id_for_candidate_column(column: int) -> String:
+	return "FA%d" % mini(floori(float(column) / 2.0), 3)
+
+
+func _action_id_for_material(material_index: int) -> String:
+	return ["FA0", "FA2", "FA3"][material_index]
+
+
+func _material_id_for_action(action_index: int) -> String:
+	return ["F0", "F1", "F1", "F2"][action_index]
 
 
 func _action_control(index: int) -> Control:
 	return [_auto_fill, _wild_toggle, _confirm, _cancel][index] as Control
-
-
-func _first_id(ids: PackedStringArray) -> String:
-	return ids[0] if not ids.is_empty() else ""
 
 
 func _graph_entry(top: String, bottom: String, left: String, right: String) -> Dictionary:
@@ -444,6 +482,11 @@ func _focused_candidate_is_valid() -> bool:
 	return _focus_controller.current_focus_id(get_viewport()).begins_with("FC")
 
 
+func _focused_material_is_valid() -> bool:
+	var focus_id: String = _focus_controller.current_focus_id(get_viewport())
+	return focus_id.begins_with("F") and focus_id.length() == 2
+
+
 func _show_candidate_details(item_id: String) -> void:
 	var index: int = _candidate_item_ids.find(item_id)
 	if index < 0 or index >= _candidate_entries.size():
@@ -451,9 +494,29 @@ func _show_candidate_details(item_id: String) -> void:
 	_candidate_details.text = str(_candidate_entries[index].get("details", ""))
 
 
+func _show_material_details(slot_index: int) -> void:
+	if slot_index < 0 or slot_index >= _material_entries.size():
+		return
+	_candidate_details.text = str(_material_entries[slot_index].get("details", ""))
+
+
+func _refresh_focused_details() -> void:
+	var focus_id: String = _focus_controller.current_focus_id(get_viewport())
+	if focus_id.begins_with("FC"):
+		var candidate_index: int = focus_id.trim_prefix("FC").to_int()
+		if candidate_index >= 0 and candidate_index < _candidate_item_ids.size():
+			_show_candidate_details(_candidate_item_ids[candidate_index])
+	elif focus_id.begins_with("F") and focus_id.length() == 2:
+		_show_material_details(focus_id.trim_prefix("F").to_int())
+
+
 func _on_candidate_focused(item_id: String, card: Control) -> void:
 	_show_candidate_details(item_id)
 	_ensure_candidate_visible.bind(card).call_deferred()
+
+
+func _on_material_focused(slot_index: int) -> void:
+	_show_material_details(slot_index)
 
 
 func _ensure_candidate_visible(card: Control) -> void:
@@ -461,13 +524,13 @@ func _ensure_candidate_visible(card: Control) -> void:
 		_candidate_scroll.ensure_control_visible(card)
 
 
-func _selected_candidate_style() -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.12, 0.28, 0.22, 0.98)
-	style.border_color = Color(1.0, 0.78, 0.22, 1.0)
-	style.set_border_width_all(3)
-	style.set_corner_radius_all(8)
-	return style
+func _presentation_snapshots(cards: Array[InventoryCardButton]) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for card: InventoryCardButton in cards:
+		var snapshot: Dictionary = card.presentation_snapshot()
+		snapshot["minimum_size"] = card.custom_minimum_size
+		result.append(snapshot)
+	return result
 
 
 func _activate_focus_id(focus_id: String) -> void:

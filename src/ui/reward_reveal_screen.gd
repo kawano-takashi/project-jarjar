@@ -7,6 +7,7 @@ signal audio_event_requested(event_id: StringName)
 
 const HOLD_THRESHOLD_SECONDS: float = 0.25
 const CURRENT_CARD_SIZE := Vector2(760.0, 340.0)
+const UiPolishScript := preload("res://src/ui/ui_polish.gd")
 
 @onready var _unopened_count: Label = %UnopenedCount
 @onready var _accessibility_status: Label = %AccessibilityStatus
@@ -550,7 +551,7 @@ func _card_style(rarity: int, outline_thickness: int, stage_light_step: int) -> 
 	style.content_margin_top = 20.0
 	style.content_margin_right = 24.0
 	style.content_margin_bottom = 20.0
-	var border_color: Color = _rarity_color(rarity)
+	var border_color: Color = UiPolishScript.rarity_color(rarity)
 	var background: Color = Color(0.055, 0.071, 0.09, 0.98)
 	if stage_light_step > 0:
 		background = background.lightened(0.08 * float(stage_light_step))
@@ -560,46 +561,8 @@ func _card_style(rarity: int, outline_thickness: int, stage_light_step: int) -> 
 	style.border_width_top = outline_thickness
 	style.border_width_right = outline_thickness
 	style.border_width_bottom = outline_thickness
-	match rarity:
-		GameTypes.Rarity.RARE:
-			_set_corner_radii(style, 9, 9, 9, 9)
-		GameTypes.Rarity.EPIC:
-			_set_corner_radii(style, 20, 2, 20, 2)
-		GameTypes.Rarity.LEGENDARY:
-			_set_corner_radii(style, 28, 28, 28, 28)
-		-1:
-			_set_corner_radii(style, 32, 32, 32, 32)
-		_:
-			_set_corner_radii(style, 1, 1, 1, 1)
+	UiPolishScript.apply_rarity_corner_shape(style, rarity)
 	return style
-
-
-func _rarity_color(rarity: int) -> Color:
-	match rarity:
-		GameTypes.Rarity.COMMON:
-			return Color(0.72, 0.76, 0.78, 1.0)
-		GameTypes.Rarity.RARE:
-			return Color(0.25, 0.67, 1.0, 1.0)
-		GameTypes.Rarity.EPIC:
-			return Color(0.78, 0.35, 1.0, 1.0)
-		GameTypes.Rarity.LEGENDARY:
-			return Color(1.0, 0.68, 0.18, 1.0)
-		-1:
-			return Color(0.35, 0.92, 0.72, 1.0)
-	return Color(0.38, 0.44, 0.48, 1.0)
-
-
-func _set_corner_radii(
-	style: StyleBoxFlat,
-	top_left: int,
-	top_right: int,
-	bottom_right: int,
-	bottom_left: int,
-) -> void:
-	style.corner_radius_top_left = top_left
-	style.corner_radius_top_right = top_right
-	style.corner_radius_bottom_right = bottom_right
-	style.corner_radius_bottom_left = bottom_left
 
 
 func _current_focus_id() -> String:

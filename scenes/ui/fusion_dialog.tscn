@@ -96,26 +96,23 @@ alignment = 1
 
 [node name="FusionMaterial0" type="Button" parent="Center/Panel/Margin/Content/Materials"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(360, 92)
+custom_minimum_size = Vector2(96, 96)
 layout_mode = 2
 focus_mode = 0
-text = "材料枠1　材料投入後は A／Enter で外す\n空き（フォーカス対象外）"
 script = ExtResource("2_card")
 
 [node name="FusionMaterial1" type="Button" parent="Center/Panel/Margin/Content/Materials"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(360, 92)
+custom_minimum_size = Vector2(96, 96)
 layout_mode = 2
 focus_mode = 0
-text = "材料枠2　材料投入後は A／Enter で外す\n空き（フォーカス対象外）"
 script = ExtResource("2_card")
 
 [node name="FusionMaterial2" type="Button" parent="Center/Panel/Margin/Content/Materials"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(360, 92)
+custom_minimum_size = Vector2(96, 96)
 layout_mode = 2
 focus_mode = 0
-text = "材料枠3　材料投入後は A／Enter で外す\n空き（フォーカス対象外）"
 script = ExtResource("2_card")
 
 [node name="Middle" type="HBoxContainer" parent="Center/Panel/Margin/Content"]
@@ -155,10 +152,10 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/h_separation = 8
 theme_override_constants/v_separation = 8
-columns = 4
+columns = 8
 
 [node name="Details" type="PanelContainer" parent="Center/Panel/Margin/Content/Middle"]
-custom_minimum_size = Vector2(420, 0)
+custom_minimum_size = Vector2(600, 0)
 layout_mode = 2
 theme_override_styles/panel = SubResource("StyleDetails")
 

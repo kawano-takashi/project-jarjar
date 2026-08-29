@@ -238,6 +238,25 @@ func _assert_button_labels(assertions: Variant, root: Control, label: String) ->
 		button_count += 1
 		var button := control as BaseButton
 		var text_value: String = button.text
+		if bool(control.get_meta("item_visual", false)):
+			assertions.expect_equal(
+				"",
+				text_value,
+				"%s %s keeps item-card text empty" % [label, button.name],
+			)
+			assertions.expect_true(
+				_contains_japanese(control.accessibility_name),
+				"%s %s exposes a Japanese accessibility name" % [label, button.name],
+			)
+			assertions.expect_true(
+				_has_keyboard_mapping(control.accessibility_description),
+				"%s %s exposes a keyboard mapping to assistive apps" % [label, button.name],
+			)
+			assertions.expect_true(
+				_has_gamepad_mapping(control.accessibility_description),
+				"%s %s exposes a gamepad mapping to assistive apps" % [label, button.name],
+			)
+			continue
 		assertions.expect_true(
 			_contains_japanese(text_value),
 			"%s %s has a Japanese operation label" % [label, button.name],
