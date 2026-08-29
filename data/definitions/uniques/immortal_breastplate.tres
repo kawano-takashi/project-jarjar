@@ -6,4 +6,5 @@
 script = ExtResource("1_unique")
 unique_id = &"immortal_breastplate"
 display_name = "不死者の胸当て"
+effect_description = "ほかの装備の被ダメージ軽減を2倍（この装備自身は対象外、合計100%上限）。与ダメージ -50%。"
 equipment_slot = 3

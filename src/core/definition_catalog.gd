@@ -404,6 +404,8 @@ func _load_uniques() -> void:
 			uniques[definition.unique_id] = definition
 		if definition.display_name.is_empty():
 			_add_error("display_name must not be empty: %s" % path)
+		if definition.effect_description.strip_edges().is_empty():
+			_add_error("effect_description must not be empty: %s" % path)
 		_validate_enum_value(
 			definition.equipment_slot,
 			Types.EquipmentSlot.size(),

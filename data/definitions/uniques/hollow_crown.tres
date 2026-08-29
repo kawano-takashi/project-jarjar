@@ -6,4 +6,5 @@
 script = ExtResource("1_unique")
 unique_id = &"hollow_crown"
 display_name = "空洞の王冠"
+effect_description = "スキル装着枠2（K1）を封印。装着枠1（K0）のスキル発動ごとに、同じスキルを少し遅れてもう一度発生。"
 equipment_slot = 2

@@ -6,4 +6,5 @@
 script = ExtResource("1_unique")
 unique_id = &"bloodied_dagger"
 display_name = "血塗れの短剣"
+effect_description = "与ダメージ -50%。このWAVE中、敵を1体倒すごとに主武器の攻撃速度 +1%。次のWAVEでリセット。"
 equipment_slot = 1

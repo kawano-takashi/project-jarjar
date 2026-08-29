@@ -12,6 +12,14 @@ const SeedServiceScript := preload("res://src/core/seed_service.gd")
 const StatCalculatorScript := preload("res://src/combat/stat_calculator.gd")
 const TimerMathScript := preload("res://src/core/timer_math.gd")
 const WeightedSelectorScript := preload("res://src/core/weighted_selector.gd")
+const UNIQUE_EFFECT_DESCRIPTIONS: Dictionary = {
+	&"bloodied_dagger": "与ダメージ -50%。このWAVE中、敵を1体倒すごとに主武器の攻撃速度 +1%。次のWAVEでリセット。",
+	&"broken_clock": "スキル発動までの時間と必要回数を半減（回数は端数切り上げ）。スキルダメージ -50%。",
+	&"coward_boots": "移動中と停止後0.25秒間、主武器攻撃とスキル進行を停止。0.25秒静止すると、主武器の攻撃速度 +100%、与ダメージ +200%。",
+	&"echo_gauntlet": "主武器攻撃3回ごとに、3回目の攻撃を少し遅れてもう一度発生。装備を外すとカウントをリセット。",
+	&"hollow_crown": "スキル装着枠2（K1）を封印。装着枠1（K0）のスキル発動ごとに、同じスキルを少し遅れてもう一度発生。",
+	&"immortal_breastplate": "ほかの装備の被ダメージ軽減を2倍（この装備自身は対象外、合計100%上限）。与ダメージ -50%。",
+}
 
 var _catalog: CatalogScript = null
 
@@ -140,6 +148,20 @@ func _game_types_test(assertions: Variant) -> void:
 		catalog.unique_ids(),
 		"unique IDs ordinal",
 	)
+	for unique_id: StringName in UNIQUE_EFFECT_DESCRIPTIONS:
+		var unique_definition: UniqueDefinition = catalog.unique(unique_id)
+		assertions.expect_true(unique_definition != null, "unique effect definition %s exists" % unique_id)
+		if unique_definition == null:
+			continue
+		assertions.expect_false(
+			unique_definition.effect_description.strip_edges().is_empty(),
+			"unique effect description %s is non-empty" % unique_id,
+		)
+		assertions.expect_equal(
+			str(UNIQUE_EFFECT_DESCRIPTIONS[unique_id]),
+			unique_definition.effect_description,
+			"unique effect description %s is fixed" % unique_id,
+		)
 	_verify_wave_resources(assertions, catalog)
 	assertions.expect_true(AffixRoll.new() is RefCounted, "AffixRoll RefCounted")
 	assertions.expect_true(ItemInstance.new() is RefCounted, "ItemInstance RefCounted")

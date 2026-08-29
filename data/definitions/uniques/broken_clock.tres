@@ -6,4 +6,5 @@
 script = ExtResource("1_unique")
 unique_id = &"broken_clock"
 display_name = "壊れた時計"
+effect_description = "スキル発動までの時間と必要回数を半減（回数は端数切り上げ）。スキルダメージ -50%。"
 equipment_slot = 1

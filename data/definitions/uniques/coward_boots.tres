@@ -6,4 +6,5 @@
 script = ExtResource("1_unique")
 unique_id = &"coward_boots"
 display_name = "臆病者の靴"
+effect_description = "移動中と停止後0.25秒間、主武器攻撃とスキル進行を停止。0.25秒静止すると、主武器の攻撃速度 +100%、与ダメージ +200%。"
 equipment_slot = 5

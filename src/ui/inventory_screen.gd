@@ -36,6 +36,7 @@ const FUSION_SUCCESS_FALLBACK_TEXT: String = "合成成功"
 const SORT_ACTION_FOCUS_ID: String = "action_sort"
 const SORT_ACTION_LABEL: String = "高レア順に整理\n実行 A／Enter"
 const UNKNOWN_AFFIX_LABEL: String = "不明な効果"
+const UNKNOWN_UNIQUE_EFFECT_LABEL: String = "不明な固有効果"
 const AFFIX_LABELS: Dictionary = {
 	&"damage_pct": "与ダメージ",
 	&"attack_speed_pct": "攻撃速度",
@@ -1344,6 +1345,9 @@ func _item_details(
 	lines.append("種類: %s" % InventoryItemVisualsScript.item_type_label(item))
 	lines.append("レアリティ: %s" % _controller.rarity_label(item.rarity))
 	lines.append("名前: %s" % item.display_name)
+	if not item.unique_id.is_empty():
+		lines.append("固有効果:")
+		lines.append("★ %s" % _unique_effect_description(item))
 	if item.affixes.is_empty():
 		lines.append("効果: 特性なし")
 	else:
@@ -1462,6 +1466,19 @@ func _format_effect_value(value: float, is_percent: bool) -> String:
 	if magnitude != "0":
 		value_prefix = "+" if value > 0.0 else "-"
 	return "%s%s%s" % [value_prefix, magnitude, "%" if is_percent else ""]
+
+
+func _unique_effect_description(item: ItemInstance) -> String:
+	if item == null or item.unique_id.is_empty():
+		return ""
+	var definition: UniqueDefinition = (
+		_controller.catalog.unique(item.unique_id)
+		if _controller.catalog != null
+		else null
+	)
+	if definition == null or definition.effect_description.strip_edges().is_empty():
+		return UNKNOWN_UNIQUE_EFFECT_LABEL
+	return definition.effect_description
 
 
 func _skill_card_text(skill_id: StringName) -> String:

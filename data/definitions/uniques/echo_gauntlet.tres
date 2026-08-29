@@ -6,4 +6,5 @@
 script = ExtResource("1_unique")
 unique_id = &"echo_gauntlet"
 display_name = "反響の手甲"
+effect_description = "主武器攻撃3回ごとに、3回目の攻撃を少し遅れてもう一度発生。装備を外すとカウントをリセット。"
 equipment_slot = 4

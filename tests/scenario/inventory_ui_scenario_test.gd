@@ -20,6 +20,7 @@ func test_names() -> PackedStringArray:
 		"inventory_icon_card_presentation_contract",
 		"inventory_rarity_sort_button_contract",
 		"inventory_japanese_effect_presentation_contract",
+		"inventory_unique_effect_presentation_contract",
 		"inventory_controller_mouse_bulk_fusion_and_discard_contract",
 		"fusion_dialog_exact_controller_contract",
 		"inventory_exact_skill_sequence_and_crown_contract",
@@ -37,6 +38,8 @@ func run_test(test_name: String, assertions: Variant, context: Dictionary) -> vo
 			await _test_rarity_sort_button(assertions, context)
 		"inventory_japanese_effect_presentation_contract":
 			await _test_japanese_effect_presentation(assertions, context)
+		"inventory_unique_effect_presentation_contract":
+			await _test_unique_effect_presentation(assertions, context)
 		"inventory_controller_mouse_bulk_fusion_and_discard_contract":
 			await _test_controller_mouse_bulk_fusion_and_discard(assertions, context)
 		"fusion_dialog_exact_controller_contract":
@@ -616,6 +619,165 @@ func _test_japanese_effect_presentation(
 		)
 	screen.test_cancel()
 	_cleanup_fixture(fixture, context)
+
+
+func _test_unique_effect_presentation(
+	assertions: Variant,
+	context: Dictionary,
+) -> void:
+	var catalog: DefinitionCatalog = _loaded_catalog(assertions)
+	if catalog == null:
+		return
+	var qa: Dictionary = QaScenarioFactory.build("inventory_controller", catalog)
+	assertions.expect_true(qa.get("valid", false), "unique effect presentation fixture valid")
+	if not qa.get("valid", false):
+		return
+	var state: RunState = qa["state"] as RunState
+	var unique_ids: Array[StringName] = catalog.unique_ids()
+	var unique_items: Array[ItemInstance] = []
+	for index: int in range(unique_ids.size()):
+		var unique_id: StringName = unique_ids[index]
+		var definition: UniqueDefinition = catalog.unique(unique_id)
+		assertions.expect_true(definition != null, "unique UI definition %s exists" % unique_id)
+		if definition == null:
+			continue
+		var item := ItemInstance.new()
+		item.item_id = "qa-unique-effect-%s" % unique_id
+		item.item_seed = index
+		item.slot = definition.equipment_slot
+		item.rarity = GameTypes.Rarity.COMMON
+		item.unique_id = unique_id
+		item.display_name = definition.display_name
+		state.inventory[index] = item
+		unique_items.append(item)
+
+	var unknown_index: int = unique_ids.size()
+	var unknown_item := ItemInstance.new()
+	unknown_item.item_id = "qa-unknown-unique-effect"
+	unknown_item.item_seed = unknown_index
+	unknown_item.slot = GameTypes.EquipmentSlot.SUB_WEAPON
+	unknown_item.rarity = GameTypes.Rarity.COMMON
+	unknown_item.unique_id = &"future_unique"
+	unknown_item.display_name = "未知のユニーク装備"
+	state.inventory[unknown_index] = unknown_item
+
+	var normal_index: int = unknown_index + 1
+	var normal_item := ItemInstance.new()
+	normal_item.item_id = "qa-normal-effect-control"
+	normal_item.item_seed = normal_index
+	normal_item.slot = GameTypes.EquipmentSlot.SUB_WEAPON
+	normal_item.rarity = GameTypes.Rarity.COMMON
+	normal_item.display_name = "通常装備"
+	state.inventory[normal_index] = normal_item
+
+	var fixture: Dictionary = await _spawn_inventory(assertions, context, state)
+	if fixture.is_empty():
+		return
+	var screen: InventoryScreen = fixture["screen"]
+	for index: int in range(unique_items.size()):
+		var item: ItemInstance = unique_items[index]
+		var definition: UniqueDefinition = catalog.unique(item.unique_id)
+		var effect_block: String = "固有効果:\n★ %s" % definition.effect_description
+		var focus_id: String = "grid_%d" % index
+		var card: Dictionary = screen.item_card_presentation(focus_id)
+		var tooltip: String = str(card.get("tooltip", ""))
+		var accessibility_name: String = str(card.get("accessibility_name", ""))
+		var accessibility_description: String = str(card.get("accessibility_description", ""))
+		assertions.expect_true(effect_block in tooltip, "%s tooltip presents its unique effect" % item.unique_id)
+		assertions.expect_true(
+			definition.effect_description in accessibility_name,
+			"%s accessibility name presents its unique effect" % item.unique_id,
+		)
+		assertions.expect_true(
+			effect_block in accessibility_description,
+			"%s accessibility description presents its unique effect" % item.unique_id,
+		)
+		assertions.expect_false(
+			String(item.unique_id) in tooltip,
+			"%s tooltip hides its internal unique ID" % item.unique_id,
+		)
+		assertions.expect_true(screen.test_focus(focus_id), "%s receives inventory focus" % item.unique_id)
+		var comparison: String = str(screen.debug_state()["comparison"])
+		assertions.expect_true(
+			effect_block in comparison,
+			"%s right details present its unique effect" % item.unique_id,
+		)
+
+	var unknown_focus_id: String = "grid_%d" % unknown_index
+	var unknown_card: Dictionary = screen.item_card_presentation(unknown_focus_id)
+	var unknown_tooltip: String = str(unknown_card.get("tooltip", ""))
+	assertions.expect_true(
+		"固有効果:\n★ 不明な固有効果" in unknown_tooltip,
+		"unknown unique tooltip uses the Japanese fallback",
+	)
+	assertions.expect_false(
+		"future_unique" in unknown_tooltip,
+		"unknown unique tooltip hides its internal ID",
+	)
+	assertions.expect_true(screen.test_focus(unknown_focus_id), "unknown unique receives inventory focus")
+	var unknown_comparison: String = str(screen.debug_state()["comparison"])
+	assertions.expect_true(
+		"固有効果:\n★ 不明な固有効果" in unknown_comparison,
+		"unknown unique right details use the Japanese fallback",
+	)
+	assertions.expect_false(
+		"future_unique" in unknown_comparison,
+		"unknown unique right details hide its internal ID",
+	)
+
+	var normal_card: Dictionary = screen.item_card_presentation("grid_%d" % normal_index)
+	assertions.expect_false(
+		"固有効果:" in str(normal_card.get("tooltip", "")),
+		"normal equipment omits the unique-effect block",
+	)
+
+	assertions.expect_true(screen.test_focus("grid_0"), "first unique restores focus before fusion")
+	assertions.expect_true(screen.test_focus("action_2"), "fusion action receives focus for unique effects")
+	screen.test_accept()
+	var fusion_dialog: FusionDialog = screen.get_node("%FusionDialog") as FusionDialog
+	for item: ItemInstance in unique_items:
+		var definition: UniqueDefinition = catalog.unique(item.unique_id)
+		var fusion_effect_block: String = "固有効果:\n★ %s" % definition.effect_description
+		assertions.expect_true(
+			screen.test_fusion_candidate_focus(item.item_id),
+			"%s fusion candidate receives focus" % item.unique_id,
+		)
+		var candidate_details: String = str(fusion_dialog.debug_state()["candidate_details"])
+		assertions.expect_true(
+			fusion_effect_block in candidate_details,
+			"%s fusion details present its unique effect" % item.unique_id,
+		)
+	assertions.expect_true(
+		screen.test_fusion_candidate_focus(unknown_item.item_id),
+		"unknown unique fusion candidate receives focus",
+	)
+	var unknown_candidate_details: String = str(fusion_dialog.debug_state()["candidate_details"])
+	assertions.expect_true(
+		"固有効果:\n★ 不明な固有効果" in unknown_candidate_details,
+		"unknown unique fusion details use the Japanese fallback",
+	)
+	assertions.expect_false(
+		"future_unique" in unknown_candidate_details,
+		"unknown unique fusion details hide its internal ID",
+	)
+
+	var first_unique: ItemInstance = unique_items[0]
+	var first_definition: UniqueDefinition = catalog.unique(first_unique.unique_id)
+	assertions.expect_true(
+		screen.test_fusion_candidate_focus(first_unique.item_id),
+		"first unique fusion candidate receives focus for material details",
+	)
+	screen.test_accept()
+	assertions.expect_true(screen.test_focus("F0"), "first fusion material receives focus")
+	var material_details: String = str(fusion_dialog.debug_state()["candidate_details"])
+	var material_effect_block: String = "固有効果:\n★ %s" % first_definition.effect_description
+	assertions.expect_true(
+		material_effect_block in material_details,
+		"fusion material details present the unique effect",
+	)
+	screen.test_cancel()
+	_cleanup_fixture(fixture, context)
+
 
 func _test_controller_mouse_bulk_fusion_and_discard(
 	assertions: Variant,
