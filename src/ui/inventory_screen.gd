@@ -37,13 +37,6 @@ const SORT_ACTION_FOCUS_ID: String = "action_sort"
 const SORT_ACTION_LABEL: String = "高レア順に整理\n実行 A／Enter"
 const UNKNOWN_AFFIX_LABEL: String = "不明な効果"
 const UNKNOWN_UNIQUE_EFFECT_LABEL: String = "不明な固有効果"
-const INITIAL_ITEM_DETAILS_TEXT: String = (
-	"アイテムにフォーカスまたはポインターを合わせると詳細を表示します。"
-)
-const CONTROLS_LEGEND_TEXT: String = (
-	"A／Enter・クリック: 持ち上げ／配置　L／X: ロック切替\n"
-	+ "ドラッグ: 移動　B／Esc: 取消"
-)
 const PLACEMENT_WARNING_PREFIX: String = "⚠ 配置不可："
 const AFFIX_LABELS: Dictionary = {
 	&"damage_pct": "与ダメージ",
@@ -77,9 +70,6 @@ const ACTION_LABELS: Array[String] = [
 @onready var _wave_label: Label = %InventoryWave
 @onready var _count_label: Label = %InventoryCounts
 @onready var _status_label: Label = %InventoryStatus
-@onready var _comparison_label: Label = %ComparisonText
-@onready var _placement_warning_label: Label = %PlacementWarning
-@onready var _controls_legend_label: Label = %InventoryControlsLegend
 @onready var _equip_row: HBoxContainer = %EquipRow
 @onready var _grid: GridContainer = %InventoryGrid
 @onready var _overflow_panel: Control = %OverflowPanel
@@ -92,6 +82,7 @@ const ACTION_LABELS: Array[String] = [
 @onready var _bulk_dialog: BulkSelectDialog = %BulkSelectDialog
 @onready var _fusion_dialog: FusionDialog = %FusionDialog
 @onready var _confirmation_dialog: JarjarConfirmationDialog = %ConfirmationDialog
+@onready var _item_tooltip: Variant = %InventoryItemTooltip
 
 var _controller := InventoryController.new()
 var _focus_controller := FocusController.new()
@@ -113,7 +104,7 @@ var _confirmation_kind: StringName = &""
 var _confirmation_payload: Dictionary = {}
 var _confirmation_origin_focus_id: String = ""
 var _last_valid_focus_id: String = "equip_0"
-var _comparison_target: Dictionary = {}
+var _test_drag_source_override: Dictionary = {}
 var _fusion_feedback_presented: bool = false
 var _fusion_feedback_reduce_motion: bool = false
 var _fusion_feedback_reduce_flashes: bool = false
@@ -130,8 +121,7 @@ func _ready() -> void:
 	_connect_overlays()
 	_modal_focus.configure(get_viewport(), [_content_root])
 	_settings_overlay.closed.connect(_on_settings_closed)
-	_controls_legend_label.text = CONTROLS_LEGEND_TEXT
-	_placement_warning_label.accessibility_live = AccessibilityServer.LIVE_POLITE
+	_item_tooltip.begin_session()
 	set_process(false)
 	_reset_fusion_feedback_visuals()
 	if _pending_state != null:
@@ -247,13 +237,7 @@ func debug_state() -> Dictionary:
 		),
 		"pointer_event_count": _pointer_event_count,
 		"status": _status_text,
-		"comparison": _comparison_label.text,
-		"placement_warning": (
-			_placement_warning_label.text
-			if _placement_warning_label.visible
-			else ""
-		),
-		"controls_legend": _controls_legend_label.text,
+		"tooltip": _item_tooltip.debug_snapshot(),
 		"overflow_count": _overflow_cards.size(),
 		"overflow_scroll": _overflow_scroll.scroll_horizontal,
 		"bulk_open": _bulk_dialog.visible,
@@ -299,12 +283,14 @@ func debug_state() -> Dictionary:
 func test_focus(focus_id: String) -> bool:
 	if _fusion_dialog.visible:
 		return _fusion_dialog.test_focus(focus_id)
+	_item_tooltip.activate_focus_input()
 	return _focus_controller.grab_focus_id(focus_id)
 
 
 func test_direction(direction: StringName) -> bool:
 	if _fusion_dialog.visible:
 		return _fusion_dialog.test_direction(direction)
+	_item_tooltip.activate_focus_input()
 	return _focus_controller.move(get_viewport(), direction)
 
 
@@ -350,13 +336,17 @@ func test_mouse_drop(source: Dictionary, target: Dictionary) -> void:
 func test_mouse_drag_preview(source: Dictionary, target: Dictionary) -> void:
 	if _modal_focus.has_active_modal():
 		return
+	_test_drag_source_override = source.duplicate(true)
 	var kind := StringName(target.get("kind", &""))
 	var index: int = int(target.get("index", -1))
-	_update_comparison(_controller.item_at(kind, index), kind, index)
-	_refresh_placement_warning(source)
+	var card: InventoryCardButton = _card_for_location(kind, index)
+	if card != null:
+		_item_tooltip.activate_pointer_input()
+		_item_tooltip._on_target_mouse_entered(card)
 
 
 func test_mouse_drag_end() -> void:
+	_test_drag_source_override.clear()
 	_notification(NOTIFICATION_DRAG_END)
 
 
@@ -386,9 +376,10 @@ func _notification(what: int) -> void:
 	if not is_node_ready():
 		return
 	if what == NOTIFICATION_DRAG_BEGIN:
-		_refresh_placement_warning.call_deferred()
+		_item_tooltip.refresh_active.call_deferred()
 	elif what == NOTIFICATION_DRAG_END:
-		_clear_placement_warning()
+		_test_drag_source_override.clear()
+		_item_tooltip.hide_tooltip(false)
 
 
 func _process(delta: float) -> void:
@@ -595,14 +586,14 @@ func _refresh_from_state(preserve_focus: bool) -> void:
 	_render_fusion()
 	_configure_normal_focus_graph()
 	if _modal_focus.has_active_modal():
-		_clear_placement_warning()
+		_item_tooltip.hide_tooltip(true)
 		return
 	if preserve_focus and _focus_controller.grab_focus_id(previous_focus):
 		_last_valid_focus_id = previous_focus
 	else:
 		_focus_controller.focus_initial_deferred()
 	_track_current_focus.call_deferred()
-	_refresh_current_item_details.call_deferred()
+	_item_tooltip.refresh_active.call_deferred()
 
 
 func _render_header() -> void:
@@ -626,8 +617,18 @@ func _render_inventory() -> void:
 		_render_item_card(_grid_cards[index], &"inventory", index)
 
 
+func _refresh_item_card_presentations() -> void:
+	_render_equipment()
+	_render_inventory()
+	for index: int in range(_overflow_cards.size()):
+		_render_item_card(_overflow_cards[index], &"overflow", index)
+	_item_tooltip.refresh_active()
+
+
 func _rebuild_overflow() -> void:
 	for child: Node in _overflow_row.get_children():
+		if child is InventoryCardButton:
+			_item_tooltip.unbind_target(child as InventoryCardButton)
 		_overflow_row.remove_child(child)
 		child.queue_free()
 	_overflow_cards.clear()
@@ -941,7 +942,7 @@ func _connect_item_card(card: InventoryCardButton, kind: StringName, index: int)
 	card.drop_received.connect(_on_card_drop_received)
 	card.pointer_event.connect(_on_pointer_event)
 	card.focus_entered.connect(_on_item_focus_entered.bind(kind, index))
-	card.mouse_entered.connect(_on_item_hovered.bind(kind, index))
+	_item_tooltip.bind_target(card, _item_tooltip_payload.bind(kind, index))
 
 
 func _on_item_card_pressed(kind: StringName, index: int) -> void:
@@ -956,7 +957,7 @@ func _on_item_card_pressed(kind: StringName, index: int) -> void:
 				if kind == &"equipped"
 				else "%s を持ち上げました。配置先でA、Bで取消" % item.display_name
 			)
-			_refresh_placement_warning()
+			_refresh_item_card_presentations()
 	else:
 		var request: Dictionary = _controller.item_move_request(kind, index)
 		if not request.is_empty():
@@ -975,7 +976,7 @@ func _on_skill_card_pressed(index: int) -> void:
 	if _controller.held_skill_source.is_empty():
 		if _controller.begin_skill_lift(source_kind, source_id):
 			_status_text = "スキルを持ち上げました。配置先でA、Bで取消"
-			_clear_placement_warning()
+			_item_tooltip.hide_tooltip(false)
 	else:
 		var request: Dictionary = _controller.skill_move_request(source_kind, source_id)
 		if not request.is_empty():
@@ -1048,7 +1049,7 @@ func _request_inventory_sort() -> void:
 	if _modal_focus.has_active_modal():
 		return
 	_controller.cancel_lift()
-	_clear_placement_warning()
+	_refresh_item_card_presentations()
 	_pending_command_kind = &"sort"
 	sort_requested.emit()
 
@@ -1056,7 +1057,8 @@ func _request_inventory_sort() -> void:
 func _push_modal(modal: Control, fallback_focus: Control = null) -> bool:
 	if not _modal_focus.push(modal, fallback_focus):
 		return false
-	_clear_placement_warning()
+	_item_tooltip.hide_tooltip(true)
+	_fusion_dialog.hide_tooltip(true)
 	return true
 
 
@@ -1252,7 +1254,6 @@ func _on_settings_closed() -> void:
 func _handle_cancel() -> bool:
 	if not _controller.held_item_source.is_empty() or not _controller.held_skill_source.is_empty():
 		_controller.cancel_lift()
-		_clear_placement_warning()
 		_status_text = "持ち上げを取り消しました"
 		_refresh_from_state(true)
 		return true
@@ -1278,16 +1279,9 @@ func _on_item_focus_entered(kind: StringName, index: int) -> void:
 	_on_focus_entered(focus_id, item.item_id if item != null else "")
 	if item != null and kind in [&"inventory", &"overflow"]:
 		_controller.set_last_item_focus(item.item_id)
-	_update_comparison(item, kind, index)
 	if kind == &"overflow":
 		_ensure_overflow_visible.bind(index).call_deferred()
 	_render_actions()
-
-
-func _on_item_hovered(kind: StringName, index: int) -> void:
-	if _modal_focus.has_active_modal():
-		return
-	_update_comparison(_controller.item_at(kind, index), kind, index)
 
 
 func _on_focus_entered(focus_id: String, _item_id: String) -> void:
@@ -1314,22 +1308,6 @@ func _ensure_overflow_visible(index: int) -> void:
 	elif card_right > visible_left + visible_width:
 		target_scroll = ceili(card_right - visible_width)
 	_overflow_scroll.scroll_horizontal = maxi(0, target_scroll)
-
-
-func _update_comparison(
-	item: ItemInstance,
-	kind: StringName = &"",
-	index: int = -1,
-) -> void:
-	if kind.is_empty():
-		_comparison_target.clear()
-		_comparison_label.text = INITIAL_ITEM_DETAILS_TEXT
-		_clear_placement_warning()
-		return
-	_comparison_target = {"kind": kind, "index": index}
-	var marked: bool = item != null and _controller.marked_item_ids.has(item.item_id)
-	_comparison_label.text = _right_panel_item_details(item, kind, index, marked)
-	_refresh_placement_warning()
 
 
 func _comparison_summary(item: ItemInstance) -> String:
@@ -1375,20 +1353,17 @@ func _full_item_details(
 	index: int,
 	marked: bool,
 	custom_operations: String = "",
+	move_source: Dictionary = {},
 ) -> String:
-	var details: String = _item_details(item, kind, index, marked, custom_operations)
-	if item != null:
-		details += "\n装備比較: %s" % _comparison_summary(item)
-	return details
-
-
-func _right_panel_item_details(
-	item: ItemInstance,
-	kind: StringName,
-	index: int,
-	marked: bool,
-) -> String:
-	var details: String = _item_details(item, kind, index, marked, "", false)
+	var details: String = _item_details(
+		item,
+		kind,
+		index,
+		marked,
+		custom_operations,
+		true,
+		move_source,
+	)
 	if item != null:
 		details += "\n装備比較: %s" % _comparison_summary(item)
 	return details
@@ -1401,6 +1376,7 @@ func _item_details(
 	marked: bool,
 	custom_operations: String = "",
 	include_guidance: bool = true,
+	move_source: Dictionary = {},
 ) -> String:
 	var lines: Array[String] = []
 	lines.append("保管位置: %s" % _location_label(kind, index))
@@ -1408,11 +1384,11 @@ func _item_details(
 		lines.append("種類: %s" % _empty_slot_type_label(kind, index))
 		lines.append("状態: 空き")
 		if include_guidance:
-			lines.append("配置可否: %s" % _placement_text(kind, index))
+			lines.append("配置可否: %s" % _placement_text(kind, index, move_source))
 			lines.append("操作: %s" % (
 				custom_operations
 				if not custom_operations.is_empty()
-				else _item_operations(item, kind)
+				else _item_operations(item, kind, move_source)
 			))
 		return "\n".join(lines)
 	lines.append("種類: %s" % InventoryItemVisualsScript.item_type_label(item))
@@ -1429,11 +1405,11 @@ func _item_details(
 			lines.append("・%s" % _format_affix_effect(affix.affix_id, affix.value))
 	lines.append("状態: %s" % _item_state_text(item, marked))
 	if include_guidance:
-		lines.append("配置可否: %s" % _placement_text(kind, index))
+		lines.append("配置可否: %s" % _placement_text(kind, index, move_source))
 		lines.append("操作: %s" % (
 			custom_operations
 			if not custom_operations.is_empty()
-			else _item_operations(item, kind)
+			else _item_operations(item, kind, move_source)
 		))
 	return "\n".join(lines)
 
@@ -1481,6 +1457,8 @@ func _empty_slot_type_label(kind: StringName, index: int) -> String:
 
 
 func _active_item_move_source() -> Dictionary:
+	if not _test_drag_source_override.is_empty():
+		return _test_drag_source_override.duplicate(true)
 	if not _controller.held_item_source.is_empty():
 		return _controller.held_item_source.duplicate(true)
 	var viewport: Viewport = get_viewport()
@@ -1499,48 +1477,50 @@ func _active_item_move_source() -> Dictionary:
 	}
 
 
-func _refresh_placement_warning(source_override: Dictionary = {}) -> void:
-	if (
-		_modal_focus.has_active_modal()
-		or _comparison_target.is_empty()
-		or not _comparison_target_exists()
-	):
-		_clear_placement_warning()
-		return
-	var source: Dictionary = (
-		source_override.duplicate(true)
-		if not source_override.is_empty()
-		else _active_item_move_source()
-	)
+func _item_tooltip_payload(kind: StringName, index: int) -> Dictionary:
+	if _modal_focus.has_active_modal() or not _location_exists(kind, index):
+		return {}
+	var item: ItemInstance = _controller.item_at(kind, index)
+	var marked: bool = item != null and _controller.marked_item_ids.has(item.item_id)
+	var source: Dictionary = _active_item_move_source()
+	return {
+		"details": _full_item_details(item, kind, index, marked, "", source),
+		"warning": _placement_warning_for(kind, index, source),
+		"urgent": not source.is_empty(),
+	}
+
+
+func _placement_warning_for(
+	kind: StringName,
+	index: int,
+	source: Dictionary,
+) -> String:
 	if (
 		source.is_empty()
+		or not _location_exists(kind, index)
 		or (
 			source.has("drag_type")
 			and StringName(source.get("drag_type", &"")) != &"item"
 		)
 	):
-		_clear_placement_warning()
-		return
+		return ""
 	var validation: Dictionary = InventoryService.validate_move(
 		_controller.state,
 		StringName(source.get("kind", &"")),
 		int(source.get("index", -1)),
-		StringName(_comparison_target.get("kind", &"")),
-		int(_comparison_target.get("index", -1)),
+		kind,
+		index,
 	)
 	if bool(validation.get("success", false)):
-		_clear_placement_warning()
-		return
+		return ""
 	var message: String = str(validation.get("message", validation.get("error", "")))
-	_set_placement_warning(PLACEMENT_WARNING_PREFIX + message)
+	return PLACEMENT_WARNING_PREFIX + message
 
 
-func _comparison_target_exists() -> bool:
+func _location_exists(kind: StringName, index: int) -> bool:
 	var state: RunState = _controller.state
 	if state == null:
 		return false
-	var kind := StringName(_comparison_target.get("kind", &""))
-	var index: int = int(_comparison_target.get("index", -1))
 	match kind:
 		&"equipped":
 			return index in GameTypes.EquipmentSlot.values()
@@ -1551,32 +1531,22 @@ func _comparison_target_exists() -> bool:
 	return false
 
 
-func _set_placement_warning(text_value: String) -> void:
-	var should_show: bool = not text_value.is_empty()
-	if (
-		_placement_warning_label.text == text_value
-		and _placement_warning_label.visible == should_show
-	):
-		return
-	if should_show:
-		_placement_warning_label.visible = true
-		_placement_warning_label.text = text_value
-	else:
-		_placement_warning_label.visible = false
-		_placement_warning_label.text = ""
-
-
-func _clear_placement_warning() -> void:
-	_set_placement_warning("")
-
-
-func _placement_text(kind: StringName, index: int) -> String:
+func _placement_text(
+	kind: StringName,
+	index: int,
+	move_source: Dictionary = {},
+) -> String:
 	if kind != &"equipped":
 		return "装備の配置・移動・交換が可能"
 	var slot_label: String = InventoryItemVisualsScript.slot_label(index)
-	if _controller.held_item_source.is_empty():
+	var source: Dictionary = (
+		move_source
+		if not move_source.is_empty()
+		else _controller.held_item_source
+	)
+	if source.is_empty():
 		return "対応する%sを配置可能" % slot_label
-	var held_item_id: String = str(_controller.held_item_source.get("item_id", ""))
+	var held_item_id: String = str(source.get("item_id", ""))
 	var held_item: ItemInstance = _controller.find_item(held_item_id).get("item") as ItemInstance
 	if held_item == null:
 		return "対応する%sを配置可能" % slot_label
@@ -1587,10 +1557,14 @@ func _placement_text(kind: StringName, index: int) -> String:
 	)
 
 
-func _item_operations(item: ItemInstance, kind: StringName) -> String:
+func _item_operations(
+	item: ItemInstance,
+	kind: StringName,
+	move_source: Dictionary = {},
+) -> String:
 	if item == null:
 		return "持ち上げ中の装備を A／Enter またはドロップで配置"
-	if not _controller.held_item_source.is_empty():
+	if not move_source.is_empty() or not _controller.held_item_source.is_empty():
 		return "A／Enter: 配置・交換 / ドロップ: 移動 / B: 持ち上げ取消"
 	var move_text: String = "A／Enter: 持ち上げ / ドラッグ: 移動 / L・X: ロック切替"
 	if kind == &"equipped":
@@ -1598,25 +1572,15 @@ func _item_operations(item: ItemInstance, kind: StringName) -> String:
 	return move_text
 
 
-func _refresh_current_item_details() -> void:
-	var focus_id: String = _focus_controller.current_focus_id(get_viewport())
-	var location: Dictionary = _location_for_focus_id(focus_id)
-	if location.is_empty():
-		_refresh_placement_warning()
-		return
-	var kind := StringName(location.get("kind", &""))
-	var index: int = int(location.get("index", -1))
-	_update_comparison(_controller.item_at(kind, index), kind, index)
-
-
-func _location_for_focus_id(focus_id: String) -> Dictionary:
-	if focus_id.begins_with("equip_"):
-		return {"kind": &"equipped", "index": focus_id.trim_prefix("equip_").to_int()}
-	if focus_id.begins_with("grid_"):
-		return {"kind": &"inventory", "index": focus_id.trim_prefix("grid_").to_int()}
-	if focus_id.begins_with("overflow_"):
-		return {"kind": &"overflow", "index": focus_id.trim_prefix("overflow_").to_int()}
-	return {}
+func _card_for_location(kind: StringName, index: int) -> InventoryCardButton:
+	match kind:
+		&"equipped":
+			return _equip_cards[index] if index >= 0 and index < _equip_cards.size() else null
+		&"inventory":
+			return _grid_cards[index] if index >= 0 and index < _grid_cards.size() else null
+		&"overflow":
+			return _overflow_cards[index] if index >= 0 and index < _overflow_cards.size() else null
+	return null
 
 
 func _format_affix_effect(affix_id: StringName, value: float) -> String:

@@ -28,6 +28,7 @@ var _visual_unique: bool = false
 var _visual_locked: bool = false
 var _visual_state_badge: String = ""
 var _visual_muted: bool = false
+var _managed_tooltip: bool = false
 var _unique_badge: Label = null
 var _lock_badge: Label = null
 var _state_badge: Label = null
@@ -74,6 +75,15 @@ func configure_item_visual(
 	set_meta("item_icon_muted", muted)
 
 
+func set_managed_tooltip(enabled: bool) -> void:
+	_managed_tooltip = enabled
+	set_meta("managed_tooltip", enabled)
+
+
+func _get_tooltip(_at_position: Vector2) -> String:
+	return "" if _managed_tooltip else tooltip_text
+
+
 func clear_item_visual() -> void:
 	_visual_mode = false
 	_visual_rarity = -2
@@ -111,6 +121,7 @@ func presentation_snapshot() -> Dictionary:
 		"accessibility_name": accessibility_name,
 		"accessibility_description": accessibility_description,
 		"tooltip": tooltip_text,
+		"managed_tooltip": _managed_tooltip,
 		"icon_max_width": get_theme_constant(&"icon_max_width"),
 		"texture_filter": texture_filter,
 		"corner_radii": PackedInt32Array([

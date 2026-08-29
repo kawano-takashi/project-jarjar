@@ -265,22 +265,17 @@ func _test_icon_card_presentation(assertions: Variant, context: Dictionary) -> v
 		return
 	var screen: InventoryScreen = fixture["screen"]
 	var state: RunState = fixture["state"]
-	screen.call("_update_comparison", null)
-	assertions.expect_equal(
-		InventoryScreen.INITIAL_ITEM_DETAILS_TEXT,
-		screen.debug_state()["comparison"],
-		"right details expose the exact initial guidance",
-	)
-	assertions.expect_equal(
-		InventoryScreen.CONTROLS_LEGEND_TEXT,
-		screen.debug_state()["controls_legend"],
-		"right panel exposes the exact two-line shared controls legend",
-	)
-	var placement_warning := screen.get_node("%PlacementWarning") as Label
+	assertions.expect_equal(null, screen.get_node_or_null("%ComparePanel"), "fixed inventory detail panel is removed")
+	assertions.expect_equal(null, screen.get_node_or_null("%ComparisonText"), "fixed inventory comparison label is removed")
+	assertions.expect_equal(null, screen.get_node_or_null("%PlacementWarning"), "fixed inventory warning label is removed")
+	assertions.expect_equal(null, screen.get_node_or_null("%InventoryControlsLegend"), "fixed inventory controls legend is removed")
+	var initial_tooltip: Dictionary = _inventory_tooltip_state(screen)
+	assertions.expect_false(initial_tooltip["visible"], "shared tooltip is hidden before the first real input")
+	assertions.expect_equal(&"none", initial_tooltip["input_mode"], "shared tooltip starts without an input mode")
 	assertions.expect_equal(
 		AccessibilityServer.LIVE_POLITE,
-		placement_warning.accessibility_live,
-		"placement warning uses a polite accessibility live region",
+		initial_tooltip["warning_accessibility_live"],
+		"shared placement warning uses a polite accessibility live region",
 	)
 	var equipped_bow: Dictionary = screen.item_card_presentation("equip_0")
 	assertions.expect_equal(Vector2(96.0, 96.0), equipped_bow["minimum_size"], "equipped card is 96px square")
@@ -291,6 +286,9 @@ func _test_icon_card_presentation(assertions: Variant, context: Dictionary) -> v
 	assertions.expect_equal(CanvasItem.TEXTURE_FILTER_NEAREST, equipped_bow["texture_filter"], "equipped icon uses Nearest filtering")
 	assertions.expect_true("主武器／弓" in str(equipped_bow["tooltip"]), "equipped tooltip contains the item type")
 	assertions.expect_true("装備中 E0" in str(equipped_bow["accessibility_name"]), "equipped accessibility name contains its location")
+	assertions.expect_true(equipped_bow["managed_tooltip"], "registered card suppresses the native tooltip")
+	var equipped_bow_control := screen.focus_control("equip_0") as InventoryCardButton
+	assertions.expect_equal("", equipped_bow_control.get_tooltip(Vector2.ZERO), "managed card does not duplicate the native tooltip")
 
 	var grid_bow: Dictionary = screen.item_card_presentation("grid_0")
 	var grid_staff: Dictionary = screen.item_card_presentation("grid_6")
@@ -340,14 +338,9 @@ func _test_icon_card_presentation(assertions: Variant, context: Dictionary) -> v
 	assertions.expect_true("一時受取 O0" in str(overflow_card["tooltip"]), "temporary tooltip contains its exact location")
 
 	screen.test_focus("grid_33")
-	var details_text: String = str(screen.debug_state()["comparison"])
-	for expected_text: String in ["種類:", "レアリティ:", "名前:", "効果:", "装備比較:", "保管位置:", "状態:"]:
-		assertions.expect_true(expected_text in details_text, "right details contain %s" % expected_text)
-	for removed_text: String in ["配置可否:", "操作:"]:
-		assertions.expect_false(
-			removed_text in details_text,
-			"right details omit repeated %s" % removed_text,
-		)
+	var details_text: String = _inventory_tooltip_details(screen)
+	for expected_text: String in ["種類:", "レアリティ:", "名前:", "効果:", "装備比較:", "保管位置:", "状態:", "配置可否:", "操作:"]:
+		assertions.expect_true(expected_text in details_text, "shared inventory tooltip contains %s" % expected_text)
 
 	screen.test_focus("action_2")
 	screen.test_accept()
@@ -373,7 +366,7 @@ func _test_icon_card_presentation(assertions: Variant, context: Dictionary) -> v
 		assertions.expect_equal(unique_card["icon_path"], candidate["icon_path"], "fusion candidate reuses the inventory icon")
 		assertions.expect_true(candidate["unique_badge"], "fusion candidate keeps the unique star")
 	screen.test_fusion_candidate_focus("qa-inventory-18")
-	var fusion_candidate_details: String = str(fusion_dialog.debug_state()["candidate_details"])
+	var fusion_candidate_details: String = _fusion_tooltip_details(fusion_dialog)
 	for guidance_label: String in ["配置可否:", "操作:"]:
 		assertions.expect_true(
 			guidance_label in fusion_candidate_details,
@@ -419,9 +412,10 @@ func _test_icon_card_presentation(assertions: Variant, context: Dictionary) -> v
 	assertions.expect_equal("", empty_grid["icon_path"], "empty normal slot stays iconless")
 	assertions.expect_true(empty_grid["muted"], "empty normal slot uses the empty presentation")
 	screen.test_focus("equip_0")
-	assertions.expect_true("主武器／木の棒" in str(screen.debug_state()["comparison"]), "empty main weapon details identify the placeholder type")
-	assertions.expect_false("配置可否:" in str(screen.debug_state()["comparison"]), "empty slot right details omit placement availability")
-	assertions.expect_false("操作:" in str(screen.debug_state()["comparison"]), "empty slot right details omit repeated operations")
+	var empty_slot_details: String = _inventory_tooltip_details(screen)
+	assertions.expect_true("主武器／木の棒" in empty_slot_details, "empty main weapon tooltip identifies the placeholder type")
+	assertions.expect_true("配置可否:" in empty_slot_details, "empty slot tooltip retains placement availability")
+	assertions.expect_true("操作:" in empty_slot_details, "empty slot tooltip retains current operations")
 	_cleanup_fixture(fixture, context)
 
 
@@ -623,7 +617,7 @@ func _test_japanese_effect_presentation(
 		)
 
 	screen.test_focus("grid_0")
-	var comparison: String = str(screen.debug_state()["comparison"])
+	var comparison: String = _inventory_tooltip_details(screen)
 	assertions.expect_true("▼ 与ダメージ -5.5%" in comparison, "comparison presents a negative percentage delta")
 	assertions.expect_true("◆ 攻撃速度 0%" in comparison, "comparison presents a zero percentage delta")
 	assertions.expect_true("▲ 最大HP +8" in comparison, "comparison presents a positive absolute delta")
@@ -638,7 +632,7 @@ func _test_japanese_effect_presentation(
 	assertions.expect_true("不明な効果 +2" in unknown_tooltip, "unknown effect uses the Japanese fallback")
 	assertions.expect_false("future_effect" in unknown_tooltip, "unknown effect hides its internal ID")
 	screen.test_focus("grid_1")
-	var unknown_comparison: String = str(screen.debug_state()["comparison"])
+	var unknown_comparison: String = _inventory_tooltip_details(screen)
 	assertions.expect_true("不明な効果 +2" in unknown_comparison, "comparison uses the unknown-effect fallback")
 	assertions.expect_false("future_effect" in unknown_comparison, "comparison hides an unknown internal ID")
 
@@ -650,7 +644,7 @@ func _test_japanese_effect_presentation(
 		"Japanese effect fusion candidate receives focus",
 	)
 	var fusion_dialog: FusionDialog = screen.get_node("%FusionDialog") as FusionDialog
-	var candidate_details: String = str(fusion_dialog.debug_state()["candidate_details"])
+	var candidate_details: String = _fusion_tooltip_details(fusion_dialog)
 	for effect_case: Dictionary in effect_cases:
 		assertions.expect_true(
 			str(effect_case["text"]) in candidate_details,
@@ -740,7 +734,7 @@ func _test_unique_effect_presentation(
 			"%s tooltip hides its internal unique ID" % item.unique_id,
 		)
 		assertions.expect_true(screen.test_focus(focus_id), "%s receives inventory focus" % item.unique_id)
-		var comparison: String = str(screen.debug_state()["comparison"])
+		var comparison: String = _inventory_tooltip_details(screen)
 		assertions.expect_true(
 			effect_block in comparison,
 			"%s right details present its unique effect" % item.unique_id,
@@ -758,7 +752,7 @@ func _test_unique_effect_presentation(
 		"unknown unique tooltip hides its internal ID",
 	)
 	assertions.expect_true(screen.test_focus(unknown_focus_id), "unknown unique receives inventory focus")
-	var unknown_comparison: String = str(screen.debug_state()["comparison"])
+	var unknown_comparison: String = _inventory_tooltip_details(screen)
 	assertions.expect_true(
 		"固有効果:\n★ 不明な固有効果" in unknown_comparison,
 		"unknown unique right details use the Japanese fallback",
@@ -785,7 +779,7 @@ func _test_unique_effect_presentation(
 			screen.test_fusion_candidate_focus(item.item_id),
 			"%s fusion candidate receives focus" % item.unique_id,
 		)
-		var candidate_details: String = str(fusion_dialog.debug_state()["candidate_details"])
+		var candidate_details: String = _fusion_tooltip_details(fusion_dialog)
 		assertions.expect_true(
 			fusion_effect_block in candidate_details,
 			"%s fusion details present its unique effect" % item.unique_id,
@@ -794,7 +788,7 @@ func _test_unique_effect_presentation(
 		screen.test_fusion_candidate_focus(unknown_item.item_id),
 		"unknown unique fusion candidate receives focus",
 	)
-	var unknown_candidate_details: String = str(fusion_dialog.debug_state()["candidate_details"])
+	var unknown_candidate_details: String = _fusion_tooltip_details(fusion_dialog)
 	assertions.expect_true(
 		"固有効果:\n★ 不明な固有効果" in unknown_candidate_details,
 		"unknown unique fusion details use the Japanese fallback",
@@ -812,7 +806,7 @@ func _test_unique_effect_presentation(
 	)
 	screen.test_accept()
 	assertions.expect_true(screen.test_focus("F0"), "first fusion material receives focus")
-	var material_details: String = str(fusion_dialog.debug_state()["candidate_details"])
+	var material_details: String = _fusion_tooltip_details(fusion_dialog)
 	var material_effect_block: String = "固有効果:\n★ %s" % first_definition.effect_description
 	assertions.expect_true(
 		material_effect_block in material_details,
@@ -837,17 +831,17 @@ func _test_controller_mouse_bulk_fusion_and_discard(
 	var controller_state: RunState = controller_fixture["state"]
 	var mouse_state: RunState = mouse_fixture["state"]
 	controller_screen.test_focus("grid_0")
-	assertions.expect_true("比較:" in str(controller_screen.debug_state()["comparison"]), "controller focus updates comparison")
+	assertions.expect_true("比較:" in _inventory_tooltip_details(controller_screen), "controller focus updates the shared tooltip")
 	controller_screen.test_accept()
 	assertions.expect_equal(
 		"",
-		controller_screen.debug_state()["placement_warning"],
+		_inventory_tooltip_warning(controller_screen),
 		"controller lift shows no warning for its valid source slot",
 	)
 	controller_screen.test_focus("grid_6")
 	assertions.expect_equal(
 		"",
-		controller_screen.debug_state()["placement_warning"],
+		_inventory_tooltip_warning(controller_screen),
 		"controller lift shows no warning for a valid storage target",
 	)
 	controller_screen.test_accept()
@@ -861,7 +855,7 @@ func _test_controller_mouse_bulk_fusion_and_discard(
 	mouse_screen.test_mouse_drag_preview(initial_mouse_source, initial_mouse_target)
 	assertions.expect_equal(
 		"",
-		mouse_screen.debug_state()["placement_warning"],
+		_inventory_tooltip_warning(mouse_screen),
 		"mouse drag shows no warning for a valid storage target",
 	)
 	mouse_screen.test_mouse_drop(
@@ -871,7 +865,7 @@ func _test_controller_mouse_bulk_fusion_and_discard(
 	mouse_screen.test_mouse_drag_end()
 	assertions.expect_equal(
 		"",
-		mouse_screen.debug_state()["placement_warning"],
+		_inventory_tooltip_warning(mouse_screen),
 		"mouse drag end clears placement warning state",
 	)
 	assertions.expect_equal(_inventory_ids(controller_state), _inventory_ids(mouse_state), "mouse drag and controller lift produce identical inventory")
@@ -991,7 +985,7 @@ func _test_controller_mouse_bulk_fusion_and_discard(
 	)
 	assertions.expect_equal(
 		main_warning,
-		full_controller_screen.debug_state()["placement_warning"],
+		_inventory_tooltip_warning(full_controller_screen),
 		"controller main-weapon lift warns before same-slot removal",
 	)
 	full_controller_screen.test_accept()
@@ -1000,7 +994,7 @@ func _test_controller_mouse_bulk_fusion_and_discard(
 	assertions.expect_false((full_controller_screen.debug_state()["held_item_source"] as Dictionary).is_empty(), "failed main weapon standalone move remains held until B")
 	assertions.expect_equal(
 		main_warning,
-		full_controller_screen.debug_state()["placement_warning"],
+		_inventory_tooltip_warning(full_controller_screen),
 		"failed controller move keeps its advisory warning",
 	)
 	full_controller_screen.test_focus("action_2")
@@ -1011,7 +1005,7 @@ func _test_controller_mouse_bulk_fusion_and_discard(
 	)
 	assertions.expect_equal(
 		"",
-		full_controller_screen.debug_state()["placement_warning"],
+		_inventory_tooltip_warning(full_controller_screen),
 		"opening a modal clears placement warning",
 	)
 	full_controller_screen.test_cancel()
@@ -1019,7 +1013,7 @@ func _test_controller_mouse_bulk_fusion_and_discard(
 	assertions.expect_true((full_controller_screen.debug_state()["held_item_source"] as Dictionary).is_empty(), "B cancels rejected main weapon lift")
 	assertions.expect_equal(
 		"",
-		full_controller_screen.debug_state()["placement_warning"],
+		_inventory_tooltip_warning(full_controller_screen),
 		"controller cancel clears placement warning",
 	)
 	var full_mouse_main: ItemInstance = full_mouse_state.equipped[GameTypes.EquipmentSlot.MAIN_WEAPON]
@@ -1036,13 +1030,13 @@ func _test_controller_mouse_bulk_fusion_and_discard(
 	full_mouse_screen.test_mouse_drag_preview(mouse_main_source, mouse_main_target)
 	assertions.expect_equal(
 		main_warning,
-		full_mouse_screen.debug_state()["placement_warning"],
+		_inventory_tooltip_warning(full_mouse_screen),
 		"mouse main-weapon drag shows the same advisory warning",
 	)
 	full_mouse_screen.test_mouse_drag_end()
 	assertions.expect_equal(
 		"",
-		full_mouse_screen.debug_state()["placement_warning"],
+		_inventory_tooltip_warning(full_mouse_screen),
 		"mouse drag end clears an active invalid warning",
 	)
 	full_mouse_screen.test_mouse_drag_preview(mouse_main_source, mouse_main_target)
@@ -1303,8 +1297,8 @@ func _test_fusion_dialog_exact_controller(
 	var unique_candidate_id: String = rare_dialog.focus_id_for_candidate("qa-inventory-33")
 	assertions.expect_false(unique_candidate_id.is_empty(), "unlocked unique remains manually selectable")
 	rare_screen.test_fusion_candidate_focus("qa-inventory-33")
-	assertions.expect_true("通常枠 G5,3" in str(rare_dialog.debug_state()["candidate_details"]), "candidate details show exact storage location")
-	assertions.expect_true("固有効果が失われます" in str(rare_dialog.debug_state()["candidate_details"]), "unique candidate details show loss warning")
+	assertions.expect_true("通常枠 G5,3" in _fusion_tooltip_details(rare_dialog), "candidate tooltip shows exact storage location")
+	assertions.expect_true("固有効果が失われます" in _fusion_tooltip_details(rare_dialog), "unique candidate tooltip shows loss warning")
 	var unique_candidate: BaseButton = rare_dialog.focus_control(unique_candidate_id) as BaseButton
 	var unique_candidate_position: Vector2 = unique_candidate.position
 	for index: int in [18, 19, 33]:
@@ -1921,6 +1915,26 @@ func _fusion_selection_signature(screen: InventoryScreen) -> Dictionary:
 		"use_wild": debug["fusion_use_wild"],
 		"valid": debug["fusion_valid"],
 	}
+
+
+func _inventory_tooltip_state(screen: InventoryScreen) -> Dictionary:
+	return screen.debug_state()["tooltip"] as Dictionary
+
+
+func _inventory_tooltip_details(screen: InventoryScreen) -> String:
+	return str(_inventory_tooltip_state(screen)["details"])
+
+
+func _inventory_tooltip_warning(screen: InventoryScreen) -> String:
+	return str(_inventory_tooltip_state(screen)["warning"])
+
+
+func _fusion_tooltip_state(dialog: FusionDialog) -> Dictionary:
+	return dialog.debug_state()["tooltip"] as Dictionary
+
+
+func _fusion_tooltip_details(dialog: FusionDialog) -> String:
+	return str(_fusion_tooltip_state(dialog)["details"])
 
 
 func _replay_fusion_rarity_input(screen: InventoryScreen, action: StringName) -> void:

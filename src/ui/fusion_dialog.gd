@@ -28,7 +28,6 @@ signal pointer_event
 @onready var _candidate_empty: Label = %FusionCandidateEmpty
 @onready var _candidate_scroll: ScrollContainer = %FusionCandidateScroll
 @onready var _candidate_grid: GridContainer = %FusionCandidateGrid
-@onready var _candidate_details: Label = %FusionCandidateDetails
 @onready var _auto_fill: Button = %FusionAutoFill
 @onready var _wild_toggle: Button = %FusionWildToggle
 @onready var _confirm: Button = %FusionConfirm
@@ -36,6 +35,7 @@ signal pointer_event
 @onready var _preview: Label = %FusionPreview
 @onready var _status: Label = %FusionStatus
 @onready var _remove_zone: InventoryDropZone = %MaterialRemoveZone
+@onready var _item_tooltip: Variant = %InventoryItemTooltip
 
 var _origin_focus_id: String = "action_2"
 var _focus_controller := FocusController.new()
@@ -55,8 +55,6 @@ func _ready() -> void:
 		slot.pressed.connect(_on_material_pressed.bind(index))
 		slot.pointer_event.connect(_on_pointer_event)
 		slot.drop_received.connect(_on_material_item_dropped.bind(index))
-		slot.focus_entered.connect(_on_material_focused.bind(index))
-		slot.mouse_entered.connect(_show_material_details.bind(index))
 		var empty_details: String = "合成材料枠%d\n空き\n配置可否: 対象レアリティの装備をドロップ可能\n操作: 候補で A／Enter、または装備をドロップして配置" % (index + 1)
 		slot.configure_item_visual(
 			null,
@@ -68,6 +66,7 @@ func _ready() -> void:
 			"合成材料枠%d、空き、対象レアリティの装備を配置可能" % (index + 1),
 			empty_details,
 		)
+		_item_tooltip.bind_target(slot, _material_tooltip_payload.bind(index))
 	_auto_fill.set_meta("focus_id", "FA0")
 	_wild_toggle.set_meta("focus_id", "FA1")
 	_confirm.set_meta("focus_id", "FA2")
@@ -97,10 +96,12 @@ func _ready() -> void:
 func open_dialog(p_origin_focus_id: String = "action_2") -> void:
 	_origin_focus_id = p_origin_focus_id
 	visible = true
+	_item_tooltip.begin_session()
 	set_process_input(true)
 
 
 func close_without_signal() -> void:
+	_item_tooltip.end_session()
 	visible = false
 	set_process_input(false)
 	set_process_unhandled_input(false)
@@ -137,6 +138,10 @@ func status_control() -> Label:
 	return _status
 
 
+func hide_tooltip(reset_input_mode: bool = false) -> void:
+	_item_tooltip.hide_tooltip(reset_input_mode)
+
+
 func focus_initial_deferred() -> void:
 	_focus_controller.focus_initial_deferred()
 
@@ -153,10 +158,12 @@ func focus_id_for_candidate(item_id: String) -> String:
 
 
 func test_focus(focus_id: String) -> bool:
+	_item_tooltip.activate_focus_input()
 	return _focus_controller.grab_focus_id(focus_id)
 
 
 func test_direction(direction: StringName) -> bool:
+	_item_tooltip.activate_focus_input()
 	return _focus_controller.move(get_viewport(), direction)
 
 
@@ -237,7 +244,7 @@ func update_view(
 	_configure_focus_graph()
 	if not previous_focus_id.is_empty():
 		_focus_controller.grab_focus_id(previous_focus_id)
-	_refresh_focused_details()
+	_item_tooltip.refresh_active()
 
 
 func debug_state() -> Dictionary:
@@ -252,13 +259,22 @@ func debug_state() -> Dictionary:
 		"candidate_count": _candidate_cards.size(),
 		"candidate_columns": CANDIDATE_COLUMNS,
 		"candidate_item_ids": _candidate_item_ids.duplicate(),
-		"candidate_details": _candidate_details.text,
+		"tooltip": _item_tooltip.debug_snapshot(),
 		"candidate_scroll": _candidate_scroll.scroll_vertical,
 		"material_presentations": _presentation_snapshots(_material_slots),
 		"candidate_presentations": _presentation_snapshots(_candidate_cards),
 		"focus_ids": focus_ids(),
 		"focus_order": focus_order(),
 	}
+
+
+func _notification(what: int) -> void:
+	if not is_node_ready():
+		return
+	if what == NOTIFICATION_DRAG_BEGIN:
+		_item_tooltip.refresh_active.call_deferred()
+	elif what == NOTIFICATION_DRAG_END:
+		_item_tooltip.hide_tooltip(false)
 
 
 func _input(event: InputEvent) -> void:
@@ -333,14 +349,12 @@ func _sync_candidates(candidate_entries: Array[Dictionary]) -> void:
 			&"",
 		)
 	_candidate_empty.visible = _candidate_cards.is_empty()
-	if _candidate_cards.is_empty():
-		_candidate_details.text = "このレアリティで合成可能な候補はありません。"
-	elif not _focused_candidate_is_valid() and not _focused_material_is_valid():
-		_candidate_details.text = "候補へフォーカスまたはポインターを合わせると詳細を表示します。"
 
 
 func _rebuild_candidate_cards(candidate_entries: Array[Dictionary]) -> void:
 	for child: Node in _candidate_grid.get_children():
+		if child is InventoryCardButton:
+			_item_tooltip.unbind_target(child as InventoryCardButton)
 		_candidate_grid.remove_child(child)
 		child.queue_free()
 	_candidate_cards.clear()
@@ -355,9 +369,9 @@ func _rebuild_candidate_cards(candidate_entries: Array[Dictionary]) -> void:
 		card.set_meta("focus_id", "FC%d" % index)
 		card.pressed.connect(_on_candidate_pressed.bind(item_id))
 		card.pointer_event.connect(_on_pointer_event)
-		card.focus_entered.connect(_on_candidate_focused.bind(item_id, card))
-		card.mouse_entered.connect(_show_candidate_details.bind(item_id))
+		card.focus_entered.connect(_on_candidate_focused.bind(card))
 		_candidate_grid.add_child(card)
+		_item_tooltip.bind_target(card, _candidate_tooltip_payload.bind(item_id))
 		UiPolishScript.install_focus_frame(card)
 		_candidate_cards.append(card)
 
@@ -479,45 +493,39 @@ func _graph_entry(top: String, bottom: String, left: String, right: String) -> D
 	}
 
 
-func _focused_candidate_is_valid() -> bool:
-	return _focus_controller.current_focus_id(get_viewport()).begins_with("FC")
-
-
-func _focused_material_is_valid() -> bool:
-	var focus_id: String = _focus_controller.current_focus_id(get_viewport())
-	return focus_id.begins_with("F") and focus_id.length() == 2
-
-
-func _show_candidate_details(item_id: String) -> void:
+func _candidate_tooltip_payload(item_id: String) -> Dictionary:
 	var index: int = _candidate_item_ids.find(item_id)
 	if index < 0 or index >= _candidate_entries.size():
-		return
-	_candidate_details.text = str(_candidate_entries[index].get("details", ""))
+		return {}
+	return {
+		"details": str(_candidate_entries[index].get("details", "")),
+		"warning": "",
+		"urgent": false,
+	}
 
 
-func _show_material_details(slot_index: int) -> void:
+func _material_tooltip_payload(slot_index: int) -> Dictionary:
 	if slot_index < 0 or slot_index >= _material_entries.size():
-		return
-	_candidate_details.text = str(_material_entries[slot_index].get("details", ""))
+		return {}
+	return {
+		"details": str(_material_entries[slot_index].get("details", "")),
+		"warning": "",
+		"urgent": _item_drag_is_active(),
+	}
 
 
-func _refresh_focused_details() -> void:
-	var focus_id: String = _focus_controller.current_focus_id(get_viewport())
-	if focus_id.begins_with("FC"):
-		var candidate_index: int = focus_id.trim_prefix("FC").to_int()
-		if candidate_index >= 0 and candidate_index < _candidate_item_ids.size():
-			_show_candidate_details(_candidate_item_ids[candidate_index])
-	elif focus_id.begins_with("F") and focus_id.length() == 2:
-		_show_material_details(focus_id.trim_prefix("F").to_int())
+func _item_drag_is_active() -> bool:
+	var viewport: Viewport = get_viewport()
+	if viewport == null or not viewport.gui_is_dragging():
+		return false
+	var drag_data: Variant = viewport.gui_get_drag_data()
+	if not drag_data is Dictionary:
+		return false
+	return StringName((drag_data as Dictionary).get("drag_type", &"")) == &"item"
 
 
-func _on_candidate_focused(item_id: String, card: Control) -> void:
-	_show_candidate_details(item_id)
+func _on_candidate_focused(card: Control) -> void:
 	_ensure_candidate_visible.bind(card).call_deferred()
-
-
-func _on_material_focused(slot_index: int) -> void:
-	_show_material_details(slot_index)
 
 
 func _ensure_candidate_visible(card: Control) -> void:

@@ -81,7 +81,7 @@ func _test_ui_polish_contract(assertions: Variant, context: Dictionary) -> void:
 		await _assert_screen_contract(
 			assertions,
 			inventory,
-			"INVENTORY_FOUR_EFFECT_COMPARISON",
+			"INVENTORY_FOUR_EFFECT_TOOLTIP",
 			tree,
 		)
 		inventory.test_focus("equip_2")
@@ -90,20 +90,13 @@ func _test_ui_polish_contract(assertions: Variant, context: Dictionary) -> void:
 		await tree.process_frame
 		assertions.expect_equal(
 			InventoryScreen.PLACEMENT_WARNING_PREFIX + "交換先の装備種別が一致しません",
-			inventory.debug_state()["placement_warning"],
-			"inventory UI polish exposes an invalid exchange warning",
+			(inventory.debug_state()["tooltip"] as Dictionary)["warning"],
+			"inventory UI polish exposes an invalid exchange warning in the tooltip",
 		)
-		inventory.call(
-			"_set_placement_warning",
-			InventoryScreen.PLACEMENT_WARNING_PREFIX
-			+ InventoryService.MAIN_WEAPON_REQUIRED_MESSAGE
-			+ "　交換先の装備種別が一致しません",
-		)
-		await tree.process_frame
 		await _assert_screen_contract(
 			assertions,
 			inventory,
-			"INVENTORY_FOUR_EFFECT_MULTILINE_WARNING",
+			"INVENTORY_FOUR_EFFECT_INVALID_TOOLTIP",
 			tree,
 		)
 		inventory.test_cancel()
@@ -458,6 +451,10 @@ func _find_content_overlaps(root: Control) -> PackedStringArray:
 			var second: Control = content_controls[second_index]
 			if first.is_ancestor_of(second) or second.is_ancestor_of(first):
 				continue
+			var first_tooltip_layer: InventoryItemTooltip = _tooltip_layer(first)
+			var second_tooltip_layer: InventoryItemTooltip = _tooltip_layer(second)
+			if (first_tooltip_layer == null) != (second_tooltip_layer == null):
+				continue
 			var first_visible_rect: Rect2 = _visible_content_rect(first)
 			var second_visible_rect: Rect2 = _visible_content_rect(second)
 			if first_visible_rect.has_area() == false or second_visible_rect.has_area() == false:
@@ -475,6 +472,15 @@ func _find_content_overlaps(root: Control) -> PackedStringArray:
 					]
 				)
 	return overlaps
+
+
+func _tooltip_layer(control: Control) -> InventoryItemTooltip:
+	var current: Node = control
+	while current != null:
+		if current is InventoryItemTooltip:
+			return current as InventoryItemTooltip
+		current = current.get_parent()
+	return null
 
 
 func _visible_content_rect(control: Control) -> Rect2:
