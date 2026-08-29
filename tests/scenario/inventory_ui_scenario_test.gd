@@ -265,6 +265,23 @@ func _test_icon_card_presentation(assertions: Variant, context: Dictionary) -> v
 		return
 	var screen: InventoryScreen = fixture["screen"]
 	var state: RunState = fixture["state"]
+	screen.call("_update_comparison", null)
+	assertions.expect_equal(
+		InventoryScreen.INITIAL_ITEM_DETAILS_TEXT,
+		screen.debug_state()["comparison"],
+		"right details expose the exact initial guidance",
+	)
+	assertions.expect_equal(
+		InventoryScreen.CONTROLS_LEGEND_TEXT,
+		screen.debug_state()["controls_legend"],
+		"right panel exposes the exact two-line shared controls legend",
+	)
+	var placement_warning := screen.get_node("%PlacementWarning") as Label
+	assertions.expect_equal(
+		AccessibilityServer.LIVE_POLITE,
+		placement_warning.accessibility_live,
+		"placement warning uses a polite accessibility live region",
+	)
 	var equipped_bow: Dictionary = screen.item_card_presentation("equip_0")
 	assertions.expect_equal(Vector2(96.0, 96.0), equipped_bow["minimum_size"], "equipped card is 96px square")
 	assertions.expect_equal("res://assets/ui/inventory_icons/weapon_bow.png", equipped_bow["icon_path"], "equipped bow uses the bow icon")
@@ -298,6 +315,15 @@ func _test_icon_card_presentation(assertions: Variant, context: Dictionary) -> v
 	assertions.expect_true(unique_card["unique_badge"], "unique item shows a top-left star")
 	assertions.expect_true("名前:" in str(unique_card["tooltip"]), "unique tooltip includes its name")
 	assertions.expect_true("A／Enter" in str(unique_card["accessibility_description"]), "unique accessibility description includes current operations")
+	for guidance_label: String in ["配置可否:", "操作:"]:
+		assertions.expect_true(
+			guidance_label in str(unique_card["tooltip"]),
+			"item tooltip retains %s" % guidance_label,
+		)
+		assertions.expect_true(
+			guidance_label in str(unique_card["accessibility_description"]),
+			"item accessibility description retains %s" % guidance_label,
+		)
 	var unique_drag: Dictionary = unique_card["drag_preview"] as Dictionary
 	assertions.expect_equal(unique_card["icon_path"], unique_drag["icon_path"], "drag preview keeps the same icon")
 	assertions.expect_equal(unique_card["icon_color"], unique_drag["icon_color"], "drag preview keeps the same rarity color")
@@ -315,8 +341,13 @@ func _test_icon_card_presentation(assertions: Variant, context: Dictionary) -> v
 
 	screen.test_focus("grid_33")
 	var details_text: String = str(screen.debug_state()["comparison"])
-	for expected_text: String in ["種類:", "レアリティ:", "名前:", "効果:", "装備比較:", "保管位置:", "状態:", "配置可否:", "操作:"]:
+	for expected_text: String in ["種類:", "レアリティ:", "名前:", "効果:", "装備比較:", "保管位置:", "状態:"]:
 		assertions.expect_true(expected_text in details_text, "right details contain %s" % expected_text)
+	for removed_text: String in ["配置可否:", "操作:"]:
+		assertions.expect_false(
+			removed_text in details_text,
+			"right details omit repeated %s" % removed_text,
+		)
 
 	screen.test_focus("action_2")
 	screen.test_accept()
@@ -342,6 +373,12 @@ func _test_icon_card_presentation(assertions: Variant, context: Dictionary) -> v
 		assertions.expect_equal(unique_card["icon_path"], candidate["icon_path"], "fusion candidate reuses the inventory icon")
 		assertions.expect_true(candidate["unique_badge"], "fusion candidate keeps the unique star")
 	screen.test_fusion_candidate_focus("qa-inventory-18")
+	var fusion_candidate_details: String = str(fusion_dialog.debug_state()["candidate_details"])
+	for guidance_label: String in ["配置可否:", "操作:"]:
+		assertions.expect_true(
+			guidance_label in fusion_candidate_details,
+			"fusion candidate details retain %s" % guidance_label,
+		)
 	screen.test_accept()
 	fusion_debug = fusion_dialog.debug_state()
 	var material_presentations: Array = fusion_debug["material_presentations"] as Array
@@ -373,12 +410,18 @@ func _test_icon_card_presentation(assertions: Variant, context: Dictionary) -> v
 	assertions.expect_equal("res://assets/ui/inventory_icons/weapon_stick.png", empty_main["icon_path"], "empty main weapon shows the wood-stick icon")
 	assertions.expect_true(empty_main["muted"], "empty main weapon icon is muted")
 	assertions.expect_true("空き" in str(empty_main["accessibility_name"]), "empty equipped slot has a complete accessibility name")
+	for guidance_label: String in ["配置可否:", "操作:"]:
+		assertions.expect_true(
+			guidance_label in str(empty_main["accessibility_description"]),
+			"empty slot accessibility description retains %s" % guidance_label,
+		)
 	var empty_grid: Dictionary = screen.item_card_presentation("grid_5")
 	assertions.expect_equal("", empty_grid["icon_path"], "empty normal slot stays iconless")
 	assertions.expect_true(empty_grid["muted"], "empty normal slot uses the empty presentation")
 	screen.test_focus("equip_0")
 	assertions.expect_true("主武器／木の棒" in str(screen.debug_state()["comparison"]), "empty main weapon details identify the placeholder type")
-	assertions.expect_true("配置可否:" in str(screen.debug_state()["comparison"]), "empty slot details show placement availability")
+	assertions.expect_false("配置可否:" in str(screen.debug_state()["comparison"]), "empty slot right details omit placement availability")
+	assertions.expect_false("操作:" in str(screen.debug_state()["comparison"]), "empty slot right details omit repeated operations")
 	_cleanup_fixture(fixture, context)
 
 
@@ -796,11 +839,40 @@ func _test_controller_mouse_bulk_fusion_and_discard(
 	controller_screen.test_focus("grid_0")
 	assertions.expect_true("比較:" in str(controller_screen.debug_state()["comparison"]), "controller focus updates comparison")
 	controller_screen.test_accept()
+	assertions.expect_equal(
+		"",
+		controller_screen.debug_state()["placement_warning"],
+		"controller lift shows no warning for its valid source slot",
+	)
 	controller_screen.test_focus("grid_6")
+	assertions.expect_equal(
+		"",
+		controller_screen.debug_state()["placement_warning"],
+		"controller lift shows no warning for a valid storage target",
+	)
 	controller_screen.test_accept()
+	var initial_mouse_source: Dictionary = {
+		"drag_type": &"item",
+		"kind": &"inventory",
+		"index": 0,
+		"item_id": "qa-inventory-00",
+	}
+	var initial_mouse_target: Dictionary = {"kind": &"inventory", "index": 6}
+	mouse_screen.test_mouse_drag_preview(initial_mouse_source, initial_mouse_target)
+	assertions.expect_equal(
+		"",
+		mouse_screen.debug_state()["placement_warning"],
+		"mouse drag shows no warning for a valid storage target",
+	)
 	mouse_screen.test_mouse_drop(
-		{"drag_type": &"item", "kind": &"inventory", "index": 0, "item_id": "qa-inventory-00"},
-		{"kind": &"inventory", "index": 6},
+		initial_mouse_source,
+		initial_mouse_target,
+	)
+	mouse_screen.test_mouse_drag_end()
+	assertions.expect_equal(
+		"",
+		mouse_screen.debug_state()["placement_warning"],
+		"mouse drag end clears placement warning state",
 	)
 	assertions.expect_equal(_inventory_ids(controller_state), _inventory_ids(mouse_state), "mouse drag and controller lift produce identical inventory")
 	assertions.expect_equal(
@@ -913,12 +985,78 @@ func _test_controller_mouse_bulk_fusion_and_discard(
 	var full_controller_main_id: String = full_controller_state.equipped[GameTypes.EquipmentSlot.MAIN_WEAPON].item_id
 	full_controller_screen.test_focus("equip_0")
 	full_controller_screen.test_accept()
+	var main_warning: String = (
+		InventoryScreen.PLACEMENT_WARNING_PREFIX
+		+ InventoryService.MAIN_WEAPON_REQUIRED_MESSAGE
+	)
+	assertions.expect_equal(
+		main_warning,
+		full_controller_screen.debug_state()["placement_warning"],
+		"controller main-weapon lift warns before same-slot removal",
+	)
 	full_controller_screen.test_accept()
 	assertions.expect_equal(full_controller_main_id, full_controller_state.equipped[GameTypes.EquipmentSlot.MAIN_WEAPON].item_id, "same E main weapon standalone unequip is rejected")
 	assertions.expect_equal(InventoryService.MAIN_WEAPON_REQUIRED_MESSAGE, full_controller_screen.debug_state()["status"], "main weapon standalone rejection displays fixed message")
 	assertions.expect_false((full_controller_screen.debug_state()["held_item_source"] as Dictionary).is_empty(), "failed main weapon standalone move remains held until B")
+	assertions.expect_equal(
+		main_warning,
+		full_controller_screen.debug_state()["placement_warning"],
+		"failed controller move keeps its advisory warning",
+	)
+	full_controller_screen.test_focus("action_2")
+	full_controller_screen.test_accept()
+	assertions.expect_true(
+		full_controller_screen.debug_state()["fusion_open"],
+		"controller can open a modal while an item remains held",
+	)
+	assertions.expect_equal(
+		"",
+		full_controller_screen.debug_state()["placement_warning"],
+		"opening a modal clears placement warning",
+	)
+	full_controller_screen.test_cancel()
 	full_controller_screen.test_cancel()
 	assertions.expect_true((full_controller_screen.debug_state()["held_item_source"] as Dictionary).is_empty(), "B cancels rejected main weapon lift")
+	assertions.expect_equal(
+		"",
+		full_controller_screen.debug_state()["placement_warning"],
+		"controller cancel clears placement warning",
+	)
+	var full_mouse_main: ItemInstance = full_mouse_state.equipped[GameTypes.EquipmentSlot.MAIN_WEAPON]
+	var mouse_main_source: Dictionary = {
+		"drag_type": &"item",
+		"kind": &"equipped",
+		"index": GameTypes.EquipmentSlot.MAIN_WEAPON,
+		"item_id": full_mouse_main.item_id,
+	}
+	var mouse_main_target: Dictionary = {
+		"kind": &"equipped",
+		"index": GameTypes.EquipmentSlot.MAIN_WEAPON,
+	}
+	full_mouse_screen.test_mouse_drag_preview(mouse_main_source, mouse_main_target)
+	assertions.expect_equal(
+		main_warning,
+		full_mouse_screen.debug_state()["placement_warning"],
+		"mouse main-weapon drag shows the same advisory warning",
+	)
+	full_mouse_screen.test_mouse_drag_end()
+	assertions.expect_equal(
+		"",
+		full_mouse_screen.debug_state()["placement_warning"],
+		"mouse drag end clears an active invalid warning",
+	)
+	full_mouse_screen.test_mouse_drag_preview(mouse_main_source, mouse_main_target)
+	full_mouse_screen.test_mouse_drop(mouse_main_source, mouse_main_target)
+	assertions.expect_equal(
+		InventoryService.MAIN_WEAPON_REQUIRED_MESSAGE,
+		full_mouse_screen.debug_state()["status"],
+		"mouse invalid drop still reaches the existing command error",
+	)
+	assertions.expect_equal(
+		full_mouse_main.item_id,
+		full_mouse_state.equipped[GameTypes.EquipmentSlot.MAIN_WEAPON].item_id,
+		"mouse advisory does not mutate or block the main weapon",
+	)
 	assertions.expect_equal(0, full_controller_screen.debug_state()["pointer_event_count"], "full inventory controller unequip remains pointer-free")
 	assertions.expect_true(int(full_mouse_screen.debug_state()["pointer_event_count"]) > 0, "full inventory mouse unequip records pointer activity")
 	_cleanup_fixture(full_mouse_fixture, context)

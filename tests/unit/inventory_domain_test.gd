@@ -24,6 +24,7 @@ var _catalog: DefinitionCatalog = null
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
 		"inventory_capacity_order_and_refill_contract",
+		"inventory_move_validation_contract",
 		"inventory_rarity_sort_stability_and_isolation_contract",
 		"equipment_move_and_unique_side_effect_contract",
 		"lock_compare_select_and_discard_contract",
@@ -39,6 +40,8 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 	match test_name:
 		"inventory_capacity_order_and_refill_contract":
 			_test_inventory_capacity_order_and_refill(assertions)
+		"inventory_move_validation_contract":
+			_test_inventory_move_validation(assertions)
 		"inventory_rarity_sort_stability_and_isolation_contract":
 			_test_inventory_rarity_sort_stability_and_isolation(assertions)
 		"equipment_move_and_unique_side_effect_contract":
@@ -124,6 +127,229 @@ func _test_inventory_capacity_order_and_refill(assertions: Variant) -> void:
 	assertions.expect_false(bool(reorder["success"]), "manual overflow-to-overflow reorder rejected")
 	assertions.expect_equal(&"overflow_reorder", reorder["error"], "overflow reorder error is stable")
 	assertions.expect_equal(overflow_before, _item_ids(state.overflow), "rejected reorder is state invariant")
+
+
+func _test_inventory_move_validation(assertions: Variant) -> void:
+	var catalog: DefinitionCatalog = _loaded_catalog(assertions)
+	if catalog == null:
+		return
+	_assert_move_validation(
+		assertions,
+		null,
+		InventoryServiceScript.KIND_INVENTORY,
+		0,
+		InventoryServiceScript.KIND_INVENTORY,
+		1,
+		false,
+		&"invalid_state",
+		"インベントリ状態が不正です",
+		"null state",
+	)
+
+	var invalid_source: RunState = _new_state(520, catalog)
+	_assert_move_validation(
+		assertions,
+		invalid_source,
+		InventoryServiceScript.KIND_INVENTORY,
+		0,
+		InventoryServiceScript.KIND_INVENTORY,
+		1,
+		false,
+		&"invalid_source",
+		"移動元が不正です",
+		"empty inventory source",
+	)
+
+	var invalid_target: RunState = _new_state(521, catalog)
+	invalid_target.inventory[0] = _item(
+		"validation-source",
+		GameTypes.EquipmentSlot.HEAD,
+		GameTypes.Rarity.COMMON,
+	)
+	_assert_move_validation(
+		assertions,
+		invalid_target,
+		InventoryServiceScript.KIND_INVENTORY,
+		0,
+		InventoryServiceScript.KIND_INVENTORY,
+		RunState.INVENTORY_CAPACITY,
+		false,
+		&"invalid_target",
+		"移動先が不正です",
+		"out-of-range target",
+	)
+
+	var main_same: RunState = _new_state(522, catalog)
+	_assert_move_validation(
+		assertions,
+		main_same,
+		InventoryServiceScript.KIND_EQUIPPED,
+		GameTypes.EquipmentSlot.MAIN_WEAPON,
+		InventoryServiceScript.KIND_EQUIPPED,
+		GameTypes.EquipmentSlot.MAIN_WEAPON,
+		false,
+		&"main_weapon_required",
+		InventoryServiceScript.MAIN_WEAPON_REQUIRED_MESSAGE,
+		"main weapon same-slot unequip",
+	)
+
+	var main_to_empty: RunState = _new_state(523, catalog)
+	_assert_move_validation(
+		assertions,
+		main_to_empty,
+		InventoryServiceScript.KIND_EQUIPPED,
+		GameTypes.EquipmentSlot.MAIN_WEAPON,
+		InventoryServiceScript.KIND_INVENTORY,
+		0,
+		false,
+		&"main_weapon_required",
+		InventoryServiceScript.MAIN_WEAPON_REQUIRED_MESSAGE,
+		"main weapon to empty storage",
+	)
+
+	var equipped_to_equipped: RunState = _new_state(524, catalog)
+	equipped_to_equipped.equipped[GameTypes.EquipmentSlot.HEAD] = _item(
+		"validation-equipped-head",
+		GameTypes.EquipmentSlot.HEAD,
+		GameTypes.Rarity.COMMON,
+	)
+	_assert_move_validation(
+		assertions,
+		equipped_to_equipped,
+		InventoryServiceScript.KIND_EQUIPPED,
+		GameTypes.EquipmentSlot.HEAD,
+		InventoryServiceScript.KIND_EQUIPPED,
+		GameTypes.EquipmentSlot.BODY,
+		false,
+		&"incompatible_slot",
+		"別の装備枠へは移動できません",
+		"different equipment slots",
+	)
+
+	var wrong_equipment_slot: RunState = _new_state(525, catalog)
+	wrong_equipment_slot.inventory[0] = _item(
+		"validation-storage-head",
+		GameTypes.EquipmentSlot.HEAD,
+		GameTypes.Rarity.COMMON,
+	)
+	_assert_move_validation(
+		assertions,
+		wrong_equipment_slot,
+		InventoryServiceScript.KIND_INVENTORY,
+		0,
+		InventoryServiceScript.KIND_EQUIPPED,
+		GameTypes.EquipmentSlot.BODY,
+		false,
+		&"incompatible_slot",
+		"対応する装備枠へだけ装備できます",
+		"storage item to wrong equipment slot",
+	)
+
+	var wrong_exchange_item: RunState = _new_state(526, catalog)
+	wrong_exchange_item.equipped[GameTypes.EquipmentSlot.HEAD] = _item(
+		"validation-head-source",
+		GameTypes.EquipmentSlot.HEAD,
+		GameTypes.Rarity.COMMON,
+	)
+	wrong_exchange_item.inventory[0] = _item(
+		"validation-body-target",
+		GameTypes.EquipmentSlot.BODY,
+		GameTypes.Rarity.COMMON,
+	)
+	_assert_move_validation(
+		assertions,
+		wrong_exchange_item,
+		InventoryServiceScript.KIND_EQUIPPED,
+		GameTypes.EquipmentSlot.HEAD,
+		InventoryServiceScript.KIND_INVENTORY,
+		0,
+		false,
+		&"incompatible_slot",
+		"交換先の装備種別が一致しません",
+		"equipped item to incompatible exchange item",
+	)
+
+	var overflow_reorder: RunState = _new_state(527, catalog)
+	overflow_reorder.overflow.append(_item(
+		"validation-overflow-a",
+		GameTypes.EquipmentSlot.HANDS,
+		GameTypes.Rarity.COMMON,
+	))
+	overflow_reorder.overflow.append(_item(
+		"validation-overflow-b",
+		GameTypes.EquipmentSlot.FEET,
+		GameTypes.Rarity.COMMON,
+	))
+	_assert_move_validation(
+		assertions,
+		overflow_reorder,
+		InventoryServiceScript.KIND_OVERFLOW,
+		0,
+		InventoryServiceScript.KIND_OVERFLOW,
+		1,
+		false,
+		&"overflow_reorder",
+		"一時受取欄内では並べ替えできません",
+		"overflow reorder",
+	)
+
+	var compatible_equip: RunState = _new_state(528, catalog)
+	compatible_equip.inventory[0] = _item(
+		"validation-compatible-head",
+		GameTypes.EquipmentSlot.HEAD,
+		GameTypes.Rarity.COMMON,
+	)
+	_assert_move_validation(
+		assertions,
+		compatible_equip,
+		InventoryServiceScript.KIND_INVENTORY,
+		0,
+		InventoryServiceScript.KIND_EQUIPPED,
+		GameTypes.EquipmentSlot.HEAD,
+		true,
+		&"",
+		"",
+		"compatible equipment placement",
+	)
+
+	var compatible_unequip: RunState = _new_state(529, catalog)
+	compatible_unequip.equipped[GameTypes.EquipmentSlot.HEAD] = _item(
+		"validation-unequip-head",
+		GameTypes.EquipmentSlot.HEAD,
+		GameTypes.Rarity.COMMON,
+	)
+	_assert_move_validation(
+		assertions,
+		compatible_unequip,
+		InventoryServiceScript.KIND_EQUIPPED,
+		GameTypes.EquipmentSlot.HEAD,
+		InventoryServiceScript.KIND_EQUIPPED,
+		GameTypes.EquipmentSlot.HEAD,
+		true,
+		&"",
+		"",
+		"non-main same-slot unequip",
+	)
+
+	var compatible_main_exchange: RunState = _new_state(530, catalog)
+	compatible_main_exchange.inventory[0] = _item(
+		"validation-main-exchange",
+		GameTypes.EquipmentSlot.MAIN_WEAPON,
+		GameTypes.Rarity.COMMON,
+		GameTypes.MainWeaponType.BOW,
+	)
+	_assert_move_validation(
+		assertions,
+		compatible_main_exchange,
+		InventoryServiceScript.KIND_EQUIPPED,
+		GameTypes.EquipmentSlot.MAIN_WEAPON,
+		InventoryServiceScript.KIND_INVENTORY,
+		0,
+		true,
+		&"",
+		"",
+		"main weapon exchange",
+	)
 
 
 func _test_inventory_rarity_sort_stability_and_isolation(assertions: Variant) -> void:
@@ -1150,6 +1376,73 @@ func _skill_reward(
 	reward.skill_id = skill_id
 	reward.revealed = true
 	return reward
+
+
+func _assert_move_validation(
+	assertions: Variant,
+	state: RunState,
+	source_kind: StringName,
+	source_index: int,
+	target_kind: StringName,
+	target_index: int,
+	expected_success: bool,
+	expected_error: StringName,
+	expected_message: String,
+	label: String,
+) -> void:
+	var before: Dictionary = _move_validation_snapshot(state)
+	var validation: Dictionary = InventoryServiceScript.validate_move(
+		state,
+		source_kind,
+		source_index,
+		target_kind,
+		target_index,
+	)
+	assertions.expect_equal(3, validation.size(), "%s validation exposes exactly three keys" % label)
+	assertions.expect_equal(expected_success, bool(validation["success"]), "%s validation success" % label)
+	assertions.expect_equal(expected_error, validation["error"], "%s validation error" % label)
+	assertions.expect_equal(expected_message, validation["message"], "%s validation message" % label)
+	assertions.expect_equal(
+		before,
+		_move_validation_snapshot(state),
+		"%s validation is state invariant" % label,
+	)
+
+	var applied: Dictionary = InventoryServiceScript.apply_move(
+		state,
+		source_kind,
+		source_index,
+		target_kind,
+		target_index,
+	)
+	assertions.expect_equal(expected_success, bool(applied["success"]), "%s apply success parity" % label)
+	assertions.expect_equal(expected_error, applied["error"], "%s apply error parity" % label)
+	assertions.expect_equal(expected_message, applied["message"], "%s apply message parity" % label)
+	if not expected_success:
+		assertions.expect_equal(
+			before,
+			_move_validation_snapshot(state),
+			"%s rejected apply is state invariant" % label,
+		)
+
+
+func _move_validation_snapshot(state: RunState) -> Dictionary:
+	if state == null:
+		return {"state": null}
+	var equipped_ids := PackedStringArray()
+	for slot_value: int in GameTypes.EquipmentSlot.values():
+		var item: ItemInstance = state.equipped.get(slot_value, null) as ItemInstance
+		equipped_ids.append(item.item_id if item != null else "<null>")
+	return {
+		"inventory": _inventory_ids(state),
+		"overflow": _item_ids(state.overflow),
+		"equipped": equipped_ids,
+		"echo_item": state.echo_progress_item_id,
+		"echo_progress": state.echo_primary_attack_progress,
+		"rng": _rng_snapshot(state),
+		"drop_serial": state.drop_serial,
+		"score": state.score_breakdown.duplicate(true),
+	}
 
 
 func _item_ids(items: Array[ItemInstance]) -> PackedStringArray:

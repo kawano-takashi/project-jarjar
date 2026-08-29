@@ -118,7 +118,7 @@ static func equipped_item_ids(state: RunState) -> Array[String]:
 	return result
 
 
-static func apply_move(
+static func validate_move(
 	state: RunState,
 	source_kind: StringName,
 	source_index: int,
@@ -126,14 +126,63 @@ static func apply_move(
 	target_index: int,
 ) -> Dictionary:
 	if not _has_valid_inventory(state):
-		return _failure(&"invalid_state", "インベントリ状態が不正です")
+		return _validation_failure(&"invalid_state", "インベントリ状態が不正です")
 	if not _is_valid_location(state, source_kind, source_index, false):
-		return _failure(&"invalid_source", "移動元が不正です")
+		return _validation_failure(&"invalid_source", "移動元が不正です")
 	if not _is_valid_location(state, target_kind, target_index, true):
-		return _failure(&"invalid_target", "移動先が不正です")
+		return _validation_failure(&"invalid_target", "移動先が不正です")
 	var source_item: ItemInstance = _item_at(state, source_kind, source_index)
 	if source_item == null:
-		return _failure(&"empty_source", "移動する装備がありません")
+		return _validation_failure(&"empty_source", "移動する装備がありません")
+	if source_kind == target_kind and source_index == target_index:
+		if source_kind == KIND_EQUIPPED:
+			return _validate_unequip(
+				state,
+				source_index as GameTypes.EquipmentSlot,
+			)
+		return _validation_success()
+
+	if source_kind == KIND_EQUIPPED:
+		if target_kind == KIND_EQUIPPED:
+			return _validation_failure(&"incompatible_slot", "別の装備枠へは移動できません")
+		var target_item: ItemInstance = _item_at(state, target_kind, target_index)
+		if (
+			target_item == null
+			and source_index == GameTypes.EquipmentSlot.MAIN_WEAPON
+		):
+			return _validation_failure(&"main_weapon_required", MAIN_WEAPON_REQUIRED_MESSAGE)
+		if target_item != null and target_item.slot != source_index:
+			return _validation_failure(&"incompatible_slot", "交換先の装備種別が一致しません")
+		return _validation_success()
+	if target_kind == KIND_EQUIPPED:
+		if source_item.slot != target_index:
+			return _validation_failure(&"incompatible_slot", "対応する装備枠へだけ装備できます")
+		return _validation_success()
+	if source_kind == KIND_OVERFLOW and target_kind == KIND_OVERFLOW:
+		return _validation_failure(&"overflow_reorder", "一時受取欄内では並べ替えできません")
+	return _validation_success()
+
+
+static func apply_move(
+	state: RunState,
+	source_kind: StringName,
+	source_index: int,
+	target_kind: StringName,
+	target_index: int,
+) -> Dictionary:
+	var validation: Dictionary = validate_move(
+		state,
+		source_kind,
+		source_index,
+		target_kind,
+		target_index,
+	)
+	if not bool(validation["success"]):
+		return _failure(
+			StringName(validation["error"]),
+			str(validation["message"]),
+		)
+	var source_item: ItemInstance = _item_at(state, source_kind, source_index)
 	if source_kind == target_kind and source_index == target_index:
 		if source_kind == KIND_EQUIPPED:
 			return unequip(state, source_index as GameTypes.EquipmentSlot)
@@ -141,8 +190,6 @@ static func apply_move(
 		return _move_success(true, source_item)
 
 	if source_kind == KIND_EQUIPPED:
-		if target_kind == KIND_EQUIPPED:
-			return _failure(&"incompatible_slot", "別の装備枠へは移動できません")
 		return _move_equipped_to_storage(
 			state,
 			source_index,
@@ -166,13 +213,13 @@ static func apply_move(
 
 
 static func unequip(state: RunState, slot: GameTypes.EquipmentSlot) -> Dictionary:
-	if not _has_valid_inventory(state) or slot not in GameTypes.EquipmentSlot.values():
-		return _failure(&"invalid_slot", "装備枠が不正です")
+	var validation: Dictionary = _validate_unequip(state, slot)
+	if not bool(validation["success"]):
+		return _failure(
+			StringName(validation["error"]),
+			str(validation["message"]),
+		)
 	var item: ItemInstance = state.equipped.get(slot, null) as ItemInstance
-	if item == null:
-		return _failure(&"empty_source", "外す装備がありません")
-	if slot == GameTypes.EquipmentSlot.MAIN_WEAPON:
-		return _failure(&"main_weapon_required", MAIN_WEAPON_REQUIRED_MESSAGE)
 	state.equipped[slot] = null
 	var destination: Dictionary = insert_item(state, item)
 	_sync_equipment_side_effects(state)
@@ -381,8 +428,6 @@ static func _move_storage_to_storage(
 	target_kind: StringName,
 	target_index: int,
 ) -> Dictionary:
-	if source_kind == KIND_OVERFLOW and target_kind == KIND_OVERFLOW:
-		return _failure(&"overflow_reorder", "一時受取欄内では並べ替えできません")
 	var source_item: ItemInstance = _item_at(state, source_kind, source_index)
 	var target_item: ItemInstance = _item_at(state, target_kind, target_index)
 	if source_kind == KIND_INVENTORY and target_kind == KIND_INVENTORY:
@@ -413,8 +458,6 @@ static func _move_storage_to_equipped(
 ) -> Dictionary:
 	var target_slot := target_slot_value as GameTypes.EquipmentSlot
 	var source_item: ItemInstance = _item_at(state, source_kind, source_index)
-	if source_item.slot != target_slot:
-		return _failure(&"incompatible_slot", "対応する装備枠へだけ装備できます")
 	var displaced: ItemInstance = state.equipped.get(target_slot, null) as ItemInstance
 	state.equipped[target_slot] = source_item
 	if source_kind == KIND_INVENTORY:
@@ -440,10 +483,6 @@ static func _move_equipped_to_storage(
 	var source_slot := source_slot_value as GameTypes.EquipmentSlot
 	var source_item: ItemInstance = state.equipped.get(source_slot, null) as ItemInstance
 	var target_item: ItemInstance = _item_at(state, target_kind, target_index)
-	if target_item == null and source_slot == GameTypes.EquipmentSlot.MAIN_WEAPON:
-		return _failure(&"main_weapon_required", MAIN_WEAPON_REQUIRED_MESSAGE)
-	if target_item != null and target_item.slot != source_slot:
-		return _failure(&"incompatible_slot", "交換先の装備種別が一致しません")
 	state.equipped[source_slot] = target_item
 	if target_kind == KIND_INVENTORY:
 		state.inventory[target_index] = source_item
@@ -538,6 +577,36 @@ static func _item_at(state: RunState, kind: StringName, index: int) -> ItemInsta
 		KIND_EQUIPPED:
 			return state.equipped.get(index, null) as ItemInstance
 	return null
+
+
+static func _validate_unequip(
+	state: RunState,
+	slot: GameTypes.EquipmentSlot,
+) -> Dictionary:
+	if not _has_valid_inventory(state) or slot not in GameTypes.EquipmentSlot.values():
+		return _validation_failure(&"invalid_slot", "装備枠が不正です")
+	var item: ItemInstance = state.equipped.get(slot, null) as ItemInstance
+	if item == null:
+		return _validation_failure(&"empty_source", "外す装備がありません")
+	if slot == GameTypes.EquipmentSlot.MAIN_WEAPON:
+		return _validation_failure(&"main_weapon_required", MAIN_WEAPON_REQUIRED_MESSAGE)
+	return _validation_success()
+
+
+static func _validation_success() -> Dictionary:
+	return {
+		"success": true,
+		"error": &"",
+		"message": "",
+	}
+
+
+static func _validation_failure(error: StringName, message: String) -> Dictionary:
+	return {
+		"success": false,
+		"error": error,
+		"message": message,
+	}
 
 
 static func _location(kind: StringName, index: int, item: ItemInstance) -> Dictionary:

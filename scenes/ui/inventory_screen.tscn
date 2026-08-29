@@ -123,11 +123,40 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_styles/panel = SubResource("StyleCompare")
 
-[node name="ComparisonText" type="Label" parent="Margin/Content/Middle/ComparePanel"]
+[node name="CompareContent" type="VBoxContainer" parent="Margin/Content/Middle/ComparePanel"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="ComparisonText" type="Label" parent="Margin/Content/Middle/ComparePanel/CompareContent"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_vertical = 3
 theme_override_font_sizes/font_size = 18
-text = "アイテムへfocusまたはhoverすると比較を表示します"
+text = "アイテムにフォーカスまたはポインターを合わせると詳細を表示します。"
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="PlacementWarning" type="Label" parent="Margin/Content/Middle/ComparePanel/CompareContent"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.72, 0.3, 1)
+theme_override_font_sizes/font_size = 18
+autowrap_mode = 2
+accessibility_live = 1
+
+[node name="CompareSeparator" type="HSeparator" parent="Margin/Content/Middle/ComparePanel/CompareContent"]
+layout_mode = 2
+
+[node name="InventoryControlsLegend" type="Label" parent="Margin/Content/Middle/ComparePanel/CompareContent"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.63, 0.69, 0.72, 1)
+theme_override_font_sizes/font_size = 16
+text = "A／Enter・クリック: 持ち上げ／配置　L／X: ロック切替
+ドラッグ: 移動　B／Esc: 取消"
 vertical_alignment = 1
 autowrap_mode = 2
 

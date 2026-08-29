@@ -84,6 +84,29 @@ func _test_ui_polish_contract(assertions: Variant, context: Dictionary) -> void:
 			"INVENTORY_FOUR_EFFECT_COMPARISON",
 			tree,
 		)
+		inventory.test_focus("equip_2")
+		inventory.test_accept()
+		inventory.test_focus("grid_35")
+		await tree.process_frame
+		assertions.expect_equal(
+			InventoryScreen.PLACEMENT_WARNING_PREFIX + "交換先の装備種別が一致しません",
+			inventory.debug_state()["placement_warning"],
+			"inventory UI polish exposes an invalid exchange warning",
+		)
+		inventory.call(
+			"_set_placement_warning",
+			InventoryScreen.PLACEMENT_WARNING_PREFIX
+			+ InventoryService.MAIN_WEAPON_REQUIRED_MESSAGE
+			+ "　交換先の装備種別が一致しません",
+		)
+		await tree.process_frame
+		await _assert_screen_contract(
+			assertions,
+			inventory,
+			"INVENTORY_FOUR_EFFECT_MULTILINE_WARNING",
+			tree,
+		)
+		inventory.test_cancel()
 		inventory.test_focus("grid_27")
 		inventory.test_focus("action_2")
 		inventory.test_accept()
