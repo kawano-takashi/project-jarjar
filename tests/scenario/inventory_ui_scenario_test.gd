@@ -1296,10 +1296,38 @@ func _test_fusion_dialog_exact_controller(
 	for index: int in [3, 4]:
 		rejection_screen.test_fusion_candidate_focus("qa-inventory-%02d" % index)
 		rejection_screen.test_accept()
+	rejection_screen.test_focus("FA1")
+	rejection_screen.test_accept()
+	assertions.expect_true(rejection_screen.debug_state()["fusion_use_wild"], "button reset fixture reserves wild material")
+	var rarity_dialog := rejection_screen.get_node("%FusionDialog") as FusionDialog
+	var rarity_button := rarity_dialog.get_node("%FusionRarity") as Button
+	rarity_button.emit_signal("pressed")
+	assertions.expect_equal(GameTypes.Rarity.RARE, rejection_screen.debug_state()["fusion_rarity"], "rarity button advances Common to Rare")
+	assertions.expect_equal(PackedStringArray(), rejection_screen.debug_state()["fusion_material_ids"], "rarity button clears all F material slots")
+	assertions.expect_false(rejection_screen.debug_state()["fusion_use_wild"], "rarity button clears wild reservation")
+	var rare_button_state: Dictionary = rarity_dialog.debug_state()
+	var rare_candidate_ids: PackedStringArray = rare_button_state["candidate_item_ids"] as PackedStringArray
+	assertions.expect_true("qa-inventory-18" in rare_candidate_ids, "rarity button refreshes Rare candidates")
+	assertions.expect_false("qa-inventory-03" in rare_candidate_ids, "rarity button removes Common candidates from the view")
+	assertions.expect_true("出力: EPIC" in str(rare_button_state["preview"]), "rarity button refreshes the output preview")
+	rarity_button.emit_signal("pressed")
+	assertions.expect_equal(GameTypes.Rarity.EPIC, rejection_screen.debug_state()["fusion_rarity"], "rarity button advances Rare to Epic")
+	rarity_button.emit_signal("pressed")
+	assertions.expect_equal(GameTypes.Rarity.COMMON, rejection_screen.debug_state()["fusion_rarity"], "rarity button wraps Epic to Common")
+	assertions.expect_equal(
+		"レアリティ　◀ COMMON ▶\n←→／方向パッド左右",
+		rarity_dialog.debug_state()["rarity_text"],
+		"rarity button keeps the existing operation copy",
+	)
+	for index: int in [3, 4]:
+		rejection_screen.test_fusion_candidate_focus("qa-inventory-%02d" % index)
+		rejection_screen.test_accept()
 	_replay_fusion_rarity_input(rejection_screen, "ui_right")
 	assertions.expect_equal(GameTypes.Rarity.RARE, rejection_screen.debug_state()["fusion_rarity"], "controller FR right changes Common to Rare")
 	assertions.expect_equal(PackedStringArray(), rejection_screen.debug_state()["fusion_material_ids"], "FR change clears all F material slots")
 	assertions.expect_false(rejection_screen.debug_state()["fusion_use_wild"], "FR change clears wild reservation")
+	_replay_fusion_rarity_input(rejection_screen, "ui_left")
+	assertions.expect_equal(GameTypes.Rarity.COMMON, rejection_screen.debug_state()["fusion_rarity"], "controller FR left changes Rare to Common")
 	rejection_screen.test_cancel()
 	assertions.expect_equal(rejection_before, _run_state_signature(rejection_state), "FusionDialog B cancel preserves complete RunState")
 	assertions.expect_equal(rejection_rng_before, _rng_snapshot(rejection_state), "FusionDialog invalid/edit/cancel flow preserves every RNG stream")

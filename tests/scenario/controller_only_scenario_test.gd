@@ -210,6 +210,28 @@ func _test_left_stick_focus_moves_once_per_tilt(
 		"fusion held right tilt does not cycle rarity",
 	)
 	await _neutralize_left_stick(tree)
+	var expected_after_a: GameTypes.Rarity = rarity_values[
+		(rarity_values.find(expected_rarity) + 1) % rarity_values.size()
+	]
+	await _send_joy_button(tree, JOY_BUTTON_A, true)
+	await _send_joy_button(tree, JOY_BUTTON_A, false)
+	assertions.expect_equal(
+		expected_after_a,
+		screen.debug_state()["fusion_rarity"],
+		"fusion A advances rarity exactly once",
+	)
+	var expected_after_enter: GameTypes.Rarity = rarity_values[
+		(rarity_values.find(expected_after_a) + 1) % rarity_values.size()
+	]
+	Input.parse_input_event(_key_event(KEY_ENTER, true))
+	await tree.process_frame
+	Input.parse_input_event(_key_event(KEY_ENTER, false))
+	await tree.process_frame
+	assertions.expect_equal(
+		expected_after_enter,
+		screen.debug_state()["fusion_rarity"],
+		"fusion Enter advances rarity exactly once",
+	)
 	await _remove_screen(screen, tree)
 
 

@@ -48,6 +48,7 @@ var _material_entries: Array[Dictionary] = []
 
 func _ready() -> void:
 	_rarity.set_meta("focus_id", "FR")
+	_rarity.pressed.connect(_on_rarity_pressed)
 	for index: int in range(_material_slots.size()):
 		var slot: InventoryCardButton = _material_slots[index]
 		slot.set_meta("focus_id", "F%d" % index)
@@ -534,7 +535,9 @@ func _presentation_snapshots(cards: Array[InventoryCardButton]) -> Array[Diction
 
 
 func _activate_focus_id(focus_id: String) -> void:
-	if focus_id.begins_with("FC"):
+	if focus_id == "FR":
+		_on_rarity_pressed()
+	elif focus_id.begins_with("FC"):
 		var index: int = focus_id.trim_prefix("FC").to_int()
 		if index >= 0 and index < _candidate_item_ids.size():
 			candidate_toggled.emit(_candidate_item_ids[index])
@@ -546,6 +549,10 @@ func _activate_focus_id(focus_id: String) -> void:
 			1: wild_toggle_requested.emit()
 			2: confirm_requested.emit()
 			3: _cancel_dialog()
+
+
+func _on_rarity_pressed() -> void:
+	rarity_step_requested.emit(1)
 
 
 func _on_candidate_pressed(item_id: String) -> void:
