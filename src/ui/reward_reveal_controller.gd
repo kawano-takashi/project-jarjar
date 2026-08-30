@@ -8,7 +8,6 @@ signal vibration_requested(weak_magnitude: float, strong_magnitude: float, durat
 signal prealert_started(rarity: int)
 
 const NORMAL_INTERVAL_SECONDS: float = 0.35
-const FAST_INTERVAL_SECONDS: float = 0.0875
 const PREALERT_DURATION_SECONDS: float = 0.75
 
 enum PrealertMode { NONE, INDIVIDUAL, AGGREGATE }
@@ -16,7 +15,6 @@ enum PrealertMode { NONE, INDIVIDUAL, AGGREGATE }
 var _state: RunState = null
 var _ordered_rewards: Array[RewardRoll] = []
 var _reward_open_accumulator: float = 0.0
-var _fast_open: bool = false
 var _paused: bool = false
 var _prealert_mode: PrealertMode = PrealertMode.NONE
 var _prealert_remaining: float = 0.0
@@ -44,7 +42,6 @@ func initialize(state: RunState) -> void:
 		_ordered_rewards.assign(_state.unopened_rewards)
 	_ordered_rewards.sort_custom(_reward_precedes)
 	_reward_open_accumulator = 0.0
-	_fast_open = false
 	_paused = false
 	_clear_prealert()
 	_last_revealed = _last_revealed_reward()
@@ -66,10 +63,6 @@ func set_paused(paused: bool) -> void:
 	_paused = paused
 
 
-func set_fast_open(enabled: bool) -> void:
-	_fast_open = enabled and not _paused and not is_prealert_active()
-
-
 func tick(delta: float) -> void:
 	if _state == null or _paused or delta <= 0.0 or is_complete():
 		return
@@ -77,10 +70,9 @@ func tick(delta: float) -> void:
 		_advance_prealert(delta)
 		return
 
-	var interval: float = FAST_INTERVAL_SECONDS if _fast_open else NORMAL_INTERVAL_SECONDS
 	var timer_result: Dictionary = TimerMath.consume_repeating(
 		_reward_open_accumulator,
-		interval,
+		NORMAL_INTERVAL_SECONDS,
 		delta,
 		16,
 	)
@@ -100,7 +92,6 @@ func tick(delta: float) -> void:
 func request_open_all() -> void:
 	if _state == null or _paused or is_complete():
 		return
-	_fast_open = false
 	_reward_open_accumulator = 0.0
 	var high_rewards: Array[RewardRoll] = []
 	for reward: RewardRoll in _ordered_rewards:
@@ -147,10 +138,6 @@ func is_complete() -> bool:
 	return unrevealed_count() == 0 and not is_prealert_active()
 
 
-func is_fast_open() -> bool:
-	return _fast_open
-
-
 func is_paused() -> bool:
 	return _paused
 
@@ -190,7 +177,6 @@ func presentation_state() -> Dictionary:
 		else:
 			stage_light_step = 1 + mini(2, int(floor(progress * 3.0)))
 	return {
-		"fast_open": _fast_open,
 		"paused": _paused,
 		"complete": is_complete(),
 		"unrevealed_count": unrevealed_count(),

@@ -5,8 +5,8 @@ extends Control
 signal reveal_completed
 signal audio_event_requested(event_id: StringName)
 
-const HOLD_THRESHOLD_SECONDS: float = 0.25
 const CURRENT_CARD_SIZE := Vector2(760.0, 340.0)
+const NO_BULK_OPEN_AUDIO_RARITY: int = -1
 const UiPolishScript := preload("res://src/ui/ui_polish.gd")
 const InventoryItemVisualsScript := preload("res://src/ui/inventory_item_visuals.gd")
 const AFFIX_LABELS: Dictionary = {
@@ -32,8 +32,6 @@ const PERCENT_AFFIX_IDS: Array[StringName] = [
 @onready var _current_details: Label = %CurrentDetails
 @onready var _prealert_targets: HBoxContainer = %PrealertTargets
 @onready var _acquired_list: VBoxContainer = %AcquiredList
-@onready var _speed_proxy: Control = %RewardSpeedProxy
-@onready var _speed_label: Label = %SpeedLabel
 @onready var _open_all: Button = %RewardOpenAll
 @onready var _settings: Button = %RewardSettings
 @onready var _content_root: Control = $RootMargin
@@ -45,16 +43,9 @@ var _controller: RewardRevealController = RewardRevealController.new()
 var _automatic_progression: bool = true
 var _modal_focus := ModalFocusCoordinator.new()
 
-var _accept_pressed: bool = false
-var _accept_elapsed: float = 0.0
-var _accept_origin_focus_id: String = ""
-var _mouse_proxy_captured: bool = false
-var _mouse_proxy_elapsed: float = 0.0
-var _test_mouse_button_origin: String = ""
-var _saved_focus_id: String = "reward_speed_proxy"
+var _saved_focus_id: String = "reward_open_all"
 var _last_joypad_device: int = 0
 
-var _pointer_event_count: int = 0
 var _open_all_request_count: int = 0
 var _button_click_counts: Dictionary = {
 	"reward_open_all": 0,
@@ -63,14 +54,15 @@ var _button_click_counts: Dictionary = {
 var _vibration_call_count: int = 0
 var _last_rendered_revealed_count: int = -1
 var _last_prealert_key: String = ""
+var _bulk_open_audio_active: bool = false
+var _bulk_open_audio_rarity: int = NO_BULK_OPEN_AUDIO_RARITY
 
 
 func _ready() -> void:
-	_speed_proxy.set_meta("focus_id", "reward_speed_proxy")
 	_open_all.set_meta("focus_id", "reward_open_all")
 	_settings.set_meta("focus_id", "reward_settings")
-	FocusController.configure_horizontal_cycle([_speed_proxy, _open_all, _settings])
-	_speed_proxy.gui_input.connect(_on_speed_proxy_gui_input)
+	FocusController.configure_horizontal_cycle([_open_all, _settings])
+	_open_all.button_down.connect(_mark_current_input_as_handled)
 	_open_all.pressed.connect(_on_open_all_pressed)
 	_settings.pressed.connect(_on_settings_pressed)
 	_settings_overlay.closed.connect(_on_settings_closed)
@@ -81,7 +73,7 @@ func _ready() -> void:
 	_controller.vibration_requested.connect(_on_vibration_requested)
 	_controller.prealert_started.connect(_on_prealert_started)
 	_refresh_accessibility_from_store()
-	FocusController.grab_focus_deferred(_speed_proxy)
+	FocusController.grab_focus_deferred(_open_all)
 	if _pending_state != null:
 		_initialize_controller(_pending_state)
 	_update_view()
@@ -104,14 +96,13 @@ func reveal_controller() -> RewardRevealController:
 
 func focus_order() -> PackedStringArray:
 	return PackedStringArray([
-		"reward_speed_proxy",
 		"reward_open_all",
 		"reward_settings",
 	])
 
 
 func initial_focus_control() -> Control:
-	return _speed_proxy
+	return _open_all
 
 
 func set_automatic_progression(enabled: bool) -> void:
@@ -122,37 +113,6 @@ func test_tick(delta: float) -> void:
 	_advance(delta)
 
 
-func test_accept_press(focus_id: String) -> void:
-	_grab_focus_id(focus_id)
-	_begin_accept(focus_id)
-
-
-func test_accept_release() -> void:
-	_end_accept()
-
-
-func test_mouse_proxy_press() -> void:
-	_pointer_event_count += 1
-	_begin_mouse_proxy()
-
-
-func test_mouse_proxy_release() -> void:
-	_pointer_event_count += 1
-	_end_mouse_proxy()
-
-
-func test_mouse_button_press(focus_id: String) -> void:
-	_pointer_event_count += 1
-	_test_mouse_button_origin = focus_id
-
-
-func test_mouse_button_release(_focus_id: String = "") -> void:
-	_pointer_event_count += 1
-	if not _test_mouse_button_origin.is_empty():
-		_activate_focus_id(_test_mouse_button_origin)
-	_test_mouse_button_origin = ""
-
-
 func test_press_reward_open_all_action() -> void:
 	_request_open_all()
 
@@ -160,11 +120,6 @@ func test_press_reward_open_all_action() -> void:
 func debug_state() -> Dictionary:
 	var result: Dictionary = _controller.presentation_state()
 	result["focus_id"] = _current_focus_id()
-	result["accept_pressed"] = _accept_pressed
-	result["accept_elapsed"] = _accept_elapsed
-	result["mouse_proxy_captured"] = _mouse_proxy_captured
-	result["mouse_proxy_elapsed"] = _mouse_proxy_elapsed
-	result["pointer_event_count"] = _pointer_event_count
 	result["open_all_request_count"] = _open_all_request_count
 	result["reward_open_all_click_count"] = int(_button_click_counts["reward_open_all"])
 	result["reward_settings_click_count"] = int(_button_click_counts["reward_settings"])
@@ -186,105 +141,26 @@ func _input(event: InputEvent) -> void:
 		return
 	if event is InputEventJoypadButton:
 		_last_joypad_device = event.device
-	if event is InputEventMouseButton:
-		_pointer_event_count += 1
-		var mouse_event := event as InputEventMouseButton
-		if (
-			_mouse_proxy_captured
-			and mouse_event.button_index == MOUSE_BUTTON_LEFT
-			and not mouse_event.pressed
-		):
-			_end_mouse_proxy()
-			get_viewport().set_input_as_handled()
-		return
-	if event.is_action_pressed("reward_open_all") and not event.is_echo():
+	if event.is_action_pressed(&"reward_open_all") and not event.is_echo():
+		_mark_current_input_as_handled()
 		_request_open_all()
-		get_viewport().set_input_as_handled()
-		return
-	if event.is_action_pressed("ui_accept") and not event.is_echo():
-		_begin_accept(_current_focus_id())
-		get_viewport().set_input_as_handled()
-	elif event.is_action_released("ui_accept"):
-		_end_accept()
-		get_viewport().set_input_as_handled()
 
 
 func _advance(delta: float) -> void:
 	if delta <= 0.0 or _settings_overlay.visible:
 		return
 	_controller.tick(delta)
-	if _accept_pressed:
-		_accept_elapsed += delta
-		if (
-			_accept_origin_focus_id == "reward_speed_proxy"
-			and _accept_elapsed >= HOLD_THRESHOLD_SECONDS
-		):
-			_controller.set_fast_open(true)
-	if _mouse_proxy_captured:
-		_mouse_proxy_elapsed += delta
-		if _mouse_proxy_elapsed >= HOLD_THRESHOLD_SECONDS:
-			_controller.set_fast_open(true)
 	_update_view()
-
-
-func _begin_accept(focus_id: String) -> void:
-	if _accept_pressed or _settings_overlay.visible:
-		return
-	_accept_pressed = true
-	_accept_elapsed = 0.0
-	_accept_origin_focus_id = focus_id
-
-
-func _end_accept() -> void:
-	if not _accept_pressed:
-		return
-	var origin_id: String = _accept_origin_focus_id
-	var elapsed: float = _accept_elapsed
-	_accept_pressed = false
-	_accept_elapsed = 0.0
-	_accept_origin_focus_id = ""
-	_controller.set_fast_open(false)
-	if origin_id != "reward_speed_proxy" and elapsed < HOLD_THRESHOLD_SECONDS:
-		_activate_focus_id(origin_id)
-	_update_view()
-
-
-func _begin_mouse_proxy() -> void:
-	if _mouse_proxy_captured or _settings_overlay.visible:
-		return
-	_mouse_proxy_captured = true
-	_mouse_proxy_elapsed = 0.0
-
-
-func _end_mouse_proxy() -> void:
-	if not _mouse_proxy_captured:
-		return
-	_mouse_proxy_captured = false
-	_mouse_proxy_elapsed = 0.0
-	_controller.set_fast_open(false)
-	_update_view()
-
-
-func _activate_focus_id(focus_id: String) -> void:
-	if _modal_focus.has_active_modal():
-		return
-	match focus_id:
-		"reward_open_all":
-			_button_click_counts["reward_open_all"] = (
-				int(_button_click_counts["reward_open_all"]) + 1
-			)
-			_request_open_all()
-		"reward_settings":
-			_button_click_counts["reward_settings"] = (
-				int(_button_click_counts["reward_settings"]) + 1
-			)
-			_open_settings()
 
 
 func _request_open_all() -> void:
 	if _modal_focus.has_active_modal():
 		return
 	_open_all_request_count += 1
+	if _controller.is_paused() or _controller.is_complete():
+		return
+	_bulk_open_audio_active = true
+	_bulk_open_audio_rarity = NO_BULK_OPEN_AUDIO_RARITY
 	_controller.request_open_all()
 	_update_view()
 
@@ -293,9 +169,8 @@ func _open_settings() -> void:
 	if _modal_focus.has_active_modal():
 		return
 	_saved_focus_id = _current_focus_id()
-	_controller.set_fast_open(false)
 	_controller.set_paused(true)
-	if not _modal_focus.push(_settings_overlay, _speed_proxy):
+	if not _modal_focus.push(_settings_overlay, _open_all):
 		_controller.set_paused(false)
 		return
 	_settings_overlay.open_overlay()
@@ -304,7 +179,7 @@ func _open_settings() -> void:
 func _on_settings_closed() -> void:
 	_controller.set_paused(false)
 	_refresh_accessibility_from_store()
-	_modal_focus.pop(_settings_overlay, null, _speed_proxy)
+	_modal_focus.pop(_settings_overlay, null, _open_all)
 
 
 func _on_settings_changed(values: Dictionary) -> void:
@@ -325,18 +200,8 @@ func _refresh_accessibility_from_store() -> void:
 	)
 
 
-func _on_speed_proxy_gui_input(event: InputEvent) -> void:
-	if not event is InputEventMouseButton:
-		return
-	var mouse_event := event as InputEventMouseButton
-	if mouse_event.button_index != MOUSE_BUTTON_LEFT:
-		return
-	if mouse_event.pressed:
-		_begin_mouse_proxy()
-	accept_event()
-
-
 func _on_open_all_pressed() -> void:
+	_mark_current_input_as_handled()
 	_button_click_counts["reward_open_all"] = int(_button_click_counts["reward_open_all"]) + 1
 	_request_open_all()
 
@@ -344,6 +209,12 @@ func _on_open_all_pressed() -> void:
 func _on_settings_pressed() -> void:
 	_button_click_counts["reward_settings"] = int(_button_click_counts["reward_settings"]) + 1
 	_open_settings()
+
+
+func _mark_current_input_as_handled() -> void:
+	var viewport: Viewport = get_viewport()
+	if viewport != null:
+		viewport.set_input_as_handled()
 
 
 func _on_vibration_requested(
@@ -361,10 +232,10 @@ func _on_vibration_requested(
 
 
 func _on_reward_revealed(reward: RewardRoll) -> void:
-	if reward != null and reward.rarity_for_presentation == GameTypes.Rarity.RARE:
-		audio_event_requested.emit(&"rare_open")
-	elif reward != null and reward.rarity_for_presentation < GameTypes.Rarity.RARE:
-		audio_event_requested.emit(&"normal_open")
+	if _bulk_open_audio_active:
+		_remember_bulk_open_audio(reward)
+	elif reward != null:
+		_emit_reward_open_audio(reward.rarity_for_presentation)
 	_update_view()
 
 
@@ -377,18 +248,48 @@ func _on_prealert_started(rarity: int) -> void:
 
 
 func _on_all_revealed() -> void:
+	var should_emit_bulk_audio: bool = _bulk_open_audio_active
+	var bulk_audio_rarity: int = _bulk_open_audio_rarity
+	_reset_bulk_open_audio()
+	if should_emit_bulk_audio:
+		_emit_reward_open_audio(bulk_audio_rarity)
 	reveal_completed.emit()
 
 
 func _initialize_controller(state: RunState) -> void:
+	_reset_bulk_open_audio()
 	_controller.initialize(state)
 	_last_rendered_revealed_count = -1
 	_last_prealert_key = ""
 	_update_view()
 
 
+func _remember_bulk_open_audio(reward: RewardRoll) -> void:
+	if reward == null:
+		return
+	match reward.rarity_for_presentation:
+		GameTypes.Rarity.COMMON, GameTypes.Rarity.RARE:
+			_bulk_open_audio_rarity = maxi(
+				_bulk_open_audio_rarity,
+				reward.rarity_for_presentation,
+			)
+
+
+func _emit_reward_open_audio(rarity: int) -> void:
+	match rarity:
+		GameTypes.Rarity.COMMON:
+			audio_event_requested.emit(&"normal_open")
+		GameTypes.Rarity.RARE:
+			audio_event_requested.emit(&"rare_open")
+
+
+func _reset_bulk_open_audio() -> void:
+	_bulk_open_audio_active = false
+	_bulk_open_audio_rarity = NO_BULK_OPEN_AUDIO_RARITY
+
+
 func _update_view() -> void:
-	if not is_node_ready():
+	if not is_node_ready() or not is_inside_tree():
 		return
 	var presentation: Dictionary = _controller.presentation_state()
 	_accessibility_status.text = "動き軽減 %s・点滅軽減 %s" % [
@@ -396,11 +297,6 @@ func _update_view() -> void:
 		"ON" if bool(presentation["reduce_flashes"]) else "OFF",
 	]
 	_unopened_count.text = "未開封箱　%d" % _controller.unrevealed_count()
-	_speed_label.text = (
-		"4倍開封中（離すと通常速度）"
-		if _controller.is_fast_open()
-		else "長押し4倍　A／Enter またはマウス左"
-	)
 	_prealert_banner.visible = bool(presentation["prealert_active"])
 	_prealert_banner.text = (
 		"高レア予告　EPIC以上"
@@ -601,27 +497,13 @@ func _card_style(rarity: int, outline_thickness: int, stage_light_step: int) -> 
 
 
 func _current_focus_id() -> String:
-	var focused: Control = get_viewport().gui_get_focus_owner()
+	var viewport: Viewport = get_viewport()
+	if viewport == null:
+		return "reward_open_all"
+	var focused: Control = viewport.gui_get_focus_owner()
 	if focused == null:
-		return "reward_speed_proxy"
+		return "reward_open_all"
 	return str(focused.get_meta("focus_id", ""))
-
-
-func _grab_focus_id(focus_id: String) -> bool:
-	var control: Control = null
-	match focus_id:
-		"reward_speed_proxy":
-			control = _speed_proxy
-		"reward_open_all":
-			control = _open_all
-		"reward_settings":
-			control = _settings
-	if control == null or not control.is_visible_in_tree():
-		return false
-	if control is BaseButton and (control as BaseButton).disabled:
-		return false
-	control.grab_focus()
-	return true
 
 
 func _clear_children(parent: Node) -> void:
