@@ -52,9 +52,8 @@ func _test_boss_reward_timing(assertions: Variant) -> void:
 	boss.position = Vector2(1.0, 0.0)
 	simulation.weapon_damage_override = boss.hp
 	var weapon_slot := GameTypes.EquipmentSlot.WEAPON_1
-	var starter: ItemInstance = state.equipped[weapon_slot]
 	simulation.weapon_system.attack_elapsed_by_slot[int(weapon_slot)] = (
-		simulation.weapon_system.effective_interval(starter)
+		simulation.weapon_system.attack_interval_by_slot[int(weapon_slot)]
 	)
 	simulation.step(Vector2.ZERO, 1.0 / 60.0)
 	assertions.expect_equal(GameTypes.RunPhase.COMBAT, state.phase, "boss defeat can precede combat end")

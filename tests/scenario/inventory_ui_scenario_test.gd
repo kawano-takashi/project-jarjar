@@ -162,6 +162,7 @@ func _test_comparison(assertions: Variant, context: Dictionary) -> void:
 	await (context["tree"] as SceneTree).process_frame
 	var own_tooltip: Dictionary = screen.debug_state()["tooltip"] as Dictionary
 	assertions.expect_true(str(own_tooltip["details"]).contains("基礎ダメージ"), "ordinary tooltip shows item performance")
+	assertions.expect_true(str(own_tooltip["details"]).contains("基準間隔"), "weapon tooltip labels the displayed value as nominal interval")
 	assertions.expect_false(str(own_tooltip["details"]).contains("移動後"), "ordinary tooltip does not guess a destination comparison")
 	var item_card: InventoryCardButton = screen.focus_control("grid_3") as InventoryCardButton
 	var drag_preview: Dictionary = item_card.drag_preview_snapshot() if item_card != null else {}

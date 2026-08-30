@@ -6,14 +6,19 @@ const MAX_ENEMY_BODY_RADIUS: float = 1.25
 const PLAYER_BODY_RADIUS: float = 0.45
 const BOW_ID: StringName = &"bow"
 const STAFF_ID: StringName = &"staff"
+const MIN_ATTACK_GAP_SECONDS: float = 0.05
 
 var attack_elapsed_by_slot: Dictionary[int, float] = {}
+var attack_interval_by_slot: Dictionary[int, float] = {}
 var last_attack_direction_by_slot: Dictionary[int, Vector2] = {}
 
 var _state: RunState = null
 var _catalog: DefinitionCatalog = null
 var _projectile_pool: ProjectilePool = null
 var _router: CombatEventRouter = null
+var _attack_rng_by_slot: Dictionary[int, RandomNumberGenerator] = {}
+var _equipped_weapon_count: int = 0
+var _time_since_last_attack: float = MIN_ATTACK_GAP_SECONDS
 
 
 func initialize(
@@ -27,17 +32,31 @@ func initialize(
 	_projectile_pool = projectile_pool
 	_router = router
 	attack_elapsed_by_slot.clear()
+	attack_interval_by_slot.clear()
 	last_attack_direction_by_slot.clear()
+	_attack_rng_by_slot.clear()
+	_equipped_weapon_count = 0
+	_time_since_last_attack = MIN_ATTACK_GAP_SECONDS
+	for slot: GameTypes.EquipmentSlot in GameTypes.weapon_slots():
+		if _weapon_at(slot) != null:
+			_equipped_weapon_count += 1
 	for slot: GameTypes.EquipmentSlot in GameTypes.weapon_slots():
 		var item: ItemInstance = _weapon_at(slot)
 		if item == null:
 			continue
-		var interval: float = effective_interval(item)
+		var attack_rng := RandomNumberGenerator.new()
+		attack_rng.seed = SeedService.derive(
+			_state.run_seed,
+			StringName("weapon_cooldown:%d:%s" % [_state.wave_number, item.item_id]),
+		)
+		_attack_rng_by_slot[int(slot)] = attack_rng
+		var interval: float = roll_next_interval(slot)
 		var phase_rng := RandomNumberGenerator.new()
 		phase_rng.seed = SeedService.derive(
 			_state.run_seed,
 			StringName("weapon_phase:%d:%s" % [_state.wave_number, item.item_id]),
 		)
+		attack_interval_by_slot[int(slot)] = interval
 		attack_elapsed_by_slot[int(slot)] = phase_rng.randf() * interval
 		last_attack_direction_by_slot[int(slot)] = Vector2.RIGHT
 
@@ -72,16 +91,49 @@ func effective_range(item: ItemInstance) -> float:
 	return definition.range_m
 
 
+static func interval_bounds(nominal_interval: float, weapon_count: int) -> Vector2:
+	var safe_interval: float = maxf(MIN_ATTACK_GAP_SECONDS, nominal_interval)
+	var safe_weapon_count: int = maxi(1, weapon_count)
+	var variation: float = minf(
+		float(safe_weapon_count) * safe_interval / 5.0,
+		float(safe_weapon_count) * 5.0 / 60.0,
+	)
+	return Vector2(
+		maxf(MIN_ATTACK_GAP_SECONDS, safe_interval - variation),
+		safe_interval + variation,
+	)
+
+
+static func sample_interval(
+	nominal_interval: float,
+	weapon_count: int,
+	rng: RandomNumberGenerator,
+) -> float:
+	var bounds: Vector2 = interval_bounds(nominal_interval, weapon_count)
+	return rng.randf_range(bounds.x, bounds.y)
+
+
+func roll_next_interval(slot: GameTypes.EquipmentSlot) -> float:
+	var item: ItemInstance = _weapon_at(slot)
+	var rng: RandomNumberGenerator = _attack_rng_by_slot.get(int(slot)) as RandomNumberGenerator
+	if item == null or rng == null:
+		return MIN_ATTACK_GAP_SECONDS
+	return sample_interval(effective_interval(item), _equipped_weapon_count, rng)
+
+
 func advance_attack_timers(delta: float) -> void:
+	var safe_delta: float = maxf(0.0, delta)
+	_time_since_last_attack = minf(
+		MIN_ATTACK_GAP_SECONDS,
+		_time_since_last_attack + safe_delta,
+	)
 	for slot: GameTypes.EquipmentSlot in GameTypes.weapon_slots():
 		var item: ItemInstance = _weapon_at(slot)
 		if item == null:
 			continue
-		var interval: float = effective_interval(item)
-		attack_elapsed_by_slot[int(slot)] = TimerMath.advance_clamped(
-			float(attack_elapsed_by_slot.get(int(slot), 0.0)),
-			interval,
-			delta,
+		attack_elapsed_by_slot[int(slot)] = maxf(
+			0.0,
+			float(attack_elapsed_by_slot.get(int(slot), 0.0)) + safe_delta,
 		)
 
 
@@ -91,7 +143,7 @@ func is_attack_ready(slot: GameTypes.EquipmentSlot) -> bool:
 		return false
 	return TimerMath.is_ready(
 		float(attack_elapsed_by_slot.get(int(slot), 0.0)),
-		effective_interval(item),
+		float(attack_interval_by_slot.get(int(slot), effective_interval(item))),
 	)
 
 
@@ -103,10 +155,16 @@ func try_attacks_detailed(
 	damage_override: float = -1.0,
 ) -> Array[Dictionary]:
 	var results: Array[Dictionary] = []
+	if not TimerMath.is_ready(_time_since_last_attack, MIN_ATTACK_GAP_SECONDS):
+		return results
+	var ready_slots: Array[GameTypes.EquipmentSlot] = []
 	for slot: GameTypes.EquipmentSlot in GameTypes.weapon_slots():
 		var item: ItemInstance = _weapon_at(slot)
-		if item == null or not is_attack_ready(slot):
-			continue
+		if item != null and is_attack_ready(slot):
+			ready_slots.append(slot)
+	ready_slots.sort_custom(_ready_slot_less)
+	for slot: GameTypes.EquipmentSlot in ready_slots:
+		var item: ItemInstance = _weapon_at(slot)
 		var result: Dictionary = _try_attack(
 			slot,
 			item,
@@ -116,8 +174,14 @@ func try_attacks_detailed(
 			current_tick,
 			damage_override,
 		)
+		if not bool(result.get("committed", false)):
+			continue
+		attack_elapsed_by_slot[int(slot)] = 0.0
+		attack_interval_by_slot[int(slot)] = roll_next_interval(slot)
+		_time_since_last_attack = 0.0
 		if bool(result.get("generated", false)):
 			results.append(result)
+		break
 	return results
 
 
@@ -146,6 +210,7 @@ func _try_attack(
 ) -> Dictionary:
 	var definition: WeaponDefinition = _definition_for_item(item)
 	var result: Dictionary = {
+		"committed": false,
 		"generated": false,
 		"weapon_id": &"",
 		"item_id": item.item_id,
@@ -173,11 +238,11 @@ func _try_attack(
 	)
 	if target == null:
 		return result
+	result["committed"] = true
 	var direction: Vector2 = (target.position - player_position).normalized()
 	if direction == Vector2.ZERO:
 		direction = last_attack_direction_by_slot.get(int(slot), Vector2.RIGHT) as Vector2
 	last_attack_direction_by_slot[int(slot)] = direction
-	attack_elapsed_by_slot[int(slot)] = 0.0
 	var damage: float = damage_override if damage_override >= 0.0 else effective_damage(item)
 	var source_effect_id := StringName("weapon:%s" % item.item_id)
 	var aim_distance: float = player_position.distance_to(target.position)
@@ -523,6 +588,27 @@ func _definition_for_item(item: ItemInstance) -> WeaponDefinition:
 func _weapon_at(slot: GameTypes.EquipmentSlot) -> ItemInstance:
 	var item: ItemInstance = _state.equipped.get(slot, null) as ItemInstance
 	return item if item != null and item.category == GameTypes.ItemCategory.WEAPON else null
+
+
+func _ready_slot_less(
+	left: GameTypes.EquipmentSlot,
+	right: GameTypes.EquipmentSlot,
+) -> bool:
+	var left_due_at: float = float(attack_interval_by_slot[int(left)]) - float(
+		attack_elapsed_by_slot[int(left)],
+	)
+	var right_due_at: float = float(attack_interval_by_slot[int(right)]) - float(
+		attack_elapsed_by_slot[int(right)],
+	)
+	if left_due_at != right_due_at:
+		return left_due_at < right_due_at
+	var left_item: ItemInstance = _weapon_at(left)
+	var right_item: ItemInstance = _weapon_at(right)
+	var left_item_id: String = String(left_item.item_id) if left_item != null else ""
+	var right_item_id: String = String(right_item.item_id) if right_item != null else ""
+	if left_item_id != right_item_id:
+		return left_item_id < right_item_id
+	return int(left) < int(right)
 
 
 func _point_on_segment_t(segment_start: Vector2, segment_end: Vector2, point: Vector2) -> float:

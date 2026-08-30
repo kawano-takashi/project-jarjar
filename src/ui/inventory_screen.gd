@@ -666,7 +666,7 @@ func _item_details(item: ItemInstance) -> String:
 		var definition: WeaponDefinition = _controller.catalog.weapon_for_type(item.weapon_type)
 		if definition != null:
 			lines.append("基礎ダメージ %.0f" % definition.damage_for_rarity(item.rarity))
-			lines.append("攻撃間隔 %.2f秒　射程 %.2fm" % [definition.base_interval, definition.range_m])
+			lines.append("基準間隔 %.2f秒　射程 %.2fm" % [definition.base_interval, definition.range_m])
 			match item.weapon_type:
 				GameTypes.WeaponType.BOW:
 					lines.append("直線弾")

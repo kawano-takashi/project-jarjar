@@ -49,6 +49,7 @@ func _test_reward(assertions: Variant, context: Dictionary) -> void:
 	assertions.expect_false(name_text.contains("スキル"), "reward card never renders a skill reward")
 	assertions.expect_false(detail_text.contains("ユニーク"), "reward details have no unique branch")
 	assertions.expect_true(detail_text.contains("基礎ダメージ") or detail_text.contains("お守り"), "reward card shows the item's own performance")
+	assertions.expect_true(detail_text.contains("基準間隔"), "weapon reward labels the displayed value as nominal interval")
 	await _detach(screen, viewport, context["tree"])
 
 

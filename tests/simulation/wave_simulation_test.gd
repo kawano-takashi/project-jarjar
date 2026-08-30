@@ -157,5 +157,5 @@ func _set_weapon_ready(simulation: CombatSimulation) -> void:
 	if item == null:
 		return
 	simulation.weapon_system.attack_elapsed_by_slot[int(slot)] = (
-		simulation.weapon_system.effective_interval(item)
+		simulation.weapon_system.attack_interval_by_slot[int(slot)]
 	)

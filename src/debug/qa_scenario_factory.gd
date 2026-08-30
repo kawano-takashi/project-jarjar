@@ -8,6 +8,7 @@ const VALID_IDS: Array[String] = [
 	"weapon_bow",
 	"weapon_staff",
 	"weapon_sword",
+	"weapon_stagger",
 	"pre_quota_death",
 	"pre_quota_timeout",
 	"post_quota_death",
@@ -34,6 +35,8 @@ static func build(scenario_id: String, catalog: DefinitionCatalog) -> Dictionary
 			fixture_valid = _replace_starter_weapon(state, catalog, GameTypes.WeaponType.STAFF)
 		"weapon_sword":
 			fixture_valid = _replace_starter_weapon(state, catalog, GameTypes.WeaponType.SWORD)
+		"weapon_stagger":
+			fixture_valid = _prepare_weapon_stagger_state(state, catalog)
 		"reward_controls":
 			fixture_valid = _prepare_rewards(state, catalog)
 		"inventory_controller":
@@ -52,6 +55,8 @@ static func build(scenario_id: String, catalog: DefinitionCatalog) -> Dictionary
 	match scenario_id:
 		"weapon_wood_stick", "weapon_bow", "weapon_staff", "weapon_sword":
 			_prepare_weapon_combat(scenario_id, simulation)
+		"weapon_stagger":
+			_prepare_weapon_stagger(simulation)
 		"pre_quota_death":
 			_prepare_quota_resolution(simulation, false, true)
 		"pre_quota_timeout":
@@ -98,6 +103,23 @@ static func _replace_starter_weapon(
 	return true
 
 
+static func _prepare_weapon_stagger_state(
+	state: RunState,
+	catalog: DefinitionCatalog,
+) -> bool:
+	state.inventory[0] = state.equipped[GameTypes.EquipmentSlot.WEAPON_1]
+	for index: int in range(3):
+		var weapon: ItemInstance = QaItemBuilder.weapon(
+			catalog,
+			"qa-stagger-bow-%d" % index,
+			GameTypes.WeaponType.BOW,
+		)
+		if weapon == null:
+			return false
+		state.equipped[GameTypes.weapon_slots()[index]] = weapon
+	return true
+
+
 static func _prepare_weapon_combat(
 	scenario_id: String,
 	simulation: CombatSimulation,
@@ -113,6 +135,20 @@ static func _prepare_weapon_combat(
 	simulation.spawn_fixture_enemy(
 		GameTypes.EnemyType.TRACKER,
 		Vector2(distance, 0.0),
+	)
+
+
+static func _prepare_weapon_stagger(simulation: CombatSimulation) -> void:
+	simulation.enemy_system.enemy_store.clear()
+	simulation.enemy_system.uniform_grid.clear()
+	simulation.freeze_normal_spawn = true
+	simulation.freeze_enemy_ai = true
+	simulation.freeze_enemy_timers = true
+	simulation.freeze_countdown = true
+	simulation.weapon_damage_override = 0.0
+	simulation.spawn_fixture_enemy(
+		GameTypes.EnemyType.TRACKER,
+		Vector2(8.0, 0.0),
 	)
 
 

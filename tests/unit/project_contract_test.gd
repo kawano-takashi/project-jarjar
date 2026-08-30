@@ -74,14 +74,14 @@ func _test_definition_shape(assertions: Variant) -> void:
 
 func _test_launch_balance(assertions: Variant) -> void:
 	var expected: Array[String] = [
-		"weapon_wood_stick", "weapon_bow", "weapon_staff", "weapon_sword",
+		"weapon_wood_stick", "weapon_bow", "weapon_staff", "weapon_sword", "weapon_stagger",
 		"pre_quota_death", "pre_quota_timeout", "post_quota_death",
 		"reward_controls", "inventory_controller", "result_controller", "boss_299",
 	]
 	assertions.expect_equal(expected, LaunchArguments.QA_SCENARIOS, "QA scenarios contain no removed immortal unique fixture")
 	var catalog := DefinitionCatalog.new()
 	assertions.expect_true(catalog.load_and_validate(), "project contract catalog valid")
-	assertions.expect_equal(2, catalog.balance_manifest().balance_revision, "balance revision is two")
+	assertions.expect_equal(3, catalog.balance_manifest().balance_revision, "balance revision is three")
 	assertions.expect_equal("4.7", str(ProjectSettings.get_setting("application/config/features", PackedStringArray())[0]).left(3), "project targets Godot 4.7")
 
 

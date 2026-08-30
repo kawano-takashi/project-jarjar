@@ -13,6 +13,7 @@ const QA_SCENARIOS: Array[String] = [
 	"weapon_bow",
 	"weapon_staff",
 	"weapon_sword",
+	"weapon_stagger",
 	"pre_quota_death",
 	"pre_quota_timeout",
 	"post_quota_death",

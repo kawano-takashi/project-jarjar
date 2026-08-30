@@ -39,3 +39,33 @@ func _test_builds(assertions: Variant) -> void:
 		assertions.expect_false(fixture.get("tutorial_active", true), "QA fixture disables tutorial: %s" % scenario_id)
 		var state: RunState = fixture.get("state") as RunState
 		assertions.expect_true(state != null, "QA fixture has run state: %s" % scenario_id)
+		if state == null:
+			continue
+		if scenario_id == "weapon_stagger":
+			_test_weapon_stagger_fixture(assertions, fixture, state)
+
+
+func _test_weapon_stagger_fixture(
+	assertions: Variant,
+	fixture: Dictionary,
+	state: RunState,
+) -> void:
+	var item_ids: Dictionary[StringName, bool] = {}
+	for slot: GameTypes.EquipmentSlot in GameTypes.weapon_slots():
+		var item: ItemInstance = state.equipped.get(slot) as ItemInstance
+		assertions.expect_true(item != null, "weapon stagger fills weapon slot %d" % int(slot))
+		if item == null:
+			continue
+		assertions.expect_equal(GameTypes.WeaponType.BOW, item.weapon_type, "weapon stagger uses a bow in slot %d" % int(slot))
+		item_ids[item.item_id] = true
+	assertions.expect_equal(3, item_ids.size(), "weapon stagger bows have distinct item IDs")
+	var simulation: CombatSimulation = fixture.get("simulation") as CombatSimulation
+	assertions.expect_true(simulation != null, "weapon stagger fixture has a simulation")
+	if simulation == null:
+		return
+	assertions.expect_float(0.0, simulation.weapon_damage_override, "weapon stagger attacks deal zero damage")
+	assertions.expect_true(simulation.freeze_normal_spawn, "weapon stagger stops normal spawning")
+	assertions.expect_true(simulation.freeze_enemy_ai, "weapon stagger stops enemy AI")
+	assertions.expect_true(simulation.freeze_enemy_timers, "weapon stagger stops enemy timers")
+	assertions.expect_true(simulation.freeze_countdown, "weapon stagger stops the wave countdown")
+	assertions.expect_equal(1, simulation.enemy_system.enemy_store.active_count(), "weapon stagger keeps one fixed target")

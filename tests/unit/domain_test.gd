@@ -66,7 +66,7 @@ func _test_catalog(assertions: Variant) -> void:
 	}
 	for affix_id: StringName in expected_affixes:
 		assertions.expect_equal(expected_affixes[affix_id], catalog.affix(affix_id).values_by_rarity, "fixed charm values %s" % affix_id)
-	assertions.expect_equal(2, catalog.balance_manifest().balance_revision, "balance revision invalidates prior QA")
+	assertions.expect_equal(3, catalog.balance_manifest().balance_revision, "balance revision invalidates prior QA")
 
 
 func _test_items(assertions: Variant) -> void:

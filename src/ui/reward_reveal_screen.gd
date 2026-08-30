@@ -564,7 +564,7 @@ func _reward_details(reward: RewardRoll) -> String:
 		)
 		if definition == null:
 			return "武器"
-		return "%s\n基礎ダメージ %.0f　間隔 %.2f秒　射程 %.2fm" % [
+		return "%s\n基礎ダメージ %.0f　基準間隔 %.2f秒　射程 %.2fm" % [
 			InventoryItemVisualsScript.weapon_type_label(item.weapon_type),
 			definition.damage_for_rarity(item.rarity),
 			definition.base_interval,
