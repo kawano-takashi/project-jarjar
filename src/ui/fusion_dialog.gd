@@ -507,6 +507,9 @@ func _candidate_tooltip_payload(item_id: String) -> Dictionary:
 func _material_tooltip_payload(slot_index: int) -> Dictionary:
 	if slot_index < 0 or slot_index >= _material_entries.size():
 		return {}
+	var item: ItemInstance = _material_entries[slot_index].get("item") as ItemInstance
+	if item == null:
+		return {}
 	return {
 		"details": str(_material_entries[slot_index].get("details", "")),
 		"warning": "",

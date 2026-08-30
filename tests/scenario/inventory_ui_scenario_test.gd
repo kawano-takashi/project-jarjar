@@ -360,6 +360,14 @@ func _test_icon_card_presentation(assertions: Variant, context: Dictionary) -> v
 	var fusion_debug: Dictionary = fusion_dialog.debug_state()
 	assertions.expect_equal(8, fusion_debug["candidate_columns"], "fusion candidate grid uses eight columns")
 	var unique_candidate_index: int = (fusion_debug["candidate_item_ids"] as PackedStringArray).find("qa-inventory-33")
+	var empty_material: Dictionary = (fusion_debug["material_presentations"] as Array)[0] as Dictionary
+	assertions.expect_true(empty_material["muted"], "empty fusion material keeps its empty presentation")
+	assertions.expect_true("空き" in str(empty_material["accessibility_name"]), "empty fusion material keeps its accessibility name")
+	assertions.expect_true("配置可否:" in str(empty_material["accessibility_description"]), "empty fusion material keeps its accessibility guidance")
+	assertions.expect_true(screen.test_focus("F0"), "empty fusion material remains focusable")
+	var empty_material_tooltip: Dictionary = _fusion_tooltip_state(fusion_dialog)
+	assertions.expect_false(empty_material_tooltip["visible"], "empty fusion material shows no focus tooltip")
+	assertions.expect_equal("", empty_material_tooltip["details"], "empty fusion material exposes no tooltip details")
 	assertions.expect_equal(-1, unique_candidate_index, "UNIQUE item is absent from fusion candidates")
 	screen.test_fusion_candidate_focus("qa-inventory-18")
 	var fusion_candidate_details: String = _fusion_tooltip_details(fusion_dialog)
@@ -375,6 +383,10 @@ func _test_icon_card_presentation(assertions: Variant, context: Dictionary) -> v
 	assertions.expect_equal(Vector2(96.0, 96.0), first_material["minimum_size"], "fusion material is 96px square")
 	assertions.expect_equal("1", first_material["state_badge"], "fusion material shows its selected material number")
 	assertions.expect_true("合成材料枠1" in str(first_material["accessibility_name"]), "fusion material accessibility identifies its slot")
+	assertions.expect_true(screen.test_focus("F0"), "filled fusion material receives focus")
+	var filled_material_tooltip: Dictionary = _fusion_tooltip_state(fusion_dialog)
+	assertions.expect_true(filled_material_tooltip["visible"], "filled fusion material keeps its tooltip")
+	assertions.expect_true("合成材料枠1" in str(filled_material_tooltip["details"]), "filled fusion material tooltip identifies its slot")
 	screen.test_cancel()
 
 	screen.test_focus("grid_34")
@@ -392,9 +404,13 @@ func _test_icon_card_presentation(assertions: Variant, context: Dictionary) -> v
 	assertions.expect_equal("res://assets/ui/inventory_icons/slot_sub_weapon.png", sorted_first["icon_path"], "sort redraws Unique as the new first item")
 	assertions.expect_equal(Color(0.95, 0.16, 0.22, 1.0), sorted_first["icon_color"], "sort redraws the new first item with Unique color")
 
+	screen.test_focus("equip_0")
+	assertions.expect_true(_inventory_tooltip_state(screen)["visible"], "filled main weapon slot starts with a visible tooltip")
 	state.equipped[GameTypes.EquipmentSlot.MAIN_WEAPON] = null
 	state.inventory[5] = null
 	screen.refresh_from_state(true)
+	await (context["tree"] as SceneTree).process_frame
+	assertions.expect_false(_inventory_tooltip_state(screen)["visible"], "a visible tooltip closes when its slot becomes empty")
 	var empty_main: Dictionary = screen.item_card_presentation("equip_0")
 	assertions.expect_equal("res://assets/ui/inventory_icons/weapon_stick.png", empty_main["icon_path"], "empty main weapon shows the wood-stick icon")
 	assertions.expect_true(empty_main["muted"], "empty main weapon icon is muted")
@@ -407,11 +423,47 @@ func _test_icon_card_presentation(assertions: Variant, context: Dictionary) -> v
 	var empty_grid: Dictionary = screen.item_card_presentation("grid_5")
 	assertions.expect_equal("", empty_grid["icon_path"], "empty normal slot stays iconless")
 	assertions.expect_true(empty_grid["muted"], "empty normal slot uses the empty presentation")
+	assertions.expect_true("空き" in str(empty_grid["accessibility_name"]), "empty normal slot keeps its accessibility name")
+	assertions.expect_true("配置可否:" in str(empty_grid["accessibility_description"]), "empty normal slot keeps its accessibility guidance")
+	var empty_main_control := screen.focus_control("equip_0") as InventoryCardButton
+	assertions.expect_true(empty_main_control != null, "empty main weapon slot remains available")
+	if empty_main_control != null:
+		assertions.expect_equal("", empty_main_control.get_tooltip(Vector2.ZERO), "managed empty main slot suppresses the native tooltip")
+	screen.test_focus("grid_0")
+	assertions.expect_true(_inventory_tooltip_state(screen)["visible"], "filled inventory slot still shows its tooltip")
 	screen.test_focus("equip_0")
-	var empty_slot_details: String = _inventory_tooltip_details(screen)
-	assertions.expect_true("主武器／木の棒" in empty_slot_details, "empty main weapon tooltip identifies the placeholder type")
-	assertions.expect_true("配置可否:" in empty_slot_details, "empty slot tooltip retains placement availability")
-	assertions.expect_true("操作:" in empty_slot_details, "empty slot tooltip retains current operations")
+	var empty_main_tooltip: Dictionary = _inventory_tooltip_state(screen)
+	assertions.expect_false(empty_main_tooltip["visible"], "empty main weapon placeholder shows no focus tooltip")
+	assertions.expect_equal("", empty_main_tooltip["details"], "empty main weapon placeholder exposes no tooltip details")
+	assertions.expect_equal("", empty_main_tooltip["warning"], "empty main weapon placeholder exposes no tooltip warning")
+	screen.test_focus("grid_5")
+	var empty_grid_tooltip: Dictionary = _inventory_tooltip_state(screen)
+	assertions.expect_false(empty_grid_tooltip["visible"], "empty normal slot shows no focus tooltip")
+	assertions.expect_equal("", empty_grid_tooltip["details"], "empty normal slot exposes no tooltip details")
+	screen.test_focus("grid_0")
+	var move_source_item: ItemInstance = state.inventory[0]
+	assertions.expect_true(move_source_item != null, "empty-slot movement test has a source item")
+	screen.test_accept()
+	screen.test_focus("grid_5")
+	var lifted_empty_tooltip: Dictionary = _inventory_tooltip_state(screen)
+	assertions.expect_false(lifted_empty_tooltip["visible"], "controller lift shows no tooltip on an empty target")
+	assertions.expect_equal("", lifted_empty_tooltip["warning"], "controller lift shows no warning on an empty target")
+	screen.test_cancel()
+	if move_source_item != null:
+		var mouse_source: Dictionary = {
+			"drag_type": &"item",
+			"kind": &"inventory",
+			"index": 0,
+			"item_id": move_source_item.item_id,
+		}
+		screen.test_mouse_drag_preview(
+			mouse_source,
+			{"kind": &"equipped", "index": GameTypes.EquipmentSlot.MAIN_WEAPON},
+		)
+		var dragged_empty_tooltip: Dictionary = _inventory_tooltip_state(screen)
+		assertions.expect_false(dragged_empty_tooltip["visible"], "mouse drag shows no tooltip on an empty equipment target")
+		assertions.expect_equal("", dragged_empty_tooltip["warning"], "mouse drag shows no warning on an empty equipment target")
+		screen.test_mouse_drag_end()
 	_cleanup_fixture(fixture, context)
 
 

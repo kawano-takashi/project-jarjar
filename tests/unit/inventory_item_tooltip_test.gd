@@ -23,6 +23,7 @@ func _exercise_tooltip(assertions: Variant, tree: SceneTree) -> void:
 	host.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var left_card := _new_card("LeftCard", &"left", Vector2(32.0, 120.0))
 	var right_card := _new_card("RightCard", &"right", Vector2(1792.0, 760.0))
+	var empty_card := _new_card("EmptyCard", &"empty", Vector2(900.0, 520.0))
 	var outside_target := Button.new()
 	outside_target.name = "OutsideTarget"
 	outside_target.focus_mode = Control.FOCUS_ALL
@@ -30,6 +31,7 @@ func _exercise_tooltip(assertions: Variant, tree: SceneTree) -> void:
 	outside_target.size = Vector2(120.0, 64.0)
 	host.add_child(left_card)
 	host.add_child(right_card)
+	host.add_child(empty_card)
 	host.add_child(outside_target)
 	var tooltip := TOOLTIP_SCENE.instantiate() as InventoryItemTooltip
 	host.add_child(tooltip)
@@ -48,11 +50,14 @@ func _exercise_tooltip(assertions: Variant, tree: SceneTree) -> void:
 			"warning": "配置不可: 交換先の装備種別が一致しません",
 			"urgent": false,
 		},
+		&"empty": {},
 	}
 	left_card.tooltip_text = "native left details"
 	right_card.tooltip_text = "native right details"
+	empty_card.tooltip_text = "native empty slot details"
 	tooltip.bind_target(left_card, _payload_for.bind(&"left"))
 	tooltip.bind_target(right_card, _payload_for.bind(&"right"))
+	tooltip.bind_target(empty_card, _payload_for.bind(&"empty"))
 	tooltip.begin_session()
 
 	var snapshot: Dictionary = tooltip.debug_snapshot()
@@ -79,6 +84,12 @@ func _exercise_tooltip(assertions: Variant, tree: SceneTree) -> void:
 		>= (snapshot["anchor_rect"] as Rect2).end.x + InventoryItemTooltip.TARGET_GAP - 0.5,
 		"tooltip prefers the right side when it fits",
 	)
+	empty_card.grab_focus()
+	await tree.process_frame
+	snapshot = tooltip.debug_snapshot()
+	assertions.expect_false(snapshot["visible"], "an empty payload hides the focused slot tooltip")
+	assertions.expect_equal("", snapshot["details"], "an empty focused slot exposes no tooltip details")
+	assertions.expect_equal("", empty_card.get_tooltip(Vector2.ZERO), "managed empty slots suppress native tooltip rendering")
 
 	outside_target.grab_focus()
 	await tree.process_frame
@@ -97,6 +108,13 @@ func _exercise_tooltip(assertions: Variant, tree: SceneTree) -> void:
 	assertions.expect_equal(&"pointer", snapshot["input_mode"], "pointer input becomes the preferred input mode")
 	tooltip.call("_on_target_mouse_exited", left_card)
 	assertions.expect_false(tooltip.debug_snapshot()["visible"], "mouse exit hides the pointer tooltip")
+	tooltip.call("_on_target_mouse_entered", empty_card)
+	snapshot = tooltip.debug_snapshot()
+	assertions.expect_false(snapshot["visible"], "hovering an empty payload keeps the tooltip hidden")
+	assertions.expect_equal(&"", snapshot["pending_focus_id"], "an empty hover starts no tooltip delay")
+	await tree.create_timer(InventoryItemTooltip.HOVER_DELAY_SECONDS + 0.05).timeout
+	assertions.expect_false(tooltip.debug_snapshot()["visible"], "an empty hover remains hidden after the normal delay")
+	tooltip.call("_on_target_mouse_exited", empty_card)
 
 	right_card.grab_focus()
 	tooltip.activate_focus_input()
@@ -160,6 +178,7 @@ func _exercise_tooltip(assertions: Variant, tree: SceneTree) -> void:
 	assertions.expect_false(snapshot["visible"], "unbinding the displayed target hides the tooltip")
 	assertions.expect_equal("native right details", right_card.get_tooltip(Vector2.ZERO), "unbinding restores native tooltip rendering")
 	left_card.queue_free()
+	empty_card.queue_free()
 	await tree.process_frame
 	assertions.expect_equal(0, tooltip.debug_snapshot()["bound_target_count"], "target deletion unregisters the final tooltip binding")
 

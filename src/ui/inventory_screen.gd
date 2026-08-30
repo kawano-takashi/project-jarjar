@@ -1447,6 +1447,8 @@ func _item_tooltip_payload(kind: StringName, index: int) -> Dictionary:
 	if _modal_focus.has_active_modal() or not _location_exists(kind, index):
 		return {}
 	var item: ItemInstance = _controller.item_at(kind, index)
+	if item == null:
+		return {}
 	var marked: bool = item != null and _controller.marked_item_ids.has(item.item_id)
 	var source: Dictionary = _active_item_move_source()
 	return {
