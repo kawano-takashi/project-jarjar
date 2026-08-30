@@ -567,9 +567,9 @@ func _process_pending_loot(current_tick: int) -> void:
 		var position: Vector2 = death["position"]
 		match enemy_type:
 			GameTypes.EnemyType.ELITE:
-				loot_service.acquire_fixed_chests(3, position, current_tick)
+				loot_service.acquire_elite_chests(position, current_tick)
 			GameTypes.EnemyType.BOSS:
-				loot_service.acquire_fixed_chests(8, position, current_tick)
+				loot_service.acquire_boss_chests(position, current_tick)
 			_:
 				loot_service.try_normal_drop(position, current_tick)
 	_pending_deaths.clear()

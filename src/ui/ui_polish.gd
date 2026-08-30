@@ -9,6 +9,7 @@ const COMMON_COLOR := Color(0.72, 0.76, 0.78, 1.0)
 const RARE_COLOR := Color(0.25, 0.67, 1.0, 1.0)
 const EPIC_COLOR := Color(0.78, 0.35, 1.0, 1.0)
 const LEGENDARY_COLOR := Color(1.0, 0.68, 0.18, 1.0)
+const UNIQUE_COLOR := Color(0.95, 0.16, 0.22, 1.0)
 const SKILL_COLOR := Color(0.35, 0.92, 0.72, 1.0)
 const NEUTRAL_COLOR := Color(0.38, 0.44, 0.48, 1.0)
 
@@ -53,6 +54,8 @@ static func rarity_color(rarity: int) -> Color:
 			return EPIC_COLOR
 		GameTypes.Rarity.LEGENDARY:
 			return LEGENDARY_COLOR
+		GameTypes.Rarity.UNIQUE:
+			return UNIQUE_COLOR
 		-1:
 			return SKILL_COLOR
 	return NEUTRAL_COLOR
@@ -66,6 +69,8 @@ static func rarity_corner_radii(rarity: int) -> PackedInt32Array:
 			return PackedInt32Array([20, 2, 20, 2])
 		GameTypes.Rarity.LEGENDARY:
 			return PackedInt32Array([28, 28, 28, 28])
+		GameTypes.Rarity.UNIQUE:
+			return PackedInt32Array([2, 28, 2, 28])
 		-1:
 			return PackedInt32Array([32, 32, 32, 32])
 	return PackedInt32Array([1, 1, 1, 1])

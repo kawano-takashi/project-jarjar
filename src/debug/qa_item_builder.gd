@@ -74,12 +74,16 @@ static func _is_valid_request(
 	var rarity_definition: RarityDefinition = catalog.rarity(rarity)
 	if rarity_definition == null:
 		return false
+	var is_unique: bool = not unique_id.is_empty()
+	if is_unique != (rarity == GameTypes.Rarity.UNIQUE):
+		return false
 	var expected_affix_count: int = rarity_definition.affix_count
-	if not unique_id.is_empty():
+	if is_unique:
 		var unique_definition: UniqueDefinition = catalog.unique(unique_id)
 		if unique_definition == null or unique_definition.equipment_slot != slot:
 			return false
-		expected_affix_count = floori(float(expected_affix_count) / 2.0)
+		if expected_affix_count != 0:
+			return false
 	if affixes.size() != expected_affix_count:
 		return false
 

@@ -9,7 +9,6 @@ signal discard_requested(item_ids: PackedStringArray, unique_confirmed: bool)
 signal fusion_requested(
 	material_ids: PackedStringArray,
 	use_wild: bool,
-	unique_confirmed: bool,
 )
 signal skill_move_requested(
 	source_kind: StringName,
@@ -753,8 +752,6 @@ func _fusion_candidate_entries() -> Array[Dictionary]:
 		)
 		if selected_slot >= 0:
 			details += "\n合成選択: 材料枠%d" % material_number
-		if not item.unique_id.is_empty():
-			details += "\n⚠ 合成すると固定名と固有効果が失われます。"
 		result.append({
 			"item_id": item.item_id,
 			"item": item,
@@ -1155,30 +1152,10 @@ func _on_fusion_wild_toggle() -> void:
 func _on_fusion_confirm() -> void:
 	if not _controller.fusion_is_valid():
 		return
-	var names: PackedStringArray = _controller.unique_names(_controller.fusion_material_ids)
-	if not names.is_empty():
-		_confirmation_kind = &"fusion"
-		_confirmation_payload = {
-			"material_ids": _controller.fusion_material_ids.duplicate(),
-			"use_wild": _controller.fusion_use_wild,
-		}
-		_confirmation_origin_focus_id = "FA2"
-		var confirm_focus: Control = _fusion_dialog.focus_control("FA2")
-		if not _push_modal(_confirmation_dialog, confirm_focus):
-			return
-		_modal_focus.set_restore_target(_confirmation_dialog, confirm_focus)
-		_confirmation_dialog.open_dialog(
-			"ユニーク装備を合成します",
-			"固有効果と固定名が失われます。対象: %s" % "、".join(names),
-			"ユニークを失って合成",
-			"FA2",
-		)
-		return
 	_pending_command_kind = &"fusion"
 	fusion_requested.emit(
 		_controller.fusion_material_ids.duplicate(),
 		_controller.fusion_use_wild,
-		false,
 	)
 
 
@@ -1205,13 +1182,6 @@ func _on_confirmation_confirmed() -> void:
 				payload.get("item_ids", PackedStringArray()) as PackedStringArray,
 				true,
 			)
-		&"fusion":
-			_pending_command_kind = &"fusion"
-			fusion_requested.emit(
-				payload.get("material_ids", PackedStringArray()) as PackedStringArray,
-				bool(payload.get("use_wild", false)),
-				true,
-			)
 
 
 func _on_confirmation_cancelled() -> void:
@@ -1224,12 +1194,8 @@ func _open_confirmation_for_result(command_kind: StringName, result: Dictionary)
 	var names: PackedStringArray = result.get("unique_names", PackedStringArray()) as PackedStringArray
 	_confirmation_kind = command_kind
 	_confirmation_payload = result.get("retry_payload", {}) as Dictionary
-	_confirmation_origin_focus_id = "FA2" if command_kind == &"fusion" else "action_1"
-	var origin_control: Control = (
-		_fusion_dialog.focus_control("FA2")
-		if command_kind == &"fusion" and _fusion_dialog.visible
-		else _action_buttons[1]
-	)
+	_confirmation_origin_focus_id = "action_1"
+	var origin_control: Control = _action_buttons[1]
 	if not _push_modal(_confirmation_dialog, origin_control):
 		return
 	_modal_focus.set_restore_target(_confirmation_dialog, origin_control)

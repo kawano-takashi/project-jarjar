@@ -272,6 +272,8 @@ func _rarity_label(rarity: GameTypes.Rarity) -> String:
 			return "EPIC"
 		GameTypes.Rarity.LEGENDARY:
 			return "LEGENDARY"
+		GameTypes.Rarity.UNIQUE:
+			return "★ UNIQUE"
 	return "COMMON"
 
 

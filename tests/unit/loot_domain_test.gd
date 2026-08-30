@@ -3,6 +3,7 @@ extends RefCounted
 
 const LootServiceScript := preload("res://src/loot/loot_service.gd")
 const ChestVisualPoolScript := preload("res://src/loot/chest_visual_pool.gd")
+const ARENA_SCENE: PackedScene = preload("res://scenes/gameplay/arena_combat.tscn")
 
 var _catalog: DefinitionCatalog = null
 
@@ -10,6 +11,7 @@ var _catalog: DefinitionCatalog = null
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
 		"reward_acquisition_guarantee_and_rng_contract",
+		"boss_unique_reward_contract",
 		"chest_visual_pool_and_failure_contract",
 		"reward_payload_presentation_and_determinism_contract",
 	])
@@ -19,6 +21,8 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 	match test_name:
 		"reward_acquisition_guarantee_and_rng_contract":
 			_test_reward_acquisition_guarantee_and_rng(assertions)
+		"boss_unique_reward_contract":
+			_test_boss_unique_reward_contract(assertions)
 		"chest_visual_pool_and_failure_contract":
 			_test_chest_visual_pool_and_failure(assertions)
 		"reward_payload_presentation_and_determinism_contract":
@@ -60,25 +64,22 @@ func _test_reward_acquisition_guarantee_and_rng(assertions: Variant) -> void:
 		return
 
 	var expected_state: RunState = _new_state(hit_seed, 1, catalog)
-	var decision_value: float = expected_state.rng_streams.loot_rng.randf()
-	assertions.expect_true(decision_value < wave.normal_chest_rate, "hit fixture is inside chest rate")
 	var expected_service: LootService = LootServiceScript.new()
 	expected_service.initialize(expected_state, catalog)
-	var expected_rewards: Array[RewardRoll] = expected_service.acquire_fixed_chests(
-		1,
+	var expected_reward: RewardRoll = expected_service.try_normal_drop(
 		Vector2(3.0, -2.0),
 		42,
 	)
-	assertions.expect_equal(1, expected_rewards.size(), "fixed comparison creates one reward")
-	if expected_rewards.is_empty():
+	if expected_reward == null:
 		return
 	assertions.expect_equal(
-		_reward_snapshot(expected_rewards[0], true),
+		_reward_snapshot(expected_reward, true),
 		_reward_snapshot(normal_reward, true),
-		"normal hit equals one rate randf followed by fixed natural acquisition",
+		"normal hit is deterministic",
 	)
-	assertions.expect_equal(expected_state.rng_streams.loot_rng.state, normal_state.rng_streams.loot_rng.state, "normal hit has exactly one extra rate randf")
+	assertions.expect_equal(expected_state.rng_streams.loot_rng.state, normal_state.rng_streams.loot_rng.state, "normal hit reproduces loot RNG state")
 	assertions.expect_true(normal_reward.is_guaranteed_main_weapon, "first natural chest is replaced by guarantee")
+	assertions.expect_equal(GameTypes.RewardSource.NORMAL, normal_reward.source, "normal drop records NORMAL source")
 	assertions.expect_equal(GameTypes.RewardKind.EQUIPMENT, normal_reward.kind, "guarantee kind fixed equipment")
 	assertions.expect_equal(GameTypes.EquipmentSlot.MAIN_WEAPON, normal_reward.equipment.slot, "guarantee slot fixed main weapon")
 	assertions.expect_equal(&"", normal_reward.equipment.unique_id, "guarantee never unique")
@@ -90,10 +91,13 @@ func _test_reward_acquisition_guarantee_and_rng(assertions: Variant) -> void:
 	var fixed_state: RunState = _new_state(hit_seed, 1, catalog)
 	var fixed_service: LootService = LootServiceScript.new()
 	fixed_service.initialize(fixed_state, catalog)
-	var fixed_rewards: Array[RewardRoll] = fixed_service.acquire_fixed_chests(1, Vector2.ZERO, 42)
-	assertions.expect_equal(1, fixed_rewards.size(), "special fixed acquisition creates requested count")
-	assertions.expect_not_equal(normal_state.rng_streams.loot_rng.state, fixed_state.rng_streams.loot_rng.state, "special fixed acquisition has no leading rate randf")
-	assertions.expect_true(fixed_rewards[0].is_guaranteed_main_weapon, "first special fixed chest is guarantee replacement")
+	var fixed_rewards: Array[RewardRoll] = fixed_service.acquire_elite_chests(Vector2.ZERO, 42)
+	assertions.expect_equal(3, fixed_rewards.size(), "elite acquisition creates exactly three chests")
+	assertions.expect_not_equal(normal_state.rng_streams.loot_rng.state, fixed_state.rng_streams.loot_rng.state, "elite acquisition has no leading rate randf")
+	assertions.expect_true(fixed_rewards[0].is_guaranteed_main_weapon, "first elite chest is guarantee replacement")
+	for reward: RewardRoll in fixed_rewards:
+		assertions.expect_equal(GameTypes.RewardSource.ELITE, reward.source, "elite reward records ELITE source")
+		assertions.expect_true(reward.equipment == null or reward.equipment.unique_id.is_empty(), "elite reward never UNIQUE")
 
 	var fallback_state: RunState = _new_state(20260827, 1, catalog)
 	var fallback_service: LootService = LootServiceScript.new()
@@ -103,6 +107,8 @@ func _test_reward_acquisition_guarantee_and_rng(assertions: Variant) -> void:
 	if fallback != null:
 		assertions.expect_true(fallback.is_guaranteed_main_weapon, "fallback is guaranteed main weapon")
 		assertions.expect_equal(99, fallback.acquired_tick, "fallback is acquired at quota tick")
+		assertions.expect_equal(GameTypes.RewardSource.FALLBACK, fallback.source, "fallback records FALLBACK source")
+		assertions.expect_true(fallback.equipment.unique_id.is_empty(), "fallback never UNIQUE")
 	assertions.expect_equal(1, fallback_state.unopened_rewards.size(), "fallback queue contains exactly one reward")
 	assertions.expect_equal(1, fallback_state.wave_chests, "fallback creates exactly one chest")
 	assertions.expect_equal(null, fallback_service.ensure_guarantee_fallback(Vector2.ZERO, 100), "fallback cannot duplicate guarantee")
@@ -111,9 +117,83 @@ func _test_reward_acquisition_guarantee_and_rng(assertions: Variant) -> void:
 	var natural_then_fallback_state: RunState = _new_state(20260828, 1, catalog)
 	var natural_then_fallback_service: LootService = LootServiceScript.new()
 	natural_then_fallback_service.initialize(natural_then_fallback_state, catalog)
-	natural_then_fallback_service.acquire_fixed_chests(1, Vector2.ZERO, 1)
+	natural_then_fallback_service.acquire_elite_chests(Vector2.ZERO, 1)
 	assertions.expect_equal(null, natural_then_fallback_service.ensure_guarantee_fallback(Vector2.ZERO, 2), "existing natural guarantee suppresses fallback")
-	assertions.expect_equal(1, natural_then_fallback_state.wave_chests, "natural guarantee plus fallback attempt remains one chest")
+	assertions.expect_equal(3, natural_then_fallback_state.wave_chests, "elite guarantee plus fallback attempt remains three chests")
+
+
+func _test_boss_unique_reward_contract(assertions: Variant) -> void:
+	var catalog: DefinitionCatalog = _loaded_catalog(assertions)
+	if catalog == null:
+		return
+	var pool := ChestVisualPoolScript.new()
+	var state: RunState = _new_state(20260830, 8, catalog)
+	var service: LootService = LootServiceScript.new()
+	service.initialize(state, catalog, pool)
+	var rewards: Array[RewardRoll] = service.acquire_boss_chests(
+		Vector2(7.0, -4.0),
+		480,
+	)
+	assertions.expect_equal(8, rewards.size(), "boss creates exactly eight rewards")
+	assertions.expect_equal(8, state.wave_chests, "boss creates exactly eight logical chests")
+	assertions.expect_equal(8, state.total_chests, "boss increments total chest count by eight")
+	assertions.expect_equal(9, state.drop_serial, "boss reserves exactly eight serials")
+	assertions.expect_equal(8, pool.active_count(), "boss displays eight ordinary world chests")
+	for transform: Transform3D in pool.transforms():
+		assertions.expect_equal(Vector3(7.0, ChestVisual.BASE_HEIGHT, -4.0), transform.origin, "boss chest keeps the common gold-chest position contract")
+	var arena := ARENA_SCENE.instantiate()
+	var chest_instances := arena.get_node("%ChestInstances") as MultiMeshInstance3D
+	var chest_mesh := chest_instances.multimesh.mesh as BoxMesh
+	var chest_material := chest_mesh.material as StandardMaterial3D
+	assertions.expect_equal(Color(0.86, 0.58, 0.2, 1.0), chest_material.albedo_color, "boss Unique chest keeps the ordinary gold world appearance")
+	arena.free()
+	var guarantee_count: int = 0
+	var unique_count: int = 0
+	for index: int in range(rewards.size()):
+		var reward: RewardRoll = rewards[index]
+		assertions.expect_equal(GameTypes.RewardSource.BOSS, reward.source, "boss reward %d records BOSS source" % index)
+		assertions.expect_equal(480, reward.acquired_tick, "boss reward %d keeps acquisition tick" % index)
+		assertions.expect_true(reward.reward_id.ends_with("-%04d" % (index + 1)), "boss reward %d preserves serial order" % index)
+		if reward.is_guaranteed_main_weapon:
+			guarantee_count += 1
+		var is_unique: bool = (
+			reward.equipment != null
+			and reward.equipment.rarity == GameTypes.Rarity.UNIQUE
+		)
+		if is_unique:
+			unique_count += 1
+			assertions.expect_equal(7, index, "UNIQUE is the eighth boss reward")
+			assertions.expect_false(reward.equipment.unique_id.is_empty(), "boss UNIQUE has unique_id")
+			assertions.expect_equal(0, reward.equipment.affixes.size(), "boss UNIQUE has zero affixes")
+		else:
+			assertions.expect_true(
+				reward.equipment == null or reward.equipment.unique_id.is_empty(),
+				"boss non-UNIQUE reward %d has no unique_id" % index,
+			)
+	assertions.expect_equal(1, guarantee_count, "boss batch contains one wave guarantee")
+	assertions.expect_equal(1, unique_count, "boss batch contains exactly one UNIQUE")
+	assertions.expect_true(rewards[0].is_guaranteed_main_weapon, "missing guarantee is first of seven non-UNIQUE rewards")
+
+	var repeat_state: RunState = _new_state(20260830, 8, catalog)
+	var repeat_service: LootService = LootServiceScript.new()
+	repeat_service.initialize(repeat_state, catalog)
+	var repeat_rewards: Array[RewardRoll] = repeat_service.acquire_boss_chests(Vector2.ZERO, 480)
+	assertions.expect_true(
+		_reward_list_snapshot(rewards, true) == _reward_list_snapshot(repeat_rewards, true),
+		"same seed reproduces boss reward batch",
+	)
+
+	var existing_state: RunState = _new_state(20260831, 8, catalog)
+	var existing_service: LootService = LootServiceScript.new()
+	existing_service.initialize(existing_state, catalog)
+	existing_service.acquire_elite_chests(Vector2.ZERO, 470)
+	var existing_boss: Array[RewardRoll] = existing_service.acquire_boss_chests(Vector2.ZERO, 480)
+	var existing_boss_guarantees: int = 0
+	for reward: RewardRoll in existing_boss:
+		if reward.is_guaranteed_main_weapon:
+			existing_boss_guarantees += 1
+	assertions.expect_equal(0, existing_boss_guarantees, "boss does not duplicate an existing wave guarantee")
+	assertions.expect_equal(1, _count_guarantees(existing_state.unopened_rewards), "wave keeps exactly one guarantee overall")
 
 
 func _test_chest_visual_pool_and_failure(assertions: Variant) -> void:
@@ -137,11 +217,11 @@ func _test_chest_visual_pool_and_failure(assertions: Variant) -> void:
 	var overflow_state: RunState = _new_state(128, 1, catalog)
 	var overflow_service: LootService = LootServiceScript.new()
 	overflow_service.initialize(overflow_state, catalog, reward_pool)
-	var overflow_rewards: Array[RewardRoll] = overflow_service.acquire_fixed_chests(
-		ChestVisualPoolScript.CAPACITY + 1,
-		Vector2.ZERO,
-		1,
-	)
+	var overflow_rewards: Array[RewardRoll] = []
+	for _batch_index: int in range(43):
+		overflow_rewards.append_array(
+			overflow_service.acquire_elite_chests(Vector2.ZERO, 1)
+		)
 	assertions.expect_equal(129, overflow_rewards.size(), "overflow acquisition returns every logical RewardRoll")
 	assertions.expect_equal(129, overflow_state.unopened_rewards.size(), "overflow loses no queued reward")
 	assertions.expect_equal(129, overflow_state.total_chests, "overflow loses no logical chest count")
@@ -182,8 +262,8 @@ func _test_chest_visual_pool_and_failure(assertions: Variant) -> void:
 	var state: RunState = _new_state(311, 1, catalog)
 	var wave_one_service: LootService = LootServiceScript.new()
 	wave_one_service.initialize(state, catalog)
-	var past_rewards: Array[RewardRoll] = wave_one_service.acquire_fixed_chests(1, Vector2.ZERO, 1)
-	assertions.expect_equal(1, past_rewards.size(), "past wave reward fixture exists")
+	var past_rewards: Array[RewardRoll] = wave_one_service.acquire_elite_chests(Vector2.ZERO, 1)
+	assertions.expect_equal(3, past_rewards.size(), "past wave reward fixtures exist")
 	if past_rewards.is_empty():
 		return
 	var past_reward: RewardRoll = past_rewards[0]
@@ -195,14 +275,14 @@ func _test_chest_visual_pool_and_failure(assertions: Variant) -> void:
 	state.wave_chests = 0
 	var wave_two_service: LootService = LootServiceScript.new()
 	wave_two_service.initialize(state, catalog)
-	wave_two_service.acquire_fixed_chests(2, Vector2.ZERO, 2)
-	assertions.expect_equal(3, state.unopened_rewards.size(), "failure fixture contains past and current rewards")
-	assertions.expect_equal(2, wave_two_service.discard_current_wave_rewards(), "failure discards current wave chest count")
-	assertions.expect_equal(1, state.unopened_rewards.size(), "failure retains past-wave reward record")
+	wave_two_service.acquire_elite_chests(Vector2.ZERO, 2)
+	assertions.expect_equal(6, state.unopened_rewards.size(), "failure fixture contains past and current rewards")
+	assertions.expect_equal(3, wave_two_service.discard_current_wave_rewards(), "failure discards current wave chest count")
+	assertions.expect_equal(3, state.unopened_rewards.size(), "failure retains past-wave reward records")
 	assertions.expect_equal(past_reward.reward_id, state.unopened_rewards[0].reward_id, "failure retained the past-wave reward")
 	assertions.expect_equal(past_item.item_id, (state.inventory[0] as ItemInstance).item_id, "failure preserves past-wave inventory")
 	assertions.expect_equal(0, state.wave_chests, "failure clears only current wave chest counter")
-	assertions.expect_equal(1, state.total_chests, "failure removes current-wave chests from total")
+	assertions.expect_equal(3, state.total_chests, "failure removes current-wave chests from total")
 
 
 func _test_reward_payload_presentation_and_determinism(assertions: Variant) -> void:
@@ -212,16 +292,18 @@ func _test_reward_payload_presentation_and_determinism(assertions: Variant) -> v
 	var presentation_state: RunState = _new_state(20260827, 8, catalog)
 	var presentation_service: LootService = LootServiceScript.new()
 	presentation_service.initialize(presentation_state, catalog)
-	var presentation_rewards: Array[RewardRoll] = presentation_service.acquire_fixed_chests(
-		1000,
-		Vector2.ZERO,
-		10,
-	)
+	var presentation_rewards: Array[RewardRoll] = []
+	for _batch_index: int in range(334):
+		presentation_rewards.append_array(
+			presentation_service.acquire_elite_chests(Vector2.ZERO, 10)
+		)
 	var rarity_seen := PackedByteArray([0, 0, 0, 0])
 	var skill_seen: bool = false
 	var invalid_skill_payloads: int = 0
 	var invalid_equipment_payloads: int = 0
 	for reward: RewardRoll in presentation_rewards:
+		if reward.source != GameTypes.RewardSource.ELITE:
+			invalid_equipment_payloads += 1
 		if reward.kind == GameTypes.RewardKind.SKILL:
 			skill_seen = true
 			if (
@@ -233,6 +315,8 @@ func _test_reward_payload_presentation_and_determinism(assertions: Variant) -> v
 				invalid_skill_payloads += 1
 			continue
 		if not _equipment_reward_contract_is_valid(reward, presentation_state.run_seed, 8):
+			invalid_equipment_payloads += 1
+		if not reward.equipment.unique_id.is_empty():
 			invalid_equipment_payloads += 1
 		rarity_seen[reward.rarity_for_presentation] = 1
 	assertions.expect_true(skill_seen, "production reward sample includes skill presentation")
@@ -308,13 +392,23 @@ func _assert_equipment_reward_contract(
 	assertions.expect_equal(GameTypes.RewardKind.EQUIPMENT, reward.kind, "equipment reward kind")
 	assertions.expect_equal(&"", reward.skill_id, "equipment reward skill id empty")
 	assertions.expect_equal(item.rarity, reward.rarity_for_presentation, "equipment presentation rarity equals item rarity")
-	assertions.expect_true(reward.rarity_for_presentation >= 0 and reward.rarity_for_presentation <= 3, "equipment presentation rarity is 0..3")
+	assertions.expect_true(
+		reward.rarity_for_presentation >= 0
+		and reward.rarity_for_presentation <= GameTypes.Rarity.UNIQUE,
+		"equipment presentation rarity is valid",
+	)
 	assertions.expect_equal(wave_number, reward.wave_number, "reward wave fixed at acquisition")
 	assertions.expect_true(reward.reward_id.begins_with("r-%016x-%02d-" % [run_seed, wave_number]), "reward id has deterministic run/wave prefix")
 	assertions.expect_true(item.item_id.begins_with("i-%016x-%02d-" % [run_seed, wave_number]), "item id has deterministic run/wave prefix")
 	assertions.expect_equal(reward.reward_id.trim_prefix("r-"), item.item_id.trim_prefix("i-"), "reward and item share one reserved serial")
 	assertions.expect_equal(ItemFactory.derive_item_seed(run_seed, item.item_id), item.item_seed, "item_seed derives from complete item_id")
 	assertions.expect_true(not item.display_name.is_empty(), "equipment display name fixed at acquisition")
+	if item.rarity == GameTypes.Rarity.UNIQUE:
+		assertions.expect_false(item.unique_id.is_empty(), "UNIQUE reward has unique_id")
+		assertions.expect_equal(0, item.affixes.size(), "UNIQUE reward has no affixes")
+		assertions.expect_equal(GameTypes.RewardSource.BOSS, reward.source, "UNIQUE reward is boss-sourced")
+	else:
+		assertions.expect_true(item.unique_id.is_empty(), "normal equipment has no unique_id")
 	if item.slot == GameTypes.EquipmentSlot.MAIN_WEAPON:
 		assertions.expect_true(
 			item.main_weapon_type >= GameTypes.MainWeaponType.BOW
@@ -344,7 +438,7 @@ func _generate_fixed_event_sequence(run_seed: int, catalog: DefinitionCatalog) -
 				wave_number * 100 + death_index,
 			)
 		if wave_number == 2:
-			service.acquire_fixed_chests(2, Vector2.ZERO, wave_number * 100 + 90)
+			service.acquire_elite_chests(Vector2.ZERO, wave_number * 100 + 90)
 		service.ensure_guarantee_fallback(Vector2.ZERO, wave_number * 100 + 99)
 	var rewards: Array[RewardRoll] = state.unopened_rewards.duplicate()
 	return {
@@ -367,7 +461,7 @@ func _equipment_reward_contract_is_valid(
 		or not reward.skill_id.is_empty()
 		or reward.rarity_for_presentation != item.rarity
 		or reward.rarity_for_presentation < 0
-		or reward.rarity_for_presentation > 3
+		or reward.rarity_for_presentation > GameTypes.Rarity.UNIQUE
 		or reward.wave_number != wave_number
 		or not reward.reward_id.begins_with("r-%016x-%02d-" % [run_seed, wave_number])
 		or not item.item_id.begins_with("i-%016x-%02d-" % [run_seed, wave_number])
@@ -376,6 +470,15 @@ func _equipment_reward_contract_is_valid(
 		or item.display_name.is_empty()
 		or reward.revealed
 	):
+		return false
+	if item.rarity == GameTypes.Rarity.UNIQUE:
+		if (
+			item.unique_id.is_empty()
+			or not item.affixes.is_empty()
+			or reward.source != GameTypes.RewardSource.BOSS
+		):
+			return false
+	elif not item.unique_id.is_empty():
 		return false
 	if item.slot == GameTypes.EquipmentSlot.MAIN_WEAPON:
 		return (
@@ -437,6 +540,7 @@ func _reward_snapshot(reward: RewardRoll, include_revealed: bool) -> Dictionary:
 		"wave_number": reward.wave_number,
 		"acquired_tick": reward.acquired_tick,
 		"is_guaranteed_main_weapon": reward.is_guaranteed_main_weapon,
+		"source": reward.source,
 		"kind": reward.kind,
 		"equipment": equipment_snapshot,
 		"skill_id": String(reward.skill_id),
@@ -445,3 +549,11 @@ func _reward_snapshot(reward: RewardRoll, include_revealed: bool) -> Dictionary:
 	if include_revealed:
 		result["revealed"] = reward.revealed
 	return result
+
+
+func _count_guarantees(rewards: Array[RewardRoll]) -> int:
+	var count: int = 0
+	for reward: RewardRoll in rewards:
+		if reward != null and reward.is_guaranteed_main_weapon:
+			count += 1
+	return count

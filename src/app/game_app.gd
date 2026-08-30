@@ -106,6 +106,7 @@ func _ready() -> void:
 		&"rare_open": AudioFactoryScript.rare_open(),
 		&"epic_prealert": AudioFactoryScript.epic_prealert(),
 		&"legendary_prealert": AudioFactoryScript.legendary_prealert(),
+		&"unique_prealert": AudioFactoryScript.unique_prealert(),
 		&"wave_clear": AudioFactoryScript.wave_clear(),
 		&"fusion": AudioFactoryScript.fusion(),
 	}
@@ -210,7 +211,7 @@ func _show_reward_reveal() -> void:
 	_active_screen = reward_screen
 	reward_screen.reveal_completed.connect(_on_reward_reveal_completed)
 	reward_screen.audio_event_requested.connect(_play_audio_event)
-	reward_screen.initialize(run_state)
+	reward_screen.initialize(run_state, _definition_catalog)
 	add_child(reward_screen)
 	_logical_phase = GameTypes.RunPhase.REWARD_REVEAL
 	_tutorial_controller.enter_reward(run_state.wave_number)
@@ -301,7 +302,6 @@ func _on_inventory_discard_requested(
 func _on_inventory_fusion_requested(
 	material_ids: PackedStringArray,
 	use_wild: bool,
-	unique_confirmed: bool,
 ) -> void:
 	_apply_inventory_command_result(
 		&"fusion",
@@ -309,7 +309,6 @@ func _on_inventory_fusion_requested(
 			run_state,
 			material_ids,
 			use_wild,
-			unique_confirmed,
 			_definition_catalog,
 		),
 	)

@@ -19,7 +19,13 @@ static func calculate(
 	for item: ItemInstance in held_equipment:
 		if item == null:
 			continue
-		equipment_counts[item.rarity] += 1
+		var score_rarity: int = (
+			GameTypes.Rarity.LEGENDARY
+			if item.rarity == GameTypes.Rarity.UNIQUE
+			else int(item.rarity)
+		)
+		if score_rarity >= 0 and score_rarity < equipment_counts.size():
+			equipment_counts[score_rarity] += 1
 		if not item.unique_id.is_empty():
 			unique_count += 1
 	var skill_level_total: int = 0

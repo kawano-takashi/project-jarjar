@@ -308,9 +308,10 @@ func _test_icon_card_presentation(assertions: Variant, context: Dictionary) -> v
 	)
 	var unique_card: Dictionary = screen.item_card_presentation("grid_33")
 	assertions.expect_equal("res://assets/ui/inventory_icons/slot_sub_weapon.png", unique_card["icon_path"], "unique catalyst reuses the catalyst icon")
-	assertions.expect_equal(Color(0.25, 0.67, 1.0, 1.0), unique_card["icon_color"], "Rare icon uses the shared blue")
-	assertions.expect_equal(PackedInt32Array([9, 9, 9, 9]), unique_card["corner_radii"], "Rare card uses the shared rounded-square shape")
+	assertions.expect_equal(Color(0.95, 0.16, 0.22, 1.0), unique_card["icon_color"], "UNIQUE icon uses dedicated deep red")
+	assertions.expect_equal(PackedInt32Array([2, 28, 2, 28]), unique_card["corner_radii"], "UNIQUE card uses its dedicated outline")
 	assertions.expect_true(unique_card["unique_badge"], "unique item shows a top-left star")
+	assertions.expect_true("レアリティ: ★ UNIQUE" in str(unique_card["tooltip"]), "UNIQUE tooltip uses the exact label")
 	assertions.expect_true("名前:" in str(unique_card["tooltip"]), "unique tooltip includes its name")
 	assertions.expect_true("A／Enter" in str(unique_card["accessibility_description"]), "unique accessibility description includes current operations")
 	for guidance_label: String in ["配置可否:", "操作:"]:
@@ -342,6 +343,7 @@ func _test_icon_card_presentation(assertions: Variant, context: Dictionary) -> v
 	for expected_text: String in ["種類:", "レアリティ:", "名前:", "効果:", "装備比較:", "保管位置:", "状態:", "配置可否:", "操作:"]:
 		assertions.expect_true(expected_text in details_text, "shared inventory tooltip contains %s" % expected_text)
 
+	screen.test_focus("grid_18")
 	screen.test_focus("action_2")
 	screen.test_accept()
 	await (context["tree"] as SceneTree).process_frame
@@ -358,13 +360,7 @@ func _test_icon_card_presentation(assertions: Variant, context: Dictionary) -> v
 	var fusion_debug: Dictionary = fusion_dialog.debug_state()
 	assertions.expect_equal(8, fusion_debug["candidate_columns"], "fusion candidate grid uses eight columns")
 	var unique_candidate_index: int = (fusion_debug["candidate_item_ids"] as PackedStringArray).find("qa-inventory-33")
-	var candidate_presentations: Array = fusion_debug["candidate_presentations"] as Array
-	assertions.expect_true(unique_candidate_index >= 0, "unique item remains a fusion candidate")
-	if unique_candidate_index >= 0:
-		var candidate: Dictionary = candidate_presentations[unique_candidate_index] as Dictionary
-		assertions.expect_equal(Vector2(96.0, 96.0), candidate["minimum_size"], "fusion candidate is 96px square")
-		assertions.expect_equal(unique_card["icon_path"], candidate["icon_path"], "fusion candidate reuses the inventory icon")
-		assertions.expect_true(candidate["unique_badge"], "fusion candidate keeps the unique star")
+	assertions.expect_equal(-1, unique_candidate_index, "UNIQUE item is absent from fusion candidates")
 	screen.test_fusion_candidate_focus("qa-inventory-18")
 	var fusion_candidate_details: String = _fusion_tooltip_details(fusion_dialog)
 	for guidance_label: String in ["配置可否:", "操作:"]:
@@ -393,8 +389,8 @@ func _test_icon_card_presentation(assertions: Variant, context: Dictionary) -> v
 	screen.test_focus("action_sort")
 	screen.test_accept()
 	var sorted_first: Dictionary = screen.item_card_presentation("grid_0")
-	assertions.expect_equal("res://assets/ui/inventory_icons/slot_feet.png", sorted_first["icon_path"], "sort redraws the new first item icon")
-	assertions.expect_equal(Color(1.0, 0.68, 0.18, 1.0), sorted_first["icon_color"], "sort redraws the new first item rarity color")
+	assertions.expect_equal("res://assets/ui/inventory_icons/slot_sub_weapon.png", sorted_first["icon_path"], "sort redraws Unique as the new first item")
+	assertions.expect_equal(Color(0.95, 0.16, 0.22, 1.0), sorted_first["icon_color"], "sort redraws the new first item with Unique color")
 
 	state.equipped[GameTypes.EquipmentSlot.MAIN_WEAPON] = null
 	state.inventory[5] = null
@@ -487,12 +483,11 @@ func _test_rarity_sort_button(
 	var mouse_sort_button: Button = mouse_screen.focus_control("action_sort") as Button
 	mouse_sort_button.emit_signal("pressed")
 
-	var expected_ids := PackedStringArray(["qa-inventory-35"])
+	var expected_ids := PackedStringArray(["qa-inventory-33", "qa-inventory-35"])
 	for index: int in range(27, 33):
 		expected_ids.append("qa-inventory-%02d" % index)
 	for index: int in range(18, 27):
 		expected_ids.append("qa-inventory-%02d" % index)
-	expected_ids.append("qa-inventory-33")
 	for index: int in range(18):
 		expected_ids.append("qa-inventory-%02d" % index)
 	expected_ids.append("qa-inventory-34")
@@ -501,7 +496,7 @@ func _test_rarity_sort_button(
 	assertions.expect_equal(controller_overflow_before, _item_ids(controller_state.overflow), "controller sort preserves overflow")
 	assertions.expect_equal(mouse_overflow_before, _item_ids(mouse_state.overflow), "mouse sort preserves overflow")
 	assertions.expect_true(controller_state.inventory[35].locked, "controller sort preserves the locked Common item")
-	assertions.expect_equal(&"bloodied_dagger", controller_state.inventory[16].unique_id, "controller sort preserves the Rare unique item")
+	assertions.expect_equal(&"bloodied_dagger", controller_state.inventory[0].unique_id, "controller sort places UNIQUE first")
 
 	for result_case: Dictionary in [
 		{
@@ -682,7 +677,8 @@ func _test_unique_effect_presentation(
 		item.item_id = "qa-unique-effect-%s" % unique_id
 		item.item_seed = index
 		item.slot = definition.equipment_slot
-		item.rarity = GameTypes.Rarity.COMMON
+		item.rarity = GameTypes.Rarity.UNIQUE
+		item.affixes = []
 		item.unique_id = unique_id
 		item.display_name = definition.display_name
 		state.inventory[index] = item
@@ -693,7 +689,8 @@ func _test_unique_effect_presentation(
 	unknown_item.item_id = "qa-unknown-unique-effect"
 	unknown_item.item_seed = unknown_index
 	unknown_item.slot = GameTypes.EquipmentSlot.SUB_WEAPON
-	unknown_item.rarity = GameTypes.Rarity.COMMON
+	unknown_item.rarity = GameTypes.Rarity.UNIQUE
+	unknown_item.affixes = []
 	unknown_item.unique_id = &"future_unique"
 	unknown_item.display_name = "未知のユニーク装備"
 	state.inventory[unknown_index] = unknown_item
@@ -773,44 +770,21 @@ func _test_unique_effect_presentation(
 	screen.test_accept()
 	var fusion_dialog: FusionDialog = screen.get_node("%FusionDialog") as FusionDialog
 	for item: ItemInstance in unique_items:
-		var definition: UniqueDefinition = catalog.unique(item.unique_id)
-		var fusion_effect_block: String = "固有効果:\n★ %s" % definition.effect_description
-		assertions.expect_true(
+		assertions.expect_false(
 			screen.test_fusion_candidate_focus(item.item_id),
-			"%s fusion candidate receives focus" % item.unique_id,
+			"%s is excluded from fusion candidates" % item.unique_id,
 		)
-		var candidate_details: String = _fusion_tooltip_details(fusion_dialog)
-		assertions.expect_true(
-			fusion_effect_block in candidate_details,
-			"%s fusion details present its unique effect" % item.unique_id,
-		)
-	assertions.expect_true(
-		screen.test_fusion_candidate_focus(unknown_item.item_id),
-		"unknown unique fusion candidate receives focus",
-	)
-	var unknown_candidate_details: String = _fusion_tooltip_details(fusion_dialog)
-	assertions.expect_true(
-		"固有効果:\n★ 不明な固有効果" in unknown_candidate_details,
-		"unknown unique fusion details use the Japanese fallback",
-	)
 	assertions.expect_false(
-		"future_unique" in unknown_candidate_details,
-		"unknown unique fusion details hide its internal ID",
+		screen.test_fusion_candidate_focus(unknown_item.item_id),
+		"unknown UNIQUE is also excluded from fusion candidates",
 	)
-
-	var first_unique: ItemInstance = unique_items[0]
-	var first_definition: UniqueDefinition = catalog.unique(first_unique.unique_id)
 	assertions.expect_true(
-		screen.test_fusion_candidate_focus(first_unique.item_id),
-		"first unique fusion candidate receives focus for material details",
+		screen.test_fusion_candidate_focus(normal_item.item_id),
+		"normal control item remains a fusion candidate",
 	)
-	screen.test_accept()
-	assertions.expect_true(screen.test_focus("F0"), "first fusion material receives focus")
-	var material_details: String = _fusion_tooltip_details(fusion_dialog)
-	var material_effect_block: String = "固有効果:\n★ %s" % first_definition.effect_description
 	assertions.expect_true(
-		material_effect_block in material_details,
-		"fusion material details present the unique effect",
+		"UNIQUEはボス宝箱限定" in str(fusion_dialog.debug_state()["preview"]),
+		"fusion dialog states the boss-only UNIQUE rule",
 	)
 	screen.test_cancel()
 	_cleanup_fixture(fixture, context)
@@ -1159,8 +1133,8 @@ func _test_controller_mouse_bulk_fusion_and_discard(
 	var fusion_state: RunState = fusion_fixture["state"]
 	var fusion_requests: Array[Dictionary] = []
 	var fusion_background_grid_0: Control = fusion_screen.focus_control("grid_0")
-	fusion_screen.fusion_requested.connect(func(ids: PackedStringArray, use_wild: bool, confirmed: bool) -> void:
-		fusion_requests.append({"ids": ids.duplicate(), "wild": use_wild, "confirmed": confirmed})
+	fusion_screen.fusion_requested.connect(func(ids: PackedStringArray, use_wild: bool) -> void:
+		fusion_requests.append({"ids": ids.duplicate(), "wild": use_wild})
 	)
 	fusion_screen.test_focus("action_2")
 	fusion_screen.test_accept()
@@ -1289,84 +1263,56 @@ func _test_fusion_dialog_exact_controller(
 	var rare_state: RunState = rare_fixture["state"]
 	var rare_before: Dictionary = _run_state_signature(rare_state)
 	var rare_rng_before: Dictionary = _rng_snapshot(rare_state)
-	rare_screen.test_focus("grid_33")
+	rare_screen.test_focus("grid_18")
 	rare_screen.test_focus("action_2")
 	rare_screen.test_accept()
-	assertions.expect_equal(GameTypes.Rarity.RARE, rare_screen.debug_state()["fusion_rarity"], "last focus qa-inventory-33 opens FR=Rare")
+	assertions.expect_equal(GameTypes.Rarity.RARE, rare_screen.debug_state()["fusion_rarity"], "last normal Rare focus opens FR=Rare")
 	var rare_dialog: FusionDialog = rare_screen.get_node("%FusionDialog") as FusionDialog
 	var unique_candidate_id: String = rare_dialog.focus_id_for_candidate("qa-inventory-33")
-	assertions.expect_false(unique_candidate_id.is_empty(), "unlocked unique remains manually selectable")
-	rare_screen.test_fusion_candidate_focus("qa-inventory-33")
-	assertions.expect_true("通常枠 G5,3" in _fusion_tooltip_details(rare_dialog), "candidate tooltip shows exact storage location")
-	assertions.expect_true("固有効果が失われます" in _fusion_tooltip_details(rare_dialog), "unique candidate tooltip shows loss warning")
-	var unique_candidate: BaseButton = rare_dialog.focus_control(unique_candidate_id) as BaseButton
-	var unique_candidate_position: Vector2 = unique_candidate.position
-	for index: int in [18, 19, 33]:
+	assertions.expect_true(unique_candidate_id.is_empty(), "UNIQUE is absent from the manual fusion list")
+	assertions.expect_false(rare_screen.test_fusion_candidate_focus("qa-inventory-33"), "UNIQUE cannot receive fusion focus")
+	assertions.expect_true(
+		"部位は6種から均等抽選／UNIQUEはボス宝箱限定" in str(rare_dialog.debug_state()["preview"]),
+		"Rare fusion displays the exact boss-only rule",
+	)
+	for index: int in [18, 19, 20]:
 		rare_screen.test_fusion_candidate_focus("qa-inventory-%02d" % index)
 		rare_screen.test_accept()
 	assertions.expect_equal(
-		PackedStringArray(["qa-inventory-18", "qa-inventory-19", "qa-inventory-33"]),
+		PackedStringArray(["qa-inventory-18", "qa-inventory-19", "qa-inventory-20"]),
 		rare_screen.debug_state()["fusion_material_ids"],
 		"controller assigns exact Rare IDs to F0, F1, F2",
 	)
-	assertions.expect_equal(unique_candidate, rare_dialog.focus_control(unique_candidate_id), "selected candidate keeps the same control and list position")
-	assertions.expect_equal(unique_candidate_position, unique_candidate.position, "selected candidate stays at its original grid position")
-	assertions.expect_true(unique_candidate.button_pressed, "selected candidate has persistent highlighted state")
-	var unique_presentation: Dictionary = (unique_candidate as InventoryCardButton).presentation_snapshot()
-	assertions.expect_equal("", unique_presentation["text"], "selected candidate keeps card text empty")
-	assertions.expect_equal("3", unique_presentation["state_badge"], "selected candidate shows material number badge")
-	assertions.expect_true(unique_presentation["unique_badge"], "selected unique candidate shows the star badge")
-	var candidate_unique_badge := unique_candidate.get_node("UniqueBadge") as Label
-	var unique_material := rare_dialog.focus_control("F2") as InventoryCardButton
-	assertions.expect_true(unique_material != null, "third material card contains the selected unique item")
-	var material_unique_badge := unique_material.get_node("UniqueBadge") as Label
-	var material_number_badge := unique_material.get_node("StateBadge") as Label
 	assertions.expect_equal(rare_before, _run_state_signature(rare_state), "selecting F materials does not remove or mutate source slots before commit")
+	assertions.expect_equal(rare_rng_before, _rng_snapshot(rare_state), "material selection consumes no RNG")
 	assertions.expect_true((rare_screen.get_node("%FusionDialog") as FusionDialog).debug_state()["confirm_enabled"], "FA2 enables for exact three Rare materials")
 	rare_screen.test_focus("FA2")
 	rare_screen.test_accept()
 	await (context["tree"] as SceneTree).process_frame
-	assertions.expect_true(rare_screen.debug_state()["confirmation_open"], "Rare fusion containing unique opens named confirmation")
-	var confirmation_dialog := rare_screen.get_node("%ConfirmationDialog") as JarjarConfirmationDialog
-	for lower_badge: Label in [candidate_unique_badge, material_unique_badge, material_number_badge]:
-		assertions.expect_equal(0, lower_badge.z_index, "%s uses local canvas order below confirmation" % lower_badge.name)
-		assertions.expect_true(
-			confirmation_dialog.is_greater_than(lower_badge),
-			"confirmation dialog renders after %s" % lower_badge.name,
-		)
-	var rare_confirm: Control = rare_dialog.focus_control("FA2")
-	assertions.expect_equal(Control.FOCUS_NONE, rare_confirm.get_focus_mode_with_override(), "nested confirmation disables lower FusionDialog focus")
-	rare_confirm.grab_focus()
-	assertions.expect_equal("dialog_cancel", rare_screen.debug_state()["focus_id"], "lower modal cannot steal nested confirmation focus")
-	var fusion_selection_before_cancel: Dictionary = _fusion_selection_signature(rare_screen)
-	rare_screen.test_confirm_dialog(false)
-	assertions.expect_equal("FA2", rare_screen.debug_state()["focus_id"], "confirmation cancel restores fusion confirm")
-	assertions.expect_equal(fusion_selection_before_cancel, _fusion_selection_signature(rare_screen), "unique warning cancel preserves F selection and rarity")
-	assertions.expect_equal(rare_before, _run_state_signature(rare_state), "unique warning cancel preserves complete RunState")
-	assertions.expect_equal(rare_rng_before, _rng_snapshot(rare_state), "unique warning cancel preserves every RNG stream")
-	rare_screen.test_accept()
-	rare_screen.test_confirm_dialog(true)
-	for item_id: String in ["qa-inventory-18", "qa-inventory-19", "qa-inventory-33"]:
-		assertions.expect_true(InventoryService.find_item(rare_state, item_id).is_empty(), "confirmed Rare fusion consumes exact source %s" % item_id)
+	assertions.expect_false(rare_screen.debug_state()["confirmation_open"], "normal Rare fusion has no UNIQUE confirmation")
+	for item_id: String in ["qa-inventory-18", "qa-inventory-19", "qa-inventory-20"]:
+		assertions.expect_true(InventoryService.find_item(rare_state, item_id).is_empty(), "Rare fusion consumes exact source %s" % item_id)
+	assertions.expect_false(InventoryService.find_item(rare_state, "qa-inventory-33").is_empty(), "UNIQUE remains untouched")
 	var rare_output: ItemInstance = rare_state.inventory[18]
-	assertions.expect_true(rare_output != null, "confirmed Rare fusion writes one output into lowest source slot")
+	assertions.expect_true(rare_output != null, "Rare fusion writes one output into lowest source slot")
 	if rare_output != null:
-		assertions.expect_equal(GameTypes.Rarity.EPIC, rare_output.rarity, "confirmed Rare fusion creates exact Epic output")
-	assertions.expect_equal(1, rare_state.fusion_count, "confirmed Rare fusion increments count once")
-	assertions.expect_true(rare_screen.debug_state()["fusion_open"], "confirmed unique fusion keeps FusionDialog open")
-	assertions.expect_equal(GameTypes.Rarity.RARE, rare_screen.debug_state()["fusion_rarity"], "confirmed unique fusion preserves Rare selection")
-	assertions.expect_equal(PackedStringArray(), rare_screen.debug_state()["fusion_material_ids"], "confirmed unique fusion clears materials")
+		assertions.expect_equal(GameTypes.Rarity.EPIC, rare_output.rarity, "Rare fusion creates exact Epic output")
+		assertions.expect_true(rare_output.unique_id.is_empty(), "Rare fusion output is non-UNIQUE")
+	assertions.expect_equal(1, rare_state.fusion_count, "Rare fusion increments count once")
+	assertions.expect_true(rare_screen.debug_state()["fusion_open"], "Rare fusion keeps FusionDialog open")
+	assertions.expect_equal(GameTypes.Rarity.RARE, rare_screen.debug_state()["fusion_rarity"], "Rare fusion preserves Rare selection")
+	assertions.expect_equal(PackedStringArray(), rare_screen.debug_state()["fusion_material_ids"], "Rare fusion clears materials")
 	var cleared_materials: Array = (rare_dialog.debug_state()["material_presentations"] as Array)
 	for cleared_material_value: Variant in cleared_materials:
 		var cleared_material: Dictionary = cleared_material_value as Dictionary
 		assertions.expect_equal("", cleared_material["icon_path"], "fusion success clears each material icon")
 		assertions.expect_true(cleared_material["muted"], "fusion success redraws each material slot as empty")
-	assertions.expect_equal("FA0", rare_screen.debug_state()["focus_id"], "confirmed unique fusion focuses auto-fill")
-	for consumed_id: String in ["qa-inventory-18", "qa-inventory-19", "qa-inventory-33"]:
-		assertions.expect_false(rare_screen.test_fusion_candidate_focus(consumed_id), "confirmed unique fusion removes candidate %s" % consumed_id)
+	assertions.expect_equal("FR", rare_screen.debug_state()["focus_id"], "Rare fusion returns to its rarity selector when no Rare candidates remain")
+	for consumed_id: String in ["qa-inventory-18", "qa-inventory-19", "qa-inventory-20"]:
+		assertions.expect_false(rare_screen.test_fusion_candidate_focus(consumed_id), "Rare fusion removes candidate %s" % consumed_id)
 	assertions.expect_equal(0, rare_screen.debug_state()["pointer_event_count"], "exact Rare fusion controller flow emits no pointer events")
 	rare_screen.test_cancel()
-	assertions.expect_equal("action_2", rare_screen.debug_state()["focus_id"], "confirmed unique fusion session closes to A2")
+	assertions.expect_equal("action_2", rare_screen.debug_state()["focus_id"], "Rare fusion session closes to A2")
 	_cleanup_fixture(rare_fixture, context)
 
 	var wild_fixture: Dictionary = await _spawn_inventory(assertions, context)
@@ -1474,18 +1420,18 @@ func _test_fusion_dialog_exact_controller(
 	var controller_screen: InventoryScreen = controller_fixture["screen"]
 	var mouse_screen: InventoryScreen = mouse_fixture["screen"]
 	for screen: InventoryScreen in [controller_screen, mouse_screen]:
-		screen.test_focus("grid_33")
+		screen.test_focus("grid_18")
 		screen.test_focus("action_2")
 		screen.test_accept()
-	for index: int in [18, 19, 33]:
+	for index: int in [18, 19, 20]:
 		controller_screen.test_fusion_candidate_focus("qa-inventory-%02d" % index)
 		controller_screen.test_accept()
 	var mouse_dialog: FusionDialog = mouse_screen.get_node("%FusionDialog") as FusionDialog
-	var rare_ids := PackedStringArray(["qa-inventory-18", "qa-inventory-19", "qa-inventory-33"])
+	var rare_ids := PackedStringArray(["qa-inventory-18", "qa-inventory-19", "qa-inventory-20"])
 	for index: int in range(rare_ids.size()):
 		mouse_dialog.pointer_event.emit()
 		mouse_dialog.material_item_dropped.emit(
-			{"drag_type": &"item", "kind": &"inventory", "index": [18, 19, 33][index], "item_id": rare_ids[index]},
+			{"drag_type": &"item", "kind": &"inventory", "index": [18, 19, 20][index], "item_id": rare_ids[index]},
 			index,
 		)
 	assertions.expect_equal(controller_screen.debug_state()["fusion_material_ids"], mouse_screen.debug_state()["fusion_material_ids"], "mouse drag and controller place all three exact F materials identically")
@@ -1515,14 +1461,22 @@ func _test_skill_sequence_and_crown(assertions: Variant, context: Dictionary) ->
 	assertions.expect_equal(0, screen.debug_state()["pointer_event_count"], "exact skill sequence is pointer-free")
 
 	var head: ItemInstance = state.equipped.get(GameTypes.EquipmentSlot.HEAD) as ItemInstance
-	head.unique_id = &"hollow_crown"
+	var crown := ItemInstance.new()
+	crown.item_id = "ui-skill-crown"
+	crown.slot = GameTypes.EquipmentSlot.HEAD
+	crown.main_weapon_type = GameTypes.MainWeaponType.UNCLASSIFIED
+	crown.rarity = GameTypes.Rarity.UNIQUE
+	crown.affixes = []
+	crown.unique_id = &"hollow_crown"
+	crown.display_name = "空洞の王冠"
+	state.equipped[GameTypes.EquipmentSlot.HEAD] = crown
 	SkillEquipService.apply_crown_seal(state)
 	screen.refresh_from_state(true)
 	assertions.expect_true((screen.focus_control("skill_1") as Button).disabled, "hollow crown disables K1")
 	screen.test_focus("skill_0")
 	screen.test_direction(FocusController.DIRECTION_RIGHT)
 	assertions.expect_equal("skill_2", screen.debug_state()["focus_id"], "four-direction move skips sealed K1")
-	head.unique_id = &""
+	state.equipped[GameTypes.EquipmentSlot.HEAD] = head
 	screen.refresh_from_state(true)
 	screen.test_focus("skill_0")
 	screen.test_direction(FocusController.DIRECTION_RIGHT)
@@ -1533,7 +1487,7 @@ func _test_skill_sequence_and_crown(assertions: Variant, context: Dictionary) ->
 	screen.test_focus("skill_1")
 	screen.test_accept()
 	assertions.expect_false((screen.debug_state()["held_skill_source"] as Dictionary).is_empty(), "K1 can be lifted before crown seal")
-	head.unique_id = &"hollow_crown"
+	state.equipped[GameTypes.EquipmentSlot.HEAD] = crown
 	SkillEquipService.apply_crown_seal(state)
 	screen.refresh_from_state(true)
 	assertions.expect_true((screen.debug_state()["held_skill_source"] as Dictionary).is_empty(), "mid-lift crown seal cancels K1 operation")
@@ -1553,7 +1507,7 @@ func _test_result_failed_routes(assertions: Variant, context: Dictionary) -> voi
 	var result: RunSummaryScreen = await _spawn_summary(RESULT_SCENE, result_state, catalog, context)
 	assertions.expect_true(result != null, "RESULT scene instantiates")
 	if result != null:
-		await _assert_summary_contract(assertions, result, "result", 12055, context)
+		await _assert_summary_contract(assertions, result, "result", 13210, context)
 		_cleanup_screen(result, context)
 
 	var failed_state: RunState = qa["state"] as RunState
@@ -1711,14 +1665,13 @@ func _apply_discard(
 func _apply_fusion(
 	material_ids: PackedStringArray,
 	use_wild: bool,
-	unique_confirmed: bool,
 	state: RunState,
 	catalog: DefinitionCatalog,
 	screen: InventoryScreen,
 ) -> void:
 	screen.apply_command_result(
 		&"fusion",
-		FusionCommitService.commit(state, material_ids, use_wild, unique_confirmed, catalog),
+		FusionCommitService.commit(state, material_ids, use_wild, catalog),
 	)
 
 

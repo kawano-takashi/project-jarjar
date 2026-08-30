@@ -4,7 +4,7 @@ extends RefCounted
 
 const FusionServiceScript := preload("res://src/inventory/fusion_service.gd")
 const InventoryServiceScript := preload("res://src/inventory/inventory_service.gd")
-const PREVIEW_RULE_TEXT: String = "通常なら6部位ランダム／ユニーク率4%"
+const PREVIEW_RULE_TEXT: String = "部位は6種から均等抽選／UNIQUEはボス宝箱限定"
 
 
 static func preview(
@@ -44,10 +44,6 @@ static func preview(
 			validation.get("error", &"invalid_materials") as StringName,
 			_validation_message(validation.get("error", &"") as StringName),
 		)
-	var unique_names: PackedStringArray = validation.get(
-		"unique_names",
-		PackedStringArray(),
-	) as PackedStringArray
 	var material_names := PackedStringArray()
 	for item: ItemInstance in materials:
 		material_names.append(item.display_name)
@@ -66,8 +62,6 @@ static func preview(
 		"wild_count": wild_count,
 		"output_rarity": output_rarity,
 		"rule_text": PREVIEW_RULE_TEXT,
-		"needs_unique_confirmation": not unique_names.is_empty(),
-		"unique_names": unique_names,
 	}
 
 
@@ -75,7 +69,6 @@ static func commit(
 	state: RunState,
 	material_ids: PackedStringArray,
 	use_wild: bool,
-	unique_confirmed: bool,
 	catalog: DefinitionCatalog,
 ) -> Dictionary:
 	if (
@@ -89,18 +82,6 @@ static func commit(
 	var preview_result: Dictionary = preview(state, material_ids, use_wild)
 	if not bool(preview_result.get("success", false)):
 		return preview_result
-	if (
-		bool(preview_result.get("needs_unique_confirmation", false))
-		and not unique_confirmed
-	):
-		var confirmation: Dictionary = _failure(
-			&"unique_confirmation_required",
-			"ユニークを失って合成しますか",
-		)
-		confirmation["needs_unique_confirmation"] = true
-		confirmation["unique_names"] = preview_result["unique_names"]
-		confirmation["material_ids"] = material_ids.duplicate()
-		return confirmation
 
 	var materials: Array[ItemInstance] = []
 	for location_value: Variant in preview_result["material_locations"]:
@@ -113,7 +94,6 @@ static func commit(
 		wild_count,
 		state.wild_material_count,
 		InventoryServiceScript.equipped_item_ids(state),
-		unique_confirmed,
 		state.run_seed,
 		state.wave_number,
 		state.drop_serial,
@@ -180,6 +160,8 @@ static func _validation_message(error: StringName) -> String:
 			return "同じレアリティの装備を選んでください"
 		&"legendary":
 			return "Legendaryは合成できません"
+		&"unique":
+			return "UNIQUEは合成できません"
 		&"locked":
 			return "ロック中のアイテムは材料にできません"
 		&"equipped":
@@ -196,8 +178,6 @@ static func _failure(error: StringName, message: String) -> Dictionary:
 		"material_ids": PackedStringArray(),
 		"material_names": PackedStringArray(),
 		"material_locations": [],
-		"needs_unique_confirmation": false,
-		"unique_names": PackedStringArray(),
 		"use_wild": false,
 		"wild_count": 0,
 		"rule_text": PREVIEW_RULE_TEXT,

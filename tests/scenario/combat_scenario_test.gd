@@ -694,20 +694,21 @@ func _test_qa_item_builder_validation(assertions: Variant) -> void:
 		assertions.expect_equal(1, normal.affixes.size(), "common normal item has one affix")
 		assertions.expect_false(normal.affixes[0] == normal_affixes[0], "QA builder copies fixed affix values")
 
-	var unique_affixes: Array[AffixRoll] = [_qa_affix(&"damage_pct", 14.0)]
+	var unique_affixes: Array[AffixRoll] = []
 	var unique: ItemInstance = QaItemBuilderScript.build(
 		catalog,
 		"qa-builder-unique",
 		GameTypes.EquipmentSlot.SUB_WEAPON,
-		GameTypes.Rarity.RARE,
+		GameTypes.Rarity.UNIQUE,
 		GameTypes.MainWeaponType.UNCLASSIFIED,
 		unique_affixes,
 		&"bloodied_dagger",
 		false,
 	)
-	assertions.expect_true(unique != null, "QA builder accepts valid unique with halved affix count")
+	assertions.expect_true(unique != null, "QA builder accepts valid UNIQUE with zero affixes")
 	if unique != null:
-		assertions.expect_equal(1, unique.affixes.size(), "Rare unique uses floor(2 / 2) affixes")
+		assertions.expect_equal(GameTypes.Rarity.UNIQUE, unique.rarity, "QA UNIQUE uses dedicated rarity")
+		assertions.expect_equal(0, unique.affixes.size(), "QA UNIQUE has zero affixes")
 		assertions.expect_equal(
 			catalog.unique(&"bloodied_dagger").display_name,
 			unique.display_name,
@@ -753,36 +754,58 @@ func _test_qa_item_builder_validation(assertions: Variant) -> void:
 		),
 		"QA builder rejects affix outside common and slot pools",
 	)
-	var unique_wrong_slot: Array[AffixRoll] = [_qa_affix(&"skill_power_pct", 18.0)]
+	var unique_wrong_slot: Array[AffixRoll] = []
 	assertions.expect_equal(
 		null,
 		QaItemBuilderScript.build(
 			catalog,
 			"qa-builder-wrong-unique-slot",
 			GameTypes.EquipmentSlot.HEAD,
-			GameTypes.Rarity.RARE,
+			GameTypes.Rarity.UNIQUE,
 			GameTypes.MainWeaponType.UNCLASSIFIED,
 			unique_wrong_slot,
 			&"bloodied_dagger",
 		),
 		"QA builder rejects UniqueDefinition slot mismatch",
 	)
-	var unique_wrong_count: Array[AffixRoll] = [
-		_qa_affix(&"damage_pct", 14.0),
-		_qa_affix(&"max_hp", 18.0),
-	]
+	var unique_wrong_count: Array[AffixRoll] = [_qa_affix(&"damage_pct", 40.0)]
 	assertions.expect_equal(
 		null,
 		QaItemBuilderScript.build(
 			catalog,
 			"qa-builder-wrong-unique-count",
 			GameTypes.EquipmentSlot.SUB_WEAPON,
-			GameTypes.Rarity.RARE,
+			GameTypes.Rarity.UNIQUE,
 			GameTypes.MainWeaponType.UNCLASSIFIED,
 			unique_wrong_count,
 			&"bloodied_dagger",
 		),
-		"QA builder rejects unique affix count before halving",
+		"QA builder rejects any UNIQUE affix",
+	)
+	assertions.expect_equal(
+		null,
+		QaItemBuilderScript.build(
+			catalog,
+			"qa-builder-normal-rarity-with-unique-id",
+			GameTypes.EquipmentSlot.SUB_WEAPON,
+			GameTypes.Rarity.RARE,
+			GameTypes.MainWeaponType.UNCLASSIFIED,
+			[_qa_affix(&"damage_pct", 14.0), _qa_affix(&"max_hp", 18.0)],
+			&"bloodied_dagger",
+		),
+		"QA builder rejects unique_id on a normal rarity",
+	)
+	assertions.expect_equal(
+		null,
+		QaItemBuilderScript.build(
+			catalog,
+			"qa-builder-unique-rarity-without-id",
+			GameTypes.EquipmentSlot.HANDS,
+			GameTypes.Rarity.UNIQUE,
+			GameTypes.MainWeaponType.UNCLASSIFIED,
+			[],
+		),
+		"QA builder rejects UNIQUE rarity without unique_id",
 	)
 	assertions.expect_equal(
 		null,

@@ -29,6 +29,7 @@ func test_names() -> PackedStringArray:
 		"equipment_move_and_unique_side_effect_contract",
 		"lock_compare_select_and_discard_contract",
 		"reward_skill_wild_and_autoequip_contract",
+		"reward_unique_invariant_contract",
 		"fusion_preview_commit_and_protection_contract",
 		"skill_move_snapshot_and_crown_contract",
 		"score_w8_and_retry_contract",
@@ -50,6 +51,8 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 			_test_lock_compare_select_and_discard(assertions)
 		"reward_skill_wild_and_autoequip_contract":
 			_test_reward_skill_wild_and_autoequip(assertions)
+		"reward_unique_invariant_contract":
+			_test_reward_unique_invariant(assertions)
 		"fusion_preview_commit_and_protection_contract":
 			_test_fusion_preview_commit_and_protection(assertions)
 		"skill_move_snapshot_and_crown_contract":
@@ -373,9 +376,9 @@ func _test_inventory_rarity_sort_stability_and_isolation(assertions: Variant) ->
 		GameTypes.Rarity.LEGENDARY,
 	)
 	var epic_unique: ItemInstance = _item(
-		"sort-epic-unique",
+		"sort-unique",
 		GameTypes.EquipmentSlot.SUB_WEAPON,
-		GameTypes.Rarity.EPIC,
+		GameTypes.Rarity.UNIQUE,
 		GameTypes.MainWeaponType.UNCLASSIFIED,
 		&"bloodied_dagger",
 	)
@@ -439,9 +442,9 @@ func _test_inventory_rarity_sort_stability_and_isolation(assertions: Variant) ->
 	assertions.expect_false(bool(result["no_op"]), "first rarity sort changes interleaved slots")
 
 	var expected_ids := PackedStringArray([
+		"sort-unique",
 		"sort-legendary-a",
 		"sort-legendary-locked",
-		"sort-epic-unique",
 		"sort-epic-b",
 		"sort-rare-a",
 		"sort-rare-b",
@@ -455,7 +458,7 @@ func _test_inventory_rarity_sort_stability_and_isolation(assertions: Variant) ->
 		_inventory_ids(state),
 		"rarity sort is descending, stable, and compacts empty slots",
 	)
-	assertions.expect_true(state.inventory[0] == legendary_a, "rarity sort preserves exact item references")
+	assertions.expect_true(state.inventory[0] == epic_unique, "rarity sort preserves the exact Unique item reference")
 	assertions.expect_true(legendary_locked.locked, "rarity sort preserves lock state")
 	assertions.expect_equal(&"bloodied_dagger", epic_unique.unique_id, "rarity sort preserves unique identity")
 	assertions.expect_equal(overflow_before, _item_ids(state.overflow), "rarity sort leaves overflow order unchanged")
@@ -565,7 +568,7 @@ func _test_equipment_move_and_unique_side_effect(assertions: Variant) -> void:
 	var echo: ItemInstance = _item(
 		"echo-hands",
 		GameTypes.EquipmentSlot.HANDS,
-		GameTypes.Rarity.RARE,
+		GameTypes.Rarity.UNIQUE,
 		GameTypes.MainWeaponType.UNCLASSIFIED,
 		&"echo_gauntlet",
 	)
@@ -601,7 +604,7 @@ func _test_equipment_move_and_unique_side_effect(assertions: Variant) -> void:
 	var crown: ItemInstance = _item(
 		"crown-head",
 		GameTypes.EquipmentSlot.HEAD,
-		GameTypes.Rarity.RARE,
+		GameTypes.Rarity.UNIQUE,
 		GameTypes.MainWeaponType.UNCLASSIFIED,
 		&"hollow_crown",
 	)
@@ -662,7 +665,7 @@ func _test_lock_compare_select_and_discard(assertions: Variant) -> void:
 	state.inventory[6] = _item(
 		"aa-unique",
 		GameTypes.EquipmentSlot.SUB_WEAPON,
-		GameTypes.Rarity.COMMON,
+		GameTypes.Rarity.UNIQUE,
 		GameTypes.MainWeaponType.UNCLASSIFIED,
 		&"bloodied_dagger",
 		false,
@@ -873,14 +876,19 @@ func _test_fusion_preview_commit_and_protection(assertions: Variant) -> void:
 		GameTypes.Rarity.RARE,
 	)
 	var unique: ItemInstance = _item(
-		"fusion-rare-unique",
+		"fusion-unique",
 		GameTypes.EquipmentSlot.SUB_WEAPON,
-		GameTypes.Rarity.RARE,
+		GameTypes.Rarity.UNIQUE,
 		GameTypes.MainWeaponType.UNCLASSIFIED,
 		&"bloodied_dagger",
 		false,
-		[_affix(&"damage_pct", 14.0)],
+		[],
 		"血塗れの短剣",
+	)
+	var second: ItemInstance = _item(
+		"fusion-rare-b",
+		GameTypes.EquipmentSlot.BODY,
+		GameTypes.Rarity.RARE,
 	)
 	var third: ItemInstance = _item(
 		"fusion-rare-overflow",
@@ -889,50 +897,50 @@ func _test_fusion_preview_commit_and_protection(assertions: Variant) -> void:
 	)
 	state.inventory[18] = first
 	state.inventory[33] = unique
+	state.inventory[34] = second
 	state.overflow = [
 		_item("overflow-old-0", GameTypes.EquipmentSlot.MAIN_WEAPON, GameTypes.Rarity.COMMON, GameTypes.MainWeaponType.STAFF),
 		_item("overflow-old-1", GameTypes.EquipmentSlot.BODY, GameTypes.Rarity.COMMON),
 		third,
 		_item("overflow-old-3", GameTypes.EquipmentSlot.FEET, GameTypes.Rarity.COMMON),
 	]
-	var material_ids := PackedStringArray([first.item_id, third.item_id, unique.item_id])
+	var unique_material_ids := PackedStringArray([first.item_id, third.item_id, unique.item_id])
 	var rng_before: Dictionary = _rng_snapshot(state)
+	var unique_rejection: Dictionary = FusionCommitServiceScript.preview(
+		state,
+		unique_material_ids,
+		false,
+	)
+	assertions.expect_equal(&"unique", unique_rejection["error"], "UNIQUE material is rejected without a confirmation path")
+	assertions.expect_equal(rng_before, _rng_snapshot(state), "UNIQUE rejection consumes no RNG")
+
+	var material_ids := PackedStringArray([first.item_id, third.item_id, second.item_id])
 	var preview: Dictionary = FusionCommitServiceScript.preview(state, material_ids, false)
 	assertions.expect_true(bool(preview["success"]), "cross-inventory fusion preview validates")
 	assertions.expect_equal(GameTypes.Rarity.EPIC, preview["output_rarity"], "preview exposes only next rarity")
 	assertions.expect_equal(FusionCommitServiceScript.PREVIEW_RULE_TEXT, preview["rule_text"], "preview rule text exact")
-	assertions.expect_true(bool(preview["needs_unique_confirmation"]), "unique material preview warns")
-	assertions.expect_equal(PackedStringArray(["血塗れの短剣"]), preview["unique_names"], "fusion warning names unique material")
+	assertions.expect_equal(
+		"部位は6種から均等抽選／UNIQUEはボス宝箱限定",
+		preview["rule_text"],
+		"fusion preview explains the boss-only UNIQUE rule",
+	)
+	assertions.expect_false(preview.has("needs_unique_confirmation"), "fusion preview has no UNIQUE confirmation flow")
 	assertions.expect_equal(rng_before, _rng_snapshot(state), "preview consumes no RNG")
 
-	var inventory_before: PackedStringArray = _inventory_ids(state)
-	var overflow_before: PackedStringArray = _item_ids(state.overflow)
 	var serial_before: int = state.drop_serial
-	var cancel: Dictionary = FusionCommitServiceScript.commit(
-		state,
-		material_ids,
-		false,
-		false,
-		catalog,
-	)
-	assertions.expect_equal(&"unique_confirmation_required", cancel["error"], "unique fusion needs explicit confirmation")
-	assertions.expect_equal(inventory_before, _inventory_ids(state), "fusion cancel keeps inventory")
-	assertions.expect_equal(overflow_before, _item_ids(state.overflow), "fusion cancel keeps overflow")
-	assertions.expect_equal(serial_before, state.drop_serial, "fusion cancel keeps drop serial")
-	assertions.expect_equal(rng_before, _rng_snapshot(state), "fusion cancel keeps every RNG state")
-
 	var commit: Dictionary = FusionCommitServiceScript.commit(
 		state,
 		material_ids,
 		false,
-		true,
 		catalog,
 	)
-	assertions.expect_true(bool(commit["success"]), "confirmed fusion commits")
+	assertions.expect_true(bool(commit["success"]), "normal fusion commits without confirmation")
 	assertions.expect_equal(GameTypes.Rarity.EPIC, commit["output_rarity"], "fusion advances rarity exactly once")
+	assertions.expect_true((commit["output"] as ItemInstance).unique_id.is_empty(), "fusion output is always non-UNIQUE")
 	assertions.expect_equal(18, commit["output_index"], "fusion output gets lowest consumed inventory slot first")
 	assertions.expect_equal(commit["output"], state.inventory[18], "reported output occupies reported slot")
-	assertions.expect_equal("overflow-old-0", state.inventory[33].item_id, "remaining overflow refills only after output placement")
+	assertions.expect_equal(unique, state.inventory[33], "UNIQUE remains untouched by normal fusion")
+	assertions.expect_equal("overflow-old-0", state.inventory[34].item_id, "remaining overflow refills only after output placement")
 	assertions.expect_equal(
 		PackedStringArray(["overflow-old-1", "overflow-old-3"]),
 		_item_ids(state.overflow),
@@ -950,7 +958,6 @@ func _test_fusion_preview_commit_and_protection(assertions: Variant) -> void:
 	var wild_commit: Dictionary = FusionCommitServiceScript.commit(
 		wild_state,
 		PackedStringArray(["wild-a", "wild-b"]),
-		true,
 		true,
 		catalog,
 	)
@@ -1004,6 +1011,83 @@ func _test_fusion_preview_commit_and_protection(assertions: Variant) -> void:
 		"equipped material rejected",
 	)
 	assertions.expect_equal(invalid_rng, _rng_snapshot(invalid_state), "all invalid fusion checks consume no RNG")
+
+
+func _test_reward_unique_invariant(assertions: Variant) -> void:
+	var catalog: DefinitionCatalog = _loaded_catalog(assertions)
+	if catalog == null:
+		return
+	var valid_state: RunState = _new_state(540, catalog)
+	var valid_unique: ItemInstance = _item(
+		"valid-boss-unique",
+		GameTypes.EquipmentSlot.SUB_WEAPON,
+		GameTypes.Rarity.UNIQUE,
+		GameTypes.MainWeaponType.UNCLASSIFIED,
+		&"bloodied_dagger",
+		false,
+		[],
+		"血塗れの短剣",
+	)
+	valid_state.unopened_rewards = [_equipment_reward(
+		"valid-boss-unique-reward",
+		1,
+		1,
+		valid_unique,
+		GameTypes.RewardSource.BOSS,
+	)]
+	var valid_result: Dictionary = RewardApplicationServiceScript.apply_revealed(valid_state)
+	assertions.expect_true(bool(valid_result["success"]), "valid boss-sourced UNIQUE applies")
+	assertions.expect_equal(valid_unique, valid_state.inventory[0], "valid UNIQUE enters inventory")
+
+	_assert_invalid_unique_reward(
+		assertions,
+		catalog,
+		541,
+		_item("id-with-normal-rarity", GameTypes.EquipmentSlot.SUB_WEAPON, GameTypes.Rarity.RARE, GameTypes.MainWeaponType.UNCLASSIFIED, &"bloodied_dagger"),
+		GameTypes.RewardSource.BOSS,
+		&"invalid_unique_identity",
+		"unique_id with normal rarity",
+	)
+	_assert_invalid_unique_reward(
+		assertions,
+		catalog,
+		542,
+		_item("unique-rarity-without-id", GameTypes.EquipmentSlot.HANDS, GameTypes.Rarity.UNIQUE),
+		GameTypes.RewardSource.BOSS,
+		&"invalid_unique_identity",
+		"UNIQUE rarity without unique_id",
+	)
+	_assert_invalid_unique_reward(
+		assertions,
+		catalog,
+		543,
+		_item("unique-with-affix", GameTypes.EquipmentSlot.SUB_WEAPON, GameTypes.Rarity.UNIQUE, GameTypes.MainWeaponType.UNCLASSIFIED, &"bloodied_dagger", false, [_affix(&"damage_pct", 40.0)]),
+		GameTypes.RewardSource.BOSS,
+		&"invalid_unique_affixes",
+		"UNIQUE with affix",
+	)
+	_assert_invalid_unique_reward(
+		assertions,
+		catalog,
+		544,
+		_item("normal-source-unique", GameTypes.EquipmentSlot.SUB_WEAPON, GameTypes.Rarity.UNIQUE, GameTypes.MainWeaponType.UNCLASSIFIED, &"bloodied_dagger"),
+		GameTypes.RewardSource.NORMAL,
+		&"invalid_unique_source",
+		"UNIQUE from non-boss source",
+	)
+
+	var boss_normal_state: RunState = _new_state(545, catalog)
+	boss_normal_state.unopened_rewards = [_equipment_reward(
+		"boss-normal-reward",
+		1,
+		1,
+		_item("boss-normal", GameTypes.EquipmentSlot.HANDS, GameTypes.Rarity.COMMON),
+		GameTypes.RewardSource.BOSS,
+	)]
+	assertions.expect_true(
+		bool(RewardApplicationServiceScript.apply_revealed(boss_normal_state)["success"]),
+		"BOSS source permits the seven non-UNIQUE rewards",
+	)
 
 
 func _test_skill_move_snapshot_and_crown(assertions: Variant) -> void:
@@ -1096,7 +1180,7 @@ func _test_score_w8_and_retry(assertions: Variant) -> void:
 		return
 	var held: Array[ItemInstance] = [
 		_item("score-common", GameTypes.EquipmentSlot.HANDS, GameTypes.Rarity.COMMON),
-		_item("score-rare", GameTypes.EquipmentSlot.SUB_WEAPON, GameTypes.Rarity.RARE, GameTypes.MainWeaponType.UNCLASSIFIED, &"bloodied_dagger"),
+		_item("score-unique", GameTypes.EquipmentSlot.SUB_WEAPON, GameTypes.Rarity.UNIQUE, GameTypes.MainWeaponType.UNCLASSIFIED, &"bloodied_dagger"),
 		_item("score-epic", GameTypes.EquipmentSlot.HEAD, GameTypes.Rarity.EPIC),
 		_item("score-legendary", GameTypes.EquipmentSlot.FEET, GameTypes.Rarity.LEGENDARY),
 	]
@@ -1117,8 +1201,8 @@ func _test_score_w8_and_retry(assertions: Variant) -> void:
 		catalog.score_definition(),
 	)
 	assertions.expect_equal(9000, breakdown[&"combat_score"], "fixed combat subtotal")
-	assertions.expect_equal(3055, breakdown[&"final_build_score"], "fixed build subtotal")
-	assertions.expect_equal(12055, breakdown[&"total"], "fixed final score 12,055")
+	assertions.expect_equal(4210, breakdown[&"final_build_score"], "fixed build subtotal")
+	assertions.expect_equal(13210, breakdown[&"total"], "fixed final score 13,210")
 
 	var w8: RunState = _new_state(513, catalog)
 	w8.phase = GameTypes.RunPhase.INVENTORY
@@ -1233,7 +1317,7 @@ func _test_w8_reward_inventory_fusion_result(assertions: Variant) -> void:
 		"w8-held-01",
 		"w8-reward-item",
 	])
-	app.call("_on_inventory_fusion_requested", material_ids, false, true)
+	app.call("_on_inventory_fusion_requested", material_ids, false)
 	assertions.expect_equal(1, state.fusion_count, "W8 inventory fusion commits through GameApp")
 	assertions.expect_true(state.overflow.is_empty(), "W8 fusion resolves the reward overflow")
 	for material_id: String in material_ids:
@@ -1318,7 +1402,7 @@ func _crown_item(item_id: String) -> ItemInstance:
 	return _item(
 		item_id,
 		GameTypes.EquipmentSlot.HEAD,
-		GameTypes.Rarity.RARE,
+		GameTypes.Rarity.UNIQUE,
 		GameTypes.MainWeaponType.UNCLASSIFIED,
 		&"hollow_crown",
 	)
@@ -1350,16 +1434,41 @@ func _equipment_reward(
 	wave_number: int,
 	acquired_tick: int,
 	item: ItemInstance,
+	source: GameTypes.RewardSource = GameTypes.RewardSource.NORMAL,
 ) -> RewardRoll:
 	var reward := RewardRoll.new()
 	reward.reward_id = reward_id
 	reward.wave_number = wave_number
 	reward.acquired_tick = acquired_tick
+	reward.source = source
 	reward.kind = GameTypes.RewardKind.EQUIPMENT
 	reward.equipment = item
 	reward.rarity_for_presentation = item.rarity
 	reward.revealed = true
 	return reward
+
+
+func _assert_invalid_unique_reward(
+	assertions: Variant,
+	catalog: DefinitionCatalog,
+	run_seed: int,
+	item: ItemInstance,
+	source: GameTypes.RewardSource,
+	expected_error: StringName,
+	label: String,
+) -> void:
+	var state: RunState = _new_state(run_seed, catalog)
+	state.unopened_rewards = [_equipment_reward(
+		"invalid-reward-%d" % run_seed,
+		1,
+		1,
+		item,
+		source,
+	)]
+	var before_inventory: PackedStringArray = _inventory_ids(state)
+	var result: Dictionary = RewardApplicationServiceScript.apply_revealed(state)
+	assertions.expect_equal(expected_error, result["error"], "%s is rejected" % label)
+	assertions.expect_equal(before_inventory, _inventory_ids(state), "%s changes no inventory" % label)
 
 
 func _skill_reward(

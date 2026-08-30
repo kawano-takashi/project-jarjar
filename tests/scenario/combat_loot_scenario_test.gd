@@ -95,8 +95,8 @@ func _test_fixed_special_counts(assertions: Variant) -> void:
 	var expected_state: RunState = RunStateFactory.create(run_seed, catalog.wave(1))
 	var expected_service := LootService.new()
 	expected_service.initialize(expected_state, catalog)
-	expected_service.acquire_fixed_chests(3, LOW_ID_POSITION, 1)
-	expected_service.acquire_fixed_chests(8, HIGH_ID_POSITION, 1)
+	expected_service.acquire_elite_chests(LOW_ID_POSITION, 1)
+	expected_service.acquire_boss_chests(HIGH_ID_POSITION, 1)
 
 	var simulation: CombatSimulation = _new_simulation(run_seed, catalog, true)
 	var low_id_elite: EnemyEntity = simulation.spawn_fixture_enemy(
@@ -122,6 +122,9 @@ func _test_fixed_special_counts(assertions: Variant) -> void:
 	assertions.expect_equal(11, simulation.state.total_chests, "fixed boxes increment total without extra guarantee box")
 	assertions.expect_equal(11, simulation.state.unopened_rewards.size(), "fixed boxes append exactly eleven RewardRolls")
 	assertions.expect_equal(1, _guarantee_count(simulation.state.unopened_rewards), "first fixed box is replaced by exactly one guarantee")
+	assertions.expect_equal(1, _unique_count(simulation.state.unopened_rewards), "boss contributes exactly one UNIQUE")
+	assertions.expect_equal(GameTypes.Rarity.UNIQUE, simulation.state.unopened_rewards[10].equipment.rarity, "boss UNIQUE is last after seven non-UNIQUE rewards")
+	assertions.expect_equal(0, simulation.state.unopened_rewards[10].equipment.affixes.size(), "boss UNIQUE has no affixes")
 	assertions.expect_equal(12, simulation.state.drop_serial, "eleven boxes reserve eleven serials after initial wood stick")
 	assertions.expect_equal(expected_state.rng_streams.loot_rng.state, simulation.state.rng_streams.loot_rng.state, "elite and boss fixed boxes consume no rate-decision RNG")
 	assertions.expect_equal(_reward_ids(expected_state.unopened_rewards), _reward_ids(simulation.state.unopened_rewards), "special combat rewards match fixed acquisition sequence")
@@ -165,12 +168,12 @@ func _test_quota_fallback(assertions: Variant) -> void:
 	assertions.expect_equal(fallback_position, fallback_simulation.chest_visual_pool.slots[0].origin, "fallback display uses player position")
 
 	var existing_simulation: CombatSimulation = _new_simulation(20260827, catalog, true)
-	existing_simulation.loot_service.acquire_fixed_chests(1, Vector2(-2.0, 1.0), 0)
+	existing_simulation.loot_service.acquire_elite_chests(Vector2(-2.0, 1.0), 0)
 	existing_simulation.state.wave_kills = catalog.wave(1).kill_quota
 	existing_simulation.step(Vector2.ZERO, DELTA)
 	assertions.expect_true(existing_simulation.state.wave_cleared, "existing-guarantee quota fixture latches")
-	assertions.expect_equal(1, existing_simulation.state.wave_chests, "quota latch does not duplicate an existing guarantee")
-	assertions.expect_equal(1, existing_simulation.state.unopened_rewards.size(), "existing guarantee remains the sole reward")
+	assertions.expect_equal(3, existing_simulation.state.wave_chests, "quota latch does not duplicate an existing guarantee")
+	assertions.expect_equal(3, existing_simulation.state.unopened_rewards.size(), "existing elite rewards remain unchanged")
 	assertions.expect_equal(1, _guarantee_count(existing_simulation.state.unopened_rewards), "existing guarantee remains unique")
 
 
@@ -179,16 +182,16 @@ func _test_success_failure_cleanup(assertions: Variant) -> void:
 	if catalog == null:
 		return
 	var success_simulation: CombatSimulation = _new_simulation(91173, catalog, false)
-	success_simulation.loot_service.acquire_fixed_chests(1, Vector2(2.0, 2.0), 5)
+	success_simulation.loot_service.acquire_elite_chests(Vector2(2.0, 2.0), 5)
 	success_simulation.state.wave_kills = catalog.wave(1).kill_quota
 	success_simulation.state.wave_cleared = true
 	success_simulation.state.time_remaining = DELTA
-	assertions.expect_equal(1, success_simulation.chest_visual_pool.active_count(), "success fixture begins with one displayed acquired chest")
+	assertions.expect_equal(3, success_simulation.chest_visual_pool.active_count(), "success fixture begins with three displayed acquired chests")
 	success_simulation.step(Vector2.ZERO, DELTA)
 	assertions.expect_equal(GameTypes.RunPhase.REWARD_REVEAL, success_simulation.state.phase, "successful timeout enters reward reveal")
 	assertions.expect_equal(0, success_simulation.chest_visual_pool.active_count(), "success immediately absorbs every remaining display")
-	assertions.expect_equal(1, success_simulation.state.unopened_rewards.size(), "success retains the acquired RewardRoll")
-	assertions.expect_equal(1, success_simulation.state.wave_chests, "success retains wave chest count")
+	assertions.expect_equal(3, success_simulation.state.unopened_rewards.size(), "success retains the acquired RewardRolls")
+	assertions.expect_equal(3, success_simulation.state.wave_chests, "success retains wave chest count")
 
 	var failure_simulation: CombatSimulation = _new_simulation(44119, catalog, false)
 	var past_item := ItemInstance.new()
@@ -207,12 +210,11 @@ func _test_success_failure_cleanup(assertions: Variant) -> void:
 	failure_simulation.state.inventory[0] = past_item
 	failure_simulation.state.unopened_rewards.append(past_reward)
 	failure_simulation.state.total_chests = 1
-	var current_rewards: Array[RewardRoll] = failure_simulation.loot_service.acquire_fixed_chests(
-		1,
+	var current_rewards: Array[RewardRoll] = failure_simulation.loot_service.acquire_elite_chests(
 		Vector2(-2.0, -2.0),
 		8,
 	)
-	assertions.expect_equal(1, current_rewards.size(), "failure fixture current-wave reward exists")
+	assertions.expect_equal(3, current_rewards.size(), "failure fixture current-wave rewards exist")
 	failure_simulation.state.time_remaining = DELTA
 	failure_simulation.step(Vector2.ZERO, DELTA)
 
@@ -288,6 +290,14 @@ func _guarantee_count(rewards: Array[RewardRoll]) -> int:
 	var count: int = 0
 	for reward: RewardRoll in rewards:
 		if reward.is_guaranteed_main_weapon:
+			count += 1
+	return count
+
+
+func _unique_count(rewards: Array[RewardRoll]) -> int:
+	var count: int = 0
+	for reward: RewardRoll in rewards:
+		if reward.equipment != null and reward.equipment.rarity == GameTypes.Rarity.UNIQUE:
 			count += 1
 	return count
 

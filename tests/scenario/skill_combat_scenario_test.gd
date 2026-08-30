@@ -549,6 +549,8 @@ func _unique_item(
 	var item := ItemInstance.new()
 	item.item_id = item_id
 	item.slot = definition.equipment_slot
+	item.rarity = GameTypes.Rarity.UNIQUE
+	item.affixes = []
 	item.unique_id = unique_id
 	item.display_name = definition.display_name
 	return item

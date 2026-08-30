@@ -12,6 +12,7 @@ const MAIN_WEAPON_REQUIRED_MESSAGE: String = (
 )
 const SORT_COMPLETE_MESSAGE: String = "高レア順に整理しました"
 const SORT_RARITY_ORDER: Array[GameTypes.Rarity] = [
+	GameTypes.Rarity.UNIQUE,
 	GameTypes.Rarity.LEGENDARY,
 	GameTypes.Rarity.EPIC,
 	GameTypes.Rarity.RARE,

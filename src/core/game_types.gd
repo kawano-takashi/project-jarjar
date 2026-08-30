@@ -4,11 +4,12 @@ extends RefCounted
 
 enum EquipmentSlot { MAIN_WEAPON, SUB_WEAPON, HEAD, BODY, HANDS, FEET }
 enum MainWeaponType { UNCLASSIFIED, BOW, STAFF, SWORD }
-enum Rarity { COMMON, RARE, EPIC, LEGENDARY }
+enum Rarity { COMMON, RARE, EPIC, LEGENDARY, UNIQUE }
 enum TriggerType { TIME, PRIMARY_ATTACK_COUNT, KILL_COUNT, HIT_COUNT }
 enum RunPhase { BOOT, TITLE, COMBAT, REWARD_REVEAL, INVENTORY, RESULT, FAILED }
 enum EnemyType { TRACKER, FAST, ARMORED, RANGED, ELITE, BOSS }
 enum RewardKind { EQUIPMENT, SKILL }
+enum RewardSource { NORMAL, ELITE, BOSS, FALLBACK }
 
 
 static func equipment_slot_to_key(value: EquipmentSlot) -> StringName:
@@ -51,6 +52,8 @@ static func rarity_to_key(value: Rarity) -> StringName:
 			return &"epic"
 		Rarity.LEGENDARY:
 			return &"legendary"
+		Rarity.UNIQUE:
+			return &"unique"
 	return &""
 
 
@@ -109,4 +112,17 @@ static func reward_kind_to_key(value: RewardKind) -> StringName:
 			return &"equipment"
 		RewardKind.SKILL:
 			return &"skill"
+	return &""
+
+
+static func reward_source_to_key(value: RewardSource) -> StringName:
+	match value:
+		RewardSource.NORMAL:
+			return &"normal"
+		RewardSource.ELITE:
+			return &"elite"
+		RewardSource.BOSS:
+			return &"boss"
+		RewardSource.FALLBACK:
+			return &"fallback"
 	return &""

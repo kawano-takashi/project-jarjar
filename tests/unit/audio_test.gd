@@ -32,6 +32,7 @@ func _test_stream_contract(assertions: Variant) -> void:
 		{"label": "Rare open", "stream": AudioFactoryScript.rare_open(), "samples": 5_292},
 		{"label": "Epic prealert", "stream": AudioFactoryScript.epic_prealert(), "samples": 24_255},
 		{"label": "Legendary prealert", "stream": AudioFactoryScript.legendary_prealert(), "samples": 33_075},
+		{"label": "Unique prealert", "stream": AudioFactoryScript.unique_prealert(), "samples": 44_100},
 		{"label": "wave clear", "stream": AudioFactoryScript.wave_clear(), "samples": 15_876},
 		{"label": "fusion", "stream": AudioFactoryScript.fusion(), "samples": 13_230},
 	]
@@ -76,6 +77,12 @@ func _test_pcm_contract(assertions: Variant) -> void:
 		* AudioFactoryScript.PCM16_POSITIVE_MAX
 	)
 	assertions.expect_equal(expected_sample, _decode_s16(sweep.data, probe_index), "sweep phase integrates linearly interpolated frequency")
+
+	var unique_sweep: AudioStreamWAV = AudioFactoryScript.unique_prealert()
+	assertions.expect_float(392.0, AudioFactoryScript.UNIQUE_PREALERT_START_HZ, "Unique sweep starts at 392 Hz")
+	assertions.expect_float(1_568.0, AudioFactoryScript.UNIQUE_PREALERT_END_HZ, "Unique sweep ends at 1568 Hz")
+	assertions.expect_float(1.0, AudioFactoryScript.UNIQUE_PREALERT_DURATION_SECONDS, "Unique sweep lasts exactly one second")
+	assertions.expect_equal(88_200, unique_sweep.data.size(), "Unique sweep contains exactly one second of PCM16 audio")
 
 	var wave_clear: AudioStreamWAV = AudioFactoryScript.wave_clear()
 	var note_samples: int = roundi(

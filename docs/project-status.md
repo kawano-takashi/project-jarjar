@@ -1,16 +1,18 @@
 # Project JARJAR 現在の状態
 
-- 更新日: 2026-08-29 (JST)
+- 更新日: 2026-08-30 (JST)
 - 状態: **ユーザーによるMVP最終調整待ち**
-- playable baseline: `97671bd1efd5a139081f5a97f59f0083aacddf1f`
-- balance revision: `0`
+- playable baseline: 未固定（revision 1 作業ツリー）
+- balance revision: `1`
 - 正式playtest target: 未固定
 
 ## 現在地
 
-コーディングエージェントによるMVP基準版の実装と最終調整前QAは完了している。現行GDScript全回帰は
-`TEST_SUMMARY passed=103 failed=0`、通常Releaseの連続E2Eは人間確認を含めて完了扱いとなった。
-ただし、ユーザー最終調整と正式プレイテストが未完了のため、正式受入またはMVP完成ではない。
+W8ボス限定UNIQUE装備への移行をbalance revision 1として実装した。通常・エリート・fallback・合成から
+UNIQUEを除外し、W8ボスの8箱を非UNIQUE 7箱＋UNIQUE 1箱に固定している。現行GDScript全回帰は
+`TEST_SUMMARY passed=118 failed=0`。loot仕様とbalance revisionが変わったため、以前のRelease検証、手動QA、
+playtest対象は現候補へ流用しない。ユーザー最終調整と正式プレイテストが未完了のため、正式受入または
+MVP完成ではない。
 
 ## 次の作業
 

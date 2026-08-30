@@ -213,9 +213,9 @@ static func _prepare_inventory_controller(
 				catalog,
 				item_id,
 				GameTypes.EquipmentSlot.SUB_WEAPON,
-				GameTypes.Rarity.RARE,
+				GameTypes.Rarity.UNIQUE,
 				GameTypes.MainWeaponType.UNCLASSIFIED,
-				[[_make_affix(&"damage_pct", 14.0)]],
+				[[]],
 				&"bloodied_dagger",
 			)
 		elif index == 34:
@@ -305,9 +305,9 @@ static func _prepare_result_controller(
 			catalog,
 			"qa-result-rare-dagger",
 			GameTypes.EquipmentSlot.SUB_WEAPON,
-			GameTypes.Rarity.RARE,
+			GameTypes.Rarity.UNIQUE,
 			GameTypes.MainWeaponType.UNCLASSIFIED,
-			[[_make_affix(&"damage_pct", 14.0)]],
+			[[]],
 			&"bloodied_dagger",
 		),
 		_make_fixed_item(
@@ -357,8 +357,8 @@ static func _prepare_result_controller(
 	)
 	return (
 		int(state.score_breakdown.get(&"combat_score", -1)) == 9000
-		and int(state.score_breakdown.get(&"final_build_score", -1)) == 3055
-		and int(state.score_breakdown.get(&"total", -1)) == 12055
+		and int(state.score_breakdown.get(&"final_build_score", -1)) == 4210
+		and int(state.score_breakdown.get(&"total", -1)) == 13210
 	)
 
 
@@ -373,7 +373,7 @@ static func _prepare_immortal_100(
 		catalog,
 		"qa-immortal-body",
 		GameTypes.EquipmentSlot.BODY,
-		GameTypes.Rarity.COMMON,
+		GameTypes.Rarity.UNIQUE,
 		GameTypes.MainWeaponType.UNCLASSIFIED,
 		[[]],
 		&"immortal_breastplate",
@@ -494,13 +494,12 @@ static func _make_normal_fixture_item(
 ) -> ItemInstance:
 	var affix_rng := RandomNumberGenerator.new()
 	affix_rng.seed = SeedService.derive(FIXED_SEED, StringName("qa-affix:" + item_id))
-	var item: ItemInstance = ItemFactoryScript.create_item(
+	var item: ItemInstance = ItemFactoryScript.create_normal_item(
 		FIXED_SEED,
 		item_id,
 		slot,
 		weapon_type,
 		rarity,
-		&"",
 		weapon_type,
 		affix_rng,
 		catalog,
@@ -635,7 +634,7 @@ static func _equip_qa_echo_gauntlet(
 		catalog,
 		"qa-echo-gauntlet",
 		GameTypes.EquipmentSlot.HANDS,
-		GameTypes.Rarity.COMMON,
+		GameTypes.Rarity.UNIQUE,
 		GameTypes.MainWeaponType.UNCLASSIFIED,
 		affixes,
 		&"echo_gauntlet",
@@ -838,6 +837,16 @@ static func _build_reward_controls_fixture(
 				_make_affix(&"skill_power_pct", 50.0),
 			],
 		},
+		{
+			"reward_id": "qa-reward-unique-clock",
+			"item_id": "qa-item-unique-clock",
+			"slot": GameTypes.EquipmentSlot.SUB_WEAPON,
+			"weapon_type": GameTypes.MainWeaponType.UNCLASSIFIED,
+			"rarity": GameTypes.Rarity.UNIQUE,
+			"affixes": [],
+			"unique_id": &"broken_clock",
+			"source": GameTypes.RewardSource.BOSS,
+		},
 	]
 	for index: int in fixtures.size():
 		var fixture: Dictionary = fixtures[index]
@@ -851,7 +860,7 @@ static func _build_reward_controls_fixture(
 			fixture["rarity"],
 			fixture["weapon_type"],
 			affixes,
-			&"",
+			StringName(fixture.get("unique_id", &"")),
 			false,
 		)
 		if item == null:
@@ -862,6 +871,9 @@ static func _build_reward_controls_fixture(
 		reward.acquired_tick = index
 		reward.is_guaranteed_main_weapon = false
 		reward.kind = GameTypes.RewardKind.EQUIPMENT
+		reward.source = int(
+			fixture.get("source", GameTypes.RewardSource.NORMAL)
+		) as GameTypes.RewardSource
 		reward.equipment = item
 		reward.skill_id = &""
 		reward.rarity_for_presentation = int(fixture["rarity"])

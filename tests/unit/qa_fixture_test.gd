@@ -134,10 +134,12 @@ func _test_inventory_and_result(assertions: Variant) -> void:
 		elif index == 35:
 			expected_slot = GameTypes.EquipmentSlot.FEET
 		expected_rarities.append(
-			GameTypes.Rarity.COMMON
+			GameTypes.Rarity.UNIQUE
+			if index == 33
+			else GameTypes.Rarity.COMMON
 			if index <= 17 or index == 34
 			else GameTypes.Rarity.RARE
-			if index <= 26 or index == 33
+			if index <= 26
 			else GameTypes.Rarity.EPIC
 			if index <= 32
 			else GameTypes.Rarity.LEGENDARY
@@ -173,7 +175,8 @@ func _test_inventory_and_result(assertions: Variant) -> void:
 		_assert_matches_normal_fixture_item(assertions, catalog, state.inventory[index])
 	var dagger: ItemInstance = state.inventory[33]
 	assertions.expect_equal(&"bloodied_dagger", dagger.unique_id, "inventory index 33 fixed dagger")
-	_assert_single_affix(assertions, dagger, &"damage_pct", 14.0)
+	assertions.expect_equal(GameTypes.Rarity.UNIQUE, dagger.rarity, "inventory index 33 UNIQUE")
+	assertions.expect_equal(0, dagger.affixes.size(), "inventory index 33 has no affixes")
 	assertions.expect_true(state.inventory[34].locked, "inventory index 34 locked")
 	assertions.expect_equal(GameTypes.Rarity.LEGENDARY, state.inventory[35].rarity, "inventory index 35 Legendary")
 	_assert_matches_normal_fixture_item(assertions, catalog, state.inventory[34])
@@ -230,8 +233,8 @@ func _test_inventory_and_result(assertions: Variant) -> void:
 	assertions.expect_float(999.0, result_state.peak_dps, "result peak DPS")
 	assertions.expect_equal(2, result_state.wild_material_count, "result wild material count")
 	assertions.expect_equal(9000, result_state.score_breakdown[&"combat_score"], "result combat score")
-	assertions.expect_equal(3055, result_state.score_breakdown[&"final_build_score"], "result build score")
-	assertions.expect_equal(12055, result_state.score_breakdown[&"total"], "result total score")
+	assertions.expect_equal(4210, result_state.score_breakdown[&"final_build_score"], "result build score")
+	assertions.expect_equal(13210, result_state.score_breakdown[&"total"], "result total score")
 	assertions.expect_equal(null, result_state.equipped[GameTypes.EquipmentSlot.HEAD], "result HEAD empty")
 	assertions.expect_equal(null, result_state.equipped[GameTypes.EquipmentSlot.FEET], "result FEET empty")
 	assertions.expect_equal(0, _non_null_count(result_state.inventory), "result inventory empty")
@@ -242,7 +245,7 @@ func _test_inventory_and_result(assertions: Variant) -> void:
 	assertions.expect_equal(1500, result_state.score_breakdown[&"boss_kills"], "result boss score row")
 	assertions.expect_equal(4000, result_state.score_breakdown[&"wave_clears"], "result wave score row")
 	assertions.expect_equal(2000, result_state.score_breakdown[&"run_clear"], "result run-clear score row")
-	assertions.expect_equal(1755, result_state.score_breakdown[&"equipment"], "result equipment score row")
+	assertions.expect_equal(2910, result_state.score_breakdown[&"equipment"], "result equipment score row")
 	assertions.expect_equal(600, result_state.score_breakdown[&"unique_tags"], "result unique score row")
 	assertions.expect_equal(500, result_state.score_breakdown[&"skill_levels"], "result skill score row")
 	assertions.expect_equal(200, result_state.score_breakdown[&"wild_materials"], "result wild score row")
@@ -393,13 +396,12 @@ func _assert_matches_normal_fixture_item(
 		QaScenarioFactory.FIXED_SEED,
 		StringName("qa-affix:" + actual.item_id),
 	)
-	var expected: ItemInstance = ItemFactory.create_item(
+	var expected: ItemInstance = ItemFactory.create_normal_item(
 		QaScenarioFactory.FIXED_SEED,
 		actual.item_id,
 		actual.slot,
 		actual.main_weapon_type,
 		actual.rarity,
-		&"",
 		actual.main_weapon_type,
 		rng,
 		catalog,
@@ -435,10 +437,10 @@ func _assert_result_equipment(assertions: Variant, state: RunState) -> void:
 	var dagger: ItemInstance = state.equipped[GameTypes.EquipmentSlot.SUB_WEAPON] as ItemInstance
 	assertions.expect_equal("qa-result-rare-dagger", dagger.item_id, "result exact dagger id")
 	assertions.expect_equal(GameTypes.EquipmentSlot.SUB_WEAPON, dagger.slot, "result exact dagger slot")
-	assertions.expect_equal(GameTypes.Rarity.RARE, dagger.rarity, "result exact dagger rarity")
+	assertions.expect_equal(GameTypes.Rarity.UNIQUE, dagger.rarity, "result exact dagger rarity")
 	assertions.expect_equal(&"bloodied_dagger", dagger.unique_id, "result exact dagger unique")
 	assertions.expect_equal("血塗れの短剣", dagger.display_name, "result exact dagger name")
-	_assert_single_affix(assertions, dagger, &"damage_pct", 14.0)
+	assertions.expect_equal(0, dagger.affixes.size(), "result UNIQUE dagger has no affixes")
 	var body: ItemInstance = state.equipped[GameTypes.EquipmentSlot.BODY] as ItemInstance
 	assertions.expect_equal("qa-result-epic-body", body.item_id, "result exact body id")
 	assertions.expect_equal(GameTypes.EquipmentSlot.BODY, body.slot, "result exact body slot")
@@ -463,7 +465,7 @@ func _assert_result_equipment(assertions: Variant, state: RunState) -> void:
 func _assert_immortal_equipment(assertions: Variant, state: RunState) -> void:
 	var body: ItemInstance = state.equipped[GameTypes.EquipmentSlot.BODY] as ItemInstance
 	assertions.expect_equal("qa-immortal-body", body.item_id, "immortal body id")
-	assertions.expect_equal(GameTypes.Rarity.COMMON, body.rarity, "immortal body rarity")
+	assertions.expect_equal(GameTypes.Rarity.UNIQUE, body.rarity, "immortal body rarity")
 	assertions.expect_equal(&"immortal_breastplate", body.unique_id, "immortal body unique")
 	assertions.expect_false(body.locked, "immortal body unlocked")
 	assertions.expect_equal(0, body.affixes.size(), "immortal body has no own reduction affix")

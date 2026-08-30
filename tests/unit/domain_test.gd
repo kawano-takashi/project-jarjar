@@ -77,11 +77,12 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 func _game_types_test(assertions: Variant) -> void:
 	assertions.expect_equal([0, 1, 2, 3, 4, 5], GameTypes.EquipmentSlot.values(), "EquipmentSlot values")
 	assertions.expect_equal([0, 1, 2, 3], GameTypes.MainWeaponType.values(), "MainWeaponType values")
-	assertions.expect_equal([0, 1, 2, 3], GameTypes.Rarity.values(), "Rarity values")
+	assertions.expect_equal([0, 1, 2, 3, 4], GameTypes.Rarity.values(), "Rarity values")
 	assertions.expect_equal([0, 1, 2, 3], GameTypes.TriggerType.values(), "TriggerType values")
 	assertions.expect_equal([0, 1, 2, 3, 4, 5, 6], GameTypes.RunPhase.values(), "RunPhase values")
 	assertions.expect_equal([0, 1, 2, 3, 4, 5], GameTypes.EnemyType.values(), "EnemyType values")
 	assertions.expect_equal([0, 1], GameTypes.RewardKind.values(), "RewardKind values")
+	assertions.expect_equal([0, 1, 2, 3], GameTypes.RewardSource.values(), "RewardSource values")
 	var equipment_slot_keys: Array[StringName] = [&"main_weapon", &"sub_weapon", &"head", &"body", &"hands", &"feet"]
 	for equipment_slot_value: int in GameTypes.EquipmentSlot.values():
 		assertions.expect_equal(
@@ -96,7 +97,7 @@ func _game_types_test(assertions: Variant) -> void:
 			GameTypes.main_weapon_type_to_key(main_weapon_type_value as GameTypes.MainWeaponType),
 			"MainWeaponType string %d" % main_weapon_type_value
 		)
-	var rarity_keys: Array[StringName] = [&"common", &"rare", &"epic", &"legendary"]
+	var rarity_keys: Array[StringName] = [&"common", &"rare", &"epic", &"legendary", &"unique"]
 	for rarity_value: int in GameTypes.Rarity.values():
 		assertions.expect_equal(
 			rarity_keys[rarity_value],
@@ -131,6 +132,15 @@ func _game_types_test(assertions: Variant) -> void:
 			GameTypes.reward_kind_to_key(reward_kind_value as GameTypes.RewardKind),
 			"RewardKind string %d" % reward_kind_value
 		)
+	var reward_source_keys: Array[StringName] = [&"normal", &"elite", &"boss", &"fallback"]
+	for reward_source_value: int in GameTypes.RewardSource.values():
+		assertions.expect_equal(
+			reward_source_keys[reward_source_value],
+			GameTypes.reward_source_to_key(
+				reward_source_value as GameTypes.RewardSource
+			),
+			"RewardSource string %d" % reward_source_value,
+		)
 
 	var catalog: CatalogScript = _loaded_catalog(assertions)
 	if catalog == null:
@@ -138,11 +148,12 @@ func _game_types_test(assertions: Variant) -> void:
 	assertions.expect_equal(4, catalog.weapons.size(), "weapon definition count")
 	assertions.expect_equal(6, catalog.enemies.size(), "enemy definition count")
 	assertions.expect_equal(8, catalog.waves.size(), "wave definition count")
-	assertions.expect_equal(4, catalog.rarities.size(), "rarity definition count")
+	assertions.expect_equal(5, catalog.rarities.size(), "rarity definition count")
 	assertions.expect_equal(9, catalog.affixes.size(), "affix definition count")
 	assertions.expect_equal(4, catalog.skills.size(), "skill definition count")
 	assertions.expect_equal(6, catalog.uniques.size(), "unique definition count")
-	assertions.expect_equal(0, catalog.balance_manifest().balance_revision, "balance revision")
+	assertions.expect_equal(1, catalog.balance_manifest().balance_revision, "balance revision")
+	assertions.expect_equal(0, catalog.rarity(GameTypes.Rarity.UNIQUE).affix_count, "UNIQUE has no affixes")
 	assertions.expect_equal(
 		[&"bloodied_dagger", &"broken_clock", &"coward_boots", &"echo_gauntlet", &"hollow_crown", &"immortal_breastplate"],
 		catalog.unique_ids(),
@@ -253,13 +264,12 @@ func _item_factory_test(assertions: Variant) -> void:
 		var slot: GameTypes.EquipmentSlot = slot_value as GameTypes.EquipmentSlot
 		var slot_rng := RandomNumberGenerator.new()
 		slot_rng.seed = 3000 + slot_value
-		var slot_item: ItemInstance = ItemFactoryScript.create_item(
+		var slot_item: ItemInstance = ItemFactoryScript.create_normal_item(
 			run_seed,
 			ItemFactoryScript.make_item_id(run_seed, 1, 100 + slot_value),
 			slot,
 			GameTypes.MainWeaponType.BOW,
 			GameTypes.Rarity.COMMON,
-			&"",
 			GameTypes.MainWeaponType.STAFF,
 			slot_rng,
 			catalog
@@ -280,13 +290,12 @@ func _item_factory_test(assertions: Variant) -> void:
 		var weapon_type: GameTypes.MainWeaponType = weapon_types[weapon_index]
 		var weapon_rng := RandomNumberGenerator.new()
 		weapon_rng.seed = 3500 + weapon_index
-		var weapon_item: ItemInstance = ItemFactoryScript.create_item(
+		var weapon_item: ItemInstance = ItemFactoryScript.create_normal_item(
 			run_seed,
 			ItemFactoryScript.make_item_id(run_seed, 1, 120 + weapon_index),
 			GameTypes.EquipmentSlot.MAIN_WEAPON,
 			weapon_type,
 			GameTypes.Rarity.COMMON,
-			&"",
 			GameTypes.MainWeaponType.BOW,
 			weapon_rng,
 			catalog
@@ -294,17 +303,16 @@ func _item_factory_test(assertions: Variant) -> void:
 		assertions.expect_equal(GameTypes.EquipmentSlot.MAIN_WEAPON, weapon_item.slot, "main weapon slot %d" % weapon_index)
 		assertions.expect_equal(weapon_type, weapon_item.main_weapon_type, "main weapon type %d" % weapon_index)
 
-	for rarity_value: int in GameTypes.Rarity.values():
+	for rarity_value: int in range(GameTypes.Rarity.UNIQUE):
 		var rarity: GameTypes.Rarity = rarity_value as GameTypes.Rarity
 		var rng := RandomNumberGenerator.new()
 		rng.seed = 4000 + rarity_value
-		var normal: ItemInstance = ItemFactoryScript.create_item(
+		var normal: ItemInstance = ItemFactoryScript.create_normal_item(
 			run_seed,
 			ItemFactoryScript.make_item_id(run_seed, 1, 10 + rarity_value),
 			GameTypes.EquipmentSlot.HANDS,
 			GameTypes.MainWeaponType.SWORD,
 			rarity,
-			&"",
 			GameTypes.MainWeaponType.BOW,
 			rng,
 			catalog
@@ -312,22 +320,38 @@ func _item_factory_test(assertions: Variant) -> void:
 		assertions.expect_equal(GameTypes.MainWeaponType.UNCLASSIFIED, normal.main_weapon_type, "non-main weapon type %d" % rarity_value)
 		assertions.expect_equal(catalog.rarity(rarity).affix_count, normal.affixes.size(), "normal affix count %d" % rarity_value)
 		assertions.expect_equal(normal.affixes.size(), _affix_id_set(normal).size(), "normal affixes unique %d" % rarity_value)
-		var unique_rng := RandomNumberGenerator.new()
-		unique_rng.seed = 5000 + rarity_value
-		var unique: ItemInstance = ItemFactoryScript.create_item(
+	assertions.expect_true(
+		ItemFactoryScript.create_normal_item(
 			run_seed,
-			ItemFactoryScript.make_item_id(run_seed, 1, 20 + rarity_value),
-			GameTypes.EquipmentSlot.SUB_WEAPON,
+			"invalid-normal-unique",
+			GameTypes.EquipmentSlot.HANDS,
 			GameTypes.MainWeaponType.UNCLASSIFIED,
-			rarity,
-			&"bloodied_dagger",
-			GameTypes.MainWeaponType.STAFF,
-			unique_rng,
-			catalog
+			GameTypes.Rarity.UNIQUE,
+			GameTypes.MainWeaponType.BOW,
+			RandomNumberGenerator.new(),
+			catalog,
+		) == null,
+		"normal factory rejects UNIQUE rarity",
+	)
+	for unique_id: StringName in catalog.unique_ids():
+		var unique: ItemInstance = ItemFactoryScript.create_unique_item(
+			run_seed,
+			"unique-%s" % unique_id,
+			unique_id,
+			catalog,
 		)
-		var expected_unique_count: int = floori(float(catalog.rarity(rarity).affix_count) / 2.0)
-		assertions.expect_equal(expected_unique_count, unique.affixes.size(), "unique affix count %d" % rarity_value)
-		assertions.expect_equal("血塗れの短剣", unique.display_name, "unique fixed name %d" % rarity_value)
+		var definition: UniqueDefinition = catalog.unique(unique_id)
+		assertions.expect_true(unique != null, "unique factory creates %s" % unique_id)
+		if unique == null:
+			continue
+		assertions.expect_equal(GameTypes.Rarity.UNIQUE, unique.rarity, "unique rarity %s" % unique_id)
+		assertions.expect_equal(definition.equipment_slot, unique.slot, "unique slot %s" % unique_id)
+		assertions.expect_equal(definition.display_name, unique.display_name, "unique name %s" % unique_id)
+		assertions.expect_equal(0, unique.affixes.size(), "unique affix count %s" % unique_id)
+	assertions.expect_true(
+		ItemFactoryScript.create_unique_item(run_seed, "invalid-unique", &"missing", catalog) == null,
+		"unique factory rejects missing definition",
+	)
 
 
 func _name_generator_test(assertions: Variant) -> void:
@@ -438,13 +462,14 @@ func _fusion_service_test(assertions: Variant) -> void:
 	]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 6001
-	var success: Dictionary = FusionServiceScript.fuse(common, 0, 0, equipped_ids, false, 77, 2, 5, GameTypes.MainWeaponType.BOW, rng, catalog)
+	var success: Dictionary = FusionServiceScript.fuse(common, 0, 0, equipped_ids, 77, 2, 5, GameTypes.MainWeaponType.BOW, rng, catalog)
 	assertions.expect_true(bool(success["success"]), "three-to-one succeeds")
 	assertions.expect_equal(GameTypes.Rarity.RARE, success["output_rarity"], "fusion rarity increases")
+	assertions.expect_true((success["output"] as ItemInstance).unique_id.is_empty(), "fusion output is non-UNIQUE")
 	assertions.expect_equal(6, success["next_drop_serial"], "fusion serial increments once")
 	var wild_rng := RandomNumberGenerator.new()
 	wild_rng.seed = 6002
-	var wild_success: Dictionary = FusionServiceScript.fuse([common[0], common[1]], 1, 1, equipped_ids, false, 77, 2, 6, GameTypes.MainWeaponType.STAFF, wild_rng, catalog)
+	var wild_success: Dictionary = FusionServiceScript.fuse([common[0], common[1]], 1, 1, equipped_ids, 77, 2, 6, GameTypes.MainWeaponType.STAFF, wild_rng, catalog)
 	assertions.expect_true(bool(wild_success["success"]), "two plus wild succeeds")
 	assertions.expect_equal(1, wild_success["wild_consumed"], "one wild consumed")
 	assertions.expect_equal(&"wild_limit", FusionServiceScript.validate_materials([common[0]], 2, 2, equipped_ids)["error"], "two wild rejected")
@@ -460,19 +485,17 @@ func _fusion_service_test(assertions: Variant) -> void:
 		_manual_item("l2", GameTypes.Rarity.LEGENDARY),
 	]
 	assertions.expect_equal(&"legendary", FusionServiceScript.validate_materials(legendary, 0, 0, equipped_ids)["error"], "Legendary rejected")
-	var unique_item: ItemInstance = _manual_item("u0", GameTypes.Rarity.COMMON, &"bloodied_dagger")
+	var unique_item: ItemInstance = _manual_item("u0", GameTypes.Rarity.UNIQUE, &"bloodied_dagger")
 	unique_item.display_name = "血塗れの短剣"
 	var unique_materials: Array[ItemInstance] = [unique_item, common[1], common[2]]
 	var warning_rng := RandomNumberGenerator.new()
 	warning_rng.seed = 7001
 	var warning_state: int = warning_rng.state
-	var warning: Dictionary = FusionServiceScript.fuse(unique_materials, 0, 0, equipped_ids, false, 77, 2, 7, GameTypes.MainWeaponType.SWORD, warning_rng, catalog)
-	assertions.expect_false(bool(warning["success"]), "unique waits for confirmation")
-	assertions.expect_true(bool(warning["needs_unique_confirmation"]), "unique warning required")
-	assertions.expect_equal(warning_state, warning_rng.state, "unique warning consumes no RNG")
-	assertions.expect_equal(7, warning["next_drop_serial"], "unique warning preserves serial")
-	var confirmed: Dictionary = FusionServiceScript.fuse(unique_materials, 0, 0, equipped_ids, true, 77, 2, 7, GameTypes.MainWeaponType.SWORD, warning_rng, catalog)
-	assertions.expect_true(bool(confirmed["success"]), "confirmed unique fusion succeeds")
+	var rejected: Dictionary = FusionServiceScript.fuse(unique_materials, 0, 0, equipped_ids, 77, 2, 7, GameTypes.MainWeaponType.SWORD, warning_rng, catalog)
+	assertions.expect_false(bool(rejected["success"]), "UNIQUE cannot be fused")
+	assertions.expect_equal(&"unique", rejected["error"], "UNIQUE fusion rejection reason")
+	assertions.expect_equal(warning_state, warning_rng.state, "UNIQUE rejection consumes no RNG")
+	assertions.expect_equal(7, rejected["next_drop_serial"], "UNIQUE rejection preserves serial")
 
 
 func _phase_test(assertions: Variant) -> void:
@@ -550,7 +573,7 @@ func _score_test(assertions: Variant) -> void:
 		return
 	var held: Array[ItemInstance] = [
 		_manual_item("score-common", GameTypes.Rarity.COMMON),
-		_manual_item("score-rare", GameTypes.Rarity.RARE, &"bloodied_dagger"),
+		_manual_item("score-unique", GameTypes.Rarity.UNIQUE, &"bloodied_dagger"),
 		_manual_item("score-epic", GameTypes.Rarity.EPIC),
 		_manual_item("score-legendary", GameTypes.Rarity.LEGENDARY),
 	]
@@ -566,12 +589,20 @@ func _score_test(assertions: Variant) -> void:
 	}
 	var breakdown: Dictionary = ScoreServiceScript.calculate(100, 1, 1, 20, 8, true, held, skills, 2, catalog.score_definition())
 	assertions.expect_equal(9000, breakdown[&"combat_score"], "fixed combat score")
-	assertions.expect_equal(3055, breakdown[&"final_build_score"], "fixed build score")
-	assertions.expect_equal(12055, breakdown[&"total"], "fixed total 12,055")
+	assertions.expect_equal(4210, breakdown[&"final_build_score"], "fixed build score")
+	assertions.expect_equal(13210, breakdown[&"total"], "fixed total 13,210")
+	var unique_only: Dictionary = ScoreServiceScript.calculate(
+		0, 0, 0, 0, 0, false,
+		[_manual_item("score-unique-only", GameTypes.Rarity.UNIQUE, &"bloodied_dagger")],
+		{}, 0, catalog.score_definition(),
+	)
+	assertions.expect_equal(1260, unique_only[&"equipment"], "UNIQUE uses Legendary equipment score")
+	assertions.expect_equal(600, unique_only[&"unique_tags"], "UNIQUE keeps unique tag score")
+	assertions.expect_equal(1860, unique_only[&"final_build_score"], "UNIQUE scores 1860 total")
 
 
 func _stat_calculator_test(assertions: Variant) -> void:
-	var body: ItemInstance = _manual_item("body", GameTypes.Rarity.COMMON, &"immortal_breastplate")
+	var body: ItemInstance = _manual_item("body", GameTypes.Rarity.UNIQUE, &"immortal_breastplate")
 	body.slot = GameTypes.EquipmentSlot.BODY
 	var head: ItemInstance = _manual_item("head", GameTypes.Rarity.LEGENDARY)
 	head.slot = GameTypes.EquipmentSlot.HEAD

@@ -38,7 +38,7 @@ func _test_fixed_fixture_and_focus(assertions: Variant, context: Dictionary) -> 
 	var screen: RewardRevealScreen = fixture["screen"]
 	assertions.expect_equal(GameTypes.RunPhase.REWARD_REVEAL, state.phase, "reward_controls begins at REWARD_REVEAL")
 	assertions.expect_equal(3, state.wave_number, "reward_controls begins at W3")
-	assertions.expect_equal(4, state.unopened_rewards.size(), "reward_controls has exactly four fixed rewards")
+	assertions.expect_equal(5, state.unopened_rewards.size(), "reward_controls has four normal rarities and one fixed Unique")
 	var expected: Array[Dictionary] = [
 		{
 			"reward_id": "qa-reward-common-bow",
@@ -88,6 +88,18 @@ func _test_fixed_fixture_and_focus(assertions: Variant, context: Dictionary) -> 
 				{"id": "skill_power_pct", "value": 50.0},
 			],
 		},
+		{
+			"reward_id": "qa-reward-unique-clock",
+			"item_id": "qa-item-unique-clock",
+			"tick": 4,
+			"rarity": GameTypes.Rarity.UNIQUE,
+			"slot": GameTypes.EquipmentSlot.SUB_WEAPON,
+			"weapon_type": GameTypes.MainWeaponType.UNCLASSIFIED,
+			"affixes": [],
+			"unique_id": &"broken_clock",
+			"display_name": "壊れた時計",
+			"source": GameTypes.RewardSource.BOSS,
+		},
 	]
 	for index: int in expected.size():
 		var reward: RewardRoll = state.unopened_rewards[index]
@@ -97,6 +109,11 @@ func _test_fixed_fixture_and_focus(assertions: Variant, context: Dictionary) -> 
 		assertions.expect_equal(expected_reward["tick"], reward.acquired_tick, "QA reward %d tick" % index)
 		assertions.expect_false(reward.is_guaranteed_main_weapon, "QA reward %d is not guaranteed" % index)
 		assertions.expect_equal(GameTypes.RewardKind.EQUIPMENT, reward.kind, "QA reward %d equipment kind" % index)
+		assertions.expect_equal(
+			int(expected_reward.get("source", GameTypes.RewardSource.NORMAL)),
+			reward.source,
+			"QA reward %d source" % index,
+		)
 		assertions.expect_equal(&"", reward.skill_id, "QA reward %d skill id empty" % index)
 		assertions.expect_equal(expected_reward["rarity"], reward.rarity_for_presentation, "QA reward %d presentation rarity" % index)
 		assertions.expect_false(reward.revealed, "QA reward %d starts unrevealed" % index)
@@ -108,9 +125,15 @@ func _test_fixed_fixture_and_focus(assertions: Variant, context: Dictionary) -> 
 		assertions.expect_equal(expected_reward["slot"], item.slot, "QA item %d slot" % index)
 		assertions.expect_equal(expected_reward["weapon_type"], item.main_weapon_type, "QA item %d weapon type" % index)
 		assertions.expect_equal(expected_reward["rarity"], item.rarity, "QA item %d rarity" % index)
-		assertions.expect_equal(&"", item.unique_id, "QA item %d unique empty" % index)
+		assertions.expect_equal(
+			StringName(expected_reward.get("unique_id", &"")),
+			item.unique_id,
+			"QA item %d Unique identity" % index,
+		)
 		assertions.expect_false(item.locked, "QA item %d unlocked" % index)
 		assertions.expect_true(not item.display_name.is_empty(), "QA item %d name is fixed" % index)
+		if expected_reward.has("display_name"):
+			assertions.expect_equal(expected_reward["display_name"], item.display_name, "QA Unique name comes from its definition")
 		assertions.expect_equal(expected_reward["affixes"], _affix_snapshot(item.affixes), "QA item %d affixes" % index)
 	var rarity_labels: PackedStringArray = PackedStringArray()
 	var outline_tokens: PackedStringArray = PackedStringArray()
@@ -118,11 +141,12 @@ func _test_fixed_fixture_and_focus(assertions: Variant, context: Dictionary) -> 
 		rarity_labels.append(RewardRevealController.rarity_label(reward))
 		outline_tokens.append(RewardRevealController.outline_token(reward))
 	assertions.expect_equal(
-		PackedStringArray(["COMMON", "RARE", "EPIC", "LEGENDARY"]),
+		PackedStringArray(["COMMON", "RARE", "EPIC", "LEGENDARY", "UNIQUE"]),
 		rarity_labels,
-		"equipment presentation indices 0..3 map to four rarity labels",
+		"equipment presentation indices 0..4 map to five rarity labels",
 	)
-	assertions.expect_equal(4, _unique_string_count(outline_tokens), "four rarities use four readable outline shapes")
+	assertions.expect_equal(5, _unique_string_count(outline_tokens), "five rarities use five readable outline shapes")
+	assertions.expect_equal("★", outline_tokens[4], "Unique uses its dedicated star outline token")
 	var skill_reward := RewardRoll.new()
 	skill_reward.kind = GameTypes.RewardKind.SKILL
 	skill_reward.skill_id = &"starfall"
@@ -213,7 +237,8 @@ func _test_controller_contract(assertions: Variant, context: Dictionary) -> void
 		_focus_control(y_screen, focus_id).grab_focus()
 		y_screen.test_press_reward_open_all_action()
 		assertions.expect_true(y_screen.debug_state()["aggregate_prealert"], "Y from %s starts aggregate true prealert" % focus_id)
-		y_screen.test_tick(0.75)
+		assertions.expect_float(1.0, float(y_screen.debug_state()["prealert_duration"]), "Y aggregate uses Unique one-second prealert")
+		y_screen.test_tick(1.0)
 		assertions.expect_true(y_screen.reveal_controller().is_complete(), "Y from %s opens every reward" % focus_id)
 		assertions.expect_equal(0, y_screen.debug_state()["pointer_event_count"], "Y from %s uses no pointer event" % focus_id)
 		_cleanup_fixture(y_fixture, context)
@@ -288,7 +313,12 @@ func _test_reveal_modes_and_accessibility(assertions: Variant, context: Dictiona
 			guard_ticks += 1
 		if mode == "fast":
 			screen.test_accept_release()
-		assertions.expect_true(screen.reveal_controller().is_complete(), "%s mode reveals all four rewards" % mode)
+		assertions.expect_true(screen.reveal_controller().is_complete(), "%s mode reveals all five rewards" % mode)
+		assertions.expect_equal(
+			GameTypes.Rarity.UNIQUE,
+			screen.reveal_controller().last_revealed_reward().rarity_for_presentation,
+			"%s mode reveals Unique last" % mode,
+		)
 		assertions.expect_equal(baseline_payload, _reward_payload_snapshot(state.unopened_rewards), "%s mode preserves every RewardRoll payload field" % mode)
 		assertions.expect_equal(rng_before, _rng_snapshot(state), "%s mode preserves all RNG states and serial" % mode)
 		_cleanup_fixture(fixture, context)
@@ -313,6 +343,28 @@ func _test_reveal_modes_and_accessibility(assertions: Variant, context: Dictiona
 	assertions.expect_equal(3, timing_screen.reveal_controller().revealed_rewards().size(), "Epic reveals exactly after 0.75-second prealert")
 	_cleanup_fixture(timing_fixture, context)
 
+	var unique_qa: Dictionary = QaScenarioFactory.build("reward_controls", _loaded_catalog(assertions))
+	var unique_state: RunState = unique_qa["state"] as RunState
+	var unique_reward: RewardRoll = unique_state.unopened_rewards[4]
+	var unique_rewards: Array[RewardRoll] = [unique_reward]
+	unique_state.unopened_rewards = unique_rewards
+	var unique_controller := RewardRevealController.new()
+	unique_controller.initialize(unique_state)
+	unique_controller.configure_accessibility(false, false, true)
+	unique_controller.tick(0.35)
+	var unique_prealert: Dictionary = unique_controller.presentation_state()
+	assertions.expect_true(unique_controller.is_prealert_active(), "normal opening starts a dedicated Unique prealert")
+	assertions.expect_equal(GameTypes.Rarity.UNIQUE, unique_prealert["prealert_rarity"], "Unique prealert exposes its rarity")
+	assertions.expect_float(1.0, float(unique_prealert["prealert_duration"]), "Unique prealert lasts exactly one second")
+	assertions.expect_equal(PackedStringArray(["qa-reward-unique-clock"]), unique_controller.prealert_reward_ids(), "Unique prealert targets the actual final reward")
+	assertions.expect_float(0.70, float(unique_prealert["last_vibration_weak"]), "Unique vibration weak magnitude")
+	assertions.expect_float(1.0, float(unique_prealert["last_vibration_strong"]), "Unique vibration strong magnitude")
+	assertions.expect_float(0.65, float(unique_prealert["last_vibration_duration"]), "Unique vibration duration")
+	unique_controller.tick(0.999)
+	assertions.expect_equal(0, unique_controller.revealed_rewards().size(), "Unique stays hidden before its one-second prealert ends")
+	unique_controller.tick(0.001)
+	assertions.expect_equal(1, unique_controller.revealed_rewards().size(), "Unique reveals exactly at one second")
+
 	var no_high_qa: Dictionary = QaScenarioFactory.build("reward_controls", _loaded_catalog(assertions))
 	var no_high_state: RunState = no_high_qa["state"] as RunState
 	var no_high_rewards: Array[RewardRoll] = [
@@ -326,6 +378,58 @@ func _test_reveal_modes_and_accessibility(assertions: Variant, context: Dictiona
 	assertions.expect_false(no_high_controller.is_prealert_active(), "all-open with only Common/Rare has no false prealert")
 	assertions.expect_true(no_high_controller.is_complete(), "all-open with no high rarity reveals immediately")
 
+	var unique_ui_fixture: Dictionary = await _spawn_reward_screen(assertions, context)
+	if unique_ui_fixture.is_empty():
+		return
+	var unique_screen: RewardRevealScreen = unique_ui_fixture["screen"]
+	var audio_events: Array[StringName] = []
+	unique_screen.audio_event_requested.connect(
+		func(event_id: StringName) -> void:
+			audio_events.append(event_id)
+	)
+	unique_screen.test_press_reward_open_all_action()
+	var unique_ui_state: Dictionary = unique_screen.debug_state()
+	assertions.expect_equal(GameTypes.Rarity.UNIQUE, unique_ui_state["prealert_rarity"], "open-all promotes Unique to the aggregate prealert")
+	assertions.expect_float(1.0, float(unique_ui_state["prealert_duration"]), "open-all keeps the full Unique prealert duration")
+	assertions.expect_float(0.70, float(unique_ui_state["last_vibration_weak"]), "open-all Unique weak vibration")
+	assertions.expect_float(1.0, float(unique_ui_state["last_vibration_strong"]), "open-all Unique strong vibration")
+	assertions.expect_float(0.65, float(unique_ui_state["last_vibration_duration"]), "open-all Unique vibration duration")
+	assertions.expect_equal(PackedStringArray([&"unique_prealert"]), PackedStringArray(audio_events), "open-all emits the dedicated Unique sweep")
+	assertions.expect_equal("★ UNIQUE 予告", (unique_screen.get_node("%PrealertBanner") as Label).text, "Unique uses its dedicated prealert banner")
+	assertions.expect_equal("★ UNIQUE", (unique_screen.get_node("%CurrentRarity") as Label).text, "Unique prealert uses the exact presentation label")
+	var prealert_style := (unique_screen.get_node("%CurrentCard") as PanelContainer).get_theme_stylebox("panel") as StyleBoxFlat
+	assertions.expect_equal(Color(0.95, 0.16, 0.22, 1.0), prealert_style.border_color, "Unique reveal card uses the deep-crimson border")
+	assertions.expect_equal(PackedInt32Array([2, 28, 2, 28]), PackedInt32Array([
+		prealert_style.corner_radius_top_left,
+		prealert_style.corner_radius_top_right,
+		prealert_style.corner_radius_bottom_right,
+		prealert_style.corner_radius_bottom_left,
+	]), "Unique reveal card uses its dedicated outline shape")
+	unique_screen.test_tick(1.0)
+	assertions.expect_true(unique_screen.reveal_controller().is_complete(), "open-all reveals every card after the Unique prealert")
+	assertions.expect_equal(GameTypes.Rarity.UNIQUE, unique_screen.reveal_controller().last_revealed_reward().rarity_for_presentation, "open-all reveals Unique last")
+	assertions.expect_equal("★ UNIQUE", (unique_screen.get_node("%CurrentRarity") as Label).text, "revealed Unique keeps the exact star label")
+	assertions.expect_equal("壊れた時計", (unique_screen.get_node("%CurrentName") as Label).text, "Unique card shows its catalog name")
+	var clock_definition: UniqueDefinition = _loaded_catalog(assertions).unique(&"broken_clock")
+	assertions.expect_equal(
+		"部位 sub_weapon\n固有効果: %s" % clock_definition.effect_description,
+		(unique_screen.get_node("%CurrentDetails") as Label).text,
+		"Unique card shows the complete catalog effect text",
+	)
+	var missing_item := ItemInstance.new()
+	missing_item.rarity = GameTypes.Rarity.UNIQUE
+	missing_item.slot = GameTypes.EquipmentSlot.SUB_WEAPON
+	missing_item.unique_id = &"missing_definition"
+	var missing_reward := RewardRoll.new()
+	missing_reward.equipment = missing_item
+	missing_reward.rarity_for_presentation = GameTypes.Rarity.UNIQUE
+	assertions.expect_equal(
+		"部位 sub_weapon\n固有効果: 不明な固有効果",
+		String(unique_screen.call("_reward_details", missing_reward)),
+		"missing Unique definition alone uses the fallback effect text",
+	)
+	_cleanup_fixture(unique_ui_fixture, context)
+
 	var reduce_fixture: Dictionary = await _spawn_reward_screen(assertions, context)
 	if reduce_fixture.is_empty():
 		return
@@ -333,10 +437,11 @@ func _test_reveal_modes_and_accessibility(assertions: Variant, context: Dictiona
 	var reduce_controller: RewardRevealController = reduce_screen.reveal_controller()
 	reduce_controller.configure_accessibility(true, true, false)
 	reduce_screen.test_press_reward_open_all_action()
-	reduce_screen.test_tick(0.20)
+	reduce_screen.test_tick(0.26)
 	var reduce_state: Dictionary = reduce_screen.debug_state()
 	assertions.expect_true(reduce_state["aggregate_prealert"], "all-open high rewards use one aggregate prealert")
-	assertions.expect_equal(2, (reduce_state["prealert_reward_ids"] as PackedStringArray).size(), "aggregate prealert targets Epic and Legendary cards")
+	assertions.expect_equal(3, (reduce_state["prealert_reward_ids"] as PackedStringArray).size(), "aggregate prealert targets Epic, Legendary, and Unique cards")
+	assertions.expect_float(1.0, float(reduce_state["prealert_duration"]), "accessibility settings preserve Unique prealert timing")
 	assertions.expect_float(0.0, float(reduce_state["shake_offset"]), "Reduce Motion removes positional shake")
 	assertions.expect_true(float(reduce_state["scale_multiplier"]) > 1.0 and float(reduce_state["scale_multiplier"]) <= 1.02, "Reduce Motion substitutes at most 2 percent scale pulse")
 	assertions.expect_equal(0, reduce_state["stage_light_step"], "Reduce Flashes removes stepped light")
@@ -347,8 +452,10 @@ func _test_reveal_modes_and_accessibility(assertions: Variant, context: Dictiona
 		"accessibility alternatives remain visibly identified",
 	)
 	assertions.expect_equal(0, reduce_state["vibration_request_count"], "vibration disabled suppresses controller vibration")
-	reduce_screen.test_tick(0.55)
-	assertions.expect_true(reduce_controller.is_complete(), "aggregate prealert reveals all cards at 0.75 seconds")
+	reduce_screen.test_tick(0.739)
+	assertions.expect_false(reduce_controller.is_complete(), "accessibility settings keep Unique hidden before one second")
+	reduce_screen.test_tick(0.001)
+	assertions.expect_true(reduce_controller.is_complete(), "aggregate prealert reveals all cards at one second")
 	_cleanup_fixture(reduce_fixture, context)
 
 
@@ -365,7 +472,7 @@ func _spawn_reward_screen(assertions: Variant, context: Dictionary) -> Dictionar
 	if screen == null:
 		return {}
 	screen.set_automatic_progression(false)
-	screen.initialize(qa["state"] as RunState)
+	screen.initialize(qa["state"] as RunState, catalog)
 	var tree: SceneTree = context["tree"] as SceneTree
 	tree.root.add_child(screen)
 	await tree.process_frame
@@ -424,6 +531,7 @@ func _reward_payload_snapshot(rewards: Array[RewardRoll]) -> Array[Dictionary]:
 			"acquired_tick": reward.acquired_tick,
 			"guaranteed": reward.is_guaranteed_main_weapon,
 			"kind": reward.kind,
+			"source": reward.source,
 			"equipment": equipment,
 			"skill_id": String(reward.skill_id),
 			"rarity_for_presentation": reward.rarity_for_presentation,

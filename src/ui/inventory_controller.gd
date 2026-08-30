@@ -295,7 +295,7 @@ func fusion_preview_text() -> String:
 	var output_rarity: String = rarity_label(_next_rarity(fusion_rarity))
 	var material_names: PackedStringArray = fusion_material_names()
 	var material_text: String = "、".join(material_names) if not material_names.is_empty() else "未選択"
-	return "材料: %s\n出力: %s\n通常なら6部位ランダム／ユニーク率4%%" % [
+	return "材料: %s\n出力: %s\n部位は6種から均等抽選／UNIQUEはボス宝箱限定" % [
 		material_text,
 		output_rarity,
 	]
@@ -386,6 +386,8 @@ func rarity_label(rarity: GameTypes.Rarity) -> String:
 			return "EPIC"
 		GameTypes.Rarity.LEGENDARY:
 			return "LEGENDARY"
+		GameTypes.Rarity.UNIQUE:
+			return "★ UNIQUE"
 	return "COMMON"
 
 
@@ -428,13 +430,17 @@ func _initial_fusion_rarity() -> GameTypes.Rarity:
 	return GameTypes.Rarity.COMMON
 
 
-func _eligible_fusion_item(item: ItemInstance, manual: bool) -> bool:
+func _eligible_fusion_item(item: ItemInstance, _manual: bool) -> bool:
 	return (
 		item != null
 		and item.rarity == fusion_rarity
-		and item.rarity != GameTypes.Rarity.LEGENDARY
+		and item.rarity in [
+			GameTypes.Rarity.COMMON,
+			GameTypes.Rarity.RARE,
+			GameTypes.Rarity.EPIC,
+		]
 		and not item.locked
-		and (manual or item.unique_id.is_empty())
+		and item.unique_id.is_empty()
 		and find_item(item.item_id).get("kind", &"") != &"equipped"
 	)
 

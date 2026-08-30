@@ -41,15 +41,29 @@ func try_normal_drop(position: Vector2, tick: int) -> RewardRoll:
 		return null
 	if _state.rng_streams.loot_rng.randf() >= _wave.normal_chest_rate:
 		return null
-	return _acquire_natural_reward(position, tick)
+	return _acquire_natural_reward(position, tick, GameTypes.RewardSource.NORMAL)
 
 
-func acquire_fixed_chests(count: int, position: Vector2, tick: int) -> Array[RewardRoll]:
+func acquire_elite_chests(position: Vector2, tick: int) -> Array[RewardRoll]:
 	var rewards: Array[RewardRoll] = []
 	if not _is_ready():
 		return rewards
-	for _index: int in range(maxi(0, count)):
-		rewards.append(_acquire_natural_reward(position, tick))
+	for _index: int in range(3):
+		rewards.append(
+			_acquire_natural_reward(position, tick, GameTypes.RewardSource.ELITE)
+		)
+	return rewards
+
+
+func acquire_boss_chests(position: Vector2, tick: int) -> Array[RewardRoll]:
+	var rewards: Array[RewardRoll] = []
+	if not _is_ready():
+		return rewards
+	for _index: int in range(7):
+		rewards.append(
+			_acquire_natural_reward(position, tick, GameTypes.RewardSource.BOSS)
+		)
+	rewards.append(_acquire_reward(_make_unique_reward(tick), position))
 	return rewards
 
 
@@ -60,7 +74,10 @@ func ensure_guarantee_fallback(position: Vector2, tick: int) -> RewardRoll:
 		or has_current_wave_guarantee()
 	):
 		return null
-	return _acquire_reward(_make_guaranteed_reward(tick), position)
+	return _acquire_reward(
+		_make_guaranteed_reward(tick, GameTypes.RewardSource.FALLBACK),
+		position
+	)
 
 
 func has_current_wave_guarantee() -> bool:
@@ -119,23 +136,9 @@ static func select_rarity(
 
 static func select_normal_equipment_shape(
 	rng: RandomNumberGenerator,
-	catalog: DefinitionCatalog,
 ) -> Dictionary:
-	if rng.randf() < UniqueSelectorScript.UNIQUE_CHANCE:
-		var unique_id: StringName = UniqueSelectorScript.select_won(rng)
-		var unique_definition: UniqueDefinition = catalog.unique(unique_id)
-		return {
-			"unique_id": unique_id,
-			"slot": (
-				unique_definition.equipment_slot
-				if unique_definition != null
-				else GameTypes.EquipmentSlot.MAIN_WEAPON
-			),
-			"main_weapon_type": GameTypes.MainWeaponType.UNCLASSIFIED,
-		}
 	var slot: GameTypes.EquipmentSlot = select_non_unique_slot(rng)
 	return {
-		"unique_id": &"",
 		"slot": slot,
 		"main_weapon_type": (
 			select_main_weapon_type(rng)
@@ -194,10 +197,14 @@ func _is_ready() -> bool:
 	)
 
 
-func _acquire_natural_reward(position: Vector2, tick: int) -> RewardRoll:
+func _acquire_natural_reward(
+	position: Vector2,
+	tick: int,
+	source: GameTypes.RewardSource,
+) -> RewardRoll:
 	if not has_current_wave_guarantee():
-		return _acquire_reward(_make_guaranteed_reward(tick), position)
-	return _acquire_reward(_make_normal_reward(tick), position)
+		return _acquire_reward(_make_guaranteed_reward(tick, source), position)
+	return _acquire_reward(_make_normal_reward(tick, source), position)
 
 
 func _acquire_reward(reward: RewardRoll, position: Vector2) -> RewardRoll:
@@ -209,7 +216,10 @@ func _acquire_reward(reward: RewardRoll, position: Vector2) -> RewardRoll:
 	return reward
 
 
-func _make_guaranteed_reward(tick: int) -> RewardRoll:
+func _make_guaranteed_reward(
+	tick: int,
+	source: GameTypes.RewardSource,
+) -> RewardRoll:
 	var serial: int = _reserve_drop_serial()
 	var rarity: GameTypes.Rarity = select_rarity(_wave, _state.rng_streams.loot_rng)
 	var weapon_type: GameTypes.MainWeaponType = select_guaranteed_main_weapon_type(
@@ -222,13 +232,12 @@ func _make_guaranteed_reward(tick: int) -> RewardRoll:
 		_state.wave_number,
 		serial,
 	)
-	var item: ItemInstance = ItemFactoryScript.create_item(
+	var item: ItemInstance = ItemFactoryScript.create_normal_item(
 		_state.run_seed,
 		item_id,
 		GameTypes.EquipmentSlot.MAIN_WEAPON,
 		weapon_type,
 		rarity,
-		&"",
 		_state.wave_main_weapon_type,
 		_state.rng_streams.loot_rng,
 		_catalog,
@@ -242,6 +251,7 @@ func _make_guaranteed_reward(tick: int) -> RewardRoll:
 	reward.wave_number = _state.wave_number
 	reward.acquired_tick = tick
 	reward.is_guaranteed_main_weapon = true
+	reward.source = source
 	reward.kind = GameTypes.RewardKind.EQUIPMENT
 	reward.equipment = item
 	reward.skill_id = &""
@@ -250,7 +260,10 @@ func _make_guaranteed_reward(tick: int) -> RewardRoll:
 	return reward
 
 
-func _make_normal_reward(tick: int) -> RewardRoll:
+func _make_normal_reward(
+	tick: int,
+	source: GameTypes.RewardSource,
+) -> RewardRoll:
 	var serial: int = _reserve_drop_serial()
 	var reward := RewardRoll.new()
 	reward.reward_id = ItemFactoryScript.make_reward_id(
@@ -261,6 +274,7 @@ func _make_normal_reward(tick: int) -> RewardRoll:
 	reward.wave_number = _state.wave_number
 	reward.acquired_tick = tick
 	reward.is_guaranteed_main_weapon = false
+	reward.source = source
 	reward.kind = select_reward_kind(_state.rng_streams.loot_rng)
 	reward.revealed = false
 	if reward.kind == GameTypes.RewardKind.SKILL:
@@ -270,28 +284,57 @@ func _make_normal_reward(tick: int) -> RewardRoll:
 		return reward
 
 	var rarity: GameTypes.Rarity = select_rarity(_wave, _state.rng_streams.loot_rng)
-	var shape: Dictionary = select_normal_equipment_shape(
-		_state.rng_streams.loot_rng,
-		_catalog,
-	)
+	var shape: Dictionary = select_normal_equipment_shape(_state.rng_streams.loot_rng)
 	var item_id: String = ItemFactoryScript.make_item_id(
 		_state.run_seed,
 		_state.wave_number,
 		serial,
 	)
-	reward.equipment = ItemFactoryScript.create_item(
+	reward.equipment = ItemFactoryScript.create_normal_item(
 		_state.run_seed,
 		item_id,
 		shape["slot"] as GameTypes.EquipmentSlot,
 		shape["main_weapon_type"] as GameTypes.MainWeaponType,
 		rarity,
-		shape["unique_id"] as StringName,
 		_state.wave_main_weapon_type,
 		_state.rng_streams.loot_rng,
 		_catalog,
 	)
 	reward.skill_id = &""
 	reward.rarity_for_presentation = rarity
+	return reward
+
+
+func _make_unique_reward(tick: int) -> RewardRoll:
+	var serial: int = _reserve_drop_serial()
+	var unique_id: StringName = UniqueSelectorScript.select_uniform(
+		_state.rng_streams.loot_rng
+	)
+	var item_id: String = ItemFactoryScript.make_item_id(
+		_state.run_seed,
+		_state.wave_number,
+		serial,
+	)
+	var reward := RewardRoll.new()
+	reward.reward_id = ItemFactoryScript.make_reward_id(
+		_state.run_seed,
+		_state.wave_number,
+		serial,
+	)
+	reward.wave_number = _state.wave_number
+	reward.acquired_tick = tick
+	reward.is_guaranteed_main_weapon = false
+	reward.source = GameTypes.RewardSource.BOSS
+	reward.kind = GameTypes.RewardKind.EQUIPMENT
+	reward.equipment = ItemFactoryScript.create_unique_item(
+		_state.run_seed,
+		item_id,
+		unique_id,
+		_catalog,
+	)
+	reward.skill_id = &""
+	reward.rarity_for_presentation = GameTypes.Rarity.UNIQUE
+	reward.revealed = false
 	return reward
 
 

@@ -407,7 +407,7 @@ func _exercise_reward(
 		"reward settings B restores exact origin focus",
 	)
 	screen.test_press_reward_open_all_action()
-	screen.test_tick(0.75)
+	screen.test_tick(1.0)
 	assertions.expect_true(screen.reveal_controller().is_complete(), "reward Y opens all fixed rewards")
 	assertions.expect_equal(
 		0,

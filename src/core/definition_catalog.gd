@@ -33,7 +33,9 @@ const RARITY_PATHS: Array[String] = [
 	"res://data/definitions/rarities/rare.tres",
 	"res://data/definitions/rarities/epic.tres",
 	"res://data/definitions/rarities/legendary.tres",
+	"res://data/definitions/rarities/unique.tres",
 ]
+const NORMAL_RARITY_COUNT: int = 4
 const AFFIX_PATHS: Array[String] = [
 	"res://data/definitions/affixes/damage_pct.tres",
 	"res://data/definitions/affixes/attack_speed_pct.tres",
@@ -322,6 +324,11 @@ func _load_rarities() -> void:
 		else:
 			rarities[definition.rarity] = definition
 		_validate_non_negative_int(definition.affix_count, "affix_count", path)
+		if (
+			definition.rarity == Types.Rarity.UNIQUE
+			and definition.affix_count != 0
+		):
+			_add_error("UNIQUE affix_count must be 0: %s" % path)
 
 
 func _load_affixes() -> void:
@@ -340,7 +347,12 @@ func _load_affixes() -> void:
 			_add_error("Duplicate affix_id: %s" % definition.affix_id)
 		else:
 			affixes[definition.affix_id] = definition
-		_validate_float_array(definition.values_by_rarity, RARITY_PATHS.size(), "values_by_rarity", path)
+		_validate_float_array(
+			definition.values_by_rarity,
+			NORMAL_RARITY_COUNT,
+			"values_by_rarity",
+			path
+		)
 		if definition.slot_pool.is_empty():
 			_add_error("slot_pool must not be empty: %s" % path)
 		_validate_enum_array(
@@ -435,7 +447,7 @@ func _load_score() -> void:
 	_validate_non_negative_int(_score_definition.run_clear, "run_clear", SCORE_PATH)
 	_validate_int_array(
 		_score_definition.equipment_scores,
-		RARITY_PATHS.size(),
+		NORMAL_RARITY_COUNT,
 		"equipment_scores",
 		SCORE_PATH
 	)

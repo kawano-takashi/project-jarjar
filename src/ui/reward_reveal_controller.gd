@@ -10,6 +10,7 @@ signal prealert_started(rarity: int)
 const NORMAL_INTERVAL_SECONDS: float = 0.35
 const FAST_INTERVAL_SECONDS: float = 0.0875
 const PREALERT_DURATION_SECONDS: float = 0.75
+const UNIQUE_PREALERT_DURATION_SECONDS: float = 1.0
 
 enum PrealertMode { NONE, INDIVIDUAL, AGGREGATE }
 
@@ -21,6 +22,8 @@ var _paused: bool = false
 var _prealert_mode: PrealertMode = PrealertMode.NONE
 var _prealert_remaining: float = 0.0
 var _prealert_elapsed: float = 0.0
+var _prealert_duration: float = PREALERT_DURATION_SECONDS
+var _prealert_rarity: int = -2
 var _prealert_target: RewardRoll = null
 var _prealert_reward_ids: PackedStringArray = PackedStringArray()
 var _last_revealed: RewardRoll = null
@@ -168,7 +171,7 @@ func prealert_reward_ids() -> PackedStringArray:
 func prealert_progress() -> float:
 	if not is_prealert_active():
 		return 0.0
-	return clampf(_prealert_elapsed / PREALERT_DURATION_SECONDS, 0.0, 1.0)
+	return clampf(_prealert_elapsed / _prealert_duration, 0.0, 1.0)
 
 
 func presentation_state() -> Dictionary:
@@ -195,6 +198,8 @@ func presentation_state() -> Dictionary:
 		"prealert_active": is_prealert_active(),
 		"aggregate_prealert": is_aggregate_prealert(),
 		"prealert_progress": progress,
+		"prealert_duration": _prealert_duration,
+		"prealert_rarity": _prealert_rarity,
 		"prealert_reward_ids": prealert_reward_ids(),
 		"shake_offset": shake_offset,
 		"scale_multiplier": scale_multiplier,
@@ -214,7 +219,7 @@ static func is_high_rarity(reward: RewardRoll) -> bool:
 	return (
 		reward != null
 		and reward.rarity_for_presentation >= GameTypes.Rarity.EPIC
-		and reward.rarity_for_presentation <= GameTypes.Rarity.LEGENDARY
+		and reward.rarity_for_presentation <= GameTypes.Rarity.UNIQUE
 	)
 
 
@@ -232,6 +237,8 @@ static func rarity_label(reward: RewardRoll) -> String:
 			return "EPIC"
 		GameTypes.Rarity.LEGENDARY:
 			return "LEGENDARY"
+		GameTypes.Rarity.UNIQUE:
+			return "UNIQUE"
 	return "不明"
 
 
@@ -249,12 +256,14 @@ static func outline_token(reward: RewardRoll) -> String:
 			return "⬡"
 		GameTypes.Rarity.LEGENDARY:
 			return "✦"
+		GameTypes.Rarity.UNIQUE:
+			return "★"
 	return "?"
 
 
 func _advance_prealert(delta: float) -> void:
 	_prealert_elapsed = minf(
-		PREALERT_DURATION_SECONDS,
+		_prealert_duration,
 		_prealert_elapsed + delta,
 	)
 	_prealert_remaining = TimerMath.countdown(_prealert_remaining, delta)
@@ -274,8 +283,10 @@ func _advance_prealert(delta: float) -> void:
 func _start_individual_prealert(reward: RewardRoll) -> void:
 	_reward_open_accumulator = 0.0
 	_prealert_mode = PrealertMode.INDIVIDUAL
-	_prealert_remaining = PREALERT_DURATION_SECONDS
+	_prealert_duration = _duration_for_rarity(reward.rarity_for_presentation)
+	_prealert_remaining = _prealert_duration
 	_prealert_elapsed = 0.0
+	_prealert_rarity = reward.rarity_for_presentation
 	_prealert_target = reward
 	_prealert_reward_ids = PackedStringArray([reward.reward_id])
 	prealert_started.emit(reward.rarity_for_presentation)
@@ -284,14 +295,17 @@ func _start_individual_prealert(reward: RewardRoll) -> void:
 
 func _start_aggregate_prealert(rewards: Array[RewardRoll]) -> void:
 	_prealert_mode = PrealertMode.AGGREGATE
-	_prealert_remaining = PREALERT_DURATION_SECONDS
-	_prealert_elapsed = 0.0
-	_prealert_target = null
-	_prealert_reward_ids = PackedStringArray()
 	var highest_rarity: int = GameTypes.Rarity.EPIC
 	for reward: RewardRoll in rewards:
-		_prealert_reward_ids.append(reward.reward_id)
 		highest_rarity = maxi(highest_rarity, reward.rarity_for_presentation)
+	_prealert_duration = _duration_for_rarity(highest_rarity)
+	_prealert_remaining = _prealert_duration
+	_prealert_elapsed = 0.0
+	_prealert_rarity = highest_rarity
+	_prealert_target = null
+	_prealert_reward_ids = PackedStringArray()
+	for reward: RewardRoll in rewards:
+		_prealert_reward_ids.append(reward.reward_id)
 	prealert_started.emit(highest_rarity)
 	_request_vibration_for_rarity(highest_rarity)
 
@@ -306,6 +320,10 @@ func _request_vibration_for_rarity(rarity: int) -> void:
 		weak_magnitude = 0.50
 		strong_magnitude = 0.80
 		duration = 0.50
+	elif rarity == GameTypes.Rarity.UNIQUE:
+		weak_magnitude = 0.70
+		strong_magnitude = 1.0
+		duration = 0.65
 	_vibration_request_count += 1
 	_last_vibration_weak = weak_magnitude
 	_last_vibration_strong = strong_magnitude
@@ -339,6 +357,8 @@ func _clear_prealert() -> void:
 	_prealert_mode = PrealertMode.NONE
 	_prealert_remaining = 0.0
 	_prealert_elapsed = 0.0
+	_prealert_duration = PREALERT_DURATION_SECONDS
+	_prealert_rarity = -2
 	_prealert_target = null
 	_prealert_reward_ids = PackedStringArray()
 
@@ -352,6 +372,22 @@ func _last_revealed_reward() -> RewardRoll:
 
 
 static func _reward_precedes(left: RewardRoll, right: RewardRoll) -> bool:
+	var left_is_unique: bool = (
+		left.rarity_for_presentation == GameTypes.Rarity.UNIQUE
+	)
+	var right_is_unique: bool = (
+		right.rarity_for_presentation == GameTypes.Rarity.UNIQUE
+	)
+	if left_is_unique != right_is_unique:
+		return not left_is_unique
 	if left.acquired_tick != right.acquired_tick:
 		return left.acquired_tick < right.acquired_tick
 	return left.reward_id < right.reward_id
+
+
+static func _duration_for_rarity(rarity: int) -> float:
+	return (
+		UNIQUE_PREALERT_DURATION_SECONDS
+		if rarity == GameTypes.Rarity.UNIQUE
+		else PREALERT_DURATION_SECONDS
+	)

@@ -26,6 +26,7 @@ const UiPolishScript := preload("res://src/ui/ui_polish.gd")
 @onready var _settings_overlay: SettingsOverlay = %SettingsOverlay
 
 var _pending_state: RunState = null
+var _pending_catalog: DefinitionCatalog = null
 var _controller: RewardRevealController = RewardRevealController.new()
 var _automatic_progression: bool = true
 var _modal_focus := ModalFocusCoordinator.new()
@@ -73,8 +74,12 @@ func _ready() -> void:
 	_stabilize_current_card_layout.call_deferred()
 
 
-func initialize(state: RunState) -> void:
+func initialize(
+	state: RunState,
+	catalog: DefinitionCatalog = null,
+) -> void:
 	_pending_state = state
+	_pending_catalog = catalog
 	if is_node_ready():
 		_initialize_controller(state)
 
@@ -351,9 +356,13 @@ func _on_reward_revealed(reward: RewardRoll) -> void:
 
 func _on_prealert_started(rarity: int) -> void:
 	audio_event_requested.emit(
-		&"legendary_prealert"
-		if rarity == GameTypes.Rarity.LEGENDARY
-		else &"epic_prealert"
+		&"unique_prealert"
+		if rarity == GameTypes.Rarity.UNIQUE
+		else (
+			&"legendary_prealert"
+			if rarity == GameTypes.Rarity.LEGENDARY
+			else &"epic_prealert"
+		)
 	)
 
 
@@ -383,11 +392,15 @@ func _update_view() -> void:
 		else "長押し4倍　A／Enter またはマウス左"
 	)
 	_prealert_banner.visible = bool(presentation["prealert_active"])
-	_prealert_banner.text = (
-		"高レア予告　EPIC以上"
-		if bool(presentation["aggregate_prealert"])
-		else "高レア予告"
-	)
+	var prealert_rarity: int = int(presentation.get("prealert_rarity", -2))
+	if prealert_rarity == GameTypes.Rarity.UNIQUE:
+		_prealert_banner.text = "★ UNIQUE 予告"
+	else:
+		_prealert_banner.text = (
+			"高レア予告　EPIC以上"
+			if bool(presentation["aggregate_prealert"])
+			else "高レア予告"
+		)
 	_update_current_card(presentation)
 	_update_prealert_targets(presentation)
 	var revealed_count: int = _controller.revealed_rewards().size()
@@ -403,19 +416,27 @@ func _update_current_card(presentation: Dictionary) -> void:
 	if prealert_active:
 		reward = _prealert_primary_reward()
 		_current_rarity.text = (
-			"EPIC以上"
-			if bool(presentation["aggregate_prealert"])
-			else RewardRevealController.rarity_label(reward)
+			"★ UNIQUE"
+			if int(presentation.get("prealert_rarity", -2)) == GameTypes.Rarity.UNIQUE
+			else (
+				"EPIC以上"
+				if bool(presentation["aggregate_prealert"])
+				else RewardRevealController.rarity_label(reward)
+			)
 		)
 		_current_name.text = "内容は公開前です"
 		_current_details.text = "真の高レア予告 • 結果は獲得時に確定済み"
 	elif reward != null:
 		_current_rarity.text = (
-			"%s  %s"
-			% [
-				RewardRevealController.outline_token(reward),
-				RewardRevealController.rarity_label(reward),
-			]
+			"★ UNIQUE"
+			if reward.rarity_for_presentation == GameTypes.Rarity.UNIQUE
+			else (
+				"%s  %s"
+				% [
+					RewardRevealController.outline_token(reward),
+					RewardRevealController.rarity_label(reward),
+				]
+			)
 		)
 		_current_name.text = _reward_display_name(reward)
 		_current_details.text = _reward_details(reward)
@@ -423,7 +444,11 @@ func _update_current_card(presentation: Dictionary) -> void:
 		_current_rarity.text = "未公開"
 		_current_name.text = "箱を開封しています"
 		_current_details.text = "内容は箱獲得時に確定済み"
-	var rarity: int = reward.rarity_for_presentation if reward != null else -2
+	var rarity: int = (
+		int(presentation.get("prealert_rarity", -2))
+		if prealert_active
+		else (reward.rarity_for_presentation if reward != null else -2)
+	)
 	var outline_thickness: int = int(presentation["outline_thickness"])
 	var stage_light_step: int = int(presentation["stage_light_step"])
 	_current_card.add_theme_stylebox_override(
@@ -539,6 +564,19 @@ func _reward_details(reward: RewardRoll) -> String:
 		return "スキル報酬"
 	if reward.equipment == null:
 		return "装備報酬"
+	if reward.equipment.rarity == GameTypes.Rarity.UNIQUE:
+		var effect_description: String = "不明な固有効果"
+		var unique_definition: UniqueDefinition = (
+			_pending_catalog.unique(reward.equipment.unique_id)
+			if _pending_catalog != null
+			else null
+		)
+		if unique_definition != null:
+			effect_description = unique_definition.effect_description
+		return "部位 %s\n固有効果: %s" % [
+			GameTypes.equipment_slot_to_key(reward.equipment.slot),
+			effect_description,
+		]
 	return "部位 %s　item_id %s" % [
 		GameTypes.equipment_slot_to_key(reward.equipment.slot),
 		reward.equipment.item_id,

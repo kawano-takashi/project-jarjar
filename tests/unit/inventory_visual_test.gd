@@ -121,6 +121,11 @@ func _test_rarity_color_and_shape(assertions: Variant) -> void:
 			"color": Color(1.0, 0.68, 0.18, 1.0),
 			"radii": PackedInt32Array([28, 28, 28, 28]),
 		},
+		{
+			"rarity": GameTypes.Rarity.UNIQUE,
+			"color": Color(0.95, 0.16, 0.22, 1.0),
+			"radii": PackedInt32Array([2, 28, 2, 28]),
+		},
 	]
 	for test_case: Dictionary in cases:
 		var rarity: int = int(test_case["rarity"])
@@ -150,7 +155,7 @@ func _test_icon_identity_ignores_item_identity(assertions: Variant) -> void:
 	second.item_id = "visual-b"
 	second.display_name = "伝説の固有名"
 	second.slot = GameTypes.EquipmentSlot.HEAD
-	second.rarity = GameTypes.Rarity.LEGENDARY
+	second.rarity = GameTypes.Rarity.UNIQUE
 	second.unique_id = &"hollow_crown"
 	second.locked = true
 	assertions.expect_equal(

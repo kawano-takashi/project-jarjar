@@ -33,17 +33,22 @@ static func create_initial_wood_stick(run_seed: int) -> ItemInstance:
 	return item
 
 
-static func create_item(
+static func create_normal_item(
 	run_seed: int,
 	item_id: String,
 	slot: GameTypes.EquipmentSlot,
 	main_weapon_type: GameTypes.MainWeaponType,
 	rarity: GameTypes.Rarity,
-	unique_id: StringName,
 	affinity_weapon_type: GameTypes.MainWeaponType,
 	affix_rng: RandomNumberGenerator,
 	catalog: DefinitionCatalogScript
 ) -> ItemInstance:
+	if (
+		catalog == null
+		or rarity < GameTypes.Rarity.COMMON
+		or rarity > GameTypes.Rarity.LEGENDARY
+	):
+		return null
 	var item := ItemInstance.new()
 	item.item_id = item_id
 	item.item_seed = derive_item_seed(run_seed, item_id)
@@ -54,42 +59,60 @@ static func create_item(
 		else GameTypes.MainWeaponType.UNCLASSIFIED
 	)
 	item.rarity = rarity
-	item.unique_id = unique_id
+	item.unique_id = &""
 	item.affixes = roll_affixes(
 		slot,
 		rarity,
-		unique_id,
 		affinity_weapon_type,
 		affix_rng,
 		catalog
 	)
-	if unique_id.is_empty():
-		item.display_name = NameGeneratorScript.generate(
-			item.item_seed,
-			item.slot,
-			item.main_weapon_type,
-			item.affixes
-		)
-	else:
-		var unique_definition: UniqueDefinition = catalog.unique(unique_id)
-		item.display_name = unique_definition.display_name if unique_definition != null else ""
+	item.display_name = NameGeneratorScript.generate(
+		item.item_seed,
+		item.slot,
+		item.main_weapon_type,
+		item.affixes
+	)
+	return item
+
+
+static func create_unique_item(
+	run_seed: int,
+	item_id: String,
+	unique_id: StringName,
+	catalog: DefinitionCatalogScript
+) -> ItemInstance:
+	if catalog == null or unique_id.is_empty():
+		return null
+	var unique_definition: UniqueDefinition = catalog.unique(unique_id)
+	if unique_definition == null:
+		return null
+	var item := ItemInstance.new()
+	item.item_id = item_id
+	item.item_seed = derive_item_seed(run_seed, item_id)
+	item.slot = unique_definition.equipment_slot
+	item.main_weapon_type = GameTypes.MainWeaponType.UNCLASSIFIED
+	item.rarity = GameTypes.Rarity.UNIQUE
+	item.unique_id = unique_id
+	item.affixes = []
+	item.display_name = unique_definition.display_name
+	item.locked = false
 	return item
 
 
 static func roll_affixes(
 	slot: GameTypes.EquipmentSlot,
 	rarity: GameTypes.Rarity,
-	unique_id: StringName,
 	affinity_weapon_type: GameTypes.MainWeaponType,
 	rng: RandomNumberGenerator,
 	catalog: DefinitionCatalogScript
 ) -> Array[AffixRoll]:
+	if rarity < GameTypes.Rarity.COMMON or rarity > GameTypes.Rarity.LEGENDARY:
+		return []
 	var rarity_definition: RarityDefinition = catalog.rarity(rarity)
 	if rarity_definition == null:
 		return []
 	var affix_count: int = rarity_definition.affix_count
-	if not unique_id.is_empty():
-		affix_count = floori(float(affix_count) / 2.0)
 	var selected_ids: Array[StringName] = []
 	var rolls: Array[AffixRoll] = []
 	for _affix_index: int in range(affix_count):

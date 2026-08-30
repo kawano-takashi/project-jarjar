@@ -53,6 +53,10 @@ static func apply_revealed(state: RunState) -> Dictionary:
 			and reward.equipment == null
 		):
 			return _failure(&"invalid_equipment_reward", "装備報酬が不正です")
+		if reward.kind == GameTypes.RewardKind.EQUIPMENT:
+			var equipment_error: StringName = _equipment_reward_error(reward)
+			if not equipment_error.is_empty():
+				return _failure(equipment_error, "装備報酬が不正です")
 		if (
 			reward.kind == GameTypes.RewardKind.SKILL
 			and reward.skill_id.is_empty()
@@ -171,6 +175,23 @@ static func _first_available_slot(state: RunState) -> int:
 		):
 			return slot_index
 	return -1
+
+
+static func _equipment_reward_error(reward: RewardRoll) -> StringName:
+	var item: ItemInstance = reward.equipment
+	if item == null:
+		return &"invalid_equipment_reward"
+	var has_unique_id: bool = not item.unique_id.is_empty()
+	var has_unique_rarity: bool = item.rarity == GameTypes.Rarity.UNIQUE
+	if has_unique_id != has_unique_rarity:
+		return &"invalid_unique_identity"
+	if not has_unique_rarity:
+		return &""
+	if not item.affixes.is_empty():
+		return &"invalid_unique_affixes"
+	if reward.source != GameTypes.RewardSource.BOSS:
+		return &"invalid_unique_source"
+	return &""
 
 
 static func _failure(error: StringName, message: String) -> Dictionary:

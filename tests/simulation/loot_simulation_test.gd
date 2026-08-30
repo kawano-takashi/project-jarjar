@@ -8,6 +8,7 @@ const FusionServiceScript := preload("res://src/inventory/fusion_service.gd")
 const SIMULATION_SEED: int = 20260827
 const DRAW_COUNT: int = 100000
 const RUN_COUNT: int = 100
+const BOSS_BATCH_COUNT: int = 6000
 
 var _catalog: DefinitionCatalog = null
 
@@ -15,7 +16,7 @@ var _catalog: DefinitionCatalog = null
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
 		"reward_kind_rarity_and_guarantee_distribution",
-		"normal_fusion_and_unique_selector_distribution",
+		"normal_fusion_exclusion_and_boss_unique_distribution",
 		"chest_counts_and_fusion_progression",
 	])
 
@@ -24,8 +25,8 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 	match test_name:
 		"reward_kind_rarity_and_guarantee_distribution":
 			_test_reward_kind_rarity_and_guarantee_distribution(assertions)
-		"normal_fusion_and_unique_selector_distribution":
-			_test_normal_fusion_and_unique_selector_distribution(assertions)
+		"normal_fusion_exclusion_and_boss_unique_distribution":
+			_test_normal_fusion_exclusion_and_boss_unique_distribution(assertions)
 		"chest_counts_and_fusion_progression":
 			_test_chest_counts_and_fusion_progression(assertions)
 		_:
@@ -55,7 +56,7 @@ func _test_reward_kind_rarity_and_guarantee_distribution(assertions: Variant) ->
 		for _draw: int in range(DRAW_COUNT):
 			var rarity: GameTypes.Rarity = LootServiceScript.select_rarity(wave, rarity_rng)
 			rarity_counts[rarity] += 1
-		for rarity_value: int in GameTypes.Rarity.values():
+		for rarity_value: int in range(GameTypes.Rarity.UNIQUE):
 			var expected_percent: float = 100.0 * float(wave.rarity_weights[rarity_value])
 			_assert_percent(
 				assertions,
@@ -126,25 +127,21 @@ func _test_reward_kind_rarity_and_guarantee_distribution(assertions: Variant) ->
 			)
 
 
-func _test_normal_fusion_and_unique_selector_distribution(assertions: Variant) -> void:
+func _test_normal_fusion_exclusion_and_boss_unique_distribution(assertions: Variant) -> void:
 	var catalog: DefinitionCatalog = _loaded_catalog(assertions)
 	if catalog == null:
 		return
 	var normal_rng := _seeded_rng()
-	var normal_unique_count: int = 0
-	var normal_non_unique_count: int = 0
 	var normal_slot_counts := PackedInt32Array([0, 0, 0, 0, 0, 0])
+	var normal_unique_branch_count: int = 0
 	for _draw: int in range(DRAW_COUNT):
-		var shape: Dictionary = LootServiceScript.select_normal_equipment_shape(normal_rng, catalog)
-		var unique_id: StringName = shape["unique_id"] as StringName
-		if not unique_id.is_empty():
-			normal_unique_count += 1
-		else:
-			normal_non_unique_count += 1
-			var slot: GameTypes.EquipmentSlot = shape["slot"] as GameTypes.EquipmentSlot
-			normal_slot_counts[slot] += 1
-	_assert_percent(assertions, 4.0, _percent(normal_unique_count, DRAW_COUNT), 0.3, "normal loot equipment unique 4 percent")
-	_assert_six_slot_distribution(assertions, normal_slot_counts, normal_non_unique_count, "normal unique-miss slot")
+		var shape: Dictionary = LootServiceScript.select_normal_equipment_shape(normal_rng)
+		if shape.has("unique_id"):
+			normal_unique_branch_count += 1
+		var slot: GameTypes.EquipmentSlot = shape["slot"] as GameTypes.EquipmentSlot
+		normal_slot_counts[slot] += 1
+	assertions.expect_equal(0, normal_unique_branch_count, "normal shape has no UNIQUE branch")
+	_assert_six_slot_distribution(assertions, normal_slot_counts, DRAW_COUNT, "normal equipment slot")
 
 	var unique_rng := _seeded_rng()
 	var unique_counts: Dictionary[StringName, int] = {}
@@ -152,7 +149,7 @@ func _test_normal_fusion_and_unique_selector_distribution(assertions: Variant) -
 		unique_counts[unique_id] = 0
 	var invalid_unique_count: int = 0
 	for _draw: int in range(DRAW_COUNT):
-		var selected_unique: StringName = UniqueSelectorScript.select_won(unique_rng)
+		var selected_unique: StringName = UniqueSelectorScript.select_uniform(unique_rng)
 		if unique_counts.has(selected_unique):
 			unique_counts[selected_unique] += 1
 		else:
@@ -166,6 +163,66 @@ func _test_normal_fusion_and_unique_selector_distribution(assertions: Variant) -
 			0.6,
 			"independent UniqueSelector %s" % unique_id,
 		)
+	var first_unique_rng := _seeded_rng()
+	var repeat_unique_rng := _seeded_rng()
+	var first_sequence := PackedStringArray()
+	var repeat_sequence := PackedStringArray()
+	for _index: int in range(1000):
+		first_sequence.append(String(UniqueSelectorScript.select_uniform(first_unique_rng)))
+		repeat_sequence.append(String(UniqueSelectorScript.select_uniform(repeat_unique_rng)))
+	assertions.expect_equal(first_sequence, repeat_sequence, "UNIQUE selector is deterministic for a fixed seed")
+
+	var boss_unique_counts: Dictionary[StringName, int] = {}
+	for unique_id: StringName in UniqueSelectorScript.UNIQUE_IDS:
+		boss_unique_counts[unique_id] = 0
+	var boss_contract_failures: int = 0
+	for run_seed: int in range(BOSS_BATCH_COUNT):
+		var boss_state: RunState = RunStateFactory.create(run_seed, catalog.wave(8))
+		boss_state.wave_number = 8
+		var boss_service: LootService = LootServiceScript.new()
+		boss_service.initialize(boss_state, catalog)
+		var boss_rewards: Array[RewardRoll] = boss_service.acquire_boss_chests(
+			Vector2.ZERO,
+			8000,
+		)
+		var unique_count: int = 0
+		var guarantee_count: int = 0
+		for reward_index: int in boss_rewards.size():
+			var reward: RewardRoll = boss_rewards[reward_index]
+			if reward.source != GameTypes.RewardSource.BOSS:
+				boss_contract_failures += 1
+			if reward.is_guaranteed_main_weapon:
+				guarantee_count += 1
+			if reward.equipment != null and reward.equipment.rarity == GameTypes.Rarity.UNIQUE:
+				unique_count += 1
+				if reward_index != 7 or not reward.equipment.affixes.is_empty():
+					boss_contract_failures += 1
+				if boss_unique_counts.has(reward.equipment.unique_id):
+					boss_unique_counts[reward.equipment.unique_id] += 1
+				else:
+					boss_contract_failures += 1
+		if (
+			boss_rewards.size() != 8
+			or boss_state.wave_chests != 8
+			or boss_state.drop_serial != 9
+			or unique_count != 1
+			or guarantee_count != 1
+		):
+			boss_contract_failures += 1
+	assertions.expect_equal(0, boss_contract_failures, "6000 production boss batches preserve 8 boxes, serials, source, one guarantee, and one final Unique")
+	for unique_id: StringName in UniqueSelectorScript.UNIQUE_IDS:
+		_assert_percent(
+			assertions,
+			100.0 / 6.0,
+			_percent(boss_unique_counts[unique_id], BOSS_BATCH_COUNT),
+			2.0,
+			"production W8 boss Unique %s" % unique_id,
+		)
+	assertions.expect_equal(
+		_boss_unique_for_seed(777, catalog),
+		_boss_unique_for_seed(777, catalog),
+		"production W8 boss Unique is deterministic for a fixed run seed",
+	)
 
 	var materials: Array[ItemInstance] = [
 		_manual_material("fusion-material-0"),
@@ -174,7 +231,6 @@ func _test_normal_fusion_and_unique_selector_distribution(assertions: Variant) -
 	]
 	var fusion_rng := _seeded_rng()
 	var fusion_unique_count: int = 0
-	var fusion_non_unique_count: int = 0
 	var fusion_slot_counts := PackedInt32Array([0, 0, 0, 0, 0, 0])
 	var fusion_failure_count: int = 0
 	for draw_index: int in range(DRAW_COUNT):
@@ -183,7 +239,6 @@ func _test_normal_fusion_and_unique_selector_distribution(assertions: Variant) -
 			0,
 			0,
 			[],
-			false,
 			SIMULATION_SEED,
 			1,
 			draw_index + 1,
@@ -198,11 +253,10 @@ func _test_normal_fusion_and_unique_selector_distribution(assertions: Variant) -
 		if not output.unique_id.is_empty():
 			fusion_unique_count += 1
 		else:
-			fusion_non_unique_count += 1
 			fusion_slot_counts[output.slot] += 1
 	assertions.expect_equal(0, fusion_failure_count, "100k production FusionService rolls all succeed")
-	_assert_percent(assertions, 4.0, _percent(fusion_unique_count, DRAW_COUNT), 0.3, "fusion output unique 4 percent")
-	_assert_six_slot_distribution(assertions, fusion_slot_counts, fusion_non_unique_count, "fusion unique-miss slot")
+	assertions.expect_equal(0, fusion_unique_count, "100k fusion outputs contain zero UNIQUE")
+	_assert_six_slot_distribution(assertions, fusion_slot_counts, DRAW_COUNT, "fusion output slot")
 
 
 func _test_chest_counts_and_fusion_progression(assertions: Variant) -> void:
@@ -212,6 +266,8 @@ func _test_chest_counts_and_fusion_progression(assertions: Variant) -> void:
 	var chest_totals := PackedInt32Array([0, 0, 0, 0, 0, 0, 0, 0])
 	var guarantee_count_failures: int = 0
 	var replacement_count_failures: int = 0
+	var unique_source_failures: int = 0
+	var boss_unique_count_failures: int = 0
 	var fusion_reached_epic: int = 0
 	var fusion_reached_legendary: int = 0
 	var direct_epic_total: int = 0
@@ -225,6 +281,8 @@ func _test_chest_counts_and_fusion_progression(assertions: Variant) -> void:
 			chest_totals[wave_index] += wave_chests[wave_index]
 		guarantee_count_failures += int(result["guarantee_count_failures"])
 		replacement_count_failures += int(result["replacement_count_failures"])
+		unique_source_failures += int(result["unique_source_failures"])
+		boss_unique_count_failures += int(result["boss_unique_count_failures"])
 		if bool(result["fusion_reached_epic"]):
 			fusion_reached_epic += 1
 		if bool(result["fusion_reached_legendary"]):
@@ -255,6 +313,8 @@ func _test_chest_counts_and_fusion_progression(assertions: Variant) -> void:
 	)
 	assertions.expect_equal(0, guarantee_count_failures, "every seed and wave has exactly one guaranteed main weapon")
 	assertions.expect_equal(0, replacement_count_failures, "first natural guarantee replacement never increases natural chest count")
+	assertions.expect_equal(0, unique_source_failures, "normal elite guarantee and fallback rewards contain zero UNIQUE")
+	assertions.expect_equal(0, boss_unique_count_failures, "every W8 boss batch contains exactly one UNIQUE")
 	assertions.expect_true(fusion_reached_epic >= 95, "fusion-derived Epic reaches at least 95 seeds actual=%d" % fusion_reached_epic)
 	assertions.expect_true(fusion_reached_legendary >= 90, "fusion-derived Legendary reaches at least 90 seeds actual=%d" % fusion_reached_legendary)
 	assertions.expect_true(fusion_epic_total > direct_epic_total, "fusion Epic total exceeds direct drops fusion=%d direct=%d" % [fusion_epic_total, direct_epic_total])
@@ -269,6 +329,8 @@ func _simulate_reward_rows_and_fusion(run_seed: int, catalog: DefinitionCatalog)
 	var wave_chests := PackedInt32Array([0, 0, 0, 0, 0, 0, 0, 0])
 	var guarantee_count_failures: int = 0
 	var replacement_count_failures: int = 0
+	var unique_source_failures: int = 0
+	var boss_unique_count_failures: int = 0
 	var direct_epic: int = 0
 	var direct_legendary: int = 0
 	var fusion_epic: int = 0
@@ -287,15 +349,22 @@ func _simulate_reward_rows_and_fusion(run_seed: int, catalog: DefinitionCatalog)
 			event_tick += 1
 			if service.try_normal_drop(Vector2.ZERO, event_tick) != null:
 				natural_chests += 1
-		var fixed_count: int = 3 if wave_number == 4 else (8 if wave_number == 8 else 0)
-		if fixed_count > 0:
+		var fixed_rewards: Array[RewardRoll] = []
+		if wave_number == 4:
 			event_tick += 1
-			var fixed_rewards: Array[RewardRoll] = service.acquire_fixed_chests(
-				fixed_count,
-				Vector2.ZERO,
-				event_tick,
-			)
+			fixed_rewards = service.acquire_elite_chests(Vector2.ZERO, event_tick)
+		elif wave_number == 8:
+			event_tick += 1
+			fixed_rewards = service.acquire_boss_chests(Vector2.ZERO, event_tick)
+		if not fixed_rewards.is_empty():
 			natural_chests += fixed_rewards.size()
+		if wave_number == 8:
+			var boss_unique_count: int = 0
+			for reward: RewardRoll in fixed_rewards:
+				if reward.equipment != null and reward.equipment.rarity == GameTypes.Rarity.UNIQUE:
+					boss_unique_count += 1
+			if boss_unique_count != 1:
+				boss_unique_count_failures += 1
 		var fallback: RewardRoll = service.ensure_guarantee_fallback(Vector2.ZERO, event_tick)
 		var expected_wave_chests: int = natural_chests if natural_chests > 0 else 1
 		if state.wave_chests != expected_wave_chests:
@@ -310,6 +379,18 @@ func _simulate_reward_rows_and_fusion(run_seed: int, catalog: DefinitionCatalog)
 			if reward.is_guaranteed_main_weapon:
 				guaranteed_count += 1
 			if reward.kind != GameTypes.RewardKind.EQUIPMENT or reward.equipment == null:
+				continue
+			if not reward.equipment.unique_id.is_empty():
+				if (
+					wave_number != 8
+					or reward.source != GameTypes.RewardSource.BOSS
+					or reward.equipment.rarity != GameTypes.Rarity.UNIQUE
+					or not reward.equipment.affixes.is_empty()
+				):
+					unique_source_failures += 1
+				continue
+			if reward.equipment.rarity == GameTypes.Rarity.UNIQUE:
+				unique_source_failures += 1
 				continue
 			if reward.equipment.rarity == GameTypes.Rarity.EPIC:
 				direct_epic += 1
@@ -336,7 +417,6 @@ func _simulate_reward_rows_and_fusion(run_seed: int, catalog: DefinitionCatalog)
 					0,
 					0,
 					equipped_ids,
-					false,
 					run_seed,
 					wave_number,
 					state.drop_serial,
@@ -361,6 +441,8 @@ func _simulate_reward_rows_and_fusion(run_seed: int, catalog: DefinitionCatalog)
 		"wave_chests": wave_chests,
 		"guarantee_count_failures": guarantee_count_failures,
 		"replacement_count_failures": replacement_count_failures,
+		"unique_source_failures": unique_source_failures,
+		"boss_unique_count_failures": boss_unique_count_failures,
 		"fusion_reached_epic": fusion_epic > 0,
 		"fusion_reached_legendary": fusion_legendary > 0,
 		"direct_epic": direct_epic,
@@ -382,6 +464,17 @@ func _seeded_rng() -> RandomNumberGenerator:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = SIMULATION_SEED
 	return rng
+
+
+func _boss_unique_for_seed(run_seed: int, catalog: DefinitionCatalog) -> StringName:
+	var state: RunState = RunStateFactory.create(run_seed, catalog.wave(8))
+	state.wave_number = 8
+	var service: LootService = LootServiceScript.new()
+	service.initialize(state, catalog)
+	var rewards: Array[RewardRoll] = service.acquire_boss_chests(Vector2.ZERO, 8000)
+	if rewards.size() != 8 or rewards[7].equipment == null:
+		return &""
+	return rewards[7].equipment.unique_id
 
 
 func _percent(count: int, denominator: int) -> float:
