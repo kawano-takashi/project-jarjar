@@ -11,6 +11,3 @@ boss_kill = 1500
 wave_clear = 500
 run_clear = 2000
 equipment_scores = PackedInt32Array(30, 105, 360, 1260)
-unique_tag = 600
-skill_level = 100
-wild_material = 100

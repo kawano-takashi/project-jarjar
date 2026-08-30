@@ -197,11 +197,11 @@ func _validate_factory_initial_state(game_app: Node) -> Dictionary:
 	var simulation := simulation_value as CombatSimulation
 	if simulation.state != state:
 		return _validation_failure(&"initial_simulation_state_mismatch")
-	var main_weapon: ItemInstance = state.equipped.get(
-		GameTypes.EquipmentSlot.MAIN_WEAPON,
+	var starter_weapon: ItemInstance = state.equipped.get(
+		GameTypes.EquipmentSlot.WEAPON_1,
 		null,
 	) as ItemInstance
-	if main_weapon == null or main_weapon.item_id != EXPECTED_WOOD_STICK_ID:
+	if starter_weapon == null or starter_weapon.item_id != EXPECTED_WOOD_STICK_ID:
 		return _validation_failure(&"initial_wood_stick_invalid")
 	var actual_snapshot: Dictionary = _initial_snapshot(state)
 	for key: String in _expected_initial_snapshot:
@@ -241,37 +241,29 @@ func _validate_timeout_failure(game_app: Node) -> Dictionary:
 
 
 func _initial_snapshot(state: RunState) -> Dictionary:
-	var main_weapon: ItemInstance = state.equipped.get(
-		GameTypes.EquipmentSlot.MAIN_WEAPON,
+	var starter_weapon: ItemInstance = state.equipped.get(
+		GameTypes.EquipmentSlot.WEAPON_1,
 		null,
 	) as ItemInstance
 	return {
 		"run_seed": state.run_seed,
 		"phase": state.phase,
 		"wave_number": state.wave_number,
-		"wave_main_weapon_type": state.wave_main_weapon_type,
 		"physics_tick": state.physics_tick,
 		"time_remaining": state.time_remaining,
 		"wave_cleared": state.wave_cleared,
 		"boss_defeated": state.boss_defeated,
 		"current_hp": state.current_hp,
 		"max_hp": state.max_hp,
-		"main_weapon_id": main_weapon.item_id if main_weapon != null else "",
+		"starter_weapon_id": starter_weapon.item_id if starter_weapon != null else "",
 		"equipped_count": _non_null_equipment_count(state),
 		"inventory_count": state.inventory.size(),
 		"overflow_count": state.overflow.size(),
-		"skill_count": state.skill_library.size(),
 		"unopened_reward_count": state.unopened_rewards.size(),
-		"scheduled_replay_count": state.scheduled_proc_replays.size(),
-		"wild_material_count": state.wild_material_count,
 		"drop_serial": state.drop_serial,
 		"next_entity_id": state.next_entity_id,
-		"next_activation_serial": state.next_activation_serial,
 		"next_event_serial": state.next_event_serial,
 		"spawn_credit": state.spawn_credit,
-		"coward_stationary_elapsed": state.coward_stationary_elapsed,
-		"echo_progress_item_id": state.echo_progress_item_id,
-		"echo_primary_attack_progress": state.echo_primary_attack_progress,
 		"non_boss_spawned": state.non_boss_spawned,
 		"wave_kills": state.wave_kills,
 		"total_kills": state.total_kills,

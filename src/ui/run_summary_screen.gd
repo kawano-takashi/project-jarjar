@@ -14,18 +14,15 @@ const SCORE_ROWS: Array[Dictionary] = [
 	{"key": &"boss_kills", "label": "ボス撃破"},
 	{"key": &"wave_clears", "label": "ウェーブクリア"},
 	{"key": &"run_clear", "label": "ラン完走"},
-	{"key": &"equipment", "label": "保持装備"},
-	{"key": &"unique_tags", "label": "ユニーク"},
-	{"key": &"skill_levels", "label": "スキルLv"},
-	{"key": &"wild_materials", "label": "ワイルド素材"},
+	{"key": &"equipment", "label": "装備中6枠"},
 ]
 const SLOT_LABELS: Array[String] = [
-	"主武器",
-	"副武器",
-	"頭",
-	"胴",
-	"手",
-	"足",
+	"武器1",
+	"武器2",
+	"武器3",
+	"お守り1",
+	"お守り2",
+	"お守り3",
 ]
 
 @onready var _heading: Label = %SummaryHeading
@@ -226,20 +223,6 @@ func _build_summary_text(state: RunState) -> String:
 			SLOT_LABELS[slot_index],
 			_item_label(item),
 		])
-	lines.append("")
-	lines.append("装着スキル")
-	var equipped_skills: Array[StringName] = [&"", &""]
-	for value: Variant in state.skill_library.values():
-		var skill: SkillState = value as SkillState
-		if skill != null and skill.equipped_slot >= 0 and skill.equipped_slot < 2:
-			equipped_skills[skill.equipped_slot] = skill.skill_id
-	for slot_index: int in range(equipped_skills.size()):
-		var skill_id: StringName = equipped_skills[slot_index]
-		var skill: SkillState = state.skill_library.get(skill_id) as SkillState
-		lines.append("枠%d: %s" % [
-			slot_index + 1,
-			"— 空き —" if skill == null else "%s Lv%d" % [_skill_name(skill_id), skill.level],
-		])
 	return "\n".join(lines)
 
 
@@ -272,22 +255,7 @@ func _rarity_label(rarity: GameTypes.Rarity) -> String:
 			return "EPIC"
 		GameTypes.Rarity.LEGENDARY:
 			return "LEGENDARY"
-		GameTypes.Rarity.UNIQUE:
-			return "★ UNIQUE"
 	return "COMMON"
-
-
-func _skill_name(skill_id: StringName) -> String:
-	match skill_id:
-		&"starfall":
-			return "星落とし"
-		&"thousand_blades":
-			return "千刃陣"
-		&"soul_chain":
-			return "魂の連鎖"
-		&"bell_of_retribution":
-			return "報復の鐘"
-	return String(skill_id)
 
 
 func _open_settings() -> void:

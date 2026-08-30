@@ -52,7 +52,6 @@ var _host_info: Dictionary = {}
 var _count_violation_frames: int = 0
 var _static_memory_invalid_frames: int = 0
 var _pool_overflow_violation_frames: int = 0
-var _effect_chain_overflow_violation_frames: int = 0
 var _orphan_node_violation_frames: int = 0
 var _maximum_orphan_node_count: int = 0
 var _first_count_violation: String = ""
@@ -83,6 +82,9 @@ func initialize(simulation: CombatSimulation, output_directory: String) -> Error
 	if _simulation.state.phase != GameTypes.RunPhase.COMBAT:
 		last_error_message = "performance_requires_combat_phase"
 		_simulation = null
+		return ERR_INVALID_DATA
+	if not _equip_three_weapon_fixture():
+		last_error_message = "performance_three_weapon_fixture_failed"
 		return ERR_INVALID_DATA
 	var fixture_result := _prepare_or_validate_full_load()
 	if not bool(fixture_result.get("valid", false)):
@@ -248,6 +250,33 @@ func _finish_without_capture() -> void:
 	completed.emit(exit_code, summary)
 
 
+func _equip_three_weapon_fixture() -> bool:
+	var weapon_types: Array[GameTypes.WeaponType] = [
+		GameTypes.WeaponType.BOW,
+		GameTypes.WeaponType.STAFF,
+		GameTypes.WeaponType.SWORD,
+	]
+	var slots: Array[GameTypes.EquipmentSlot] = GameTypes.weapon_slots()
+	for index: int in range(slots.size()):
+		var item: ItemInstance = ItemFactory.create_weapon(
+			_simulation.state.run_seed,
+			"performance-weapon-%d" % index,
+			weapon_types[index],
+			GameTypes.Rarity.LEGENDARY,
+			_simulation.catalog,
+		)
+		if item == null:
+			return false
+		_simulation.state.equipped[slots[index]] = item
+	_simulation.weapon_system.initialize(
+		_simulation.state,
+		_simulation.catalog,
+		_simulation.projectile_pool,
+		_simulation.event_router,
+	)
+	return InventoryService.equipped_weapon_count(_simulation.state) == 3
+
+
 func _prepare_or_validate_full_load() -> Dictionary:
 	var initial_counts := _active_counts()
 	if (
@@ -294,7 +323,7 @@ func _configure_simulation_freeze() -> void:
 	_simulation.freeze_countdown = true
 	_simulation.freeze_all_updates = true
 	_simulation.allow_contact_timers_only = false
-	_simulation.main_weapon_damage_override = 0.0
+	_simulation.weapon_damage_override = 0.0
 	_simulation.state.current_hp = _simulation.state.max_hp
 
 
@@ -330,7 +359,7 @@ func _runtime_frame_values() -> Dictionary:
 	counts["projectile_pool_overflow"] = _simulation.projectile_pool.overflow_count
 	counts["vfx_pool_overflow"] = _simulation.vfx_pool.overflow_count
 	counts["chest_pool_forced_absorb"] = _simulation.chest_visual_pool.forced_absorb_count
-	counts["effect_chain_depth_overflow"] = _simulation.event_router.chain_depth_overflow_count
+	counts["equipped_weapon_count"] = InventoryService.equipped_weapon_count(_simulation.state)
 	counts["orphan_node_count"] = int(
 		Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)
 	)
@@ -426,8 +455,8 @@ func _validate_frame_values(values: Dictionary) -> void:
 	)
 	if pool_overflow_total != 0:
 		_pool_overflow_violation_frames += 1
-	if int(values["effect_chain_depth_overflow"]) != 0:
-		_effect_chain_overflow_violation_frames += 1
+	if int(values["equipped_weapon_count"]) != 3:
+		_count_violation_frames += 1
 	var orphan_node_count: int = int(values["orphan_node_count"])
 	_maximum_orphan_node_count = maxi(_maximum_orphan_node_count, orphan_node_count)
 	if orphan_node_count != 0:
@@ -456,8 +485,6 @@ func _append_runtime_counter_failures() -> void:
 		_append_failure_once("static_memory_nonpositive")
 	if _pool_overflow_violation_frames != 0:
 		_append_failure_once("pool_overflow_nonzero")
-	if _effect_chain_overflow_violation_frames != 0:
-		_append_failure_once("effect_chain_depth_overflow_nonzero")
 	if _orphan_node_violation_frames != 0:
 		_append_failure_once("orphan_node_nonzero")
 
@@ -547,7 +574,6 @@ func _build_summary(metrics: Dictionary) -> Dictionary:
 		"first_count_violation": _first_count_violation,
 		"static_memory_invalid_frames": _static_memory_invalid_frames,
 		"pool_overflow_violation_frames": _pool_overflow_violation_frames,
-		"effect_chain_overflow_violation_frames": _effect_chain_overflow_violation_frames,
 		"orphan_node_violation_frames": _orphan_node_violation_frames,
 		"maximum_orphan_node_count": _maximum_orphan_node_count,
 		"active_enemy_final": int(frame_values.get("active_enemy", -1)),
@@ -557,7 +583,7 @@ func _build_summary(metrics: Dictionary) -> Dictionary:
 		"projectile_pool_overflow": int(frame_values.get("projectile_pool_overflow", -1)),
 		"vfx_pool_overflow": int(frame_values.get("vfx_pool_overflow", -1)),
 		"chest_pool_forced_absorb": int(frame_values.get("chest_pool_forced_absorb", -1)),
-		"effect_chain_depth_overflow": int(frame_values.get("effect_chain_depth_overflow", -1)),
+		"equipped_weapon_count": int(frame_values.get("equipped_weapon_count", -1)),
 		"failure_reasons": ";".join(_failure_reasons),
 		"host": _host_info.duplicate(true),
 	}
@@ -607,8 +633,7 @@ func _write_summary(summary: Dictionary) -> bool:
 		"vfx_pool_overflow=%d" % int(summary["vfx_pool_overflow"]),
 		"chest_pool_forced_absorb=%d" % int(summary["chest_pool_forced_absorb"]),
 		"pool_overflow_violation_frames=%d" % int(summary["pool_overflow_violation_frames"]),
-		"effect_chain_depth_overflow=%d" % int(summary["effect_chain_depth_overflow"]),
-		"effect_chain_overflow_violation_frames=%d" % int(summary["effect_chain_overflow_violation_frames"]),
+		"equipped_weapon_count=%d" % int(summary["equipped_weapon_count"]),
 		"maximum_orphan_node_count=%d" % int(summary["maximum_orphan_node_count"]),
 		"orphan_node_violation_frames=%d" % int(summary["orphan_node_violation_frames"]),
 		"static_memory_invalid_frames=%d" % int(summary["static_memory_invalid_frames"]),

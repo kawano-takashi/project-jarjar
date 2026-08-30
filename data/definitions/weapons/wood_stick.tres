@@ -5,8 +5,9 @@
 [resource]
 script = ExtResource("1_weapon")
 weapon_id = &"wood_stick"
-main_weapon_type = 0
-base_damage = 10.0
+weapon_type = 1
+lootable = false
+damage_by_rarity = PackedFloat32Array(10, 10, 10, 10)
 base_interval = 0.8
 range_m = 1.8
 projectile_speed = 0.0

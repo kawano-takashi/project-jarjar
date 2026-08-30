@@ -5,15 +5,23 @@ extends Control
 const MIN_FEEDBACK_DURATION_SECONDS: float = 0.40
 const FLASH_PULSE_DURATION_SECONDS: float = 0.50
 const REDUCED_FLASH_OUTLINE_SIZE: int = 5
+const InventoryItemVisualsScript := preload("res://src/ui/inventory_item_visuals.gd")
 
 @onready var _wave_value: Label = %WaveValue
 @onready var _time_value: Label = %TimeValue
 @onready var _kills_value: Label = %KillsValue
 @onready var _hp_value: Label = %HpValue
-@onready var _weapon_value: Label = %WeaponValue
 @onready var _chests_value: Label = %ChestsValue
-@onready var _skill_slot_zero_value: Label = %SkillSlot0Value
-@onready var _skill_slot_one_value: Label = %SkillSlot1Value
+@onready var _weapon_icons: Array[TextureRect] = [
+	%WeaponSlot0Icon,
+	%WeaponSlot1Icon,
+	%WeaponSlot2Icon,
+]
+@onready var _weapon_values: Array[Label] = [
+	%WeaponSlot0Value,
+	%WeaponSlot1Value,
+	%WeaponSlot2Value,
+]
 @onready var _bonus_time: Label = %BonusTime
 @onready var _boss_requirement: Label = %BossRequirement
 @onready var _boss_spawn_status: Label = %BossSpawnStatus
@@ -122,7 +130,6 @@ func update_from_snapshot(snapshot: CombatSnapshot) -> void:
 	var kill_quota := int(values.get("kill_quota", 0))
 	var current_hp := maxf(0.0, float(values.get("current_hp", 0.0)))
 	var max_hp := maxf(0.0, float(values.get("max_hp", 0.0)))
-	var weapon_name := str(values.get("weapon_name", "木の棒"))
 	var wave_chests := int(values.get("wave_chests", 0))
 	var wave_cleared := bool(values.get("wave_cleared", false))
 	var boss_defeated := bool(values.get("boss_defeated", false))
@@ -132,54 +139,44 @@ func update_from_snapshot(snapshot: CombatSnapshot) -> void:
 	_time_value.text = "残り %d 秒" % int(ceil(time_remaining))
 	_kills_value.text = "撃破 %d / %d" % [wave_kills, kill_quota]
 	_hp_value.text = "HP %s / %s" % [_format_health(current_hp), _format_health(max_hp)]
-	_weapon_value.text = "主武器  %s" % weapon_name
 	_chests_value.text = "箱  %d" % wave_chests
-	var skill_slots: Array = values.get("skill_slots", []) as Array
-	_update_skill_slot(_skill_slot_zero_value, skill_slots, 0)
-	_update_skill_slot(_skill_slot_one_value, skill_slots, 1)
+	var weapon_slots: Array = values.get("weapon_slots", []) as Array
+	for index: int in range(_weapon_values.size()):
+		_update_weapon_slot(weapon_slots, index)
 	_bonus_time.visible = wave_cleared
 	_update_boss_gate(wave_number, boss_defeated, non_boss_spawned)
 	_update_debug_overlay(values, snapshot)
 
 
-func _update_skill_slot(label: Label, skill_slots: Array, slot_index: int) -> void:
-	if slot_index < 0 or slot_index >= skill_slots.size():
-		label.text = "未装着"
+func _update_weapon_slot(weapon_slots: Array, slot_index: int) -> void:
+	var icon: TextureRect = _weapon_icons[slot_index]
+	var label: Label = _weapon_values[slot_index]
+	if slot_index < 0 or slot_index >= weapon_slots.size():
+		icon.texture = null
+		label.text = "空き"
 		return
-	var slot: Dictionary = skill_slots[slot_index] as Dictionary
-	match str(slot.get("status", "empty")):
-		"sealed":
-			label.text = "封印"
-		"active":
-			var skill_id: String = str(slot.get("skill_id", ""))
-			var display_name: String = str(slot.get("display_name", skill_id))
-			var level: int = int(slot.get("level", 1))
-			var progress: float = float(slot.get("progress", 0.0))
-			var threshold: float = float(slot.get("threshold", 0.0))
-			var pending_count: int = int(slot.get("pending_count", 0))
-			if skill_id == "starfall":
-				var remaining: float = maxf(
-					0.0,
-					float(slot.get("remaining", threshold - progress)),
-				)
-				label.text = "%s Lv%d  %.1f秒/%.1f秒（残り%.1f秒） 予約%d" % [
-					display_name,
-					level,
-					progress,
-					threshold,
-					remaining,
-					pending_count,
-				]
-			else:
-				label.text = "%s Lv%d  %d/%d 予約%d" % [
-					display_name,
-					level,
-					int(roundf(progress)),
-					int(roundf(threshold)),
-					pending_count,
-				]
-		_:
-			label.text = "未装着"
+	var slot: Dictionary = weapon_slots[slot_index] as Dictionary
+	var weapon_type: int = int(slot.get("weapon_type", GameTypes.WeaponType.NONE))
+	var rarity: int = int(slot.get("rarity", -1))
+	if weapon_type == GameTypes.WeaponType.NONE or rarity < 0:
+		icon.texture = null
+		label.text = "空き"
+		return
+	icon.texture = InventoryItemVisualsScript.icon_for_weapon_type(weapon_type)
+	icon.modulate = UiPolish.rarity_color(rarity)
+	label.text = _rarity_label(rarity)
+	label.add_theme_color_override(&"font_color", UiPolish.rarity_color(rarity))
+
+
+func _rarity_label(rarity: int) -> String:
+	match rarity:
+		GameTypes.Rarity.RARE:
+			return "RARE"
+		GameTypes.Rarity.EPIC:
+			return "EPIC"
+		GameTypes.Rarity.LEGENDARY:
+			return "LEGENDARY"
+	return "COMMON"
 
 
 func _update_boss_gate(

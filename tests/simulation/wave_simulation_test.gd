@@ -28,6 +28,7 @@ func _test_wood_stick_w1(assertions: Variant) -> void:
 	var one_hit: CombatSimulation = _new_simulation(1)
 	_freeze(one_hit)
 	var tracker: EnemyEntity = one_hit.spawn_fixture_enemy(GameTypes.EnemyType.TRACKER, Vector2(1.0, 0.0))
+	_set_weapon_ready(one_hit)
 	one_hit.step(Vector2.ZERO, DELTA)
 	assertions.expect_false(one_hit.enemy_system.enemy_store.has_entity(tracker.entity_id), "initial wood stick one-shots W1 TRACKER")
 	assertions.expect_equal(1, one_hit.state.wave_kills, "one-hit increments W1 kill")
@@ -35,6 +36,7 @@ func _test_wood_stick_w1(assertions: Variant) -> void:
 	var forty: CombatSimulation = _new_simulation(1)
 	_freeze(forty)
 	forty.spawn_fixture_enemy(GameTypes.EnemyType.TRACKER, Vector2(1.0, 0.0))
+	_set_weapon_ready(forty)
 	var ticks: int = 0
 	while forty.state.wave_kills < 40 and ticks < 1921:
 		var kills_before: int = forty.state.wave_kills
@@ -52,7 +54,7 @@ func _test_flow_priorities_and_heal(assertions: Variant) -> void:
 	pre_death.freeze_normal_spawn = true
 	pre_death.state.wave_kills = 39
 	pre_death.state.current_hp = 1.0
-	pre_death.weapon_system.attack_elapsed = 0.0
+	pre_death.weapon_system.attack_elapsed_by_slot[int(GameTypes.EquipmentSlot.WEAPON_1)] = 0.0
 	var death_enemy: EnemyEntity = pre_death.spawn_fixture_enemy(GameTypes.EnemyType.TRACKER, Vector2.ZERO)
 	death_enemy.contact_elapsed = death_enemy.definition.contact_interval
 	pre_death.step(Vector2.ZERO, DELTA)
@@ -70,7 +72,7 @@ func _test_flow_priorities_and_heal(assertions: Variant) -> void:
 	post_death.state.wave_kills = 40
 	post_death.state.wave_cleared = true
 	post_death.state.current_hp = 1.0
-	post_death.weapon_system.attack_elapsed = 0.0
+	post_death.weapon_system.attack_elapsed_by_slot[int(GameTypes.EquipmentSlot.WEAPON_1)] = 0.0
 	var post_enemy: EnemyEntity = post_death.spawn_fixture_enemy(GameTypes.EnemyType.TRACKER, Vector2.ZERO)
 	post_enemy.contact_elapsed = post_enemy.definition.contact_interval
 	post_death.step(Vector2.ZERO, DELTA)
@@ -83,6 +85,7 @@ func _test_flow_priorities_and_heal(assertions: Variant) -> void:
 	var target: EnemyEntity = kill_and_death.spawn_fixture_enemy(GameTypes.EnemyType.TRACKER, Vector2(0.5, 0.0))
 	var armored: EnemyEntity = kill_and_death.spawn_fixture_enemy(GameTypes.EnemyType.ARMORED, Vector2(1.0, 0.0))
 	armored.contact_elapsed = armored.definition.contact_interval
+	_set_weapon_ready(kill_and_death)
 	kill_and_death.step(Vector2.ZERO, DELTA)
 	assertions.expect_false(kill_and_death.enemy_system.enemy_store.has_entity(target.entity_id), "same tick target killed")
 	assertions.expect_true(kill_and_death.state.wave_cleared, "same tick quota latched before death")
@@ -93,17 +96,16 @@ func _test_flow_priorities_and_heal(assertions: Variant) -> void:
 	kill_and_timeout.state.wave_kills = 39
 	kill_and_timeout.state.time_remaining = DELTA
 	kill_and_timeout.spawn_fixture_enemy(GameTypes.EnemyType.TRACKER, Vector2(1.0, 0.0))
+	_set_weapon_ready(kill_and_timeout)
 	kill_and_timeout.step(Vector2.ZERO, DELTA)
 	assertions.expect_true(kill_and_timeout.state.wave_cleared, "same tick quota latched before timeout")
 	assertions.expect_equal(GameTypes.RunPhase.REWARD_REVEAL, kill_and_timeout.state.phase, "same tick quota/timeout succeeds")
 
 	var healing: CombatSimulation = _new_simulation(1)
 	healing.state.current_hp = 1.0
-	healing.state.coward_stationary_elapsed = 12.5
 	healing.state.recent_damage_samples.append(DamageSample.new())
 	assertions.expect_true(healing.begin_wave(2), "next wave starts")
 	assertions.expect_float(healing.state.max_hp, healing.state.current_hp, "wave start fully heals")
-	assertions.expect_float(0.0, healing.state.coward_stationary_elapsed, "wave start clears stationary elapsed")
 	assertions.expect_equal(0, healing.state.recent_damage_samples.size(), "wave start clears recent damage samples")
 
 
@@ -147,3 +149,13 @@ func _freeze(simulation: CombatSimulation) -> void:
 	simulation.freeze_enemy_timers = true
 	simulation.freeze_normal_spawn = true
 	simulation.freeze_countdown = true
+
+
+func _set_weapon_ready(simulation: CombatSimulation) -> void:
+	var slot: GameTypes.EquipmentSlot = GameTypes.EquipmentSlot.WEAPON_1
+	var item: ItemInstance = simulation.state.equipped.get(slot, null)
+	if item == null:
+		return
+	simulation.weapon_system.attack_elapsed_by_slot[int(slot)] = (
+		simulation.weapon_system.effective_interval(item)
+	)

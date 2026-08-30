@@ -5,8 +5,9 @@
 [resource]
 script = ExtResource("1_weapon")
 weapon_id = &"staff"
-main_weapon_type = 2
-base_damage = 18.0
+weapon_type = 3
+lootable = true
+damage_by_rarity = PackedFloat32Array(18, 27, 41, 61)
 base_interval = 1.5
 range_m = 13.0
 projectile_speed = 16.0

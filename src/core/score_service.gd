@@ -9,30 +9,16 @@ static func calculate(
 	post_quota_kills: int,
 	cleared_waves: int,
 	run_cleared: bool,
-	held_equipment: Array[ItemInstance],
-	skill_library: Dictionary,
-	wild_material_count: int,
-	definition: ScoreDefinition
+	equipped_items: Array[ItemInstance],
+	definition: ScoreDefinition,
 ) -> Dictionary:
-	var equipment_counts: PackedInt32Array = PackedInt32Array([0, 0, 0, 0])
-	var unique_count: int = 0
-	for item: ItemInstance in held_equipment:
+	var equipment_counts := PackedInt32Array([0, 0, 0, 0])
+	for item: ItemInstance in equipped_items:
 		if item == null:
 			continue
-		var score_rarity: int = (
-			GameTypes.Rarity.LEGENDARY
-			if item.rarity == GameTypes.Rarity.UNIQUE
-			else int(item.rarity)
-		)
-		if score_rarity >= 0 and score_rarity < equipment_counts.size():
-			equipment_counts[score_rarity] += 1
-		if not item.unique_id.is_empty():
-			unique_count += 1
-	var skill_level_total: int = 0
-	for value: Variant in skill_library.values():
-		var skill: SkillState = value as SkillState
-		if skill != null:
-			skill_level_total += skill.level
+		var rarity_index: int = int(item.rarity)
+		if rarity_index >= 0 and rarity_index < equipment_counts.size():
+			equipment_counts[rarity_index] += 1
 
 	var normal_kill_score: int = normal_kills * definition.normal_kill
 	var post_quota_score: int = post_quota_kills * definition.post_quota_bonus
@@ -43,9 +29,6 @@ static func calculate(
 	var equipment_score: int = 0
 	for rarity: int in range(equipment_counts.size()):
 		equipment_score += equipment_counts[rarity] * definition.equipment_scores[rarity]
-	var unique_score: int = unique_count * definition.unique_tag
-	var skill_score: int = skill_level_total * definition.skill_level
-	var wild_score: int = wild_material_count * definition.wild_material
 	var combat_score: int = (
 		normal_kill_score
 		+ post_quota_score
@@ -54,7 +37,6 @@ static func calculate(
 		+ wave_clear_score
 		+ run_clear_score
 	)
-	var final_build_score: int = equipment_score + unique_score + skill_score + wild_score
 	return {
 		&"normal_kills": normal_kill_score,
 		&"post_quota_bonus": post_quota_score,
@@ -63,10 +45,7 @@ static func calculate(
 		&"wave_clears": wave_clear_score,
 		&"run_clear": run_clear_score,
 		&"equipment": equipment_score,
-		&"unique_tags": unique_score,
-		&"skill_levels": skill_score,
-		&"wild_materials": wild_score,
 		&"combat_score": combat_score,
-		&"final_build_score": final_build_score,
-		&"total": combat_score + final_build_score,
+		&"final_build_score": equipment_score,
+		&"total": combat_score + equipment_score,
 	}

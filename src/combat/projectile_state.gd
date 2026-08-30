@@ -24,10 +24,6 @@ var pierce_remaining: int = 0
 var born_physics_tick: int = 0
 var hit_entity_ids: Dictionary[int, bool] = {}
 var source_effect_id: StringName = &""
-var proc_effect_id: StringName = &""
-var is_primary: bool = true
-var effect_chain: PackedStringArray = PackedStringArray()
-var chain_depth: int = 0
 
 
 func activate(
@@ -44,9 +40,6 @@ func activate(
 	p_pierce_remaining: int,
 	p_born_physics_tick: int,
 	p_source_effect_id: StringName = &"",
-	p_proc_effect_id: StringName = &"",
-	p_is_primary: bool = true,
-	p_effect_chain: PackedStringArray = PackedStringArray(),
 ) -> void:
 	active = true
 	faction = p_faction
@@ -65,10 +58,6 @@ func activate(
 	born_physics_tick = p_born_physics_tick
 	hit_entity_ids.clear()
 	source_effect_id = p_source_effect_id
-	proc_effect_id = p_proc_effect_id
-	is_primary = p_is_primary
-	effect_chain = p_effect_chain.duplicate()
-	chain_depth = effect_chain.size()
 
 
 func deactivate() -> void:
@@ -89,7 +78,3 @@ func deactivate() -> void:
 	born_physics_tick = 0
 	hit_entity_ids.clear()
 	source_effect_id = &""
-	proc_effect_id = &""
-	is_primary = true
-	effect_chain = PackedStringArray()
-	chain_depth = 0

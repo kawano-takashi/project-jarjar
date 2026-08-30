@@ -106,7 +106,6 @@ func _ready() -> void:
 		&"rare_open": AudioFactoryScript.rare_open(),
 		&"epic_prealert": AudioFactoryScript.epic_prealert(),
 		&"legendary_prealert": AudioFactoryScript.legendary_prealert(),
-		&"unique_prealert": AudioFactoryScript.unique_prealert(),
 		&"wave_clear": AudioFactoryScript.wave_clear(),
 		&"fusion": AudioFactoryScript.fusion(),
 	}
@@ -254,7 +253,6 @@ func _show_inventory() -> bool:
 	screen.connect("sort_requested", _on_inventory_sort_requested)
 	screen.connect("discard_requested", _on_inventory_discard_requested)
 	screen.connect("fusion_requested", _on_inventory_fusion_requested)
-	screen.connect("skill_move_requested", _on_inventory_skill_move_requested)
 	screen.connect("continue_requested", _on_inventory_continue_requested)
 	screen.call("initialize", run_state, _definition_catalog)
 	add_child(screen)
@@ -289,45 +287,20 @@ func _on_inventory_sort_requested() -> void:
 	)
 
 
-func _on_inventory_discard_requested(
-	item_ids: PackedStringArray,
-	unique_confirmed: bool,
-) -> void:
+func _on_inventory_discard_requested(item_ids: PackedStringArray) -> void:
 	_apply_inventory_command_result(
 		&"discard",
-		InventoryService.discard(run_state, item_ids, unique_confirmed),
+		InventoryService.discard(run_state, item_ids),
 	)
 
 
-func _on_inventory_fusion_requested(
-	material_ids: PackedStringArray,
-	use_wild: bool,
-) -> void:
+func _on_inventory_fusion_requested(material_ids: PackedStringArray) -> void:
 	_apply_inventory_command_result(
 		&"fusion",
 		FusionCommitService.commit(
 			run_state,
 			material_ids,
-			use_wild,
 			_definition_catalog,
-		),
-	)
-
-
-func _on_inventory_skill_move_requested(
-	source_kind: StringName,
-	source_id: Variant,
-	target_kind: StringName,
-	target_id: Variant,
-) -> void:
-	_apply_inventory_command_result(
-		&"skill_move",
-		SkillEquipService.apply_move(
-			run_state,
-			source_kind,
-			source_id,
-			target_kind,
-			target_id,
 		),
 	)
 
@@ -605,36 +578,9 @@ func _refresh_score(run_cleared: bool) -> void:
 		run_state.post_quota_kills,
 		run_state.cleared_waves,
 		run_cleared,
-		_held_equipment(),
-		run_state.skill_library,
-		run_state.wild_material_count,
+		InventoryService.equipped_items(run_state),
 		_definition_catalog.score_definition(),
 	)
-
-
-func _held_equipment() -> Array[ItemInstance]:
-	var result: Array[ItemInstance] = []
-	var seen: Dictionary[String, bool] = {}
-	if run_state == null:
-		return result
-	for value: Variant in run_state.equipped.values():
-		_append_held_item(result, seen, value as ItemInstance)
-	for item: ItemInstance in run_state.inventory:
-		_append_held_item(result, seen, item)
-	for item: ItemInstance in run_state.overflow:
-		_append_held_item(result, seen, item)
-	return result
-
-
-func _append_held_item(
-	items: Array[ItemInstance],
-	seen: Dictionary[String, bool],
-	item: ItemInstance,
-) -> void:
-	if item == null or seen.has(item.item_id):
-		return
-	seen[item.item_id] = true
-	items.append(item)
 
 
 func _inventory_gate_message() -> String:
@@ -642,8 +588,8 @@ func _inventory_gate_message() -> String:
 		return "ラン状態がありません"
 	if not run_state.overflow.is_empty():
 		return "一時受取欄の残り %d 件を整理してください" % run_state.overflow.size()
-	if run_state.equipped.get(GameTypes.EquipmentSlot.MAIN_WEAPON, null) == null:
-		return "主武器が必要です"
+	if InventoryService.equipped_weapon_count(run_state) <= 0:
+		return "武器を最低1本装備してください"
 	return "現在の状態では進めません"
 
 

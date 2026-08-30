@@ -8,6 +8,20 @@ signal audio_event_requested(event_id: StringName)
 const HOLD_THRESHOLD_SECONDS: float = 0.25
 const CURRENT_CARD_SIZE := Vector2(760.0, 340.0)
 const UiPolishScript := preload("res://src/ui/ui_polish.gd")
+const InventoryItemVisualsScript := preload("res://src/ui/inventory_item_visuals.gd")
+const AFFIX_LABELS: Dictionary = {
+	&"damage_pct": "与ダメージ",
+	&"attack_speed_pct": "攻撃速度",
+	&"area_pct": "効果範囲",
+	&"pierce": "貫通数",
+	&"max_hp": "最大HP",
+	&"damage_reduction_pct": "被ダメージ軽減",
+	&"move_speed_pct": "移動速度",
+}
+const PERCENT_AFFIX_IDS: Array[StringName] = [
+	&"damage_pct", &"attack_speed_pct", &"area_pct",
+	&"damage_reduction_pct", &"move_speed_pct",
+]
 
 @onready var _unopened_count: Label = %UnopenedCount
 @onready var _accessibility_status: Label = %AccessibilityStatus
@@ -356,13 +370,9 @@ func _on_reward_revealed(reward: RewardRoll) -> void:
 
 func _on_prealert_started(rarity: int) -> void:
 	audio_event_requested.emit(
-		&"unique_prealert"
-		if rarity == GameTypes.Rarity.UNIQUE
-		else (
-			&"legendary_prealert"
-			if rarity == GameTypes.Rarity.LEGENDARY
-			else &"epic_prealert"
-		)
+		&"legendary_prealert"
+		if rarity == GameTypes.Rarity.LEGENDARY
+		else &"epic_prealert"
 	)
 
 
@@ -392,15 +402,11 @@ func _update_view() -> void:
 		else "長押し4倍　A／Enter またはマウス左"
 	)
 	_prealert_banner.visible = bool(presentation["prealert_active"])
-	var prealert_rarity: int = int(presentation.get("prealert_rarity", -2))
-	if prealert_rarity == GameTypes.Rarity.UNIQUE:
-		_prealert_banner.text = "★ UNIQUE 予告"
-	else:
-		_prealert_banner.text = (
-			"高レア予告　EPIC以上"
-			if bool(presentation["aggregate_prealert"])
-			else "高レア予告"
-		)
+	_prealert_banner.text = (
+		"高レア予告　EPIC以上"
+		if bool(presentation["aggregate_prealert"])
+		else "高レア予告"
+	)
 	_update_current_card(presentation)
 	_update_prealert_targets(presentation)
 	var revealed_count: int = _controller.revealed_rewards().size()
@@ -416,28 +422,17 @@ func _update_current_card(presentation: Dictionary) -> void:
 	if prealert_active:
 		reward = _prealert_primary_reward()
 		_current_rarity.text = (
-			"★ UNIQUE"
-			if int(presentation.get("prealert_rarity", -2)) == GameTypes.Rarity.UNIQUE
-			else (
-				"EPIC以上"
-				if bool(presentation["aggregate_prealert"])
-				else RewardRevealController.rarity_label(reward)
-			)
+			"EPIC以上"
+			if bool(presentation["aggregate_prealert"])
+			else RewardRevealController.rarity_label(reward)
 		)
 		_current_name.text = "内容は公開前です"
 		_current_details.text = "真の高レア予告 • 結果は獲得時に確定済み"
 	elif reward != null:
-		_current_rarity.text = (
-			"★ UNIQUE"
-			if reward.rarity_for_presentation == GameTypes.Rarity.UNIQUE
-			else (
-				"%s  %s"
-				% [
-					RewardRevealController.outline_token(reward),
-					RewardRevealController.rarity_label(reward),
-				]
-			)
-		)
+		_current_rarity.text = "%s  %s" % [
+			RewardRevealController.outline_token(reward),
+			RewardRevealController.rarity_label(reward),
+		]
 		_current_name.text = _reward_display_name(reward)
 		_current_details.text = _reward_details(reward)
 	else:
@@ -548,39 +543,41 @@ func _prealert_primary_reward() -> RewardRoll:
 
 
 func _reward_display_name(reward: RewardRoll) -> String:
-	if reward.rarity_for_presentation == -1:
-		return str(reward.skill_id) if not reward.skill_id.is_empty() else "スキル"
-	if reward.equipment == null:
-		return "装備"
+	if reward.item == null:
+		return "アイテム"
 	return (
-		reward.equipment.display_name
-		if not reward.equipment.display_name.is_empty()
-		else reward.equipment.item_id
+		reward.item.display_name
+		if not reward.item.display_name.is_empty()
+		else reward.item.item_id
 	)
 
 
 func _reward_details(reward: RewardRoll) -> String:
-	if reward.rarity_for_presentation == -1:
-		return "スキル報酬"
-	if reward.equipment == null:
-		return "装備報酬"
-	if reward.equipment.rarity == GameTypes.Rarity.UNIQUE:
-		var effect_description: String = "不明な固有効果"
-		var unique_definition: UniqueDefinition = (
-			_pending_catalog.unique(reward.equipment.unique_id)
+	if reward.item == null:
+		return "アイテム報酬"
+	var item: ItemInstance = reward.item
+	if item.category == GameTypes.ItemCategory.WEAPON:
+		var definition: WeaponDefinition = (
+			_pending_catalog.weapon_for_type(item.weapon_type)
 			if _pending_catalog != null
 			else null
 		)
-		if unique_definition != null:
-			effect_description = unique_definition.effect_description
-		return "部位 %s\n固有効果: %s" % [
-			GameTypes.equipment_slot_to_key(reward.equipment.slot),
-			effect_description,
+		if definition == null:
+			return "武器"
+		return "%s\n基礎ダメージ %.0f　間隔 %.2f秒　射程 %.2fm" % [
+			InventoryItemVisualsScript.weapon_type_label(item.weapon_type),
+			definition.damage_for_rarity(item.rarity),
+			definition.base_interval,
+			definition.range_m,
 		]
-	return "部位 %s　item_id %s" % [
-		GameTypes.equipment_slot_to_key(reward.equipment.slot),
-		reward.equipment.item_id,
-	]
+	var lines := PackedStringArray(["お守り"])
+	for affix: AffixRoll in item.affixes:
+		lines.append("%s +%.0f%s" % [
+			AFFIX_LABELS.get(affix.affix_id, String(affix.affix_id)),
+			affix.value,
+			"%" if affix.affix_id in PERCENT_AFFIX_IDS else "",
+		])
+	return "\n".join(lines)
 
 
 func _card_style(rarity: int, outline_thickness: int, stage_light_step: int) -> StyleBoxFlat:

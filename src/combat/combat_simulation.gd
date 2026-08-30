@@ -18,7 +18,6 @@ var vfx_pool: VfxPool = VfxPool.new()
 var chest_visual_pool: ChestVisualPool = ChestVisualPool.new()
 var event_router: CombatEventRouter = CombatEventRouter.new()
 var weapon_system: WeaponSystem = WeaponSystem.new()
-var skill_system: CombatSkillSystem = CombatSkillSystem.new()
 var loot_service: LootService = LootService.new()
 
 var freeze_enemy_ai: bool = false
@@ -27,9 +26,11 @@ var freeze_normal_spawn: bool = false
 var freeze_countdown: bool = false
 var freeze_all_updates: bool = false
 var allow_contact_timers_only: bool = false
-var main_weapon_damage_override: float = -1.0
+var weapon_damage_override: float = -1.0
 
 var _pending_deaths: Array[Dictionary] = []
+var _deferred_boss_reward_pending: bool = false
+var _deferred_boss_reward_position: Vector2 = Vector2.ZERO
 
 
 func initialize(
@@ -51,14 +52,12 @@ func initialize(
 	var stats: Dictionary = StatCalculator.aggregate_affixes(state.equipped)
 	state.max_hp = StatCalculator.effective_max_hp(stats)
 	state.current_hp = state.max_hp
-	state.wave_main_weapon_type = _equipped_main_weapon_type()
 	enemy_system = EnemySystem.new()
 	enemy_system.initialize(state, catalog, wave, rng_source)
 	weapon_system = WeaponSystem.new()
 	weapon_system.initialize(state, catalog, projectile_pool, event_router)
-	skill_system = CombatSkillSystem.new()
-	skill_system.initialize(state, catalog, event_router)
-	skill_system.prepare_for_combat()
+	_deferred_boss_reward_pending = false
+	_deferred_boss_reward_position = Vector2.ZERO
 	_rebuild_uniform_grid(enemy_system.snapshot_ids(), state.physics_tick + 1)
 
 
@@ -76,14 +75,11 @@ func begin_wave(wave_number: int, rng_source: Variant = null) -> bool:
 	state.boss_defeated = false
 	state.spawn_credit = 0.0
 	state.non_boss_spawned = 0
-	state.scheduled_proc_replays.clear()
 	state.recent_damage_samples.clear()
-	state.coward_stationary_elapsed = 0.0
 	wave = next_wave
 	var stats: Dictionary = StatCalculator.aggregate_affixes(state.equipped)
 	state.max_hp = StatCalculator.effective_max_hp(stats)
 	state.current_hp = state.max_hp
-	state.wave_main_weapon_type = _equipped_main_weapon_type()
 	player_position = Vector2.ZERO
 	projectile_pool.clear()
 	vfx_pool.clear()
@@ -93,10 +89,8 @@ func begin_wave(wave_number: int, rng_source: Variant = null) -> bool:
 	enemy_system.initialize(state, catalog, wave, rng_source)
 	weapon_system = WeaponSystem.new()
 	weapon_system.initialize(state, catalog, projectile_pool, event_router)
-	if skill_system == null:
-		skill_system = CombatSkillSystem.new()
-	skill_system.initialize(state, catalog, event_router)
-	skill_system.prepare_for_combat()
+	_deferred_boss_reward_pending = false
+	_deferred_boss_reward_position = Vector2.ZERO
 	return true
 
 
@@ -111,9 +105,7 @@ func step(move_input: Vector2, delta: float) -> CombatSnapshot:
 	var enemy_snapshot: Array[int] = enemy_system.snapshot_ids()
 	var projectile_snapshot: Array[Vector2i] = projectile_pool.snapshot_active()
 
-	var previous_player_position: Vector2 = player_position
 	_move_player(move_input, delta)
-	skill_system.update_coward_motion(previous_player_position, player_position, delta)
 	if not freeze_enemy_ai and not freeze_enemy_timers:
 		enemy_system.advance_snapshot(
 			enemy_snapshot,
@@ -140,29 +132,6 @@ func step(move_input: Vector2, delta: float) -> CombatSnapshot:
 	if not freeze_normal_spawn:
 		enemy_system.resolve_normal_spawns(player_position, current_tick)
 
-	skill_system.advance_time_progress(delta)
-	for replay: ScheduledProcReplay in skill_system.take_due_replays(current_tick):
-		var replay_result: Dictionary
-		if replay.proc_effect_id == CombatSkillSystem.ECHO_PROC_ID:
-			replay_result = weapon_system.replay_weapon(
-				replay,
-				player_position,
-				enemy_system.enemy_store,
-				enemy_system.uniform_grid,
-				current_tick,
-			)
-			_emit_melee_trail(replay_result, true, current_tick)
-		else:
-			replay_result = skill_system.resolve_scheduled_skill(
-				replay,
-				enemy_snapshot,
-				enemy_system.enemy_store,
-				enemy_system.uniform_grid,
-				player_position,
-				current_tick,
-			)
-		_apply_resolution_hits(replay_result)
-
 	for projectile_entry: Vector2i in projectile_snapshot:
 		var ally_hits: Array[Dictionary] = weapon_system.resolve_ally_projectile(
 			projectile_entry,
@@ -172,33 +141,16 @@ func step(move_input: Vector2, delta: float) -> CombatSnapshot:
 		)
 		_apply_enemy_hit_records(ally_hits)
 
-
-	if not skill_system.combat_progress_paused():
-		var coward_active: bool = skill_system.coward_stationary_active()
-		weapon_system.advance_attack_timer(delta, coward_active)
-		var primary_result: Dictionary = weapon_system.try_primary_attack_detailed(
-			player_position,
-			enemy_system.enemy_store,
-			enemy_system.uniform_grid,
-			current_tick,
-			coward_active,
-			main_weapon_damage_override,
-		)
-		skill_system.register_primary_attack(primary_result, current_tick)
-		_emit_melee_trail(primary_result, false, current_tick)
-		_apply_resolution_hits(primary_result)
-
-	var pending_candidates: Array[Dictionary] = skill_system.pending_activation_snapshot()
-	for candidate: Dictionary in pending_candidates:
-		var skill_result: Dictionary = skill_system.resolve_pending_candidate(
-			candidate,
-			enemy_snapshot,
-			enemy_system.enemy_store,
-			enemy_system.uniform_grid,
-			player_position,
-			current_tick,
-		)
-		_apply_resolution_hits(skill_result)
+	weapon_system.advance_attack_timers(delta)
+	for attack_result: Dictionary in weapon_system.try_attacks_detailed(
+		player_position,
+		enemy_system.enemy_store,
+		enemy_system.uniform_grid,
+		current_tick,
+		weapon_damage_override,
+	):
+		_emit_melee_trail(attack_result, false, current_tick)
+		_apply_resolution_hits(attack_result)
 
 	if not freeze_enemy_timers or allow_contact_timers_only:
 		var enemy_damage: Array[Dictionary] = enemy_system.resolve_ready_enemy_damage_actions(
@@ -224,8 +176,12 @@ func step(move_input: Vector2, delta: float) -> CombatSnapshot:
 		)
 
 	_process_pending_loot(current_tick)
-	if not state.wave_cleared and RunStateMachine.quota_reached(state, wave):
-		loot_service.ensure_guarantee_fallback(player_position, current_tick)
+	if (
+		not state.wave_cleared
+		and RunStateMachine.quota_reached(state, wave)
+		and not _deferred_boss_reward_pending
+	):
+		loot_service.ensure_reward_fallback(player_position, current_tick)
 
 	var player_dead: bool = state.current_hp <= 0.0
 	if freeze_countdown:
@@ -233,8 +189,10 @@ func step(move_input: Vector2, delta: float) -> CombatSnapshot:
 	else:
 		RunStateMachine.resolve_combat_tick(state, wave, player_dead, delta)
 	if state.phase == GameTypes.RunPhase.REWARD_REVEAL:
+		_acquire_deferred_boss_rewards(current_tick)
 		chest_visual_pool.absorb_all()
 	elif state.phase == GameTypes.RunPhase.FAILED:
+		_deferred_boss_reward_pending = false
 		chest_visual_pool.clear()
 		loot_service.discard_current_wave_rewards()
 	if (
@@ -388,7 +346,6 @@ func prepare_performance_fixture(
 	enemy_system.enemy_store.overflow_count = 0
 	projectile_pool.overflow_count = 0
 	vfx_pool.overflow_count = 0
-	event_router.chain_depth_overflow_count = 0
 	state.next_entity_id = 0
 	var enemy_types: Array[GameTypes.EnemyType] = [
 		GameTypes.EnemyType.TRACKER,
@@ -462,7 +419,6 @@ func performance_fixture_metrics() -> Dictionary:
 		"enemy_pool_overflow": enemy_system.enemy_store.overflow_count,
 		"projectile_pool_overflow": projectile_pool.overflow_count,
 		"vfx_pool_overflow": vfx_pool.overflow_count,
-		"effect_chain_depth_overflow": event_router.chain_depth_overflow_count,
 	}
 
 
@@ -535,7 +491,7 @@ func _update_damage_samples(event: CombatEvent, applied_damage: float) -> void:
 	state.peak_dps = maxf(state.peak_dps, current_dps)
 
 
-func _record_enemy_death(enemy: EnemyEntity, cause_event: CombatEvent) -> void:
+func _record_enemy_death(enemy: EnemyEntity, _cause_event: CombatEvent) -> void:
 	var already_cleared: bool = state.wave_cleared
 	_pending_deaths.append({
 		"entity_id": enemy.entity_id,
@@ -555,7 +511,6 @@ func _record_enemy_death(enemy: EnemyEntity, cause_event: CombatEvent) -> void:
 			state.boss_defeated = true
 		_:
 			state.normal_kills += 1
-	skill_system.register_kill(cause_event)
 
 
 func _process_pending_loot(current_tick: int) -> void:
@@ -569,45 +524,32 @@ func _process_pending_loot(current_tick: int) -> void:
 			GameTypes.EnemyType.ELITE:
 				loot_service.acquire_elite_chests(position, current_tick)
 			GameTypes.EnemyType.BOSS:
-				loot_service.acquire_boss_chests(position, current_tick)
+				if wave != null and wave.wave_number == 8:
+					_deferred_boss_reward_pending = true
+					_deferred_boss_reward_position = position
+				else:
+					loot_service.acquire_boss_chests(position, current_tick)
 			_:
 				loot_service.try_normal_drop(position, current_tick)
 	_pending_deaths.clear()
 
 
+func _acquire_deferred_boss_rewards(current_tick: int) -> void:
+	if not _deferred_boss_reward_pending:
+		return
+	loot_service.acquire_boss_chests(_deferred_boss_reward_position, current_tick)
+	_deferred_boss_reward_pending = false
+
+
 func _apply_player_damage_records(records: Array[Dictionary]) -> void:
 	for record: Dictionary in records:
-		var source_entity_id: int = int(record.get("source_entity_id", -1))
-		var source_effect_id: StringName = StringName(record.get("source_effect_id", &"enemy"))
 		var raw_damage: float = float(record.get("raw_damage", 0.0))
-		var position: Vector2 = record.get("position", player_position) as Vector2
-		var event: CombatEvent = event_router.create_primary(
-			state,
-			&"player_damage",
-			source_entity_id,
-			source_effect_id,
-			raw_damage,
-			position,
-			Vector2.ZERO,
-		)
-		skill_system.register_hit(event)
 		_apply_raw_player_damage(raw_damage)
 
 
 func _apply_enemy_projectile_damage(records: Array[Dictionary]) -> void:
 	for record: Dictionary in records:
 		var raw_damage: float = float(record.get("damage", 0.0))
-		var source_entity_id: int = int(record.get("source_entity_id", -1))
-		var event: CombatEvent = event_router.create_primary(
-			state,
-			&"player_damage",
-			source_entity_id,
-			&"enemy_projectile",
-			raw_damage,
-			player_position,
-			Vector2.ZERO,
-		)
-		skill_system.register_hit(event)
 		_apply_raw_player_damage(raw_damage)
 
 
@@ -653,10 +595,6 @@ func _rebuild_uniform_grid(ids: Array[int], current_tick: int) -> void:
 
 
 func _build_hud_values() -> Dictionary:
-	var main_weapon: ItemInstance = state.equipped.get(
-		GameTypes.EquipmentSlot.MAIN_WEAPON,
-		null,
-	) as ItemInstance
 	return {
 		"wave_number": state.wave_number,
 		"time_remaining": state.time_remaining,
@@ -664,7 +602,7 @@ func _build_hud_values() -> Dictionary:
 		"kill_quota": wave.kill_quota,
 		"current_hp": state.current_hp,
 		"max_hp": state.max_hp,
-		"weapon_name": main_weapon.display_name if main_weapon != null else "木の棒",
+		"weapon_slots": weapon_system.build_hud_weapons(),
 		"wave_chests": state.wave_chests,
 		"wave_cleared": state.wave_cleared,
 		"boss_defeated": state.boss_defeated,
@@ -676,20 +614,7 @@ func _build_hud_values() -> Dictionary:
 		"enemy_pool_overflow": enemy_system.enemy_store.overflow_count,
 		"projectile_pool_overflow": projectile_pool.overflow_count,
 		"vfx_pool_overflow": vfx_pool.overflow_count,
-		"skill_slots": skill_system.build_hud_slots(),
 	}
-
-
-func _equipped_main_weapon_type() -> GameTypes.MainWeaponType:
-	var main_weapon: ItemInstance = state.equipped.get(
-		GameTypes.EquipmentSlot.MAIN_WEAPON,
-		null,
-	) as ItemInstance
-	return (
-		main_weapon.main_weapon_type
-		if main_weapon != null
-		else GameTypes.MainWeaponType.UNCLASSIFIED
-	)
 
 
 func _enemy_height_scale(enemy_type: GameTypes.EnemyType) -> float:

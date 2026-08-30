@@ -6,6 +6,3 @@
 script = ExtResource("1_affix")
 affix_id = &"pierce"
 values_by_rarity = PackedFloat32Array(1, 1, 2, 3)
-slot_pool = Array[int]([0, 4])
-in_common_pool = false
-affinity_weapon_types = Array[int]([1])

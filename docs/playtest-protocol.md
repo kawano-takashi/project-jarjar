@@ -34,7 +34,7 @@ balance_revision=<integer>
 
 | balance_revision | 全testerの初見資格確認済み | 確認日 (YYYY-MM-DD) |
 |---:|---|---|
-| 1 | 未確認 |  |
+| 2 | 未確認 |  |
 
 実際に全員の条件を確認するまでは、上表を`yes`へ変更しない。
 
@@ -77,6 +77,11 @@ RESULTまたはFAILEDを表示した直後、次の導線を選ぶ前に、聞�
 2. 「今すぐもう1ラン遊びたいですか。yesかnoで答えてください」
 3. 「このランで、ゲームを壊したと感じるほど強いビルドを経験しましたか。yesかnoで答えてください」
 
+run 1だけは上の3問に続けて、次の理解度質問をそのまま質問する。説明や誘導を追加してから
+答え直してもらってはならない。
+
+4. 「武器はそれぞれ個別に自動攻撃し、お守りは武器とプレイヤー全体を強化する、と分かりやすく理解できましたか。yesかnoで答えてください」
+
 run 3の回答後はTITLEへ戻り、ゲーム内の「終了」で閉じる。
 
 ## 整理時間
@@ -92,6 +97,7 @@ RESULTへ遷移する瞬間までを計測する。W8最終整理を含む。REW
 
 - `docs/playtest-results.csv`: 1runにつき1行。
 - `docs/playtest-inventory-times.csv`: 1整理区間につき1行。
+- `docs/playtest-understanding.csv`: 1testerにつきrun 1直後の理解度回答を1行。
 - UTF-8 BOMなし、LF、カンマ区切り、空セルなし。
 - yes/no列は小文字`yes`または`no`だけ。
 - `run_index`は1..3、`run_seed`は画面表示と一致する0..9,223,372,036,854,775,807。
@@ -101,6 +107,8 @@ RESULTへ遷移する瞬間までを計測する。W8最終整理を含む。REW
 - `run_clear=yes`なら`cleared_waves=8`、noなら0..7。
 - resultsの一意キーは`(tester_id, run_index)`。
 - inventory-timesの一意キーは`(tester_id, run_index, wave_number)`。
+- understandingの一意キーは`tester_id`で、`run_index=1`、`weapon_charm_understanding_yes_no`は小文字の`yes`または`no`だけ。
+- resultsに存在する全testerがunderstandingにちょうど1行存在し、understandingに余分なtesterを含めない。
 - 同一tester内でrun seedを重複させない。
 
 ## 合格判定
@@ -111,6 +119,7 @@ RESULTへ遷移する瞬間までを計測する。W8最終整理を含む。REW
 - 即時再挑戦yes: 全回答の70%以上
 - 全整理区間のseconds中央値: 30..60秒
 - 各testerのrun 1だけによる初見クリア率: 40..60%
+- run 1直後の「武器＝個別自動攻撃、お守り＝全体能力補正」理解度yes: 全testerの80%以上
 - 全testerが3run以内にbroken buildを1回以上経験
 - 完走runの`combat_score / total_score`中央値: 65..75%
 
@@ -119,7 +128,7 @@ RESULTへ遷移する瞬間までを計測する。W8最終整理を含む。REW
 
 ## 再開指示（正式対象固定後のみ）
 
-同一EXE/PCKペアで記入済みの2つのCSVを提供した後、次の文言で再開する。
+同一EXE/PCKペアで記入済みの3つのCSVを提供した後、次の文言で再開する。
 
 `正式プレイテスト集計を再開 H`
 

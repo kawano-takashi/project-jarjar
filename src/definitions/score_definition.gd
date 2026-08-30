@@ -9,6 +9,3 @@ extends Resource
 @export var wave_clear: int = 0
 @export var run_clear: int = 0
 @export var equipment_scores: PackedInt32Array = PackedInt32Array()
-@export var unique_tag: int = 0
-@export var skill_level: int = 0
-@export var wild_material: int = 0

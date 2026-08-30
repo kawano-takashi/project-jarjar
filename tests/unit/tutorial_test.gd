@@ -48,7 +48,15 @@ func _test_sequence_and_timers(assertions: Variant) -> void:
 	assertions.expect_true(tutorial.dismiss_noncombat(), "noncombat tutorial closes with cancel")
 	assertions.expect_true(tutorial.enter_inventory(1), "first W1 inventory message shown")
 	var inventory_message: String = str(tutorial.noncombat_message)
-	var expected_tokens: Array[String] = ["装備", "LOCK", "3対1合成", "一時受取欄"]
+	var expected_tokens: Array[String] = [
+		"3本の武器",
+		"自動攻撃",
+		"3個のお守り",
+		"全体を強化",
+		"同じレアリティ",
+		"アイテム3個",
+		"上位1個",
+	]
 	var previous_index: int = -1
 	for token: String in expected_tokens:
 		var token_index: int = inventory_message.find(token)

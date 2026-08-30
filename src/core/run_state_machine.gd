@@ -4,7 +4,7 @@ extends RefCounted
 
 static func can_transition(
 	from_phase: GameTypes.RunPhase,
-	to_phase: GameTypes.RunPhase
+	to_phase: GameTypes.RunPhase,
 ) -> bool:
 	match from_phase:
 		GameTypes.RunPhase.BOOT:
@@ -36,7 +36,6 @@ static func transition(state: RunState, to_phase: GameTypes.RunPhase) -> bool:
 			push_error("Rejected RunPhase transition")
 		return false
 	if state.phase == GameTypes.RunPhase.COMBAT:
-		state.scheduled_proc_replays.clear()
 		state.recent_damage_samples.clear()
 	state.phase = to_phase
 	return true
@@ -44,7 +43,7 @@ static func transition(state: RunState, to_phase: GameTypes.RunPhase) -> bool:
 
 static func can_transition_state(
 	state: RunState,
-	to_phase: GameTypes.RunPhase
+	to_phase: GameTypes.RunPhase,
 ) -> bool:
 	if state == null or not can_transition(state.phase, to_phase):
 		return false
@@ -60,9 +59,7 @@ static func can_transition_state(
 					return false
 			return true
 		GameTypes.RunPhase.INVENTORY:
-			if not state.overflow.is_empty():
-				return false
-			if state.equipped.get(GameTypes.EquipmentSlot.MAIN_WEAPON) == null:
+			if not state.overflow.is_empty() or _equipped_weapon_count(state) <= 0:
 				return false
 			if to_phase == GameTypes.RunPhase.COMBAT:
 				return state.wave_number >= 1 and state.wave_number <= 7
@@ -81,7 +78,7 @@ static func resolve_combat_tick(
 	state: RunState,
 	wave: WaveDefinition,
 	player_dead: bool,
-	delta: float
+	delta: float,
 ) -> GameTypes.RunPhase:
 	if state.phase != GameTypes.RunPhase.COMBAT:
 		return state.phase
@@ -97,3 +94,12 @@ static func resolve_combat_tick(
 		)
 		transition(state, target)
 	return state.phase
+
+
+static func _equipped_weapon_count(state: RunState) -> int:
+	var count: int = 0
+	for slot: GameTypes.EquipmentSlot in GameTypes.weapon_slots():
+		var item: ItemInstance = state.equipped.get(slot, null) as ItemInstance
+		if item != null and item.category == GameTypes.ItemCategory.WEAPON:
+			count += 1
+	return count

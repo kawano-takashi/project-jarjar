@@ -24,12 +24,10 @@ var drag_enabled: bool = false
 var accepted_drag_type: StringName = &""
 var _visual_mode: bool = false
 var _visual_rarity: int = -2
-var _visual_unique: bool = false
 var _visual_locked: bool = false
 var _visual_state_badge: String = ""
 var _visual_muted: bool = false
 var _managed_tooltip: bool = false
-var _unique_badge: Label = null
 var _lock_badge: Label = null
 var _state_badge: Label = null
 
@@ -37,7 +35,6 @@ var _state_badge: Label = null
 func configure_item_visual(
 	texture: Texture2D,
 	rarity: int,
-	show_unique: bool,
 	show_locked: bool,
 	state_badge: String,
 	muted: bool,
@@ -47,7 +44,6 @@ func configure_item_visual(
 	_ensure_badges()
 	_visual_mode = true
 	_visual_rarity = rarity
-	_visual_unique = show_unique
 	_visual_locked = show_locked
 	_visual_state_badge = state_badge
 	_visual_muted = muted
@@ -61,7 +57,6 @@ func configure_item_visual(
 	accessibility_name = p_accessibility_name
 	accessibility_description = p_accessibility_description
 	tooltip_text = p_accessibility_description
-	_unique_badge.text = "★" if show_unique else ""
 	_lock_badge.text = "🔒" if show_locked else ""
 	_state_badge.text = state_badge
 	_apply_icon_colors(UiPolishScript.rarity_color(rarity) if not muted else EMPTY_ICON_COLOR)
@@ -69,7 +64,6 @@ func configure_item_visual(
 	set_meta("item_visual", true)
 	set_meta("item_icon_path", texture.resource_path if texture != null else "")
 	set_meta("item_rarity", rarity)
-	set_meta("item_unique_badge", show_unique)
 	set_meta("item_lock_badge", show_locked)
 	set_meta("item_state_badge", state_badge)
 	set_meta("item_icon_muted", muted)
@@ -87,15 +81,13 @@ func _get_tooltip(_at_position: Vector2) -> String:
 func clear_item_visual() -> void:
 	_visual_mode = false
 	_visual_rarity = -2
-	_visual_unique = false
 	_visual_locked = false
 	_visual_state_badge = ""
 	_visual_muted = false
 	icon = null
 	accessibility_name = ""
 	accessibility_description = ""
-	if _unique_badge != null:
-		_unique_badge.text = ""
+	if _lock_badge != null:
 		_lock_badge.text = ""
 		_state_badge.text = ""
 	for color_name: StringName in ICON_COLOR_NAMES:
@@ -113,7 +105,6 @@ func presentation_snapshot() -> Dictionary:
 		"text": text,
 		"icon_path": icon.resource_path if icon != null else "",
 		"rarity": _visual_rarity,
-		"unique_badge": _visual_unique,
 		"lock_badge": _visual_locked,
 		"state_badge": _visual_state_badge,
 		"muted": _visual_muted,
@@ -182,7 +173,6 @@ func _build_drag_preview() -> Control:
 		icon_preview.configure_item_visual(
 			icon,
 			_visual_rarity,
-			_visual_unique,
 			_visual_locked,
 			_visual_state_badge,
 			_visual_muted,
@@ -215,18 +205,8 @@ func _drop_data(_at_position: Vector2, data: Variant) -> void:
 
 
 func _ensure_badges() -> void:
-	if _unique_badge != null:
+	if _lock_badge != null:
 		return
-	_unique_badge = _new_badge("UniqueBadge", HORIZONTAL_ALIGNMENT_LEFT)
-	_unique_badge.anchor_left = 0.0
-	_unique_badge.anchor_top = 0.0
-	_unique_badge.anchor_right = 0.0
-	_unique_badge.anchor_bottom = 0.0
-	_unique_badge.offset_left = 5.0
-	_unique_badge.offset_top = 2.0
-	_unique_badge.offset_right = 31.0
-	_unique_badge.offset_bottom = 28.0
-	_unique_badge.add_theme_color_override("font_color", Color(1.0, 0.82, 0.24, 1.0))
 	_lock_badge = _new_badge("LockBadge", HORIZONTAL_ALIGNMENT_RIGHT)
 	_lock_badge.anchor_left = 1.0
 	_lock_badge.anchor_top = 0.0

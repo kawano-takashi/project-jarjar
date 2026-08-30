@@ -19,9 +19,6 @@ const EPIC_PREALERT_DURATION_SECONDS: float = 0.55
 const LEGENDARY_PREALERT_START_HZ: float = 330.0
 const LEGENDARY_PREALERT_END_HZ: float = 1_320.0
 const LEGENDARY_PREALERT_DURATION_SECONDS: float = 0.75
-const UNIQUE_PREALERT_START_HZ: float = 392.0
-const UNIQUE_PREALERT_END_HZ: float = 1_568.0
-const UNIQUE_PREALERT_DURATION_SECONDS: float = 1.0
 const WAVE_CLEAR_FREQUENCIES_HZ: Array[float] = [523.0, 659.0, 784.0]
 const WAVE_CLEAR_NOTE_DURATION_SECONDS: float = 0.12
 const FUSION_START_HZ: float = 392.0
@@ -57,14 +54,6 @@ static func legendary_prealert() -> AudioStreamWAV:
 	)
 
 
-static func unique_prealert() -> AudioStreamWAV:
-	return create_sweep(
-		UNIQUE_PREALERT_START_HZ,
-		UNIQUE_PREALERT_END_HZ,
-		UNIQUE_PREALERT_DURATION_SECONDS,
-	)
-
-
 static func wave_clear() -> AudioStreamWAV:
 	return create_tone_sequence(
 		WAVE_CLEAR_FREQUENCIES_HZ,
@@ -94,10 +83,6 @@ static func create_epic_prealert() -> AudioStreamWAV:
 
 static func create_legendary_prealert() -> AudioStreamWAV:
 	return legendary_prealert()
-
-
-static func create_unique_prealert() -> AudioStreamWAV:
-	return unique_prealert()
 
 
 static func create_wave_clear() -> AudioStreamWAV:

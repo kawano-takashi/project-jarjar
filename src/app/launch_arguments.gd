@@ -19,7 +19,6 @@ const QA_SCENARIOS: Array[String] = [
 	"reward_controls",
 	"inventory_controller",
 	"result_controller",
-	"immortal_100",
 	"boss_299",
 ]
 

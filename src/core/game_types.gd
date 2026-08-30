@@ -2,42 +2,52 @@ class_name GameTypes
 extends RefCounted
 
 
-enum EquipmentSlot { MAIN_WEAPON, SUB_WEAPON, HEAD, BODY, HANDS, FEET }
-enum MainWeaponType { UNCLASSIFIED, BOW, STAFF, SWORD }
-enum Rarity { COMMON, RARE, EPIC, LEGENDARY, UNIQUE }
-enum TriggerType { TIME, PRIMARY_ATTACK_COUNT, KILL_COUNT, HIT_COUNT }
+enum ItemCategory { WEAPON, CHARM }
+enum EquipmentSlot { WEAPON_1, WEAPON_2, WEAPON_3, CHARM_1, CHARM_2, CHARM_3 }
+enum WeaponType { NONE, WOOD_STICK, BOW, STAFF, SWORD }
+enum Rarity { COMMON, RARE, EPIC, LEGENDARY }
 enum RunPhase { BOOT, TITLE, COMBAT, REWARD_REVEAL, INVENTORY, RESULT, FAILED }
 enum EnemyType { TRACKER, FAST, ARMORED, RANGED, ELITE, BOSS }
-enum RewardKind { EQUIPMENT, SKILL }
 enum RewardSource { NORMAL, ELITE, BOSS, FALLBACK }
 
 
 static func equipment_slot_to_key(value: EquipmentSlot) -> StringName:
 	match value:
-		EquipmentSlot.MAIN_WEAPON:
-			return &"main_weapon"
-		EquipmentSlot.SUB_WEAPON:
-			return &"sub_weapon"
-		EquipmentSlot.HEAD:
-			return &"head"
-		EquipmentSlot.BODY:
-			return &"body"
-		EquipmentSlot.HANDS:
-			return &"hands"
-		EquipmentSlot.FEET:
-			return &"feet"
+		EquipmentSlot.WEAPON_1:
+			return &"weapon_1"
+		EquipmentSlot.WEAPON_2:
+			return &"weapon_2"
+		EquipmentSlot.WEAPON_3:
+			return &"weapon_3"
+		EquipmentSlot.CHARM_1:
+			return &"charm_1"
+		EquipmentSlot.CHARM_2:
+			return &"charm_2"
+		EquipmentSlot.CHARM_3:
+			return &"charm_3"
 	return &""
 
 
-static func main_weapon_type_to_key(value: MainWeaponType) -> StringName:
+static func item_category_to_key(value: ItemCategory) -> StringName:
 	match value:
-		MainWeaponType.UNCLASSIFIED:
-			return &"unclassified"
-		MainWeaponType.BOW:
+		ItemCategory.WEAPON:
+			return &"weapon"
+		ItemCategory.CHARM:
+			return &"charm"
+	return &""
+
+
+static func weapon_type_to_key(value: WeaponType) -> StringName:
+	match value:
+		WeaponType.NONE:
+			return &"none"
+		WeaponType.WOOD_STICK:
+			return &"wood_stick"
+		WeaponType.BOW:
 			return &"bow"
-		MainWeaponType.STAFF:
+		WeaponType.STAFF:
 			return &"staff"
-		MainWeaponType.SWORD:
+		WeaponType.SWORD:
 			return &"sword"
 	return &""
 
@@ -52,21 +62,6 @@ static func rarity_to_key(value: Rarity) -> StringName:
 			return &"epic"
 		Rarity.LEGENDARY:
 			return &"legendary"
-		Rarity.UNIQUE:
-			return &"unique"
-	return &""
-
-
-static func trigger_type_to_key(value: TriggerType) -> StringName:
-	match value:
-		TriggerType.TIME:
-			return &"time"
-		TriggerType.PRIMARY_ATTACK_COUNT:
-			return &"primary_attack_count"
-		TriggerType.KILL_COUNT:
-			return &"kill_count"
-		TriggerType.HIT_COUNT:
-			return &"hit_count"
 	return &""
 
 
@@ -106,15 +101,6 @@ static func enemy_type_to_key(value: EnemyType) -> StringName:
 	return &""
 
 
-static func reward_kind_to_key(value: RewardKind) -> StringName:
-	match value:
-		RewardKind.EQUIPMENT:
-			return &"equipment"
-		RewardKind.SKILL:
-			return &"skill"
-	return &""
-
-
 static func reward_source_to_key(value: RewardSource) -> StringName:
 	match value:
 		RewardSource.NORMAL:
@@ -126,3 +112,31 @@ static func reward_source_to_key(value: RewardSource) -> StringName:
 		RewardSource.FALLBACK:
 			return &"fallback"
 	return &""
+
+
+static func is_weapon_slot(value: EquipmentSlot) -> bool:
+	return value in [
+		EquipmentSlot.WEAPON_1,
+		EquipmentSlot.WEAPON_2,
+		EquipmentSlot.WEAPON_3,
+	]
+
+
+static func category_for_slot(value: EquipmentSlot) -> ItemCategory:
+	return ItemCategory.WEAPON if is_weapon_slot(value) else ItemCategory.CHARM
+
+
+static func weapon_slots() -> Array[EquipmentSlot]:
+	return [
+		EquipmentSlot.WEAPON_1,
+		EquipmentSlot.WEAPON_2,
+		EquipmentSlot.WEAPON_3,
+	]
+
+
+static func charm_slots() -> Array[EquipmentSlot]:
+	return [
+		EquipmentSlot.CHARM_1,
+		EquipmentSlot.CHARM_2,
+		EquipmentSlot.CHARM_3,
+	]

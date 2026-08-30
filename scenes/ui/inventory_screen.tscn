@@ -1,8 +1,7 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://src/ui/inventory_screen.gd" id="1_inventory"]
 [ext_resource type="PackedScene" path="res://scenes/ui/settings_overlay.tscn" id="2_settings"]
-[ext_resource type="PackedScene" path="res://scenes/ui/bulk_select_dialog.tscn" id="3_bulk"]
 [ext_resource type="PackedScene" path="res://scenes/ui/fusion_dialog.tscn" id="4_fusion"]
 [ext_resource type="PackedScene" path="res://scenes/ui/confirmation_dialog.tscn" id="5_confirmation"]
 [ext_resource type="PackedScene" path="res://scenes/ui/inventory_item_tooltip.tscn" id="6_tooltip"]
@@ -136,23 +135,10 @@ layout_mode = 2
 theme_override_constants/separation = 8
 alignment = 1
 
-[node name="SkillPanel" type="PanelContainer" parent="Margin/Content"]
-layout_mode = 2
-theme_override_styles/panel = SubResource("StylePanel")
-
-[node name="SkillRow" type="HBoxContainer" parent="Margin/Content/SkillPanel"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_constants/separation = 8
-alignment = 1
-
 [node name="InventoryItemTooltip" parent="." instance=ExtResource("6_tooltip")]
 unique_name_in_owner = true
 
 [node name="SettingsOverlay" parent="." instance=ExtResource("2_settings")]
-unique_name_in_owner = true
-
-[node name="BulkSelectDialog" parent="." instance=ExtResource("3_bulk")]
 unique_name_in_owner = true
 
 [node name="FusionDialog" parent="." instance=ExtResource("4_fusion")]

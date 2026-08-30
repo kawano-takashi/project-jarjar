@@ -4,13 +4,12 @@ extends RefCounted
 
 const FusionServiceScript := preload("res://src/inventory/fusion_service.gd")
 const InventoryServiceScript := preload("res://src/inventory/inventory_service.gd")
-const PREVIEW_RULE_TEXT: String = "部位は6種から均等抽選／UNIQUEはボス宝箱限定"
+const PREVIEW_RULE_TEXT: String = "同レア3個／出力は武器・お守り各50%"
 
 
 static func preview(
 	state: RunState,
 	material_ids: PackedStringArray,
-	use_wild: bool,
 ) -> Dictionary:
 	if state == null or state.inventory.size() != RunState.INVENTORY_CAPACITY:
 		return _failure(&"invalid_state", "ラン状態が不正です")
@@ -31,25 +30,16 @@ static func preview(
 			return _failure(&"material_missing", "合成材料が見つかりません")
 		materials.append(item)
 		locations.append(location)
-
-	var wild_count: int = 1 if use_wild else 0
 	var validation: Dictionary = FusionServiceScript.validate_materials(
 		materials,
-		wild_count,
-		state.wild_material_count,
 		InventoryServiceScript.equipped_item_ids(state),
 	)
 	if not bool(validation.get("valid", false)):
-		return _failure(
-			validation.get("error", &"invalid_materials") as StringName,
-			_validation_message(validation.get("error", &"") as StringName),
-		)
+		var error := validation.get("error", &"invalid_materials") as StringName
+		return _failure(error, _validation_message(error))
 	var material_names := PackedStringArray()
 	for item: ItemInstance in materials:
 		material_names.append(item.display_name)
-	var output_rarity := (
-		(int(materials[0].rarity) + 1) as GameTypes.Rarity
-	)
 	return {
 		"success": true,
 		"valid": true,
@@ -58,9 +48,7 @@ static func preview(
 		"material_ids": material_ids.duplicate(),
 		"material_names": material_names,
 		"material_locations": locations,
-		"use_wild": use_wild,
-		"wild_count": wild_count,
-		"output_rarity": output_rarity,
+		"output_rarity": (int(materials[0].rarity) + 1) as GameTypes.Rarity,
 		"rule_text": PREVIEW_RULE_TEXT,
 	}
 
@@ -68,7 +56,6 @@ static func preview(
 static func commit(
 	state: RunState,
 	material_ids: PackedStringArray,
-	use_wild: bool,
 	catalog: DefinitionCatalog,
 ) -> Dictionary:
 	if (
@@ -79,25 +66,20 @@ static func commit(
 		or state.rng_streams.fusion_rng == null
 	):
 		return _failure(&"invalid_catalog", "合成定義を利用できません")
-	var preview_result: Dictionary = preview(state, material_ids, use_wild)
+	var preview_result: Dictionary = preview(state, material_ids)
 	if not bool(preview_result.get("success", false)):
 		return preview_result
-
 	var materials: Array[ItemInstance] = []
 	for location_value: Variant in preview_result["material_locations"]:
 		var location: Dictionary = location_value as Dictionary
 		materials.append(location["item"] as ItemInstance)
-	var wild_count: int = int(preview_result["wild_count"])
 	var rng_state_before: int = state.rng_streams.fusion_rng.state
 	var fusion_result: Dictionary = FusionServiceScript.fuse(
 		materials,
-		wild_count,
-		state.wild_material_count,
 		InventoryServiceScript.equipped_item_ids(state),
 		state.run_seed,
 		state.wave_number,
 		state.drop_serial,
-		InventoryServiceScript.current_main_weapon_type(state),
 		state.rng_streams.fusion_rng,
 		catalog,
 	)
@@ -135,11 +117,9 @@ static func commit(
 		state.overflow.append(output)
 		output_kind = InventoryServiceScript.KIND_OVERFLOW
 		output_index = state.overflow.size() - 1
-	state.wild_material_count -= wild_count
 	state.drop_serial = int(fusion_result["next_drop_serial"])
 	state.fusion_count += 1
 	var refill_count: int = InventoryServiceScript.refill_from_overflow(state)
-
 	fusion_result["preview"] = preview_result
 	fusion_result["output_kind"] = output_kind
 	fusion_result["output_index"] = output_index
@@ -150,18 +130,12 @@ static func commit(
 
 static func _validation_message(error: StringName) -> String:
 	match error:
-		&"wild_limit":
-			return "ワイルド素材は最大1個です"
-		&"wild_unavailable":
-			return "ワイルド素材が不足しています"
 		&"material_count":
-			return "必要な材料数が揃っていません"
+			return "同じレアリティのアイテムが3個必要です"
 		&"rarity_mismatch":
-			return "同じレアリティの装備を選んでください"
+			return "同じレアリティのアイテムを選んでください"
 		&"legendary":
 			return "Legendaryは合成できません"
-		&"unique":
-			return "UNIQUEは合成できません"
 		&"locked":
 			return "ロック中のアイテムは材料にできません"
 		&"equipped":
@@ -178,7 +152,5 @@ static func _failure(error: StringName, message: String) -> Dictionary:
 		"material_ids": PackedStringArray(),
 		"material_names": PackedStringArray(),
 		"material_locations": [],
-		"use_wild": false,
-		"wild_count": 0,
 		"rule_text": PREVIEW_RULE_TEXT,
 	}

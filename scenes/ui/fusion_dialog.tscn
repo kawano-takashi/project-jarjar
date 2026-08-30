@@ -194,13 +194,6 @@ layout_mode = 2
 focus_mode = 2
 text = "自動投入\n実行 A／Enter"
 
-[node name="FusionWildToggle" type="Button" parent="Center/Panel/Margin/Content/Actions"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(300, 58)
-layout_mode = 2
-focus_mode = 2
-text = "ワイルド投入\n実行 A／Enter"
-
 [node name="FusionConfirm" type="Button" parent="Center/Panel/Margin/Content/Actions"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(300, 58)

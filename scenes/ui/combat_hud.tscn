@@ -91,13 +91,6 @@ theme_override_colors/font_color = Color(0.94, 0.78, 0.7, 1)
 theme_override_font_sizes/font_size = 23
 text = "HP 100 / 100"
 
-[node name="WeaponValue" type="Label" parent="CombatPanel/Content"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_colors/font_color = Color(0.76, 0.86, 0.97, 1)
-theme_override_font_sizes/font_size = 23
-text = "主武器  木の棒"
-
 [node name="ChestsValue" type="Label" parent="CombatPanel/Content"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -105,7 +98,7 @@ theme_override_colors/font_color = Color(0.96, 0.83, 0.38, 1)
 theme_override_font_sizes/font_size = 22
 text = "箱  0"
 
-[node name="SkillPanel" type="PanelContainer" parent="."]
+[node name="WeaponPanel" type="PanelContainer" parent="."]
 layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
@@ -113,53 +106,91 @@ anchor_right = 1.0
 offset_left = -410.0
 offset_top = 24.0
 offset_right = -28.0
-offset_bottom = 194.0
+offset_bottom = 250.0
 grow_horizontal = 0
 theme_override_styles/panel = SubResource("StylePanel")
 
-[node name="Content" type="VBoxContainer" parent="SkillPanel"]
+[node name="Content" type="VBoxContainer" parent="WeaponPanel"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="Heading" type="Label" parent="SkillPanel/Content"]
+[node name="Heading" type="Label" parent="WeaponPanel/Content"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.44, 0.86, 0.76, 1)
 theme_override_font_sizes/font_size = 20
-text = "SKILLS"
+text = "WEAPONS"
 
-[node name="SkillSlot0" type="HBoxContainer" parent="SkillPanel/Content"]
+[node name="WeaponSlot0" type="HBoxContainer" parent="WeaponPanel/Content"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="SkillPanel/Content/SkillSlot0"]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_colors/font_color = Color(0.61, 0.69, 0.72, 1)
-theme_override_font_sizes/font_size = 20
-text = "スキル 1"
-
-[node name="SkillSlot0Value" type="Label" parent="SkillPanel/Content/SkillSlot0"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_colors/font_color = Color(0.94, 0.94, 0.88, 1)
-theme_override_font_sizes/font_size = 22
-text = "未装着"
-
-[node name="SkillSlot1" type="HBoxContainer" parent="SkillPanel/Content"]
-layout_mode = 2
-
-[node name="Label" type="Label" parent="SkillPanel/Content/SkillSlot1"]
+[node name="Label" type="Label" parent="WeaponPanel/Content/WeaponSlot0"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.61, 0.69, 0.72, 1)
 theme_override_font_sizes/font_size = 20
-text = "スキル 2"
+text = "武器 1"
 
-[node name="SkillSlot1Value" type="Label" parent="SkillPanel/Content/SkillSlot1"]
+[node name="WeaponSlot0Icon" type="TextureRect" parent="WeaponPanel/Content/WeaponSlot0"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="WeaponSlot0Value" type="Label" parent="WeaponPanel/Content/WeaponSlot0"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.94, 0.94, 0.88, 1)
 theme_override_font_sizes/font_size = 22
-text = "未装着"
+text = "COMMON"
+
+[node name="WeaponSlot1" type="HBoxContainer" parent="WeaponPanel/Content"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="WeaponPanel/Content/WeaponSlot1"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.61, 0.69, 0.72, 1)
+theme_override_font_sizes/font_size = 20
+text = "武器 2"
+
+[node name="WeaponSlot1Icon" type="TextureRect" parent="WeaponPanel/Content/WeaponSlot1"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="WeaponSlot1Value" type="Label" parent="WeaponPanel/Content/WeaponSlot1"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.94, 0.94, 0.88, 1)
+theme_override_font_sizes/font_size = 22
+text = "空き"
+
+[node name="WeaponSlot2" type="HBoxContainer" parent="WeaponPanel/Content"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="WeaponPanel/Content/WeaponSlot2"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.61, 0.69, 0.72, 1)
+theme_override_font_sizes/font_size = 20
+text = "武器 3"
+
+[node name="WeaponSlot2Icon" type="TextureRect" parent="WeaponPanel/Content/WeaponSlot2"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="WeaponSlot2Value" type="Label" parent="WeaponPanel/Content/WeaponSlot2"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.94, 0.94, 0.88, 1)
+theme_override_font_sizes/font_size = 22
+text = "空き"
 
 [node name="BonusTime" type="Label" parent="."]
 unique_name_in_owner = true

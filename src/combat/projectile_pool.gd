@@ -30,9 +30,6 @@ func acquire(
 	pierce_remaining: int,
 	born_physics_tick: int,
 	source_effect_id: StringName = &"",
-	proc_effect_id: StringName = &"",
-	is_primary: bool = true,
-	effect_chain: PackedStringArray = PackedStringArray(),
 ) -> ProjectileState:
 	for slot: ProjectileState in slots:
 		if slot.active:
@@ -52,9 +49,6 @@ func acquire(
 			pierce_remaining,
 			born_physics_tick,
 			source_effect_id,
-			proc_effect_id,
-			is_primary,
-			effect_chain,
 		)
 		return slot
 	overflow_count += 1

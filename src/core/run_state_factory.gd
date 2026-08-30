@@ -11,11 +11,10 @@ static func create(run_seed: int, first_wave: WaveDefinition) -> RunState:
 	state.rng_streams = RunRngStreams.create(run_seed)
 	state.phase = GameTypes.RunPhase.COMBAT
 	state.wave_number = 1
-	state.wave_main_weapon_type = GameTypes.MainWeaponType.UNCLASSIFIED
 	state.time_remaining = first_wave.duration_seconds
 	state.current_hp = 100.0
 	state.max_hp = 100.0
 	var wood_stick: ItemInstance = ItemFactoryScript.create_initial_wood_stick(run_seed)
-	state.equipped[GameTypes.EquipmentSlot.MAIN_WEAPON] = wood_stick
+	state.equipped[GameTypes.EquipmentSlot.WEAPON_1] = wood_stick
 	state.drop_serial = 1
 	return state

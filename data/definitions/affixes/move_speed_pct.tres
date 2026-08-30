@@ -6,6 +6,3 @@
 script = ExtResource("1_affix")
 affix_id = &"move_speed_pct"
 values_by_rarity = PackedFloat32Array(6, 10, 16, 25)
-slot_pool = Array[int]([1, 5])
-in_common_pool = true
-affinity_weapon_types = Array[int]([])

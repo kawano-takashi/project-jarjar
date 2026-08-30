@@ -10,7 +10,6 @@ signal prealert_started(rarity: int)
 const NORMAL_INTERVAL_SECONDS: float = 0.35
 const FAST_INTERVAL_SECONDS: float = 0.0875
 const PREALERT_DURATION_SECONDS: float = 0.75
-const UNIQUE_PREALERT_DURATION_SECONDS: float = 1.0
 
 enum PrealertMode { NONE, INDIVIDUAL, AGGREGATE }
 
@@ -219,7 +218,7 @@ static func is_high_rarity(reward: RewardRoll) -> bool:
 	return (
 		reward != null
 		and reward.rarity_for_presentation >= GameTypes.Rarity.EPIC
-		and reward.rarity_for_presentation <= GameTypes.Rarity.UNIQUE
+		and reward.rarity_for_presentation <= GameTypes.Rarity.LEGENDARY
 	)
 
 
@@ -227,8 +226,6 @@ static func rarity_label(reward: RewardRoll) -> String:
 	if reward == null:
 		return ""
 	match reward.rarity_for_presentation:
-		-1:
-			return "スキル"
 		GameTypes.Rarity.COMMON:
 			return "COMMON"
 		GameTypes.Rarity.RARE:
@@ -237,8 +234,6 @@ static func rarity_label(reward: RewardRoll) -> String:
 			return "EPIC"
 		GameTypes.Rarity.LEGENDARY:
 			return "LEGENDARY"
-		GameTypes.Rarity.UNIQUE:
-			return "UNIQUE"
 	return "不明"
 
 
@@ -246,8 +241,6 @@ static func outline_token(reward: RewardRoll) -> String:
 	if reward == null:
 		return ""
 	match reward.rarity_for_presentation:
-		-1:
-			return "○"
 		GameTypes.Rarity.COMMON:
 			return "□"
 		GameTypes.Rarity.RARE:
@@ -256,8 +249,6 @@ static func outline_token(reward: RewardRoll) -> String:
 			return "⬡"
 		GameTypes.Rarity.LEGENDARY:
 			return "✦"
-		GameTypes.Rarity.UNIQUE:
-			return "★"
 	return "?"
 
 
@@ -320,10 +311,6 @@ func _request_vibration_for_rarity(rarity: int) -> void:
 		weak_magnitude = 0.50
 		strong_magnitude = 0.80
 		duration = 0.50
-	elif rarity == GameTypes.Rarity.UNIQUE:
-		weak_magnitude = 0.70
-		strong_magnitude = 1.0
-		duration = 0.65
 	_vibration_request_count += 1
 	_last_vibration_weak = weak_magnitude
 	_last_vibration_strong = strong_magnitude
@@ -372,22 +359,10 @@ func _last_revealed_reward() -> RewardRoll:
 
 
 static func _reward_precedes(left: RewardRoll, right: RewardRoll) -> bool:
-	var left_is_unique: bool = (
-		left.rarity_for_presentation == GameTypes.Rarity.UNIQUE
-	)
-	var right_is_unique: bool = (
-		right.rarity_for_presentation == GameTypes.Rarity.UNIQUE
-	)
-	if left_is_unique != right_is_unique:
-		return not left_is_unique
 	if left.acquired_tick != right.acquired_tick:
 		return left.acquired_tick < right.acquired_tick
 	return left.reward_id < right.reward_id
 
 
-static func _duration_for_rarity(rarity: int) -> float:
-	return (
-		UNIQUE_PREALERT_DURATION_SECONDS
-		if rarity == GameTypes.Rarity.UNIQUE
-		else PREALERT_DURATION_SECONDS
-	)
+static func _duration_for_rarity(_rarity: int) -> float:
+	return PREALERT_DURATION_SECONDS

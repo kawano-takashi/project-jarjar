@@ -8,10 +8,9 @@ const MOVE_MESSAGE: String = "WASD / 矢印 / 左スティックで移動"
 const PICKUP_MESSAGE: String = "宝箱は自動回収されます"
 const REWARD_MESSAGE: String = "報酬は獲得時に確定しています"
 const INVENTORY_MESSAGE: String = (
-	"1. 装備：A／Enter またはクリックで持ち上げ、配置先で決定\n"
-	+ "2. LOCK：L／Xで選択中の装備を保護\n"
-	+ "3. 3対1合成：同じレアリティ3個を上位1個へ\n"
-	+ "4. 一時受取欄：空にしてから次へ進む"
+	"1. 3本の武器は、それぞれ独立してすべて自動攻撃\n"
+	+ "2. 3個のお守りは、武器とプレイヤー全体を強化\n"
+	+ "3. 同じレアリティのアイテム3個で、上位1個へ合成"
 )
 
 var enabled: bool = false
