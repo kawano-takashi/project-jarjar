@@ -3,16 +3,35 @@ extends RefCounted
 
 
 const CAPACITY: int = 4096
+const MAX_PRODUCTION_REQUESTS_PER_TICK: int = 64
+const LOW_PRIORITY_FREE_THRESHOLD: int = 128
+const IMPORTANT_RESERVED_SLOTS: int = 32
+const NORMAL_KILL_FREE_THRESHOLD: int = IMPORTANT_RESERVED_SLOTS
+
+const PRIORITY_GENERIC: int = 0
+const PRIORITY_ATTACK: int = 1
+const PRIORITY_HIT: int = 2
+const PRIORITY_KILL: int = 3
+const PRIORITY_IMPORTANT: int = 4
+const PRIORITY_TERMINAL: int = 5
 
 var slots: Array[VfxState] = []
 var overflow_count: int = 0
 var reuse_count: int = 0
 var reduce_motion: bool = false
 var reduce_flashes: bool = false
+var request_count: int = 0
+var admitted_count: int = 0
+var generic_drop_count: int = 0
+var important_drop_count: int = 0
 
 var _free_indices: Array[int] = []
 var _active_indices: Array[int] = []
 var _active_position_by_pool_index: PackedInt32Array = PackedInt32Array()
+var _request_tick: int = -1
+var _admitted_this_tick: int = 0
+var _ordinary_admitted_this_tick: int = 0
+var _next_request_serial: int = 1
 
 
 func _init() -> void:
@@ -43,7 +62,73 @@ func acquire(
 		VfxState.EffectKind.GENERIC,
 		Vector2.RIGHT,
 		1.0,
+		false,
+		PRIORITY_GENERIC,
+		0,
+		true,
 	)
+
+
+func request(
+	position: Vector2,
+	scale_m: float,
+	lifetime: float,
+	color: Color,
+	born_tick: int,
+	priority: int = PRIORITY_GENERIC,
+	effect_kind: VfxState.EffectKind = VfxState.EffectKind.GENERIC,
+	direction: Vector2 = Vector2.RIGHT,
+	sweep_sign: float = 1.0,
+	evolved: bool = false,
+) -> VfxState:
+	_prepare_request_tick(born_tick)
+	request_count += 1
+	var important: bool = priority >= PRIORITY_IMPORTANT
+	var ordinary_limit: int = (
+		MAX_PRODUCTION_REQUESTS_PER_TICK - IMPORTANT_RESERVED_SLOTS
+	)
+	if not important and _ordinary_admitted_this_tick >= ordinary_limit:
+		_record_request_drop(false)
+		return null
+	if _admitted_this_tick >= MAX_PRODUCTION_REQUESTS_PER_TICK:
+		_record_request_drop(important)
+		return null
+	var free_slots: int = _free_indices.size()
+	if priority <= PRIORITY_HIT and free_slots <= LOW_PRIORITY_FREE_THRESHOLD:
+		_record_request_drop(false)
+		return null
+	if priority == PRIORITY_KILL and free_slots <= NORMAL_KILL_FREE_THRESHOLD:
+		_record_request_drop(false)
+		return null
+	if free_slots <= 0 and important:
+		_replace_oldest_lower_priority(priority)
+	if _free_indices.is_empty():
+		_record_request_drop(important)
+		return null
+	var serial: int = _next_request_serial
+	_next_request_serial += 1
+	var admitted: VfxState = _acquire_state(
+		position,
+		scale_m,
+		lifetime,
+		color,
+		born_tick,
+		effect_kind,
+		direction,
+		sweep_sign,
+		evolved,
+		priority,
+		serial,
+		false,
+	)
+	if admitted == null:
+		_record_request_drop(important)
+		return null
+	_admitted_this_tick += 1
+	if not important:
+		_ordinary_admitted_this_tick += 1
+	admitted_count += 1
+	return admitted
 
 
 func _acquire_state(
@@ -55,9 +140,14 @@ func _acquire_state(
 	effect_kind: VfxState.EffectKind,
 	direction: Vector2,
 	sweep_sign: float,
+	evolved: bool,
+	priority: int,
+	request_serial: int,
+	record_overflow: bool,
 ) -> VfxState:
 	if _free_indices.is_empty():
-		overflow_count += 1
+		if record_overflow:
+			overflow_count += 1
 		return null
 	var pool_index: int = _free_indices.pop_back()
 	var slot: VfxState = slots[pool_index]
@@ -73,6 +163,9 @@ func _acquire_state(
 		effect_kind,
 		direction,
 		sweep_sign,
+		evolved,
+		priority,
+		request_serial,
 	)
 	_active_position_by_pool_index[pool_index] = _active_indices.size()
 	_active_indices.append(pool_index)
@@ -121,6 +214,10 @@ func active_indices_snapshot() -> Array[int]:
 
 func active_count() -> int:
 	return _active_indices.size()
+
+
+func free_count() -> int:
+	return _free_indices.size()
 
 
 func reset_reuse_count() -> void:
@@ -174,3 +271,40 @@ func clear() -> void:
 	_free_indices.clear()
 	for index: int in range(CAPACITY - 1, -1, -1):
 		_free_indices.append(index)
+	_request_tick = -1
+	_admitted_this_tick = 0
+	_ordinary_admitted_this_tick = 0
+
+
+func _prepare_request_tick(current_tick: int) -> void:
+	if _request_tick == current_tick:
+		return
+	_request_tick = current_tick
+	_admitted_this_tick = 0
+	_ordinary_admitted_this_tick = 0
+
+
+func _record_request_drop(important: bool) -> void:
+	if important:
+		important_drop_count += 1
+	else:
+		generic_drop_count += 1
+
+
+func _replace_oldest_lower_priority(incoming_priority: int) -> void:
+	var candidate: VfxState = null
+	for pool_index: int in _active_indices:
+		var slot: VfxState = slots[pool_index]
+		if slot.priority >= incoming_priority:
+			continue
+		if (
+			candidate == null
+			or slot.priority < candidate.priority
+			or (
+				slot.priority == candidate.priority
+				and slot.request_serial < candidate.request_serial
+			)
+		):
+			candidate = slot
+	if candidate != null:
+		release(candidate.pool_index, candidate.generation)

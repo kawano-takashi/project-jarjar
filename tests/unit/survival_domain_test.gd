@@ -11,6 +11,7 @@ func test_names() -> PackedStringArray:
 		"survival_manifest_drives_progression_and_xp_pickups",
 		"survival_xp_yield_fraction_and_growth_order",
 		"survival_validator_rejects_fixed_boss_enrage_drift",
+		"survival_validator_rejects_all_nonboss_ranged_drift",
 		"survival_segment_tuning_bounds_and_steps",
 		"survival_weighted_unique_offer_and_serial_guard",
 		"survival_queued_offer_levels_and_owned_probability",
@@ -48,6 +49,8 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 			_test_xp_yield_fraction_and_growth_order(assertions)
 		"survival_validator_rejects_fixed_boss_enrage_drift":
 			_test_boss_enrage_validation(assertions)
+		"survival_validator_rejects_all_nonboss_ranged_drift":
+			_test_nonboss_ranged_validation(assertions)
 		"survival_segment_tuning_bounds_and_steps":
 			_test_segment_tuning_contract(assertions)
 		"survival_weighted_unique_offer_and_serial_guard":
@@ -122,18 +125,23 @@ func _test_all_content_fixed_contract(assertions: Variant) -> void:
 	assertions.expect_equal(&"homing_core", catalog.manifest().starter_weapon_id, "nearest-target weapon is the starter")
 	assertions.expect_equal(2, catalog.manifest().owned_offer_attempt_count, "owned offer uses two attempts")
 	assertions.expect_float(0.3, catalog.manifest().owned_offer_luck_coefficient, "owned offer luck coefficient")
-	assertions.expect_equal(165, catalog.manifest().xp_yield_percent, "calibrated XP yield balances the durable enemy pressure")
+	assertions.expect_equal(90, catalog.manifest().xp_yield_percent, "revision five tuned XP yield supports the denser arena")
+	assertions.expect_float(
+		0.55,
+		catalog.manifest().normal_enemy_damage_scale,
+		"revision five keeps dense contact pressure survivable",
+	)
 	assertions.expect_equal(
 		50,
 		catalog.enemy_for_type(GameTypes.EnemyType.ELITE).xp_value,
 		"calibrated elite XP supports the intended evolution pacing",
 	)
-	var expected_segment_targets: Array[int] = [4, 6, 9, 13, 18, 36, 48, 60, 69, 100]
+	var expected_segment_targets: Array[int] = [16, 24, 36, 52, 72, 96, 120, 144, 168, 192]
 	var expected_segment_hp: Array[float] = [
-		0.15, 0.168, 0.192, 0.222, 0.258, 0.6, 0.936, 0.959, 1.44, 2.625,
+		0.15, 0.17, 0.20, 0.24, 0.30, 0.45, 0.65, 0.90, 1.25, 1.75,
 	]
 	var expected_segment_damage: Array[float] = [
-		0.25, 0.27, 0.29, 0.315, 0.345, 0.532, 0.672, 0.651, 0.824, 1.368,
+		0.18, 0.20, 0.22, 0.25, 0.29, 0.36, 0.45, 0.56, 0.72, 0.95,
 	]
 	for segment_index: int in range(10):
 		var segment: EnemySegmentDefinition = catalog.segment(segment_index)
@@ -152,6 +160,45 @@ func _test_all_content_fixed_contract(assertions: Variant) -> void:
 			segment.damage_multiplier,
 			"segment %d calibrated contact pressure" % (segment_index + 1),
 		)
+	var expected_weapon_ranges: Dictionary = {
+		&"resonance_wave": PackedFloat32Array([2.2, 2.3714286, 2.5428571, 2.7142857, 2.8857143, 3.0571429, 3.2285714, 3.4]),
+		&"vital_resonance": PackedFloat32Array([4.4]),
+		&"homing_core": PackedFloat32Array([5.5, 5.5, 6.0, 6.0, 6.5, 6.5, 7.0, 7.5]),
+		&"infinite_homing": PackedFloat32Array([8.0]),
+		&"directional_needle": PackedFloat32Array([6.0, 6.0, 6.5, 6.5, 7.0, 7.0, 7.5, 8.0]),
+		&"infinite_needles": PackedFloat32Array([8.0]),
+		&"arc_crystal": PackedFloat32Array([4.5, 4.5, 4.75, 4.75, 5.0, 5.0, 5.25, 5.25]),
+		&"spiral_crystal": PackedFloat32Array([8.0]),
+		&"returning_ring": PackedFloat32Array([5.5, 5.5, 6.0, 6.0, 6.5, 6.5, 7.0, 7.5]),
+		&"critical_ring": PackedFloat32Array([8.0]),
+		&"orbital_array": PackedFloat32Array([1.5, 1.6428571, 1.7857143, 1.9285714, 2.0714286, 2.2142857, 2.3571429, 2.5]),
+		&"eternal_orbit": PackedFloat32Array([3.3]),
+		&"mass_projectile": PackedFloat32Array([5.0, 5.0, 5.5, 5.5, 6.0, 6.0, 6.5, 6.75]),
+		&"collapse_projectile": PackedFloat32Array([5.5]),
+		&"zero_field": PackedFloat32Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+		&"absorption_field": PackedFloat32Array([0.0]),
+	}
+	for weapon_id: StringName in expected_weapon_ranges:
+		assertions.expect_equal(
+			expected_weapon_ranges[weapon_id],
+			catalog.weapon(weapon_id).range_by_level,
+			"%s revision five range table" % weapon_id,
+		)
+	assertions.expect_equal(
+		PackedFloat32Array([0.22, 0.22, 0.24, 0.24, 0.26, 0.26, 0.28, 0.3]),
+		catalog.weapon(&"arc_crystal").projectile_radius_by_level,
+		"base arc uses a compact physical projectile radius",
+	)
+	assertions.expect_equal(
+		PackedFloat32Array([1.5, 1.7, 1.7, 1.9, 1.9, 2.1, 2.3, 2.5]),
+		catalog.weapon(&"arc_crystal").effect_radius_by_level,
+		"base arc stores its explosion radius explicitly",
+	)
+	assertions.expect_equal(
+		PackedFloat32Array([0.55]),
+		catalog.weapon(&"spiral_crystal").projectile_radius_by_level,
+		"evolved spiral uses the approved physical radius",
+	)
 	var initial_state: RunState = RunStateFactory.create(1000, catalog)
 	assertions.expect_equal(1, initial_state.weapons.size(), "a run starts with exactly one weapon")
 	assertions.expect_true(initial_state.weapon(&"homing_core") != null, "starter runtime owns homing core")
@@ -242,10 +289,21 @@ func _test_close_range_outer_edges(assertions: Variant) -> void:
 
 
 func _effective_outer_edge(definition: WeaponDefinition, level: int) -> float:
-	var area: float = definition.area_at(level)
-	if definition.behavior == GameTypes.WeaponBehavior.ORBITAL:
-		return area + maxf(0.35, area * WeaponSystem.ORBIT_HIT_RADIUS_MULTIPLIER)
-	return area
+	match definition.behavior:
+		GameTypes.WeaponBehavior.MELEE_WAVE:
+			return definition.range_at(level)
+		GameTypes.WeaponBehavior.ORBITAL:
+			return definition.range_at(level) + definition.effect_radius_at(level)
+		GameTypes.WeaponBehavior.AURA:
+			return definition.effect_radius_at(level)
+		_:
+			return (
+				definition.range_at(level)
+				+ maxf(
+					definition.projectile_radius_at(level),
+					definition.effect_radius_at(level),
+				)
+			)
 
 
 func _test_xp(assertions: Variant) -> void:
@@ -461,15 +519,40 @@ func _test_xp_yield_fraction_and_growth_order(assertions: Variant) -> void:
 func _test_boss_enrage_validation(assertions: Variant) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	var canonical: SurvivalContentManifest = catalog.manifest()
-	assertions.expect_float(1.5, canonical.boss_hp_multiplier, "calibrated boss HP matches the twelve-run gate")
-	assertions.expect_float(0.798, canonical.boss_damage_multiplier, "calibrated boss damage matches the twelve-run gate")
+	assertions.expect_float(0.5625, canonical.boss_hp_multiplier, "calibrated boss HP matches the twelve-run gate")
+	assertions.expect_float(0.57, canonical.boss_damage_multiplier, "calibrated boss damage matches the twelve-run gate")
 	assertions.expect_float(1.0, canonical.boss_action_rate_multiplier, "canonical boss action rate starts neutral")
+	assertions.expect_float(
+		0.55,
+		canonical.normal_enemy_damage_scale,
+		"canonical contact-only enemies use the common damage lever",
+	)
+	var normal_scale_lower: SurvivalContentManifest = canonical.duplicate(true) as SurvivalContentManifest
+	normal_scale_lower.normal_enemy_damage_scale = 0.25
+	assertions.expect_true(
+		DefinitionCatalog.new().validate_manifest(normal_scale_lower),
+		"validator accepts the authorized normal-enemy damage lower bound",
+	)
+	var normal_scale_off_step: SurvivalContentManifest = canonical.duplicate(true) as SurvivalContentManifest
+	normal_scale_off_step.normal_enemy_damage_scale = 0.57
+	assertions.expect_false(
+		DefinitionCatalog.new().validate_manifest(normal_scale_off_step),
+		"validator rejects normal-enemy damage outside five-percent steps",
+	)
 	var lower_bound: SurvivalContentManifest = canonical.duplicate(true) as SurvivalContentManifest
 	lower_bound.boss_hp_multiplier = SurvivalContentManifest.DEFAULT_BOSS_HP_MULTIPLIER * 0.25
 	lower_bound.boss_damage_multiplier = SurvivalContentManifest.DEFAULT_BOSS_DAMAGE_MULTIPLIER * 0.25
 	lower_bound.boss_action_rate_multiplier = SurvivalContentManifest.DEFAULT_BOSS_ACTION_RATE_MULTIPLIER * 0.25
 	var lower_bound_catalog := DefinitionCatalog.new()
 	assertions.expect_true(lower_bound_catalog.validate_manifest(lower_bound), "validator accepts the extended boss -75 percent bound")
+	var hp_lower_bound: SurvivalContentManifest = canonical.duplicate(true) as SurvivalContentManifest
+	hp_lower_bound.boss_hp_multiplier = (
+		SurvivalContentManifest.DEFAULT_BOSS_HP_MULTIPLIER * 0.15
+	)
+	assertions.expect_true(
+		DefinitionCatalog.new().validate_manifest(hp_lower_bound),
+		"validator accepts the extended boss-HP -85 percent bound",
+	)
 	var upper_bound: SurvivalContentManifest = canonical.duplicate(true) as SurvivalContentManifest
 	upper_bound.boss_hp_multiplier = SurvivalContentManifest.DEFAULT_BOSS_HP_MULTIPLIER * 1.10
 	upper_bound.boss_damage_multiplier = SurvivalContentManifest.DEFAULT_BOSS_DAMAGE_MULTIPLIER * 1.10
@@ -482,7 +565,7 @@ func _test_boss_enrage_validation(assertions: Variant) -> void:
 	assertions.expect_false(off_step_catalog.validate_manifest(off_step), "validator rejects boss tuning outside five-percent steps")
 	assertions.expect_true(off_step_catalog.error_text.contains("boss HP multiplier"), "boss step rejection names the changed multiplier")
 	var below_bound: SurvivalContentManifest = canonical.duplicate(true) as SurvivalContentManifest
-	below_bound.boss_hp_multiplier = SurvivalContentManifest.DEFAULT_BOSS_HP_MULTIPLIER * 0.20
+	below_bound.boss_hp_multiplier = SurvivalContentManifest.DEFAULT_BOSS_HP_MULTIPLIER * 0.10
 	assertions.expect_false(
 		DefinitionCatalog.new().validate_manifest(below_bound),
 		"validator rejects a boss multiplier below the authorized lower bound",
@@ -509,16 +592,57 @@ func _test_boss_enrage_validation(assertions: Variant) -> void:
 	var interval_catalog := DefinitionCatalog.new()
 	assertions.expect_false(interval_catalog.validate_manifest(interval_drift), "validator rejects boss interval drift")
 	assertions.expect_true(interval_catalog.error_text.contains("-10%"), "boss interval rejection is specific")
-	var summon_drift: SurvivalContentManifest = canonical.duplicate(true) as SurvivalContentManifest
-	summon_drift.boss_summon_bonus_per_stack = 2
-	var summon_catalog := DefinitionCatalog.new()
-	assertions.expect_false(summon_catalog.validate_manifest(summon_drift), "validator rejects boss summon drift")
-	assertions.expect_true(summon_catalog.error_text.contains("+1"), "boss summon rejection is specific")
 	var cap_drift: SurvivalContentManifest = canonical.duplicate(true) as SurvivalContentManifest
 	cap_drift.boss_enrage_max_stacks = 11
 	var cap_catalog := DefinitionCatalog.new()
 	assertions.expect_false(cap_catalog.validate_manifest(cap_drift), "validator rejects boss enrage cap drift")
 	assertions.expect_true(cap_catalog.error_text.contains("10 stacks"), "boss cap rejection is specific")
+
+
+func _test_nonboss_ranged_validation(assertions: Variant) -> void:
+	var catalog: DefinitionCatalog = _catalog(assertions)
+	var canonical: SurvivalContentManifest = catalog.manifest()
+	var shooter_index: int = _enemy_index_for_type(
+		canonical,
+		GameTypes.EnemyType.SHOOTER,
+	)
+	var elite_index: int = _enemy_index_for_type(
+		canonical,
+		GameTypes.EnemyType.ELITE,
+	)
+	assertions.expect_true(shooter_index >= 0 and elite_index >= 0, "contact-only validation fixtures exist")
+	if shooter_index < 0 or elite_index < 0:
+		return
+	var negative_shooter: EnemyDefinition = (
+		canonical.enemies[shooter_index].duplicate(true) as EnemyDefinition
+	)
+	negative_shooter.projectile_damage = -1.0
+	var negative_catalog := DefinitionCatalog.new()
+	assertions.expect_false(
+		negative_catalog.validate_manifest(
+			_with_enemy(canonical, shooter_index, negative_shooter)
+		),
+		"validator rejects negative ranged drift on a normal enemy",
+	)
+	assertions.expect_true(
+		negative_catalog.error_text.contains("contact-only"),
+		"negative ranged drift reports the contact-only contract",
+	)
+	var non_finite_elite: EnemyDefinition = (
+		canonical.enemies[elite_index].duplicate(true) as EnemyDefinition
+	)
+	non_finite_elite.preferred_distance_max = NAN
+	var non_finite_catalog := DefinitionCatalog.new()
+	assertions.expect_false(
+		non_finite_catalog.validate_manifest(
+			_with_enemy(canonical, elite_index, non_finite_elite)
+		),
+		"validator rejects non-finite ranged drift on an elite",
+	)
+	assertions.expect_true(
+		non_finite_catalog.error_text.contains("contact-only"),
+		"non-finite ranged drift reports the contact-only contract",
+	)
 
 
 func _test_segment_tuning_contract(assertions: Variant) -> void:
@@ -569,7 +693,7 @@ func _test_segment_tuning_contract(assertions: Variant) -> void:
 	assertions.expect_false(off_step_catalog.validate_manifest(off_step), "segment pressure rejects non-five-percent drift")
 
 	var below_target_segment: EnemySegmentDefinition = canonical.segments[0].duplicate(true) as EnemySegmentDefinition
-	below_target_segment.target_active = 3
+	below_target_segment.target_active = 1
 	assertions.expect_false(
 		DefinitionCatalog.new().validate_manifest(_with_segment(canonical, 0, below_target_segment)),
 		"segment target rejects values below the ten-percent lower bound",
@@ -1514,6 +1638,29 @@ func _with_segment(
 	segments[segment_index] = segment
 	copy.segments = segments
 	return copy
+
+
+func _with_enemy(
+	manifest: SurvivalContentManifest,
+	enemy_index: int,
+	enemy: EnemyDefinition,
+) -> SurvivalContentManifest:
+	var copy: SurvivalContentManifest = manifest.duplicate(true) as SurvivalContentManifest
+	var enemy_definitions: Array[EnemyDefinition] = []
+	enemy_definitions.assign(manifest.enemies)
+	enemy_definitions[enemy_index] = enemy
+	copy.enemies = enemy_definitions
+	return copy
+
+
+func _enemy_index_for_type(
+	manifest: SurvivalContentManifest,
+	enemy_type: GameTypes.EnemyType,
+) -> int:
+	for index: int in range(manifest.enemies.size()):
+		if manifest.enemies[index].enemy_type == enemy_type:
+			return index
+	return -1
 
 
 func _catalog(assertions: Variant) -> DefinitionCatalog:

@@ -1,6 +1,6 @@
 # Project JARJAR 人間プレイテスト手順
 
-**状態: 使用禁止（revision 4自動調整完了・正式候補未固定）**
+**状態: 使用禁止（balance revision 5 source gate PASS・正式候補未固定）**
 
 現在フェーズは `docs/project-status.md` を正とする。正式プレイテスト対象はまだ固定していないため、
 現時点では候補者を採用せず、資格確認も結果収集も行わない。
@@ -15,11 +15,12 @@
 candidate_head=<40hex>
 exe_sha256=<64hex>
 pck_sha256=<64hex>
-balance_revision=4
+balance_revision=5
 ```
 
 `docs/project-status.md`が「正式playtest対象固定済み」へ更新され、同じ4値が一致するまで下記手順を開始しない。
 EXE/PCK、balance revision、候補HEADのいずれかが変わった場合、以前の対象やデータを流用しない。
+revision 4以前のsource gate、回帰、QA、build identity、playtest記録は履歴専用であり、revision 5候補の証拠として無効である。
 
 ## 専用12run調整ゲート
 
@@ -31,22 +32,33 @@ EXE/PCK、balance revision、候補HEADのいずれかが変わった場合、�
 - normal方針4runすべてが7:00までに初回進化する。
 - normal方針4runの初回進化時刻の算術平均が288秒以上324秒以下。
 - 全runでpool overflowとorphanが0。
+- 全runで必須metricが存在し、weapon hitとkillが1件以上ある。
+- 画面外weapon hitとkillが0で、hit/kill中心距離とeffect外縁距離が各combat envelope内に収まる。
+- important VFX dropが0。
 
-2026-09-01のsource gateは12runでPASSした。実測は2:00以前死亡0/12、最終ボス到達9/12、撃破8/12、
-3:00まで進化0/12、normal方針は5:00まで2/4・7:00まで4/4・初回進化平均322.883秒、
-pool overflow 0run、orphan 0runである。実測CSVとsummaryは`artifacts/balance/revision-4/`に保存している。
+revision 5 source gateはseed `17`、`29`、`43`、`61`を`cautious`、`normal`、`evolution`の各方針で実行する
+12runでPASSした。実測は2:00以前死亡0/12、最終ボス到達11/12、撃破6/12、3:00まで進化0/12、
+normal方針は5:00まで2/4・7:00まで4/4・初回進化平均321.641667秒である。
 
-この自動調整の最終値はstarter `homing_core`、`xp_yield_percent=165`、elite `xp_value=50`、bossのHP `1.5`、
-damage `0.798`、action rate `1.0`である。segment値は次のとおりである。
+画面外weapon hit / killは0 / 0（該当runはいずれも0/12）、最大hit中心距離は9.623473167m、
+最大kill中心距離は9.570774078m、最大effect外縁距離は8.996990412mである。
+VFX admitted / suppressed / important dropは90,151 / 0 / 0、audio admitted / suppressedは53,321 / 181,691、
+pool overflowは0run、orphanは0run、必須metric取得は12/12である。
+実測CSVとsummaryは`artifacts/balance/revision-5/`に保存している。
+同じrevision 5作業ツリーで全GDScript回帰112/112もPASSしているが、正式candidate identityは未固定である。
+
+この自動調整の最終値は`xp_yield_percent=90`、通常敵damage scale `0.55`、bossのHP `0.5625`、
+damage `0.57`、action rate `1.0`である。segment値は次のとおりである。
 
 | segment | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| target_active | 4 | 6 | 9 | 13 | 18 | 36 | 48 | 60 | 69 | 100 |
-| hp_multiplier | 0.15 | 0.168 | 0.192 | 0.222 | 0.258 | 0.6 | 0.936 | 0.959 | 1.44 | 2.625 |
-| damage_multiplier | 0.25 | 0.27 | 0.29 | 0.315 | 0.345 | 0.532 | 0.672 | 0.651 | 0.824 | 1.368 |
+| target_active | 16 | 24 | 36 | 52 | 72 | 96 | 120 | 144 | 168 | 192 |
+| hp_multiplier | 0.15 | 0.17 | 0.20 | 0.24 | 0.30 | 0.45 | 0.65 | 0.90 | 1.25 | 1.75 |
+| damage_multiplier | 0.18 | 0.20 | 0.22 | 0.25 | 0.29 | 0.36 | 0.45 | 0.56 | 0.72 | 0.95 |
 
 この12runは調整用の自動ゲートであり、下記の初見tester、人間の回答、人間playtestの計測値として数えない。
-上記のstarter、XP、segment、boss、候補抽選、進化条件のいずれかを変更した場合、このsource gate結果を無効として再実行する。
+上記のXP、通常敵damage、segment、boss、候補抽選、進化条件、出現・攻撃・10:00遷移のいずれかを変更した場合、
+このsource gate結果を無効として全12runを再実行する。
 ユーザーが最終調整完了を明示するまで正式candidateは固定せず、Full HD性能試験、Release export、Verify、ManualQa、
 人間playtestは未実施のままとする。
 
@@ -62,7 +74,7 @@ damage `0.798`、action rate `1.0`である。segment値は次のとおりであ
 
 | balance_revision | 全testerの初見資格確認済み | 確認日 (YYYY-MM-DD) |
 |---:|---|---|
-| 4 | 未確認 |  |
+| 5 | 未確認 |  |
 
 実際に全員の条件を確認するまでは、上表を`yes`へ変更しない。
 

@@ -316,6 +316,13 @@ func _test_acceptance_bounds(assertions: Variant) -> void:
 		bool(AcceptanceScript.evaluate(orphaned)["passed"]),
 		"any pool orphan fails the literal all-pool gate",
 	)
+	var important_vfx_dropped: Array[Dictionary] = []
+	important_vfx_dropped.assign(passing.duplicate(true))
+	important_vfx_dropped[0]["important_vfx_dropped"] = 1
+	assertions.expect_false(
+		bool(AcceptanceScript.evaluate(important_vfx_dropped)["passed"]),
+		"dropping any elite, boss, or terminal VFX fails the hard gate",
+	)
 	var short_results: Array[Dictionary] = []
 	short_results.assign(passing.slice(0, 11))
 	assertions.expect_false(
@@ -371,6 +378,30 @@ func _passing_results() -> Array[Dictionary]:
 			"boss_reached": index < 10,
 			"boss_cleared": index < 6,
 			"first_evolution_tick": first_evolution_tick,
+			"weapon_hits": 100,
+			"weapon_kills": 20,
+			"visible_weapon_hits": 100,
+			"visible_weapon_kills": 20,
+			"offscreen_weapon_hits": 0,
+			"offscreen_weapon_kills": 0,
+			"max_hit_center_distance": 9.5,
+			"max_kill_center_distance": 9.5,
+			"max_effect_outer_distance": 8.9,
+			"peak_visible_enemies": 120,
+			"mean_visible_enemies": 72.0,
+			"peak_engaged_enemies": 96,
+			"mean_engaged_enemies": 52.0,
+			"peak_materializing_enemies": 16,
+			"mean_materializing_enemies": 4.0,
+			"absorbed_normal_count": 0,
+			"absorbed_enemy_projectile_count": 0,
+			"feedback_emitted": 100,
+			"feedback_suppressed": 0,
+			"vfx_admitted": 100,
+			"vfx_suppressed": 0,
+			"important_vfx_dropped": 0,
+			"audio_admitted": 80,
+			"audio_suppressed": 20,
 			"pool_overflow_count": 0,
 			"pool_orphan_count": 0,
 		})

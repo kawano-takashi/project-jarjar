@@ -31,6 +31,17 @@ static func evaluate(results: Array[Dictionary]) -> Dictionary:
 	var normal_evolution_seconds_total: float = 0.0
 	var overflow_runs: int = 0
 	var orphan_runs: int = 0
+	var missing_visible_metric_runs: int = 0
+	var no_weapon_combat_runs: int = 0
+	var offscreen_weapon_hit_runs: int = 0
+	var offscreen_weapon_kill_runs: int = 0
+	var hit_distance_runs: int = 0
+	var kill_distance_runs: int = 0
+	var effect_outer_distance_runs: int = 0
+	var feedback_suppressed_runs: int = 0
+	var important_vfx_drop_runs: int = 0
+	var audio_admitted_total: int = 0
+	var audio_suppressed_total: int = 0
 
 	for result: Dictionary in results:
 		if bool(result.get("death_before_two_minutes", false)):
@@ -55,6 +66,58 @@ static func evaluate(results: Array[Dictionary]) -> Dictionary:
 			overflow_runs += 1
 		if int(result.get("pool_orphan_count", 0)) > 0:
 			orphan_runs += 1
+		var required_metric_keys: Array[String] = [
+			"weapon_hits",
+			"weapon_kills",
+			"visible_weapon_hits",
+			"visible_weapon_kills",
+			"offscreen_weapon_hits",
+			"offscreen_weapon_kills",
+			"max_hit_center_distance",
+			"max_kill_center_distance",
+			"max_effect_outer_distance",
+			"peak_visible_enemies",
+			"mean_visible_enemies",
+			"peak_engaged_enemies",
+			"mean_engaged_enemies",
+			"peak_materializing_enemies",
+			"mean_materializing_enemies",
+			"absorbed_normal_count",
+			"absorbed_enemy_projectile_count",
+			"feedback_emitted",
+			"feedback_suppressed",
+			"vfx_admitted",
+			"vfx_suppressed",
+			"important_vfx_dropped",
+			"audio_admitted",
+			"audio_suppressed",
+		]
+		var metrics_present: bool = true
+		for metric_key: String in required_metric_keys:
+			if not result.has(metric_key):
+				metrics_present = false
+				break
+		if not metrics_present:
+			missing_visible_metric_runs += 1
+			continue
+		if int(result["weapon_hits"]) <= 0 or int(result["weapon_kills"]) <= 0:
+			no_weapon_combat_runs += 1
+		if int(result["offscreen_weapon_hits"]) != 0:
+			offscreen_weapon_hit_runs += 1
+		if int(result["offscreen_weapon_kills"]) != 0:
+			offscreen_weapon_kill_runs += 1
+		if float(result["max_hit_center_distance"]) > CombatEnvelope.DAMAGE_CENTER_RADIUS + 0.0001:
+			hit_distance_runs += 1
+		if float(result["max_kill_center_distance"]) > CombatEnvelope.DAMAGE_CENTER_RADIUS + 0.0001:
+			kill_distance_runs += 1
+		if float(result["max_effect_outer_distance"]) > CombatEnvelope.EFFECT_OUTER_RADIUS + 0.0001:
+			effect_outer_distance_runs += 1
+		if int(result["feedback_suppressed"]) != 0:
+			feedback_suppressed_runs += 1
+		if int(result["important_vfx_dropped"]) != 0:
+			important_vfx_drop_runs += 1
+		audio_admitted_total += int(result["audio_admitted"])
+		audio_suppressed_total += int(result["audio_suppressed"])
 
 	var normal_mean_evolution_seconds: float = (
 		-1.0
@@ -108,6 +171,37 @@ static func evaluate(results: Array[Dictionary]) -> Dictionary:
 		reasons.append("pool_overflow_runs expected=0 actual=%d" % overflow_runs)
 	if orphan_runs != 0:
 		reasons.append("pool_orphan_runs expected=0 actual=%d" % orphan_runs)
+	if missing_visible_metric_runs != 0:
+		reasons.append(
+			"missing_visible_metric_runs expected=0 actual=%d"
+			% missing_visible_metric_runs
+		)
+	if no_weapon_combat_runs != 0:
+		reasons.append("no_weapon_combat_runs expected=0 actual=%d" % no_weapon_combat_runs)
+	if offscreen_weapon_hit_runs != 0:
+		reasons.append(
+			"offscreen_weapon_hit_runs expected=0 actual=%d"
+			% offscreen_weapon_hit_runs
+		)
+	if offscreen_weapon_kill_runs != 0:
+		reasons.append(
+			"offscreen_weapon_kill_runs expected=0 actual=%d"
+			% offscreen_weapon_kill_runs
+		)
+	if hit_distance_runs != 0:
+		reasons.append("hit_distance_runs expected=0 actual=%d" % hit_distance_runs)
+	if kill_distance_runs != 0:
+		reasons.append("kill_distance_runs expected=0 actual=%d" % kill_distance_runs)
+	if effect_outer_distance_runs != 0:
+		reasons.append(
+			"effect_outer_distance_runs expected=0 actual=%d"
+			% effect_outer_distance_runs
+		)
+	if important_vfx_drop_runs != 0:
+		reasons.append(
+			"important_vfx_drop_runs expected=0 actual=%d"
+			% important_vfx_drop_runs
+		)
 
 	return {
 		"passed": reasons.is_empty(),
@@ -129,4 +223,15 @@ static func evaluate(results: Array[Dictionary]) -> Dictionary:
 		),
 		"overflow_runs": overflow_runs,
 		"orphan_runs": orphan_runs,
+		"missing_visible_metric_runs": missing_visible_metric_runs,
+		"no_weapon_combat_runs": no_weapon_combat_runs,
+		"offscreen_weapon_hit_runs": offscreen_weapon_hit_runs,
+		"offscreen_weapon_kill_runs": offscreen_weapon_kill_runs,
+		"hit_distance_runs": hit_distance_runs,
+		"kill_distance_runs": kill_distance_runs,
+		"effect_outer_distance_runs": effect_outer_distance_runs,
+		"feedback_suppressed_runs": feedback_suppressed_runs,
+		"important_vfx_drop_runs": important_vfx_drop_runs,
+		"audio_admitted_total": audio_admitted_total,
+		"audio_suppressed_total": audio_suppressed_total,
 	}

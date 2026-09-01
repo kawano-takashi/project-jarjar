@@ -5,7 +5,7 @@ func test_names() -> PackedStringArray:
 	return PackedStringArray([
 		"survival_pool_active_free_index_contract",
 		"xp_pool_overflow_merges_without_loss",
-		"forty_meter_grid_boundaries",
+		"thirty_meter_grid_boundaries",
 		"segment_tick_boundaries",
 		"arena_nodes_hold_four_active_and_respawn",
 		"all_weapon_behaviors_generate_attacks",
@@ -16,7 +16,7 @@ func test_names() -> PackedStringArray:
 		"arc_node_damage_uses_single_resolved_impact",
 		"mass_projectile_requires_an_in_range_target",
 		"directional_projectile_preserves_last_nonzero_move_direction",
-		"returning_ring_reaches_nine_meters_and_hits_on_return",
+		"returning_ring_uses_explicit_outbound_range_and_hits_on_return",
 		"orbital_outer_reach_is_monotonic_and_bounded",
 		"infinite_homing_one_tick_cadence_stays_within_pool",
 		"orbital_active_window_uses_duration_and_has_real_gaps",
@@ -30,7 +30,7 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 			_test_pool_active_free_indices(assertions)
 		"xp_pool_overflow_merges_without_loss":
 			_test_xp_overflow_merge(assertions)
-		"forty_meter_grid_boundaries":
+		"thirty_meter_grid_boundaries":
 			_test_grid_boundaries(assertions)
 		"segment_tick_boundaries":
 			_test_segment_boundaries(assertions)
@@ -52,7 +52,7 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 			_test_mass_range_gate(assertions)
 		"directional_projectile_preserves_last_nonzero_move_direction":
 			_test_directional_move_targeting(assertions)
-		"returning_ring_reaches_nine_meters_and_hits_on_return":
+		"returning_ring_uses_explicit_outbound_range_and_hits_on_return":
 			_test_returning_ring_rehit(assertions)
 		"orbital_outer_reach_is_monotonic_and_bounded":
 			_test_orbital_outer_reach(assertions)
@@ -131,11 +131,11 @@ func _test_xp_overflow_merge(assertions: Variant) -> void:
 
 func _test_grid_boundaries(assertions: Variant) -> void:
 	var grid := UniformGrid.new()
-	assertions.expect_equal(Vector2(-20.0, -20.0), UniformGrid.ARENA_MIN, "grid begins at the 40m arena corner")
-	assertions.expect_equal(Vector2(20.0, 20.0), UniformGrid.ARENA_MAX, "grid ends at the 40m arena corner")
+	assertions.expect_equal(Vector2(-15.0, -15.0), UniformGrid.ARENA_MIN, "grid begins at the 30m arena corner")
+	assertions.expect_equal(Vector2(15.0, 15.0), UniformGrid.ARENA_MAX, "grid ends at the 30m arena corner")
 	assertions.expect_equal(Vector2i.ZERO, grid.cell_indices_for_position(Vector2(-100.0, -100.0)), "outside negative positions clamp to first cell")
-	assertions.expect_equal(Vector2i(19, 19), grid.cell_indices_for_position(Vector2(100.0, 100.0)), "outside positive positions clamp to last cell")
-	assertions.expect_equal(400, UniformGrid.CELL_COUNT, "2m cells cover the complete 40 by 40 arena")
+	assertions.expect_equal(Vector2i(14, 14), grid.cell_indices_for_position(Vector2(100.0, 100.0)), "outside positive positions clamp to last cell")
+	assertions.expect_equal(225, UniformGrid.CELL_COUNT, "2m cells cover the complete 30 by 30 arena")
 
 
 func _test_segment_boundaries(assertions: Variant) -> void:
@@ -386,19 +386,24 @@ func _test_arc_impact_explosion(assertions: Variant) -> void:
 	)
 	var entries: Array[Vector2i] = simulation.projectile_pool.snapshot_active()
 	assertions.expect_equal(1, entries.size(), "level one arc crystal creates one projectile")
-	simulation.weapon_system.move_snapshot_projectiles(
-		entries,
-		simulation.enemy_system.enemy_store,
-		Vector2.ZERO,
-		2,
-		false,
-	)
-	var records: Array[Dictionary] = simulation.weapon_system.resolve_ally_projectile(
-		entries[0],
-		simulation.enemy_system.enemy_store,
-		simulation.enemy_system.uniform_grid,
-		2,
-	)
+	var records: Array[Dictionary] = []
+	for current_tick: int in range(2, 40):
+		if simulation.projectile_pool.active_count() == 0:
+			break
+		simulation.weapon_system.move_snapshot_projectiles(
+			entries,
+			simulation.enemy_system.enemy_store,
+			Vector2.ZERO,
+			current_tick,
+			false,
+		)
+		records.append_array(simulation.weapon_system.resolve_ally_projectile(
+			entries[0],
+			simulation.enemy_system.enemy_store,
+			simulation.enemy_system.uniform_grid,
+			Vector2.ZERO,
+			current_tick,
+		))
 	assertions.expect_equal(1, _hit_count_for(records, first_enemy.entity_id), "first impact enemy receives one explosion hit")
 	assertions.expect_equal(1, _hit_count_for(records, second_enemy.entity_id), "nearby enemy receives the same explosion once")
 	assertions.expect_equal(0, simulation.projectile_pool.active_count(), "arc projectile is released after its single explosion")
@@ -406,6 +411,7 @@ func _test_arc_impact_explosion(assertions: Variant) -> void:
 		entries[0],
 		simulation.enemy_system.enemy_store,
 		simulation.enemy_system.uniform_grid,
+		Vector2.ZERO,
 		2,
 	)
 	assertions.expect_equal(0, repeated_records.size(), "released arc projectile cannot deal a double hit")
@@ -494,7 +500,7 @@ func _test_arc_node_impact_order(assertions: Variant) -> void:
 		ProjectileState.MovementKind.ARC,
 		Vector2(0.0, node_position.y),
 		Vector2(780.0, 0.0),
-		13.0,
+		node_position.x,
 		10.0,
 		0.25,
 	)
@@ -563,7 +569,7 @@ func _test_mass_range_gate(assertions: Variant) -> void:
 	assertions.expect_equal(0, runtime.cooldown_remaining_ticks, "no eligible mass target consumes no cooldown")
 	var near_enemy: EnemyEntity = simulation.spawn_fixture_enemy(
 		GameTypes.EnemyType.BULWARK,
-		Vector2(10.0, 0.0),
+		Vector2(5.0, 0.0),
 		-1,
 	)
 	var attacks: Array[Dictionary] = simulation.weapon_system.advance_and_fire(
@@ -623,18 +629,13 @@ func _test_returning_ring_rehit(assertions: Variant) -> void:
 		state.rng_streams.create_weapon_rng(definition.lineage_id, 0),
 	)
 	state.weapons.append(runtime)
-	var outward_reach: float = (
-		definition.projectile_speed_at(1)
-		* float(definition.duration_ticks_at(1))
-		/ float(RunState.TICKS_PER_SECOND)
-		* 0.5
-	)
-	assertions.expect_true(outward_reach >= 9.0, "level one returning ring reaches at least nine meters outward")
+	var outward_reach: float = definition.range_at(1)
+	assertions.expect_float(5.5, outward_reach, "level one returning ring uses the explicit outbound range")
 	var simulation := CombatSimulation.new()
 	simulation.initialize(state, catalog)
 	var target: EnemyEntity = simulation.spawn_fixture_enemy(
 		GameTypes.EnemyType.BULWARK,
-		Vector2(9.0, 0.0),
+		Vector2(outward_reach, 0.0),
 		-1,
 	)
 	simulation.weapon_system.advance_and_fire(
@@ -646,9 +647,21 @@ func _test_returning_ring_rehit(assertions: Variant) -> void:
 	var outward_hit_count: int = 0
 	var return_hit_count: int = 0
 	var moving_player_position := Vector2.ZERO
-	var return_start_tick: int = floori(float(definition.duration_ticks_at(1)) / 2.0)
+	var initial_projectile: ProjectileState = simulation.projectile_pool.resolve_snapshot_entry(
+		simulation.projectile_pool.snapshot_active()[0]
+	)
+	assertions.expect_float(
+		outward_reach,
+		initial_projectile.outbound_distance_remaining,
+		"returning projectile stores its exact outbound turn range",
+	)
+	assertions.expect_float(
+		outward_reach * 2.0,
+		initial_projectile.remaining_distance,
+		"returning projectile total path is bounded to out-and-back range",
+	)
 	for current_tick: int in range(2, definition.duration_ticks_at(1) + 4):
-		if current_tick > return_start_tick:
+		if current_tick > ceili(outward_reach / definition.projectile_speed_at(1) * 60.0):
 			moving_player_position += Vector2(0.0, 0.04)
 		var entries: Array[Vector2i] = simulation.projectile_pool.snapshot_active()
 		simulation.weapon_system.move_snapshot_projectiles(
@@ -665,6 +678,7 @@ func _test_returning_ring_rehit(assertions: Variant) -> void:
 				entry,
 				simulation.enemy_system.enemy_store,
 				simulation.enemy_system.uniform_grid,
+				moving_player_position,
 				current_tick,
 			)
 			var target_hit_count: int = _hit_count_for(records, target.entity_id)
@@ -682,18 +696,17 @@ func _test_orbital_outer_reach(assertions: Variant) -> void:
 		return
 	var base: WeaponDefinition = catalog.weapon(&"orbital_array")
 	var evolved: WeaponDefinition = catalog.weapon(&"eternal_orbit")
-	var level_one_outer: float = _orbital_outer_reach(base.area_at(1))
-	var level_eight_outer: float = _orbital_outer_reach(base.area_at(8))
-	var evolved_outer: float = _orbital_outer_reach(evolved.area_at(1))
+	var level_one_outer: float = _orbital_outer_reach(base, 1)
+	var level_eight_outer: float = _orbital_outer_reach(base, 8)
+	var evolved_outer: float = _orbital_outer_reach(evolved, 1)
 	assertions.expect_true(level_one_outer >= 1.8 and level_one_outer <= 2.4, "level one orbital outer reach stays in the approved band")
 	assertions.expect_true(level_eight_outer >= 3.2 and level_eight_outer <= 3.8, "level eight orbital outer reach stays in the approved band")
 	assertions.expect_true(evolved_outer >= 4.2 and evolved_outer <= 4.8, "evolved orbital outer reach stays in the approved band")
 	assertions.expect_true(level_one_outer < level_eight_outer and level_eight_outer < evolved_outer, "orbital outer reach grows monotonically through evolution")
 
 
-func _orbital_outer_reach(area: float) -> float:
-	var orbit_radius: float = maxf(1.0, area)
-	return orbit_radius + maxf(0.35, orbit_radius * WeaponSystem.ORBIT_HIT_RADIUS_MULTIPLIER)
+func _orbital_outer_reach(definition: WeaponDefinition, level: int) -> float:
+	return definition.range_at(level) + definition.effect_radius_at(level)
 
 
 func _test_infinite_homing_pool(assertions: Variant) -> void:
@@ -713,7 +726,7 @@ func _test_infinite_homing_pool(assertions: Variant) -> void:
 	simulation.initialize(state, catalog)
 	var target: EnemyEntity = simulation.spawn_fixture_enemy(
 		GameTypes.EnemyType.BOSS,
-		Vector2(18.0, 18.0),
+		Vector2(7.5, 0.0),
 		-1,
 	)
 	target.max_hp = 1_000_000.0
@@ -733,6 +746,7 @@ func _test_infinite_homing_pool(assertions: Variant) -> void:
 				entry,
 				simulation.enemy_system.enemy_store,
 				simulation.enemy_system.uniform_grid,
+				Vector2.ZERO,
 				current_tick,
 			)
 		generated_count += simulation.weapon_system.advance_and_fire(
@@ -867,6 +881,7 @@ func _node_projectile_simulation(
 		runtime.cooldown_remaining_ticks = 10_000
 	var simulation := CombatSimulation.new()
 	simulation.initialize(state, catalog)
+	simulation.player_position = Vector2(6.0, ArenaObjectSystem.NODE_SITE_POSITIONS[4].y)
 	return simulation
 
 

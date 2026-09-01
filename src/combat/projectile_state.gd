@@ -22,6 +22,7 @@ var radius: float = 0.0
 var damage: float = 0.0
 var remaining_distance: float = 0.0
 var previous_remaining_distance: float = 0.0
+var outbound_distance_remaining: float = 0.0
 var remaining_lifetime: float = 0.0
 var target_position: Vector2 = Vector2.ZERO
 var pierce_remaining: int = 0
@@ -87,6 +88,7 @@ func activate(
 	damage = p_damage
 	remaining_distance = p_remaining_distance
 	previous_remaining_distance = p_remaining_distance
+	outbound_distance_remaining = 0.0
 	remaining_lifetime = p_remaining_lifetime
 	target_position = p_target_position
 	pierce_remaining = p_pierce_remaining
@@ -118,6 +120,7 @@ func deactivate() -> void:
 	damage = 0.0
 	remaining_distance = 0.0
 	previous_remaining_distance = 0.0
+	outbound_distance_remaining = 0.0
 	remaining_lifetime = 0.0
 	target_position = Vector2.ZERO
 	pierce_remaining = 0

@@ -26,8 +26,8 @@ func _test_manifest_globals(assertions: Variant) -> void:
 	if not catalog.is_valid:
 		return
 	var manifest: SurvivalContentManifest = catalog.manifest()
-	assertions.expect_equal(4, manifest.balance.balance_revision, "balance revision four")
-	assertions.expect_equal(Vector2(40.0, 40.0), manifest.arena_size, "finite 40x40 arena")
+	assertions.expect_equal(5, manifest.balance.balance_revision, "balance revision five")
+	assertions.expect_equal(Vector2(30.0, 30.0), manifest.arena_size, "finite 30x30 arena")
 	assertions.expect_equal(60, manifest.ticks_per_second, "fixed 60Hz domain clock")
 	assertions.expect_equal(36000, manifest.boss_start_tick, "boss starts at ten minutes")
 	assertions.expect_equal(19, manifest.xp_early_max_level, "early XP band ends at level nineteen")
@@ -55,7 +55,6 @@ func _test_manifest_globals(assertions: Variant) -> void:
 	assertions.expect_equal(10, manifest.boss_enrage_max_stacks, "boss enrage stack cap")
 	assertions.expect_float(0.10, manifest.boss_attack_bonus_per_stack, "boss attack bonus per stack")
 	assertions.expect_float(0.10, manifest.boss_interval_reduction_per_stack, "boss interval reduction per stack")
-	assertions.expect_equal(1, manifest.boss_summon_bonus_per_stack, "boss summon bonus per stack")
 
 
 func _test_content_identity(assertions: Variant) -> void:
@@ -85,7 +84,7 @@ func _test_content_identity(assertions: Variant) -> void:
 	for index: int in range(10):
 		targets.append(catalog.segment(index).target_active)
 	assertions.expect_equal(
-		PackedInt32Array([4, 6, 9, 13, 18, 36, 48, 60, 69, 100]),
+		PackedInt32Array([16, 24, 36, 52, 72, 96, 120, 144, 168, 192]),
 		targets,
 		"calibrated active-enemy targets preserve durable crowd pressure",
 	)

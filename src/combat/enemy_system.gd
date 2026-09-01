@@ -14,27 +14,17 @@ const NORMAL_ENEMY_IDS: Array[StringName] = [
 	&"bulwark",
 	&"shooter",
 ]
-const ARENA_SPAWN_MIN: Vector2 = Vector2(-19.25, -19.25)
-const ARENA_SPAWN_MAX: Vector2 = Vector2(19.25, 19.25)
-const FALLBACK_CORNERS: Array[Vector2] = [
-	Vector2(19.25, 19.25),
-	Vector2(-19.25, 19.25),
-	Vector2(-19.25, -19.25),
-	Vector2(19.25, -19.25),
-]
-const PLAYER_BODY_RADIUS: float = 0.45
-const MINIMUM_NORMAL_SPAWN_DISTANCE: float = 9.0
 const MAXIMUM_SPAWN_POSITION_TRIALS: int = 16
 const MAXIMUM_SPAWNS_PER_TICK: int = 16
 const SPAWN_TARGET_RAMP_TICKS: float = 180.0
-const BOSS_SUMMON_RADIUS: float = 2.5
+const BOSS_CHARGE_TICKS: int = CombatEnvelope.BOSS_CHARGE_TICKS
+const BOSS_VOLLEY_BASE_COUNT: int = 8
 const BOSS_VOLLEY_PHASE_BONUS: int = 4
 const BOSS_PHASE_INTERVAL_MULTIPLIER: float = 0.75
 const BOSS_MIN_INTERVAL_MULTIPLIER: float = 0.20
 
 const ACTION_PLAYER_DAMAGE: StringName = &"player_damage"
 const DAMAGE_SOURCE_CONTACT: StringName = &"enemy_contact"
-const DAMAGE_SOURCE_ELITE_AREA: StringName = &"elite_area"
 
 var enemy_store: EnemyStore = EnemyStore.new()
 var uniform_grid: UniformGrid = UniformGrid.new()
@@ -73,9 +63,9 @@ func advance_snapshot(
 		var time_scale: float = _time_scale_for(enemy)
 		if time_scale <= 0.0:
 			continue
-		_update_boss_state(enemy, current_tick)
 		_move_enemy(enemy, player_position, time_scale)
 		_advance_enemy_timers(enemy, time_scale)
+		_update_boss_state(enemy)
 	_rebuild_grid(current_tick)
 
 
@@ -96,7 +86,7 @@ func accrue_spawn_credit() -> void:
 	)
 
 
-func resolve_scheduled_spawns(player_position: Vector2, current_tick: int) -> Array[EnemyEntity]:
+func resolve_scheduled_spawns(_player_position: Vector2, current_tick: int) -> Array[EnemyEntity]:
 	var spawned: Array[EnemyEntity] = []
 	for elite_index: int in range(_manifest.elite_spawn_ticks.size()):
 		if (
@@ -105,9 +95,8 @@ func resolve_scheduled_spawns(player_position: Vector2, current_tick: int) -> Ar
 		):
 			var elite: EnemyEntity = _spawn_enemy(
 				GameTypes.EnemyType.ELITE,
-				_farthest_fallback_corner(player_position),
+				Vector2.ZERO,
 				current_tick,
-				false,
 			)
 			if elite != null:
 				_elite_spawned[elite_index] = 1
@@ -116,9 +105,8 @@ func resolve_scheduled_spawns(player_position: Vector2, current_tick: int) -> Ar
 	if not _state.boss_spawned and current_tick >= _manifest.boss_start_tick:
 		var boss: EnemyEntity = _spawn_enemy(
 			GameTypes.EnemyType.BOSS,
-			_farthest_fallback_corner(player_position),
+			Vector2.ZERO,
 			current_tick,
-			false,
 		)
 		if boss != null:
 			_state.boss_spawned = true
@@ -145,62 +133,14 @@ func resolve_normal_spawns(player_position: Vector2, current_tick: int) -> Array
 		var enemy_type: GameTypes.EnemyType = _select_normal_enemy_type(segment)
 		var enemy: EnemyEntity = _spawn_enemy(
 			enemy_type,
-			_choose_normal_spawn_position(player_position),
+			_choose_normal_spawn_position(player_position, enemy_type),
 			current_tick,
-			false,
 		)
 		if enemy == null:
 			break
 		spawned.append(enemy)
 		_state.spawn_credit = maxf(0.0, _state.spawn_credit - 1.0)
 	return spawned
-
-
-func resolve_ready_boss_summons(
-	ids: Array[int],
-	current_tick: int,
-) -> Array[EnemyEntity]:
-	var spawned: Array[EnemyEntity] = []
-	for entity_id: int in ids:
-		var boss: EnemyEntity = enemy_store.get_by_id(entity_id)
-		if (
-			boss == null
-			or boss.enemy_type != GameTypes.EnemyType.BOSS
-			or not boss.is_targetable(current_tick)
-			or boss.definition.summon_interval_ticks <= 0
-		):
-			continue
-		var interval_ticks: float = _boss_action_interval(
-			boss.definition.summon_interval_ticks,
-			boss.boss_phase,
-		)
-		if boss.summon_elapsed_ticks < interval_ticks:
-			continue
-		boss.summon_elapsed_ticks = 0.0
-		var summon_count: int = mini(
-			boss.definition.summon_count
-			+ maxi(0, boss.boss_phase - 1)
-			+ _state.boss_enrage_stacks * _manifest.boss_summon_bonus_per_stack,
-			enemy_store.free_count(),
-		)
-		var start_angle: float = boss.rng.randf_range(0.0, TAU) if boss.rng != null else 0.0
-		for summon_index: int in range(summon_count):
-			var angle: float = start_angle + TAU * float(summon_index) / float(maxi(1, summon_count))
-			var position: Vector2 = _clamp_enemy_center(
-				boss.position + Vector2.from_angle(angle) * BOSS_SUMMON_RADIUS
-			)
-			var enemy_type: GameTypes.EnemyType = _select_normal_enemy_type(current_segment())
-			var summoned: EnemyEntity = _spawn_enemy(
-				enemy_type,
-				position,
-				current_tick,
-				true,
-			)
-			if summoned == null:
-				break
-			spawned.append(summoned)
-	return spawned
-
 
 func resolve_ready_enemy_damage_actions(
 	ids: Array[int],
@@ -212,24 +152,7 @@ func resolve_ready_enemy_damage_actions(
 		var enemy: EnemyEntity = enemy_store.get_by_id(entity_id)
 		if not _can_resolve_actions(enemy, current_tick):
 			continue
-		if (
-			enemy.enemy_type == GameTypes.EnemyType.ELITE
-			and enemy.telegraph_active
-			and enemy.telegraph_elapsed_ticks >= float(enemy.definition.telegraph_ticks)
-		):
-			if (
-				player_position.distance_squared_to(enemy.telegraph_position)
-				<= enemy.definition.area_radius * enemy.definition.area_radius
-			):
-				records.append(_damage_record(
-					enemy,
-					DAMAGE_SOURCE_ELITE_AREA,
-					enemy.definition.projectile_damage * _effective_damage_multiplier(enemy),
-					enemy.telegraph_position,
-				))
-			enemy.telegraph_active = false
-			enemy.telegraph_elapsed_ticks = 0.0
-		var contact_radius: float = PLAYER_BODY_RADIUS + enemy.definition.body_radius
+		var contact_radius: float = CombatEnvelope.PLAYER_BODY_RADIUS + enemy.definition.body_radius
 		if (
 			enemy.contact_elapsed_ticks >= float(enemy.definition.contact_interval_ticks)
 			and enemy.position.distance_squared_to(player_position)
@@ -247,7 +170,7 @@ func resolve_ready_enemy_damage_actions(
 
 func resolve_ready_enemy_special_actions(
 	ids: Array[int],
-	player_position: Vector2,
+	_player_position: Vector2,
 	current_tick: int,
 	projectile_pool: ProjectilePool,
 ) -> void:
@@ -255,13 +178,8 @@ func resolve_ready_enemy_special_actions(
 		var enemy: EnemyEntity = enemy_store.get_by_id(entity_id)
 		if not _can_resolve_actions(enemy, current_tick):
 			continue
-		match enemy.enemy_type:
-			GameTypes.EnemyType.ELITE:
-				_start_ready_elite_telegraph(enemy, player_position)
-			GameTypes.EnemyType.SHOOTER:
-				_fire_ready_shooter_projectile(enemy, player_position, current_tick, projectile_pool)
-			GameTypes.EnemyType.BOSS:
-				_fire_ready_boss_volley(enemy, current_tick, projectile_pool)
+		if enemy.enemy_type == GameTypes.EnemyType.BOSS:
+			_fire_ready_boss_volley(enemy, current_tick, projectile_pool)
 
 
 func current_segment() -> EnemySegmentDefinition:
@@ -280,17 +198,12 @@ func boss_entity() -> EnemyEntity:
 func _move_enemy(enemy: EnemyEntity, player_position: Vector2, time_scale: float) -> void:
 	var offset: Vector2 = player_position - enemy.position
 	var direction: Vector2 = Vector2.ZERO
-	if enemy.enemy_type == GameTypes.EnemyType.SHOOTER:
-		var distance: float = offset.length()
-		if distance > enemy.definition.preferred_distance_max:
-			direction = offset.normalized()
-		elif distance < enemy.definition.preferred_distance_min and distance > 0.0:
-			direction = -offset.normalized()
-	elif offset != Vector2.ZERO:
+	if offset != Vector2.ZERO:
 		direction = offset.normalized()
 	enemy.position = _clamp_enemy_center(
 		enemy.position
-		+ direction * enemy.definition.move_speed * time_scale / float(RunState.TICKS_PER_SECOND)
+		+ direction * enemy.definition.move_speed * time_scale / float(RunState.TICKS_PER_SECOND),
+		enemy.body_radius(),
 	)
 
 
@@ -301,39 +214,12 @@ func _advance_enemy_timers(enemy: EnemyEntity, time_scale: float) -> void:
 	)
 	if enemy.definition.special_interval_ticks > 0:
 		enemy.special_elapsed_ticks += time_scale
-	if enemy.definition.summon_interval_ticks > 0:
-		enemy.summon_elapsed_ticks += time_scale
+	if enemy.boss_charge_active:
+		enemy.boss_charge_elapsed_ticks += time_scale
+	if enemy.enemy_type == GameTypes.EnemyType.BOSS:
+		enemy.boss_action_age_ticks += time_scale
 	if enemy.telegraph_active:
 		enemy.telegraph_elapsed_ticks += time_scale
-
-
-func _start_ready_elite_telegraph(enemy: EnemyEntity, player_position: Vector2) -> void:
-	if (
-		enemy.telegraph_active
-		or enemy.definition.special_interval_ticks <= 0
-		or enemy.special_elapsed_ticks < float(enemy.definition.special_interval_ticks)
-	):
-		return
-	enemy.special_elapsed_ticks = 0.0
-	enemy.telegraph_active = true
-	enemy.telegraph_elapsed_ticks = 0.0
-	enemy.telegraph_position = player_position
-
-
-func _fire_ready_shooter_projectile(
-	enemy: EnemyEntity,
-	player_position: Vector2,
-	current_tick: int,
-	projectile_pool: ProjectilePool,
-) -> void:
-	if (
-		enemy.definition.special_interval_ticks <= 0
-		or enemy.special_elapsed_ticks < float(enemy.definition.special_interval_ticks)
-	):
-		return
-	enemy.special_elapsed_ticks = 0.0
-	var direction: Vector2 = (player_position - enemy.position).normalized()
-	_spawn_enemy_projectile(enemy, direction, current_tick, projectile_pool, 0.0)
 
 
 func _fire_ready_boss_volley(
@@ -341,23 +227,71 @@ func _fire_ready_boss_volley(
 	current_tick: int,
 	projectile_pool: ProjectilePool,
 ) -> void:
-	var interval_ticks: float = _boss_action_interval(
+	if enemy.boss_charge_active:
+		if enemy.boss_charge_elapsed_ticks < float(BOSS_CHARGE_TICKS):
+			return
+		_emit_boss_volley(enemy, current_tick, projectile_pool)
+		return
+	var interval_ticks: int = _boss_action_interval_ticks(
 		enemy.definition.special_interval_ticks,
 		enemy.boss_phase,
 	)
-	if interval_ticks <= 0.0 or enemy.special_elapsed_ticks < interval_ticks:
+	if (
+		interval_ticks <= 0
+		or enemy.special_elapsed_ticks < float(interval_ticks - BOSS_CHARGE_TICKS)
+	):
 		return
-	enemy.special_elapsed_ticks = 0.0
-	var volley_count: int = (
-		enemy.definition.volley_count
+	var charge_start_tick: float = float(interval_ticks - BOSS_CHARGE_TICKS)
+	_start_boss_charge(
+		enemy,
+		interval_ticks,
+		maxf(0.0, enemy.special_elapsed_ticks - charge_start_tick),
+	)
+
+
+func _start_boss_charge(
+	enemy: EnemyEntity,
+	interval_ticks: int,
+	initial_elapsed_ticks: float = 0.0,
+) -> void:
+	enemy.boss_charge_active = true
+	enemy.boss_charge_elapsed_ticks = clampf(
+		initial_elapsed_ticks,
+		0.0,
+		float(BOSS_CHARGE_TICKS),
+	)
+	enemy.boss_charge_interval_ticks = interval_ticks
+	enemy.boss_charge_spoke_count = (
+		BOSS_VOLLEY_BASE_COUNT
 		+ maxi(0, enemy.boss_phase - 1) * BOSS_VOLLEY_PHASE_BONUS
 	)
+	enemy.boss_charge_half_step = enemy.barrage_alternate
+
+
+func _emit_boss_volley(
+	enemy: EnemyEntity,
+	current_tick: int,
+	projectile_pool: ProjectilePool,
+) -> void:
+	var volley_count: int = enemy.boss_charge_spoke_count
 	var angle_step: float = TAU / float(maxi(1, volley_count))
-	var offset: float = angle_step * 0.5 if enemy.barrage_alternate else 0.0
+	var offset: float = angle_step * 0.5 if enemy.boss_charge_half_step else 0.0
 	for angle_index: int in range(volley_count):
 		var direction: Vector2 = Vector2.from_angle(offset + angle_step * float(angle_index))
 		_spawn_enemy_projectile(enemy, direction, current_tick, projectile_pool, 0.5)
 	enemy.barrage_alternate = not enemy.barrage_alternate
+	enemy.special_elapsed_ticks = 0.0
+	enemy.boss_charge_active = false
+	enemy.boss_charge_elapsed_ticks = 0.0
+	enemy.boss_charge_interval_ticks = 0
+	enemy.boss_charge_spoke_count = 0
+	enemy.boss_charge_half_step = false
+	var next_interval_ticks: int = _boss_action_interval_ticks(
+		enemy.definition.special_interval_ticks,
+		enemy.boss_phase,
+	)
+	if next_interval_ticks == BOSS_CHARGE_TICKS:
+		_start_boss_charge(enemy, next_interval_ticks)
 
 
 func _spawn_enemy_projectile(
@@ -367,6 +301,8 @@ func _spawn_enemy_projectile(
 	projectile_pool: ProjectilePool,
 	stop_time_scale: float,
 ) -> void:
+	if enemy.enemy_type != GameTypes.EnemyType.BOSS:
+		return
 	var lifetime_seconds: float = (
 		float(enemy.definition.projectile_lifetime_ticks)
 		/ float(RunState.TICKS_PER_SECOND)
@@ -394,7 +330,7 @@ func _spawn_enemy_projectile(
 	)
 
 
-func _update_boss_state(enemy: EnemyEntity, current_tick: int) -> void:
+func _update_boss_state(enemy: EnemyEntity) -> void:
 	if enemy.enemy_type != GameTypes.EnemyType.BOSS:
 		return
 	var hp_ratio: float = enemy.hp / maxf(1.0, enemy.max_hp)
@@ -407,28 +343,31 @@ func _update_boss_state(enemy: EnemyEntity, current_tick: int) -> void:
 	_state.boss_phase = phase
 	_state.boss_hp = enemy.hp
 	_state.boss_max_hp = enemy.max_hp
-	var elapsed_boss_ticks: int = maxi(0, current_tick - _manifest.boss_start_tick)
 	_state.boss_enrage_stacks = mini(
 		_manifest.boss_enrage_max_stacks,
-		floori(float(elapsed_boss_ticks) / float(_manifest.boss_enrage_interval_ticks)),
+		floori(enemy.boss_action_age_ticks / float(_manifest.boss_enrage_interval_ticks)),
 	)
 
 
 func _boss_action_interval(base_ticks: int, phase: int) -> float:
+	return float(_boss_action_interval_ticks(base_ticks, phase))
+
+
+func _boss_action_interval_ticks(base_ticks: int, phase: int) -> int:
 	if base_ticks <= 0:
-		return 0.0
+		return 0
 	var phase_multiplier: float = pow(BOSS_PHASE_INTERVAL_MULTIPLIER, maxi(0, phase - 1))
 	var enrage_multiplier: float = (
 		1.0
 		- _manifest.boss_interval_reduction_per_stack
 		* float(_state.boss_enrage_stacks)
 	)
-	return maxf(
-		1.0,
+	var nominal_interval_ticks: float = (
 		float(base_ticks)
 		/ _manifest.boss_action_rate_multiplier
-		* maxf(BOSS_MIN_INTERVAL_MULTIPLIER, phase_multiplier * enrage_multiplier),
+		* maxf(BOSS_MIN_INTERVAL_MULTIPLIER, phase_multiplier * enrage_multiplier)
 	)
+	return maxi(BOSS_CHARGE_TICKS, ceili(nominal_interval_ticks))
 
 
 func _effective_damage_multiplier(enemy: EnemyEntity) -> float:
@@ -450,7 +389,6 @@ func _spawn_enemy(
 	enemy_type: GameTypes.EnemyType,
 	position: Vector2,
 	current_tick: int,
-	summoned_by_boss: bool,
 ) -> EnemyEntity:
 	var definition: EnemyDefinition = _catalog.enemy(GameTypes.enemy_type_to_key(enemy_type))
 	if definition == null:
@@ -461,15 +399,18 @@ func _spawn_enemy(
 	if enemy_type == GameTypes.EnemyType.BOSS:
 		hp_multiplier = _manifest.boss_hp_multiplier
 		damage_multiplier = _manifest.boss_damage_multiplier
+	elif enemy_type in NORMAL_ENEMY_TYPES:
+		damage_multiplier *= _manifest.normal_enemy_damage_scale
+	var resolved_position: Vector2 = _clamp_enemy_center(position, definition.body_radius)
 	return enemy_store.try_spawn(
 		_state,
 		enemy_type,
 		definition,
-		position,
+		resolved_position,
 		hp_multiplier,
 		damage_multiplier,
 		current_tick,
-		summoned_by_boss,
+		CombatEnvelope.entry_ticks_for_enemy_type(enemy_type),
 	)
 
 
@@ -487,47 +428,49 @@ func _select_normal_enemy_type(segment: EnemySegmentDefinition) -> GameTypes.Ene
 	return NORMAL_ENEMY_TYPES.back()
 
 
-func _choose_normal_spawn_position(player_position: Vector2) -> Vector2:
+func _choose_normal_spawn_position(
+	player_position: Vector2,
+	enemy_type: GameTypes.EnemyType,
+) -> Vector2:
+	var definition: EnemyDefinition = _catalog.enemy(GameTypes.enemy_type_to_key(enemy_type))
+	var body_radius: float = definition.body_radius if definition != null else 0.0
+	var center_limit: float = CombatEnvelope.enemy_center_limit(body_radius)
 	if _spawn_rng == null:
-		return _farthest_fallback_corner(player_position)
+		return _farthest_fallback_corner(player_position, body_radius)
 	var minimum_distance_squared: float = (
-		MINIMUM_NORMAL_SPAWN_DISTANCE * MINIMUM_NORMAL_SPAWN_DISTANCE
+		CombatEnvelope.NORMAL_SPAWN_MIN_DISTANCE
+		* CombatEnvelope.NORMAL_SPAWN_MIN_DISTANCE
 	)
 	for _trial_index: int in range(MAXIMUM_SPAWN_POSITION_TRIALS):
 		var edge: int = _spawn_rng.randi_range(0, 3)
-		var coordinate: float = _spawn_rng.randf()
+		var coordinate: float = _spawn_rng.randf_range(-center_limit, center_limit)
 		var candidate: Vector2
 		match edge:
 			0:
-				candidate = Vector2(
-					ARENA_SPAWN_MIN.x,
-					lerpf(ARENA_SPAWN_MIN.y, ARENA_SPAWN_MAX.y, coordinate),
-				)
+				candidate = Vector2(-center_limit, coordinate)
 			1:
-				candidate = Vector2(
-					ARENA_SPAWN_MAX.x,
-					lerpf(ARENA_SPAWN_MIN.y, ARENA_SPAWN_MAX.y, coordinate),
-				)
+				candidate = Vector2(center_limit, coordinate)
 			2:
-				candidate = Vector2(
-					lerpf(ARENA_SPAWN_MIN.x, ARENA_SPAWN_MAX.x, coordinate),
-					ARENA_SPAWN_MIN.y,
-				)
+				candidate = Vector2(coordinate, -center_limit)
 			_:
-				candidate = Vector2(
-					lerpf(ARENA_SPAWN_MIN.x, ARENA_SPAWN_MAX.x, coordinate),
-					ARENA_SPAWN_MAX.y,
-				)
+				candidate = Vector2(coordinate, center_limit)
 		if candidate.distance_squared_to(player_position) >= minimum_distance_squared:
 			return candidate
-	return _farthest_fallback_corner(player_position)
+	return _farthest_fallback_corner(player_position, body_radius)
 
 
-func _farthest_fallback_corner(player_position: Vector2) -> Vector2:
-	var farthest: Vector2 = FALLBACK_CORNERS[0]
+func _farthest_fallback_corner(player_position: Vector2, body_radius: float) -> Vector2:
+	var center_limit: float = CombatEnvelope.enemy_center_limit(body_radius)
+	var fallback_corners: Array[Vector2] = [
+		Vector2(center_limit, center_limit),
+		Vector2(-center_limit, center_limit),
+		Vector2(-center_limit, -center_limit),
+		Vector2(center_limit, -center_limit),
+	]
+	var farthest: Vector2 = fallback_corners[0]
 	var farthest_distance_squared: float = farthest.distance_squared_to(player_position)
-	for index: int in range(1, FALLBACK_CORNERS.size()):
-		var candidate: Vector2 = FALLBACK_CORNERS[index]
+	for index: int in range(1, fallback_corners.size()):
+		var candidate: Vector2 = fallback_corners[index]
 		var distance_squared: float = candidate.distance_squared_to(player_position)
 		if distance_squared > farthest_distance_squared:
 			farthest = candidate
@@ -574,8 +517,9 @@ func _damage_record(
 	}
 
 
-func _clamp_enemy_center(position: Vector2) -> Vector2:
+func _clamp_enemy_center(position: Vector2, body_radius: float) -> Vector2:
+	var center_limit: float = CombatEnvelope.enemy_center_limit(body_radius)
 	return Vector2(
-		clampf(position.x, ARENA_SPAWN_MIN.x, ARENA_SPAWN_MAX.x),
-		clampf(position.y, ARENA_SPAWN_MIN.y, ARENA_SPAWN_MAX.y),
+		clampf(position.x, -center_limit, center_limit),
+		clampf(position.y, -center_limit, center_limit),
 	)

@@ -4,12 +4,16 @@ extends RefCounted
 
 const FIXED_DELTA_SECONDS: float = 1.0 / 60.0
 const PLAYER_SPEED: float = 5.0
-const PLAYER_RADIUS: float = 0.45
-const ARENA_MIN: Vector2 = Vector2(-19.55, -19.55)
-const ARENA_MAX: Vector2 = Vector2(19.55, 19.55)
+const PLAYER_RADIUS: float = CombatEnvelope.PLAYER_BODY_RADIUS
+const ARENA_MIN: Vector2 = CombatEnvelope.PLAYER_CENTER_MIN
+const ARENA_MAX: Vector2 = CombatEnvelope.PLAYER_CENTER_MAX
 const VFX_HEIGHT_M: float = 0.03
 const DEATH_VFX_LIFETIME: float = 0.22
 const ATTACK_VFX_LIFETIME: float = 0.12
+const HIT_GLOW_TICKS: int = 6
+const ABSORPTION_DISPLAY_TICKS: int = CombatEnvelope.BOSS_ENTRY_TICKS
+const MAX_PRESENTATION_EVENTS_PER_TICK: int = 64
+const PRESENTATION_IMPORTANT_RESERVE: int = 32
 const PERFORMANCE_PROFILE_NAME: StringName = &"full_hd_500_2000"
 const PERFORMANCE_DEFAULT_ENEMY_COUNT: int = 500
 const PERFORMANCE_DEFAULT_PROJECTILE_COUNT: int = 1_200
@@ -40,6 +44,16 @@ var _manifest: SurvivalContentManifest = null
 var _pending_deaths: Array[Dictionary] = []
 var _pending_death_ids: Dictionary[int, bool] = {}
 var _step_events: Array[StringName] = []
+var _presentation_events: Array[CombatPresentationEvent] = []
+# Headless balance runs use combat ticks as the deterministic audio clock. The
+# live SurvivalFeedback path separately records wall-clock/voice admission.
+var _audio_cue_admission: AudioCueAdmission = AudioCueAdmission.new()
+var _hit_feedback_by_source: Dictionary[StringName, Dictionary] = {}
+var _kill_feedback_by_key: Dictionary[String, Dictionary] = {}
+var _player_hit_this_tick: bool = false
+var _absorption_started_tick: int = -1
+var _absorption_enemy_count: int = 0
+var _absorption_projectile_count: int = 0
 var _vacuum_collecting: bool = false
 var _performance_fixture_active: bool = false
 var _performance_enemy_target: int = 0
@@ -79,6 +93,14 @@ func initialize(p_state: RunState, p_catalog: DefinitionCatalog) -> void:
 	_pending_deaths.clear()
 	_pending_death_ids.clear()
 	_step_events.clear()
+	_presentation_events.clear()
+	_audio_cue_admission.reset()
+	_hit_feedback_by_source.clear()
+	_kill_feedback_by_key.clear()
+	_player_hit_this_tick = false
+	_absorption_started_tick = -1
+	_absorption_enemy_count = 0
+	_absorption_projectile_count = 0
 	_vacuum_collecting = false
 	_reset_performance_fixture_state()
 	_refresh_derived_player_stats()
@@ -91,6 +113,10 @@ func step(move_input: Vector2, _delta: float = FIXED_DELTA_SECONDS) -> CombatSna
 
 func advance_tick(move_input: Vector2) -> bool:
 	_step_events.clear()
+	_presentation_events.clear()
+	_hit_feedback_by_source.clear()
+	_kill_feedback_by_key.clear()
+	_player_hit_this_tick = false
 	if state == null or catalog == null or state.phase != GameTypes.RunPhase.COMBAT:
 		return false
 	if freeze_all_updates and not _performance_fixture_active:
@@ -99,6 +125,9 @@ func advance_tick(move_input: Vector2) -> bool:
 	var current_tick: int = state.combat_tick
 	_pending_deaths.clear()
 	_pending_death_ids.clear()
+	# Boss entry is a tick-boundary operation. Removing the old combatants before
+	# snapshots are taken guarantees they cannot move, attack, or collide on 10:00.
+	_begin_boss_transition_if_due(current_tick)
 	var enemy_snapshot: Array[int] = enemy_system.snapshot_ids()
 	var projectile_snapshot: Array[Vector2i] = projectile_pool.snapshot_active()
 	var tracked_enemy_id: int = -1
@@ -132,12 +161,29 @@ func advance_tick(move_input: Vector2) -> bool:
 	if collected_xp > 0:
 		ProgressionService.add_xp(state, collected_xp, catalog)
 		_step_events.append(&"xp_pickup")
+		_queue_presentation_event(_make_presentation_event(
+			CombatPresentationEvent.Kind.XP_PICKUP,
+			&"xp_pickup",
+			player_position,
+			CombatPresentationEvent.Priority.AMBIENT,
+			collected_xp,
+		))
 	if _vacuum_collecting and xp_pickup_pool.active_count() == 0:
 		_vacuum_collecting = false
 	arena_object_system.advance(current_tick)
 
 	# 2. Enemy update and time-driven spawns.
+	var boss_phase_before: int = state.boss_phase
 	enemy_system.advance_snapshot(enemy_snapshot, player_position, current_tick)
+	if state.boss_phase != boss_phase_before and state.boss_phase > 0:
+		var phase_boss: EnemyEntity = enemy_system.boss_entity()
+		_queue_presentation_event(_make_presentation_event(
+			CombatPresentationEvent.Kind.BOSS_PHASE_CHANGED,
+			&"boss_phase",
+			phase_boss.position if phase_boss != null else Vector2.ZERO,
+			CombatPresentationEvent.Priority.IMPORTANT,
+			state.boss_phase,
+		))
 	if _performance_fixture_active:
 		_performance_grid_updates += 1
 		var moved_enemy: EnemyEntity = enemy_system.enemy_store.get_by_id(
@@ -155,8 +201,16 @@ func advance_tick(move_input: Vector2) -> bool:
 	for spawned: EnemyEntity in scheduled_spawns:
 		if spawned.enemy_type == GameTypes.EnemyType.BOSS:
 			_step_events.append(&"boss_spawn")
+		if spawned.enemy_type in [GameTypes.EnemyType.ELITE, GameTypes.EnemyType.BOSS]:
+			_queue_presentation_event(_make_presentation_event(
+				CombatPresentationEvent.Kind.IMPORTANT_SPAWN,
+				&"boss_spawn" if spawned.enemy_type == GameTypes.EnemyType.BOSS else &"important_spawn",
+				spawned.position,
+				CombatPresentationEvent.Priority.IMPORTANT,
+				1,
+				spawned.enemy_type,
+			))
 	enemy_system.resolve_normal_spawns(player_position, current_tick)
-	enemy_system.resolve_ready_boss_summons(enemy_snapshot, current_tick)
 
 	# 3. Allied movement, weapon generation, and damage.
 	weapon_system.move_snapshot_projectiles(
@@ -184,6 +238,7 @@ func advance_tick(move_input: Vector2) -> bool:
 			projectile_entry,
 			enemy_system.enemy_store,
 			enemy_system.uniform_grid,
+			player_position,
 			current_tick,
 			projectile_resolution,
 		)
@@ -221,24 +276,49 @@ func advance_tick(move_input: Vector2) -> bool:
 		)
 		if not enemy_projectile_hit.is_empty():
 			_apply_raw_player_damage(float(enemy_projectile_hit.get("damage", 0.0)))
+	var boss_before_special: EnemyEntity = enemy_system.boss_entity()
+	var boss_was_charging: bool = (
+		boss_before_special != null and boss_before_special.boss_charge_active
+	)
+	var boss_alternate_before: bool = (
+		boss_before_special.barrage_alternate if boss_before_special != null else false
+	)
+	var boss_charge_spoke_count_before: int = (
+		boss_before_special.boss_charge_spoke_count if boss_before_special != null else 0
+	)
 	enemy_system.resolve_ready_enemy_special_actions(
 		enemy_snapshot,
 		player_position,
 		current_tick,
 		projectile_pool,
 	)
+	_record_boss_action_feedback(
+		boss_was_charging,
+		boss_alternate_before,
+		boss_charge_spoke_count_before,
+	)
 
 	# 5. Death drops, passive recovery, and terminal/modal priority.
 	_process_pending_deaths(current_tick)
+	_flush_transient_feedback()
 	_apply_passive_recovery()
 	var victory: bool = state.boss_defeated
 	var player_dead: bool = state.current_hp <= 0.0
+	if player_dead and not victory:
+		_queue_presentation_event(_make_presentation_event(
+			CombatPresentationEvent.Kind.PLAYER_DEFEATED,
+			&"player_defeated",
+			player_position,
+			CombatPresentationEvent.Priority.TERMINAL,
+		))
 	RunStateMachine.resolve_terminal(state, player_dead, victory)
 	if state.phase == GameTypes.RunPhase.COMBAT:
 		_resolve_modal_priority()
+	_record_audio_cue_metrics()
 	if _performance_fixture_active and state.phase == GameTypes.RunPhase.COMBAT:
 		_performance_workload_ticks += 1
 		_maintain_performance_fixture(current_tick)
+	_record_visible_enemy_sample(current_tick)
 	return true
 
 
@@ -256,6 +336,7 @@ func apply_upgrade_choice(choice_index: int) -> bool:
 	)
 	if not bool(result.get(&"success", false)):
 		return false
+	_record_audio_cue_id(&"level_up")
 	_refresh_derived_player_stats()
 	_continue_after_modal()
 	return true
@@ -274,6 +355,9 @@ func skip_chest_animation() -> bool:
 	)
 	if not bool(result.get(&"success", false)):
 		return false
+	_record_audio_cue_id(&"chest_open")
+	if outcome.kind == GameTypes.ChestOutcomeKind.EVOLUTION:
+		_record_audio_cue_id(&"evolution")
 	_refresh_derived_player_stats()
 	_continue_after_modal()
 	return true
@@ -296,10 +380,44 @@ func configure_accessibility(reduce_motion: bool, reduce_flashes: bool) -> void:
 	vfx_pool.reduce_flashes = reduce_flashes
 
 
+func visible_combat_metrics() -> Dictionary:
+	var sample_count: float = float(maxi(1, state.visible_enemy_sample_count))
+	return {
+		"weapon_hits": state.weapon_hit_count,
+		"weapon_kills": state.weapon_kill_count,
+		"visible_weapon_hits": state.visible_weapon_hit_count,
+		"visible_weapon_kills": state.visible_weapon_kill_count,
+		"offscreen_weapon_hits": state.offscreen_weapon_hit_count,
+		"offscreen_weapon_kills": state.offscreen_weapon_kill_count,
+		"max_hit_center_distance": state.max_weapon_hit_center_distance,
+		"max_kill_center_distance": state.max_weapon_kill_center_distance,
+		"max_effect_outer_distance": state.max_weapon_effect_outer_distance,
+		"peak_visible_enemies": state.peak_visible_enemy_count,
+		"mean_visible_enemies": float(state.visible_enemy_count_total) / sample_count,
+		"peak_engaged_enemies": state.peak_engaged_enemy_count,
+		"mean_engaged_enemies": float(state.engaged_enemy_count_total) / sample_count,
+		"peak_materializing_enemies": state.peak_materializing_enemy_count,
+		"mean_materializing_enemies": (
+			float(state.materializing_enemy_count_total) / sample_count
+		),
+		"absorbed_normal_count": state.absorbed_normal_count,
+		"absorbed_enemy_projectile_count": state.absorbed_enemy_projectile_count,
+		"vfx_admitted": vfx_pool.admitted_count,
+		"vfx_suppressed": vfx_pool.generic_drop_count,
+		"important_vfx_dropped": vfx_pool.important_drop_count,
+		"audio_admitted": _audio_cue_admission.admitted_count,
+		"audio_suppressed": _audio_cue_admission.suppressed_count,
+		"feedback_emitted": state.feedback_event_emitted_count,
+		"feedback_suppressed": state.feedback_event_suppressed_count,
+	}
+
+
 func build_snapshot() -> CombatSnapshot:
 	if state == null or catalog == null:
 		return CombatSnapshot.new()
 	var enemy_transforms: Array[Transform3D] = []
+	var enemy_visual_kinds := PackedInt32Array()
+	var enemy_visual_custom_data := PackedColorArray()
 	for entity_id: int in enemy_system.enemy_store.snapshot_ids_sorted():
 		var enemy: EnemyEntity = enemy_system.enemy_store.get_by_id(entity_id)
 		if enemy == null:
@@ -310,7 +428,16 @@ func build_snapshot() -> CombatSnapshot:
 			Basis.IDENTITY.scaled(Vector3(diameter_scale, height_scale, diameter_scale)),
 			Vector3(enemy.position.x, 0.5 * height_scale, enemy.position.y),
 		))
+		enemy_visual_kinds.append(_enemy_visual_kind(enemy.enemy_type))
+		enemy_visual_custom_data.append(Color(
+			enemy.materialization_progress(state.combat_tick),
+			1.0 if enemy.is_hit_flashing(state.combat_tick) else 0.0,
+			0.0,
+			0.0,
+		))
 	var projectile_transforms: Array[Transform3D] = []
+	var projectile_visual_kinds := PackedInt32Array()
+	var projectile_custom_data_values := PackedColorArray()
 	for pool_index: int in projectile_pool.active_indices_snapshot():
 		var projectile: ProjectileState = projectile_pool.slots[pool_index]
 		var projectile_scale: float = maxf(0.25, projectile.radius / 0.16)
@@ -322,10 +449,23 @@ func build_snapshot() -> CombatSnapshot:
 				projectile.position.y,
 			),
 		))
-	projectile_transforms.append_array(weapon_system.orbital_transforms(
+		projectile_visual_kinds.append(_projectile_visual_kind(projectile))
+		projectile_custom_data_values.append(_projectile_custom_data(projectile))
+	var orbital_transforms: Array[Transform3D] = weapon_system.orbital_transforms(
 		player_position,
 		state.combat_tick,
-	))
+	)
+	projectile_transforms.append_array(orbital_transforms)
+	var orbital_runtime: RunWeapon = state.weapon_for_lineage(&"orbital_array")
+	var orbital_evolved: bool = orbital_runtime != null and orbital_runtime.evolved
+	for _orbital_index: int in range(orbital_transforms.size()):
+		projectile_visual_kinds.append(CombatSnapshot.ProjectileVisualKind.ORBITAL_ARRAY)
+		projectile_custom_data_values.append(Color(
+			1.0 if orbital_evolved else 0.0,
+			1.0,
+			0.0,
+			0.0,
+		))
 	var vfx_transforms: Array[Transform3D] = []
 	var vfx_colors: Array[Color] = []
 	var vfx_custom_data: Array[Color] = []
@@ -337,6 +477,8 @@ func build_snapshot() -> CombatSnapshot:
 			vfx_pool.reduce_motion,
 			vfx_pool.reduce_flashes,
 		))
+	var snapshot_events: Array[CombatPresentationEvent] = []
+	snapshot_events.assign(_presentation_events)
 	var snapshot := CombatSnapshot.new(
 		player_position,
 		enemy_transforms,
@@ -349,8 +491,15 @@ func build_snapshot() -> CombatSnapshot:
 		xp_pickup_pool.transforms(),
 		arena_object_system.powerup_transforms(),
 		arena_object_system.node_transforms(),
+		enemy_visual_kinds,
+		enemy_visual_custom_data,
+		projectile_visual_kinds,
+		projectile_custom_data_values,
+		snapshot_events,
 	)
+	_apply_snapshot_markers(snapshot)
 	_step_events.clear()
+	_presentation_events.clear()
 	return snapshot
 
 
@@ -359,7 +508,7 @@ func spawn_fixture_enemy(
 	position: Vector2,
 	born_tick: int = -1,
 	apply_time_multiplier: bool = false,
-	summoned_by_boss: bool = false,
+	activate_immediately: bool = true,
 ) -> EnemyEntity:
 	var definition: EnemyDefinition = catalog.enemy_for_type(enemy_type)
 	if definition == null:
@@ -370,6 +519,8 @@ func spawn_fixture_enemy(
 	if apply_time_multiplier and enemy_type == GameTypes.EnemyType.BOSS:
 		hp_multiplier = _manifest.boss_hp_multiplier
 		damage_multiplier = _manifest.boss_damage_multiplier
+	elif apply_time_multiplier and enemy_type in EnemySystem.NORMAL_ENEMY_TYPES:
+		damage_multiplier *= _manifest.normal_enemy_damage_scale
 	var resolved_born_tick: int = state.combat_tick - 1 if born_tick < 0 else born_tick
 	var enemy: EnemyEntity = enemy_system.enemy_store.try_spawn(
 		state,
@@ -379,7 +530,7 @@ func spawn_fixture_enemy(
 		hp_multiplier,
 		damage_multiplier,
 		resolved_born_tick,
-		summoned_by_boss,
+		0 if activate_immediately else CombatEnvelope.entry_ticks_for_enemy_type(enemy_type),
 	)
 	_rebuild_uniform_grid(state.combat_tick + 1)
 	return enemy
@@ -433,6 +584,7 @@ func prepare_performance_fixture(
 	state.active_chest_outcome = null
 	state.build_maxed = true
 	state.boss_spawned = true
+	state.boss_transition_started = true
 	state.boss_defeated = false
 	state.boss_phase = 0
 	state.boss_enrage_stacks = 0
@@ -442,6 +594,30 @@ func prepare_performance_fixture(
 	state.damage_invulnerable_until_tick = PERFORMANCE_INVULNERABLE_UNTIL_TICK
 	state.modal_invulnerable_until_tick = PERFORMANCE_INVULNERABLE_UNTIL_TICK
 	state.spawn_credit = 0.0
+	state.absorbed_normal_count = 0
+	state.absorbed_enemy_projectile_count = 0
+	state.kill_chain_count = 0
+	state.kill_chain_last_tick = -1
+	state.kill_chain_accent_milestone = 0
+	state.weapon_hit_count = 0
+	state.weapon_kill_count = 0
+	state.visible_weapon_hit_count = 0
+	state.visible_weapon_kill_count = 0
+	state.offscreen_weapon_hit_count = 0
+	state.offscreen_weapon_kill_count = 0
+	state.max_weapon_hit_center_distance = 0.0
+	state.max_weapon_kill_center_distance = 0.0
+	state.max_weapon_effect_outer_distance = 0.0
+	state.visible_enemy_sample_count = 0
+	state.visible_enemy_count_total = 0
+	state.engaged_enemy_count_total = 0
+	state.materializing_enemy_count_total = 0
+	state.peak_visible_enemy_count = 0
+	state.peak_engaged_enemy_count = 0
+	state.peak_materializing_enemy_count = 0
+	state.feedback_event_emitted_count = 0
+	state.feedback_event_suppressed_count = 0
+	_audio_cue_admission.reset()
 	state.weapon_damage_by_lineage.clear()
 	state.recent_damage_samples.clear()
 	enemy_system._elite_spawned.fill(1)
@@ -467,6 +643,10 @@ func prepare_performance_fixture(
 	enemy_system.enemy_store.reset_reuse_count()
 	projectile_pool.reset_reuse_count()
 	vfx_pool.reset_reuse_count()
+	vfx_pool.request_count = 0
+	vfx_pool.admitted_count = 0
+	vfx_pool.generic_drop_count = 0
+	vfx_pool.important_drop_count = 0
 	xp_pickup_pool.reset_reuse_count()
 	_performance_fixture_active = true
 	freeze_all_updates = true
@@ -533,6 +713,80 @@ func _move_player(move_input: Vector2) -> void:
 	)
 
 
+func _begin_boss_transition_if_due(current_tick: int) -> void:
+	if (
+		state.boss_transition_started
+		or current_tick < _manifest.boss_start_tick
+	):
+		return
+	state.boss_transition_started = true
+	state.spawn_credit = 0.0
+	_absorption_started_tick = current_tick
+	_absorption_enemy_count = 0
+	_absorption_projectile_count = 0
+	for entity_id: int in enemy_system.enemy_store.snapshot_ids_sorted():
+		var enemy: EnemyEntity = enemy_system.enemy_store.get_by_id(entity_id)
+		if enemy == null or enemy.enemy_type not in EnemySystem.NORMAL_ENEMY_TYPES:
+			continue
+		if enemy_system.enemy_store.remove(entity_id):
+			_absorption_enemy_count += 1
+	for pool_index: int in projectile_pool.active_indices_snapshot():
+		var projectile: ProjectileState = projectile_pool.slots[pool_index]
+		if projectile.faction != ProjectileState.FACTION_ENEMY:
+			continue
+		if projectile_pool.release(pool_index, projectile.generation):
+			_absorption_projectile_count += 1
+	state.absorbed_normal_count += _absorption_enemy_count
+	state.absorbed_enemy_projectile_count += _absorption_projectile_count
+	_rebuild_uniform_grid(current_tick)
+	var absorbed_total: int = _absorption_enemy_count + _absorption_projectile_count
+	if absorbed_total <= 0:
+		return
+	_queue_presentation_event(_make_presentation_event(
+		CombatPresentationEvent.Kind.ABSORPTION,
+		&"absorption",
+		Vector2.ZERO,
+		CombatPresentationEvent.Priority.IMPORTANT,
+		absorbed_total,
+	))
+	vfx_pool.request(
+		Vector2.ZERO,
+		CombatEnvelope.ARENA_HALF_EXTENT,
+		float(ABSORPTION_DISPLAY_TICKS) / float(RunState.TICKS_PER_SECOND),
+		Color(0.55, 0.08, 0.11, 0.62),
+		current_tick,
+		VfxPool.PRIORITY_IMPORTANT,
+		VfxState.EffectKind.AURA_PULSE,
+	)
+
+
+func _record_visible_enemy_sample(current_tick: int) -> void:
+	var visible_count: int = 0
+	var engaged_count: int = 0
+	var materializing_count: int = 0
+	for enemy: EnemyEntity in enemy_system.enemy_store.entities:
+		if enemy.is_materializing(current_tick):
+			materializing_count += 1
+		if _combat_position_is_visible(enemy.position):
+			visible_count += 1
+		if (
+			enemy.is_targetable(current_tick)
+			and enemy.position.distance_squared_to(player_position)
+			<= CombatEnvelope.TARGET_CENTER_RADIUS * CombatEnvelope.TARGET_CENTER_RADIUS
+		):
+			engaged_count += 1
+	state.record_visible_enemy_sample(visible_count, engaged_count, materializing_count)
+
+
+func _combat_position_is_visible(position: Vector2) -> bool:
+	# Camera projection tests establish that this shared ten-metre center envelope is
+	# inside the supported viewports, including the maximum follow lag.
+	return (
+		position.distance_squared_to(player_position)
+		<= CombatEnvelope.DAMAGE_CENTER_RADIUS * CombatEnvelope.DAMAGE_CENTER_RADIUS
+	)
+
+
 func _collect_arena_pickups(_current_tick: int) -> void:
 	for pickup: ArenaPickup in arena_object_system.collect_at(player_position):
 		match pickup.kind:
@@ -566,11 +820,42 @@ func _apply_enemy_hit_records(records: Array[Dictionary]) -> void:
 			continue
 		var entity_id: int = int(record.get("entity_id", -1))
 		var enemy: EnemyEntity = enemy_system.enemy_store.get_by_id(entity_id)
-		if enemy == null:
+		if enemy == null or not enemy.is_targetable(state.combat_tick):
+			continue
+		var center_distance: float = player_position.distance_to(enemy.position)
+		if center_distance > CombatEnvelope.DAMAGE_CENTER_RADIUS + 0.0001:
+			continue
+		var effect_outer_distance: float = maxf(
+			0.0,
+			float(record.get("effect_outer_distance", 0.0)),
+		)
+		if effect_outer_distance > CombatEnvelope.EFFECT_OUTER_RADIUS + 0.0001:
 			continue
 		var applied_damage: float = minf(enemy.hp, maxf(0.0, event.damage_snapshot))
+		if applied_damage <= 0.0:
+			continue
 		enemy.hp = maxf(0.0, enemy.hp - applied_damage)
+		enemy.hit_flash_until_tick = state.combat_tick + HIT_GLOW_TICKS
 		state.record_weapon_damage(event.source_effect_id, applied_damage)
+		state.weapon_hit_count += 1
+		state.max_weapon_hit_center_distance = maxf(
+			state.max_weapon_hit_center_distance,
+			center_distance,
+		)
+		state.max_weapon_effect_outer_distance = maxf(
+			state.max_weapon_effect_outer_distance,
+			effect_outer_distance,
+		)
+		if _combat_position_is_visible(enemy.position):
+			state.visible_weapon_hit_count += 1
+		else:
+			state.offscreen_weapon_hit_count += 1
+		_accumulate_hit_feedback(
+			event.source_effect_id,
+			enemy.position,
+			enemy.enemy_type,
+			applied_damage,
+		)
 		var life_steal_ratio: float = weapon_system.life_steal_for_lineage(event.source_effect_id)
 		if life_steal_ratio > 0.0:
 			state.current_hp = minf(
@@ -580,10 +865,18 @@ func _apply_enemy_hit_records(records: Array[Dictionary]) -> void:
 		if enemy.enemy_type == GameTypes.EnemyType.BOSS:
 			state.boss_hp = enemy.hp
 		if enemy.hp <= 0.0:
-			_record_enemy_death(enemy)
+			_record_enemy_death(
+				enemy,
+				event.source_effect_id,
+				center_distance,
+			)
 
 
-func _record_enemy_death(enemy: EnemyEntity) -> void:
+func _record_enemy_death(
+	enemy: EnemyEntity,
+	source_effect_id: StringName = &"",
+	center_distance: float = 0.0,
+) -> void:
 	if _pending_death_ids.has(enemy.entity_id):
 		return
 	_pending_death_ids[enemy.entity_id] = true
@@ -594,6 +887,8 @@ func _record_enemy_death(enemy: EnemyEntity) -> void:
 		"body_radius": enemy.body_radius(),
 		"xp_value": enemy.definition.xp_value,
 		"elite_serial": enemy.elite_serial,
+		"source_effect_id": source_effect_id,
+		"center_distance": maxf(0.0, center_distance),
 	})
 
 
@@ -607,30 +902,74 @@ func _process_pending_deaths(current_tick: int) -> void:
 		if enemy == null or not enemy_system.enemy_store.remove(entity_id):
 			continue
 		var position: Vector2 = death["position"]
-		vfx_pool.acquire(
+		var enemy_type: GameTypes.EnemyType = int(death["enemy_type"]) as GameTypes.EnemyType
+		var vfx_priority: int = VfxPool.PRIORITY_KILL
+		if enemy_type == GameTypes.EnemyType.ELITE:
+			vfx_priority = VfxPool.PRIORITY_IMPORTANT
+		elif enemy_type == GameTypes.EnemyType.BOSS:
+			vfx_priority = VfxPool.PRIORITY_TERMINAL
+		vfx_pool.request(
 			position,
 			maxf(0.5, float(death["body_radius"]) * 2.0),
 			DEATH_VFX_LIFETIME,
-			Color(1.0, 0.28, 0.2, 0.82),
+			_enemy_kill_color(enemy_type),
 			current_tick,
+			vfx_priority,
+			_enemy_kill_effect_kind(enemy_type),
+			(position - player_position).normalized(),
 		)
 		state.total_kills += 1
-		match int(death["enemy_type"]):
+		state.weapon_kill_count += 1
+		var kill_distance: float = float(death.get("center_distance", 0.0))
+		state.max_weapon_kill_center_distance = maxf(
+			state.max_weapon_kill_center_distance,
+			kill_distance,
+		)
+		if _combat_position_is_visible(position):
+			state.visible_weapon_kill_count += 1
+		else:
+			state.offscreen_weapon_kill_count += 1
+		var chain_milestone: int = state.record_kill_chain(current_tick)
+		if chain_milestone > 0:
+			_queue_presentation_event(_make_presentation_event(
+				CombatPresentationEvent.Kind.CHAIN_MILESTONE,
+				&"chain_milestone",
+				position,
+				CombatPresentationEvent.Priority.IMPORTANT,
+				chain_milestone,
+				enemy_type,
+				death.get("source_effect_id", &""),
+			))
+		match enemy_type:
 			GameTypes.EnemyType.ELITE:
 				state.elite_kills += 1
 			GameTypes.EnemyType.BOSS:
 				state.boss_kills += 1
 				state.boss_defeated = true
 				state.boss_hp = 0.0
+				_queue_presentation_event(_make_presentation_event(
+					CombatPresentationEvent.Kind.BOSS_DEFEATED,
+					&"boss_defeated",
+					position,
+					CombatPresentationEvent.Priority.TERMINAL,
+					1,
+					enemy_type,
+					death.get("source_effect_id", &""),
+				))
 			_:
 				state.normal_kills += 1
+		_accumulate_kill_feedback(
+			death.get("source_effect_id", &""),
+			position,
+			enemy_type,
+		)
 		xp_pickup_pool.acquire(
 			position,
 			maxi(1, int(death["xp_value"])),
 			current_tick,
 			player_position,
 		)
-		if death["enemy_type"] == GameTypes.EnemyType.ELITE:
+		if enemy_type == GameTypes.EnemyType.ELITE:
 			arena_object_system.spawn_chest(position, int(death["elite_serial"]))
 	_pending_deaths.clear()
 	_pending_death_ids.clear()
@@ -653,6 +992,262 @@ func _apply_raw_player_damage(raw_damage: float) -> void:
 		state.combat_tick + _manifest.damage_invulnerability_ticks + 1,
 	)
 	_step_events.append(&"player_hit")
+	_player_hit_this_tick = true
+
+
+func _accumulate_hit_feedback(
+	source_effect_id: StringName,
+	position: Vector2,
+	enemy_type: GameTypes.EnemyType,
+	applied_damage: float,
+) -> void:
+	var key: StringName = source_effect_id if not source_effect_id.is_empty() else &"weapon"
+	var entry: Dictionary = _hit_feedback_by_source.get(key, {})
+	entry["count"] = int(entry.get("count", 0)) + 1
+	entry["position"] = position
+	entry["enemy_type"] = enemy_type
+	entry["intensity"] = maxf(float(entry.get("intensity", 0.0)), applied_damage)
+	_hit_feedback_by_source[key] = entry
+
+
+func _accumulate_kill_feedback(
+	source_effect_id: StringName,
+	position: Vector2,
+	enemy_type: GameTypes.EnemyType,
+) -> void:
+	var resolved_source: StringName = (
+		source_effect_id if not source_effect_id.is_empty() else &"weapon"
+	)
+	var key: String = "%s:%d" % [String(resolved_source), int(enemy_type)]
+	var entry: Dictionary = _kill_feedback_by_key.get(key, {})
+	entry["count"] = int(entry.get("count", 0)) + 1
+	entry["position"] = position
+	entry["enemy_type"] = enemy_type
+	entry["source_effect_id"] = resolved_source
+	_kill_feedback_by_key[key] = entry
+
+
+func _flush_transient_feedback() -> void:
+	var hit_keys: Array[StringName] = []
+	for key: StringName in _hit_feedback_by_source:
+		hit_keys.append(key)
+	hit_keys.sort()
+	for key: StringName in hit_keys:
+		var hit: Dictionary = _hit_feedback_by_source[key]
+		_queue_presentation_event(_make_presentation_event(
+			CombatPresentationEvent.Kind.ENEMY_HIT,
+			&"enemy_hit",
+			hit.get("position", Vector2.ZERO),
+			CombatPresentationEvent.Priority.NORMAL,
+			int(hit.get("count", 1)),
+			int(hit.get("enemy_type", GameTypes.EnemyType.PURSUER)),
+			key,
+			minf(1.0, float(hit.get("intensity", 1.0)) / 100.0),
+		))
+	var kill_keys: Array[String] = []
+	for key: String in _kill_feedback_by_key:
+		kill_keys.append(key)
+	kill_keys.sort()
+	for key: String in kill_keys:
+		var kill: Dictionary = _kill_feedback_by_key[key]
+		var enemy_type: int = int(kill.get("enemy_type", GameTypes.EnemyType.PURSUER))
+		var event_id: StringName = &"elite_kill" if enemy_type == GameTypes.EnemyType.ELITE else &"enemy_kill"
+		var priority: CombatPresentationEvent.Priority = (
+			CombatPresentationEvent.Priority.IMPORTANT
+			if enemy_type in [GameTypes.EnemyType.ELITE, GameTypes.EnemyType.BOSS]
+			else CombatPresentationEvent.Priority.NORMAL
+		)
+		_queue_presentation_event(_make_presentation_event(
+			CombatPresentationEvent.Kind.ENEMY_KILLED,
+			event_id,
+			kill.get("position", Vector2.ZERO),
+			priority,
+			int(kill.get("count", 1)),
+			enemy_type,
+			StringName(kill.get("source_effect_id", &"weapon")),
+		))
+	if _player_hit_this_tick:
+		_queue_presentation_event(_make_presentation_event(
+			CombatPresentationEvent.Kind.PLAYER_HIT,
+			&"player_hit",
+			player_position,
+			CombatPresentationEvent.Priority.NORMAL,
+		))
+
+
+func _record_boss_action_feedback(
+	was_charging: bool,
+	alternate_before: bool,
+	latched_spoke_count: int,
+) -> void:
+	var boss: EnemyEntity = enemy_system.boss_entity()
+	if boss == null:
+		return
+	var volley_fired: bool = boss.barrage_alternate != alternate_before
+	if volley_fired:
+		var volley_count: int = maxi(1, latched_spoke_count)
+		_queue_presentation_event(_make_presentation_event(
+			CombatPresentationEvent.Kind.BOSS_VOLLEY,
+			&"boss_volley",
+			boss.position,
+			CombatPresentationEvent.Priority.IMPORTANT,
+			volley_count,
+			GameTypes.EnemyType.BOSS,
+		))
+	if boss.boss_charge_active and (not was_charging or volley_fired):
+		_queue_presentation_event(_make_presentation_event(
+			CombatPresentationEvent.Kind.BOSS_CHARGE,
+			&"boss_charge",
+			boss.position,
+			CombatPresentationEvent.Priority.IMPORTANT,
+			boss.boss_charge_spoke_count,
+			GameTypes.EnemyType.BOSS,
+		))
+
+
+func _make_presentation_event(
+	kind: CombatPresentationEvent.Kind,
+	event_id: StringName,
+	position: Vector2,
+	priority: CombatPresentationEvent.Priority,
+	count: int = 1,
+	enemy_type: int = -1,
+	source_effect_id: StringName = &"",
+	intensity: float = 1.0,
+) -> CombatPresentationEvent:
+	var event := CombatPresentationEvent.new()
+	event.kind = kind
+	event.event_id = event_id
+	event.position = position
+	event.priority = priority
+	event.count = maxi(1, count)
+	event.source_effect_id = source_effect_id
+	event.intensity = maxf(0.0, intensity)
+	event.tick = state.combat_tick
+	event.combat_tick = state.combat_tick
+	if enemy_type >= 0:
+		event.enemy_type = enemy_type
+		event.enemy_visual_kind = _enemy_visual_kind(enemy_type)
+	return event
+
+
+func _queue_presentation_event(event: CombatPresentationEvent) -> void:
+	if event == null:
+		return
+	var normal_limit: int = (
+		MAX_PRESENTATION_EVENTS_PER_TICK - PRESENTATION_IMPORTANT_RESERVE
+	)
+	if event.priority < CombatPresentationEvent.Priority.IMPORTANT and (
+		_presentation_ordinary_count() >= normal_limit
+	):
+		if _merge_presentation_event(event):
+			return
+		if _replace_lower_priority_presentation_event(event):
+			return
+		state.feedback_event_suppressed_count += 1
+		return
+	if _presentation_events.size() >= MAX_PRESENTATION_EVENTS_PER_TICK:
+		if _merge_presentation_event(event):
+			return
+		if _replace_lower_priority_presentation_event(event):
+			return
+		state.feedback_event_suppressed_count += 1
+		return
+	_presentation_events.append(event)
+	state.feedback_event_emitted_count += 1
+
+
+func _presentation_ordinary_count() -> int:
+	var count: int = 0
+	for event: CombatPresentationEvent in _presentation_events:
+		if event.priority < CombatPresentationEvent.Priority.IMPORTANT:
+			count += 1
+	return count
+
+
+func _replace_lower_priority_presentation_event(
+	incoming: CombatPresentationEvent,
+) -> bool:
+	for index: int in range(_presentation_events.size()):
+		if _presentation_events[index].priority >= incoming.priority:
+			continue
+		_presentation_events[index] = incoming
+		state.feedback_event_suppressed_count += 1
+		return true
+	return false
+
+
+func _merge_presentation_event(incoming: CombatPresentationEvent) -> bool:
+	for existing: CombatPresentationEvent in _presentation_events:
+		if (
+			existing.kind != incoming.kind
+			or existing.event_id != incoming.event_id
+			or existing.source_effect_id != incoming.source_effect_id
+			or existing.enemy_type != incoming.enemy_type
+		):
+			continue
+		existing.count += incoming.count
+		existing.intensity = maxf(existing.intensity, incoming.intensity)
+		existing.position = incoming.position
+		if incoming.priority > existing.priority:
+			existing.priority = incoming.priority
+		return true
+	return false
+
+
+func _record_audio_cue_metrics() -> void:
+	var typed_event_ids: Dictionary[StringName, bool] = {}
+	for event: CombatPresentationEvent in _presentation_events:
+		if event == null:
+			continue
+		var event_id: StringName = event.resolved_event_id()
+		if event_id.is_empty():
+			continue
+		typed_event_ids[event_id] = true
+		var group: StringName = event_id
+		if not event.source_effect_id.is_empty():
+			group = StringName("%s:%s" % [event_id, event.source_effect_id])
+		_record_audio_cue_id(
+			event_id,
+			int(event.priority),
+			group,
+			event.priority == CombatPresentationEvent.Priority.TERMINAL,
+		)
+	for event_id: StringName in _step_events:
+		if event_id == &"chest_pickup" or typed_event_ids.has(event_id):
+			continue
+		_record_audio_cue_id(event_id)
+
+
+func _record_audio_cue_id(
+	event_id: StringName,
+	priority: int = -1,
+	group: StringName = &"",
+	force: bool = false,
+) -> void:
+	if event_id.is_empty():
+		return
+	var resolved_priority: int = priority
+	if resolved_priority < 0:
+		resolved_priority = int(SurvivalFeedback.PRIORITY_BY_EVENT.get(
+			event_id,
+			AudioVoicePool.Priority.NORMAL,
+		))
+	var resolved_group: StringName = event_id if group.is_empty() else group
+	var cooldown_usec: int = int(
+		SurvivalFeedback.COOLDOWN_USEC_BY_EVENT.get(event_id, 0)
+	)
+	var cooldown_ticks: int = ceili(
+		float(cooldown_usec) * float(RunState.TICKS_PER_SECOND) / 1_000_000.0
+	)
+	_audio_cue_admission.try_admit(
+		state.combat_tick,
+		RunState.TICKS_PER_SECOND,
+		resolved_priority,
+		resolved_group,
+		cooldown_ticks,
+		force,
+	)
 
 
 func _apply_passive_recovery() -> void:
@@ -713,15 +1308,37 @@ func _damage_nodes_from_attack(attack: Dictionary, current_tick: int) -> void:
 func _emit_attack_vfx(attack: Dictionary, current_tick: int) -> void:
 	if not bool(attack.get("generated", false)):
 		return
+	var weapon_id := StringName(str(attack.get("weapon_id", "")))
+	var definition: WeaponDefinition = catalog.weapon(weapon_id)
+	if definition == null or definition.behavior not in [
+		GameTypes.WeaponBehavior.MELEE_WAVE,
+		GameTypes.WeaponBehavior.AURA,
+	]:
+		return
 	var origin: Vector2 = attack.get("origin", player_position)
 	var direction: Vector2 = attack.get("direction", Vector2.RIGHT)
 	var range_m: float = maxf(0.4, float(attack.get("range_m", 1.0)))
-	vfx_pool.acquire(
-		origin + direction.normalized() * range_m * 0.4,
+	var aura: bool = definition.behavior == GameTypes.WeaponBehavior.AURA
+	var effect_kind: VfxState.EffectKind = (
+		VfxState.EffectKind.AURA_PULSE if aura else VfxState.EffectKind.ENERGY_WAVE
+	)
+	var effect_position: Vector2 = (
+		origin if aura else origin + direction.normalized() * range_m * 0.4
+	)
+	var color := (
+		Color(0.32, 0.22, 1.0, 0.66) if aura else Color(0.25, 0.88, 1.0, 0.72)
+	)
+	vfx_pool.request(
+		effect_position,
 		minf(4.0, range_m),
 		ATTACK_VFX_LIFETIME,
-		Color(0.25, 0.88, 1.0, 0.72),
+		color,
 		current_tick,
+		VfxPool.PRIORITY_ATTACK,
+		effect_kind,
+		direction,
+		1.0,
+		definition.is_evolved,
 	)
 
 
@@ -784,6 +1401,12 @@ func _build_hud_values() -> Dictionary:
 		"boss_max_hp": state.boss_max_hp,
 		"boss_phase": state.boss_phase,
 		"boss_enrage_stacks": state.boss_enrage_stacks,
+		"kill_chain_count": state.kill_chain_count if state.kill_chain_is_visible() else 0,
+		"kill_chain_remaining_ticks": (
+			maxi(0, RunState.KILL_CHAIN_WINDOW_TICKS - (state.combat_tick - state.kill_chain_last_tick))
+			if state.kill_chain_last_tick >= 0
+			else 0
+		),
 		"stop_active": state.is_stop_active(),
 		"active_enemy": enemy_system.enemy_store.active_count(),
 		"active_projectile": projectile_pool.active_count(),
@@ -794,6 +1417,14 @@ func _build_hud_values() -> Dictionary:
 		"enemy_pool_overflow": enemy_system.enemy_store.overflow_count,
 		"projectile_pool_overflow": projectile_pool.overflow_count,
 		"vfx_pool_overflow": vfx_pool.overflow_count,
+		"vfx_requests": vfx_pool.request_count,
+		"vfx_admitted": vfx_pool.admitted_count,
+		"vfx_suppressed": vfx_pool.generic_drop_count,
+		"important_vfx_dropped": vfx_pool.important_drop_count,
+		"audio_admitted": _audio_cue_admission.admitted_count,
+		"audio_suppressed": _audio_cue_admission.suppressed_count,
+		"feedback_emitted": state.feedback_event_emitted_count,
+		"feedback_suppressed": state.feedback_event_suppressed_count,
 		"xp_pool_overflow_merges": xp_pickup_pool.overflow_merge_count,
 		"events": _step_events.duplicate(),
 	}
@@ -961,7 +1592,6 @@ func _spawn_performance_enemy(serial: int, born_tick: int) -> bool:
 		1.0,
 		1.0,
 		born_tick,
-		false,
 	)
 	if enemy == null:
 		return false
@@ -1080,6 +1710,143 @@ func _rebuild_uniform_grid(current_tick: int) -> void:
 	for enemy: EnemyEntity in enemy_system.enemy_store.entities:
 		if enemy.is_targetable(current_tick):
 			enemy_system.uniform_grid.insert(enemy.entity_id, enemy.position)
+
+
+func _apply_snapshot_markers(snapshot: CombatSnapshot) -> void:
+	var boss: EnemyEntity = enemy_system.boss_entity()
+	if boss != null and boss.boss_charge_active:
+		snapshot.boss_charge_active = true
+		snapshot.boss_charge_position = boss.position
+		snapshot.boss_charge_progress = boss.boss_charge_progress()
+		snapshot.boss_charge_radius = maxf(2.4, boss.body_radius() * 1.6)
+		snapshot.boss_charge_spoke_count = boss.boss_charge_spoke_count
+		if boss.boss_charge_spoke_count > 0 and boss.boss_charge_half_step:
+			snapshot.boss_charge_angle_offset = (
+				TAU * 0.5 / float(boss.boss_charge_spoke_count)
+			)
+	var important: EnemyEntity = _materializing_important_enemy()
+	if important != null:
+		snapshot.important_marker_active = true
+		snapshot.important_marker_kind = (
+			CombatSnapshot.ImportantMarkerKind.BOSS
+			if important.enemy_type == GameTypes.EnemyType.BOSS
+			else CombatSnapshot.ImportantMarkerKind.ELITE
+		)
+		snapshot.important_marker_position = important.position
+		snapshot.important_marker_progress = important.materialization_progress(
+			state.combat_tick
+		)
+		snapshot.important_marker_radius = maxf(1.0, important.body_radius() * 1.45)
+	if (
+		_absorption_started_tick >= 0
+		and state.combat_tick < _absorption_started_tick + ABSORPTION_DISPLAY_TICKS
+	):
+		var progress: float = clampf(
+			float(state.combat_tick - _absorption_started_tick)
+			/ float(ABSORPTION_DISPLAY_TICKS),
+			0.0,
+			1.0,
+		)
+		snapshot.absorption_active = true
+		snapshot.absorption_position = Vector2.ZERO
+		snapshot.absorption_progress = progress
+		snapshot.absorption_radius = lerpf(
+			CombatEnvelope.ARENA_HALF_EXTENT,
+			0.8,
+			progress * progress * (3.0 - 2.0 * progress),
+		)
+
+
+func _materializing_important_enemy() -> EnemyEntity:
+	var elite: EnemyEntity = null
+	for entity_id: int in enemy_system.enemy_store.snapshot_ids_sorted():
+		var enemy: EnemyEntity = enemy_system.enemy_store.get_by_id(entity_id)
+		if enemy == null or not enemy.is_materializing(state.combat_tick):
+			continue
+		if enemy.enemy_type == GameTypes.EnemyType.BOSS:
+			return enemy
+		if enemy.enemy_type == GameTypes.EnemyType.ELITE and elite == null:
+			elite = enemy
+	return elite
+
+
+func _enemy_visual_kind(enemy_type: int) -> int:
+	match enemy_type:
+		GameTypes.EnemyType.SWARMER:
+			return CombatSnapshot.EnemyVisualKind.SWARMER
+		GameTypes.EnemyType.BULWARK:
+			return CombatSnapshot.EnemyVisualKind.BULWARK
+		GameTypes.EnemyType.SHOOTER:
+			return CombatSnapshot.EnemyVisualKind.SHOOTER
+		GameTypes.EnemyType.ELITE:
+			return CombatSnapshot.EnemyVisualKind.ELITE
+		GameTypes.EnemyType.BOSS:
+			return CombatSnapshot.EnemyVisualKind.BOSS
+	return CombatSnapshot.EnemyVisualKind.PURSUER
+
+
+func _projectile_visual_kind(projectile: ProjectileState) -> int:
+	if projectile.faction == ProjectileState.FACTION_ENEMY:
+		return CombatSnapshot.ProjectileVisualKind.ENEMY
+	var lineage_id: StringName = projectile.source_effect_id
+	var definition: WeaponDefinition = catalog.weapon(projectile.weapon_id)
+	if definition != null:
+		lineage_id = definition.lineage_id
+	match lineage_id:
+		&"resonance_wave":
+			return CombatSnapshot.ProjectileVisualKind.RESONANCE_WAVE
+		&"homing_core":
+			return CombatSnapshot.ProjectileVisualKind.HOMING_CORE
+		&"directional_needle":
+			return CombatSnapshot.ProjectileVisualKind.DIRECTIONAL_NEEDLE
+		&"arc_crystal":
+			return CombatSnapshot.ProjectileVisualKind.ARC_CRYSTAL
+		&"returning_ring":
+			return CombatSnapshot.ProjectileVisualKind.RETURNING_RING
+		&"orbital_array":
+			return CombatSnapshot.ProjectileVisualKind.ORBITAL_ARRAY
+		&"mass_projectile":
+			return CombatSnapshot.ProjectileVisualKind.MASS_PROJECTILE
+		&"zero_field":
+			return CombatSnapshot.ProjectileVisualKind.ZERO_FIELD
+	return CombatSnapshot.ProjectileVisualKind.DEFAULT
+
+
+func _projectile_custom_data(projectile: ProjectileState) -> Color:
+	var definition: WeaponDefinition = catalog.weapon(projectile.weapon_id)
+	var evolved: bool = definition != null and definition.is_evolved
+	var progress: float = 0.0
+	if projectile.total_lifetime_ticks > 0:
+		progress = clampf(
+			projectile.elapsed_ticks / float(projectile.total_lifetime_ticks),
+			0.0,
+			1.0,
+		)
+	return Color(1.0 if evolved else 0.0, progress, 0.0, 0.0)
+
+
+func _enemy_kill_color(enemy_type: int) -> Color:
+	match enemy_type:
+		GameTypes.EnemyType.SWARMER:
+			return Color(1.0, 0.58, 0.18, 0.82)
+		GameTypes.EnemyType.BULWARK:
+			return Color(0.9, 0.24, 0.16, 0.84)
+		GameTypes.EnemyType.SHOOTER:
+			return Color(1.0, 0.22, 0.55, 0.84)
+		GameTypes.EnemyType.ELITE:
+			return Color(1.0, 0.78, 0.18, 0.9)
+		GameTypes.EnemyType.BOSS:
+			return Color(1.0, 0.12, 0.16, 0.94)
+	return Color(1.0, 0.34, 0.22, 0.82)
+
+
+func _enemy_kill_effect_kind(enemy_type: int) -> VfxState.EffectKind:
+	match enemy_type:
+		GameTypes.EnemyType.SWARMER, GameTypes.EnemyType.SHOOTER:
+			return VfxState.EffectKind.ENERGY_WAVE
+		GameTypes.EnemyType.BULWARK, GameTypes.EnemyType.ELITE, GameTypes.EnemyType.BOSS:
+			return VfxState.EffectKind.AURA_PULSE
+	return VfxState.EffectKind.GENERIC
 
 
 func _enemy_height_scale(enemy_type: GameTypes.EnemyType) -> float:

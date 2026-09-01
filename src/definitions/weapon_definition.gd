@@ -15,7 +15,12 @@ extends Resource
 @export var cooldown_ticks_by_level: PackedInt32Array = PackedInt32Array()
 @export var amount_by_level: PackedInt32Array = PackedInt32Array()
 @export var projectile_speed_by_level: PackedFloat32Array = PackedFloat32Array()
-@export var area_by_level: PackedFloat32Array = PackedFloat32Array()
+@export var range_by_level: PackedFloat32Array = PackedFloat32Array()
+@export var projectile_radius_by_level: PackedFloat32Array = PackedFloat32Array()
+@export var effect_radius_by_level: PackedFloat32Array = PackedFloat32Array()
+@export var range_scales_with_area: bool = false
+@export var projectile_radius_scales_with_area: bool = false
+@export var effect_radius_scales_with_area: bool = false
 @export var duration_ticks_by_level: PackedInt32Array = PackedInt32Array()
 @export var pierce_by_level: PackedInt32Array = PackedInt32Array()
 @export var critical_chance: float = 0.0
@@ -39,8 +44,34 @@ func projectile_speed_at(level: int) -> float:
 	return _float_at(projectile_speed_by_level, level)
 
 
-func area_at(level: int) -> float:
-	return _float_at(area_by_level, level)
+func range_at(level: int) -> float:
+	return _float_at(range_by_level, level)
+
+
+func projectile_radius_at(level: int) -> float:
+	return _float_at(projectile_radius_by_level, level)
+
+
+func effect_radius_at(level: int) -> float:
+	return _float_at(effect_radius_by_level, level)
+
+
+func effective_range_at(level: int, area_multiplier: float) -> float:
+	return range_at(level) * _area_scale(area_multiplier, range_scales_with_area)
+
+
+func effective_projectile_radius_at(level: int, area_multiplier: float) -> float:
+	return (
+		projectile_radius_at(level)
+		* _area_scale(area_multiplier, projectile_radius_scales_with_area)
+	)
+
+
+func effective_effect_radius_at(level: int, area_multiplier: float) -> float:
+	return (
+		effect_radius_at(level)
+		* _area_scale(area_multiplier, effect_radius_scales_with_area)
+	)
 
 
 func duration_ticks_at(level: int) -> int:
@@ -63,3 +94,7 @@ func _int_at(values: PackedInt32Array, level: int) -> int:
 		return 0
 	var index: int = clampi(level - 1, 0, values.size() - 1)
 	return values[index]
+
+
+func _area_scale(area_multiplier: float, enabled: bool) -> float:
+	return maxf(0.0, area_multiplier) if enabled else 1.0

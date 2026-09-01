@@ -2,9 +2,42 @@ class_name CombatSnapshot
 extends RefCounted
 
 
+enum EnemyVisualKind {
+	PURSUER,
+	SWARMER,
+	BULWARK,
+	SHOOTER,
+	ELITE,
+	BOSS,
+}
+
+enum ProjectileVisualKind {
+	DEFAULT,
+	RESONANCE_WAVE,
+	HOMING_CORE,
+	DIRECTIONAL_NEEDLE,
+	ARC_CRYSTAL,
+	RETURNING_RING,
+	ORBITAL_ARRAY,
+	MASS_PROJECTILE,
+	ZERO_FIELD,
+	ENEMY,
+}
+
+enum ImportantMarkerKind {
+	NONE,
+	ELITE,
+	BOSS,
+}
+
+
 var player_position: Vector2 = Vector2.ZERO
 var enemy_transforms: Array[Transform3D] = []
+var enemy_visual_kinds: PackedInt32Array = PackedInt32Array()
+var enemy_visual_custom_data: PackedColorArray = PackedColorArray()
 var projectile_transforms: Array[Transform3D] = []
+var projectile_visual_kinds: PackedInt32Array = PackedInt32Array()
+var projectile_visual_custom_data: PackedColorArray = PackedColorArray()
 var vfx_transforms: Array[Transform3D] = []
 var vfx_colors: Array[Color] = []
 var vfx_custom_data: Array[Color] = []
@@ -20,6 +53,25 @@ var active_xp_count: int = 0
 var active_pickup_count: int = 0
 var active_node_count: int = 0
 var hud_values: Dictionary = {}
+var presentation_events: Array[CombatPresentationEvent] = []
+
+var boss_charge_active: bool = false
+var boss_charge_position: Vector2 = Vector2.ZERO
+var boss_charge_progress: float = 0.0
+var boss_charge_radius: float = 1.0
+var boss_charge_spoke_count: int = 0
+var boss_charge_angle_offset: float = 0.0
+
+var important_marker_active: bool = false
+var important_marker_kind: ImportantMarkerKind = ImportantMarkerKind.NONE
+var important_marker_position: Vector2 = Vector2.ZERO
+var important_marker_progress: float = 0.0
+var important_marker_radius: float = 1.0
+
+var absorption_active: bool = false
+var absorption_position: Vector2 = Vector2.ZERO
+var absorption_progress: float = 0.0
+var absorption_radius: float = 1.0
 
 
 func _init(
@@ -34,6 +86,11 @@ func _init(
 	p_xp_transforms: Array[Transform3D] = [],
 	p_pickup_transforms: Array[Transform3D] = [],
 	p_node_transforms: Array[Transform3D] = [],
+	p_enemy_visual_kinds: PackedInt32Array = PackedInt32Array(),
+	p_enemy_visual_custom_data: PackedColorArray = PackedColorArray(),
+	p_projectile_visual_kinds: PackedInt32Array = PackedInt32Array(),
+	p_projectile_visual_custom_data: PackedColorArray = PackedColorArray(),
+	p_presentation_events: Array[CombatPresentationEvent] = [],
 ) -> void:
 	player_position = p_player_position
 	enemy_transforms = p_enemy_transforms
@@ -45,6 +102,11 @@ func _init(
 	xp_transforms = p_xp_transforms
 	pickup_transforms = p_pickup_transforms
 	node_transforms = p_node_transforms
+	enemy_visual_kinds = p_enemy_visual_kinds
+	enemy_visual_custom_data = p_enemy_visual_custom_data
+	projectile_visual_kinds = p_projectile_visual_kinds
+	projectile_visual_custom_data = p_projectile_visual_custom_data
+	presentation_events = p_presentation_events
 	active_enemy_count = enemy_transforms.size()
 	active_projectile_count = projectile_transforms.size()
 	active_vfx_count = vfx_transforms.size()

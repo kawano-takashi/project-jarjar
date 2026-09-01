@@ -4,6 +4,7 @@ extends RefCounted
 
 const TICKS_PER_SECOND: int = 60
 const BOSS_START_TICK: int = 36000
+const KILL_CHAIN_WINDOW_TICKS: int = 90
 
 var run_seed: int = 0
 var rng_streams: RunRngStreams = null
@@ -30,6 +31,7 @@ var pending_chest_sources: Array[int] = []
 var opened_chests: int = 0
 var evolution_count: int = 0
 var boss_spawned: bool = false
+var boss_transition_started: bool = false
 var boss_defeated: bool = false
 var boss_phase: int = 0
 var boss_enrage_stacks: int = 0
@@ -45,6 +47,29 @@ var total_kills: int = 0
 var normal_kills: int = 0
 var elite_kills: int = 0
 var boss_kills: int = 0
+var absorbed_normal_count: int = 0
+var absorbed_enemy_projectile_count: int = 0
+var kill_chain_count: int = 0
+var kill_chain_last_tick: int = -1
+var kill_chain_accent_milestone: int = 0
+var weapon_hit_count: int = 0
+var weapon_kill_count: int = 0
+var visible_weapon_hit_count: int = 0
+var visible_weapon_kill_count: int = 0
+var offscreen_weapon_hit_count: int = 0
+var offscreen_weapon_kill_count: int = 0
+var max_weapon_hit_center_distance: float = 0.0
+var max_weapon_kill_center_distance: float = 0.0
+var max_weapon_effect_outer_distance: float = 0.0
+var visible_enemy_sample_count: int = 0
+var visible_enemy_count_total: int = 0
+var engaged_enemy_count_total: int = 0
+var materializing_enemy_count_total: int = 0
+var peak_visible_enemy_count: int = 0
+var peak_engaged_enemy_count: int = 0
+var peak_materializing_enemy_count: int = 0
+var feedback_event_emitted_count: int = 0
+var feedback_event_suppressed_count: int = 0
 var weapon_damage_by_lineage: Dictionary[StringName, float] = {}
 var recent_damage_samples: Array[DamageSample] = []
 
@@ -85,6 +110,46 @@ func record_weapon_damage(lineage_id: StringName, amount: float) -> void:
 	weapon_damage_by_lineage[lineage_id] = (
 		weapon_damage_by_lineage.get(lineage_id, 0.0) + amount
 	)
+
+
+func record_kill_chain(current_tick: int) -> int:
+	if kill_chain_last_tick >= 0 and current_tick - kill_chain_last_tick <= KILL_CHAIN_WINDOW_TICKS:
+		kill_chain_count += 1
+	else:
+		kill_chain_count = 1
+		kill_chain_accent_milestone = 0
+	kill_chain_last_tick = current_tick
+	var milestone: int = _kill_chain_milestone(kill_chain_count)
+	if milestone > kill_chain_accent_milestone:
+		kill_chain_accent_milestone = milestone
+		return milestone
+	return 0
+
+
+func kill_chain_is_visible() -> bool:
+	return (
+		kill_chain_count >= 3
+		and kill_chain_last_tick >= 0
+		and combat_tick - kill_chain_last_tick <= KILL_CHAIN_WINDOW_TICKS
+	)
+
+
+func record_visible_enemy_sample(visible_count: int, engaged_count: int, materializing_count: int) -> void:
+	visible_enemy_sample_count += 1
+	visible_enemy_count_total += maxi(0, visible_count)
+	engaged_enemy_count_total += maxi(0, engaged_count)
+	materializing_enemy_count_total += maxi(0, materializing_count)
+	peak_visible_enemy_count = maxi(peak_visible_enemy_count, visible_count)
+	peak_engaged_enemy_count = maxi(peak_engaged_enemy_count, engaged_count)
+	peak_materializing_enemy_count = maxi(peak_materializing_enemy_count, materializing_count)
+
+
+func _kill_chain_milestone(count: int) -> int:
+	if count in [10, 25, 50, 100]:
+		return count
+	if count > 100 and count % 50 == 0:
+		return count
+	return 0
 
 
 func is_invulnerable() -> bool:

@@ -25,6 +25,7 @@ const StrictChestActionScript = preload("res://src/ui/strict_chest_action.gd")
 @onready var _pause_resume: Button = %PauseResume
 @onready var _pause_settings: Button = %PauseSettings
 @onready var _pause_title: Button = %PauseTitle
+@onready var _pause_build: Label = %PauseBuild
 @onready var _evolution_guide: Label = %EvolutionGuide
 @onready var _settings: SettingsOverlay = %SettingsOverlay
 @onready var _title_confirmation: JarjarConfirmationDialog = %TitleConfirmation
@@ -34,6 +35,7 @@ var _active_offer_serial: int = -1
 var _active_chest_serial: int = -1
 var _chest_remaining: float = 0.0
 var _chest_continue_emitted: bool = false
+var _pause_build_values: Dictionary = {}
 
 
 func _ready() -> void:
@@ -121,6 +123,12 @@ func show_chest_outcome(outcome: Variant) -> void:
 	FocusController.grab_focus_deferred(_chest_continue)
 
 
+func update_build_from_values(values: Dictionary) -> void:
+	_pause_build_values = values.duplicate(true)
+	if is_node_ready():
+		_refresh_pause_build()
+
+
 func hide_automatic_modal() -> void:
 	var focus_owner: Control = get_viewport().gui_get_focus_owner()
 	if (
@@ -142,6 +150,7 @@ func open_pause() -> bool:
 	if automatic_modal_visible() or _pause_modal.visible:
 		return false
 	_pause_modal.visible = true
+	_refresh_pause_build()
 	FocusController.grab_focus_deferred(_pause_resume)
 	return true
 
@@ -187,6 +196,7 @@ func debug_state() -> Dictionary:
 		"chest_heading": _chest_heading.text,
 		"chest_result": _chest_result.text,
 		"evolution_guide": _evolution_guide.text,
+		"pause_build": _pause_build.text,
 	}
 
 
@@ -322,6 +332,32 @@ func _refresh_evolution_guide() -> void:
 			evolved_weapon.display_name,
 		])
 	_evolution_guide.text = "\n".join(lines)
+
+
+func _refresh_pause_build() -> void:
+	var weapon_lines := PackedStringArray()
+	var passive_lines := PackedStringArray()
+	var weapons_value: Variant = _pause_build_values.get("weapons", [])
+	var passives_value: Variant = _pause_build_values.get("passives", [])
+	if weapons_value is Array:
+		for entry: Variant in weapons_value as Array:
+			var weapon_name: String = str(_read_property(entry, &"display_name", "武器"))
+			var weapon_level: int = maxi(1, int(_read_property(entry, &"level", 1)))
+			var evolved: bool = bool(_read_property(entry, &"evolved", false))
+			weapon_lines.append("%s  %s" % [
+				weapon_name,
+				"EVOLVED" if evolved else "Lv %d" % weapon_level,
+			])
+	if passives_value is Array:
+		for entry: Variant in passives_value as Array:
+			passive_lines.append("%s  Lv %d" % [
+				str(_read_property(entry, &"display_name", "パッシブ")),
+				maxi(1, int(_read_property(entry, &"level", 1))),
+			])
+	_pause_build.text = "武器　%s\nパッシブ　%s" % [
+		"　｜　".join(weapon_lines) if not weapon_lines.is_empty() else "なし",
+		"　｜　".join(passive_lines) if not passive_lines.is_empty() else "なし",
+	]
 
 
 func _read_property(value: Variant, property_name: StringName, fallback: Variant) -> Variant:

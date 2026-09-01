@@ -3,6 +3,8 @@ extends Control
 
 
 const FEEDBACK_SECONDS: float = 0.45
+const KILL_CHAIN_SECONDS: float = 1.5
+const KILL_CHAIN_VISIBLE_MINIMUM: int = 3
 
 @onready var _time_value: Label = %TimeValue
 @onready var _level_kills: Label = %LevelKills
@@ -28,22 +30,36 @@ const FEEDBACK_SECONDS: float = 0.45
 	%PassiveSlot4,
 ]
 @onready var _feedback_label: Label = %FeedbackLabel
+@onready var _kill_chain: Label = %KillChain
 @onready var _debug_overlay: Label = %DebugOverlay
 
 var _feedback_remaining: float = 0.0
+var _kill_chain_remaining: float = 0.0
+var _kill_chain_count: int = 0
+var _last_total_kills: int = -1
+var _reduce_motion: bool = false
+var _reduce_flashes: bool = false
 
 
 func _ready() -> void:
 	_feedback_label.visible = false
+	_kill_chain.visible = false
+	_debug_overlay.visible = false
 	update_from_values({})
 
 
 func _process(delta: float) -> void:
-	if _feedback_remaining <= 0.0 or delta <= 0.0:
+	if delta <= 0.0:
 		return
-	_feedback_remaining = maxf(0.0, _feedback_remaining - delta)
-	if _feedback_remaining <= 0.0:
-		_feedback_label.visible = false
+	if _feedback_remaining > 0.0:
+		_feedback_remaining = maxf(0.0, _feedback_remaining - delta)
+		if _feedback_remaining <= 0.0:
+			_feedback_label.visible = false
+	if _kill_chain_remaining > 0.0:
+		_kill_chain_remaining = maxf(0.0, _kill_chain_remaining - delta)
+		if _kill_chain_remaining <= 0.0:
+			_kill_chain_count = 0
+			_kill_chain.visible = false
 
 
 func update_from_snapshot(snapshot: Variant) -> void:
@@ -66,6 +82,14 @@ func update_from_values(values: Dictionary) -> void:
 	var level: int = int(values.get("level", values.get("player_level", 1)))
 	var total_kills: int = int(values.get("total_kills", values.get("kills", 0)))
 	_level_kills.text = "LEVEL %d　撃破 %d" % [level, total_kills]
+	if values.has("kill_chain_count"):
+		_set_kill_chain(
+			maxi(0, int(values.get("kill_chain_count", 0))),
+			maxf(0.0, float(values.get("kill_chain_remaining_ticks", 0))) / 60.0,
+		)
+	elif _last_total_kills >= 0 and total_kills > _last_total_kills:
+		_register_kills(total_kills - _last_total_kills)
+	_last_total_kills = total_kills
 
 	var current_hp: float = maxf(0.0, float(values.get("current_hp", 100.0)))
 	var max_hp: float = maxf(1.0, float(values.get("max_hp", 100.0)))
@@ -108,6 +132,26 @@ func present_evolution(reduce_motion: bool = false, reduce_flashes: bool = false
 	_show_feedback("EVOLUTION", Color(0.76, 0.54, 1.0, 1.0), reduce_motion, reduce_flashes)
 
 
+func present_event(event: CombatPresentationEvent) -> void:
+	if event == null:
+		return
+	# The snapshot is authoritative for chain count. Kill events from that same
+	# tick only drive audiovisual feedback and must not increment it a second time.
+	if event.kind == CombatPresentationEvent.Kind.CHAIN_MILESTONE:
+		_set_kill_chain(event.count, KILL_CHAIN_SECONDS)
+
+
+func set_accessibility(reduce_motion: bool, reduce_flashes: bool) -> void:
+	_reduce_motion = reduce_motion
+	_reduce_flashes = reduce_flashes
+	if _kill_chain.visible:
+		_kill_chain.modulate.a = 0.82 if reduce_flashes else 1.0
+
+
+func set_debug_visible(should_show: bool) -> void:
+	_debug_overlay.visible = should_show
+
+
 func debug_state() -> Dictionary:
 	var weapons := PackedStringArray()
 	var passives := PackedStringArray()
@@ -126,6 +170,9 @@ func debug_state() -> Dictionary:
 		"passives": passives,
 		"feedback_visible": _feedback_label.visible,
 		"feedback": _feedback_label.text,
+		"kill_chain_visible": _kill_chain.visible,
+		"kill_chain": _kill_chain.text,
+		"debug_visible": _debug_overlay.visible,
 	}
 
 
@@ -149,7 +196,7 @@ func _update_build_slots(labels: Array[Label], value: Variant, weapon: bool) -> 
 			display_name = "武器" if weapon else "パッシブ"
 		var level: int = maxi(1, int(_read_property(entry, &"level", 1)))
 		var evolved: bool = bool(_read_property(entry, &"evolved", false))
-		label.text = "%s\n%s" % [display_name, "EVOLVED" if evolved else "Lv %d" % level]
+		label.text = "%s\n%s" % [display_name, "EVO" if evolved else "Lv%d" % level]
 		label.modulate = Color(1.0, 0.8, 0.38, 1.0) if evolved else Color.WHITE
 
 
@@ -182,14 +229,47 @@ func _update_debug(values: Dictionary) -> void:
 func _show_feedback(
 	text: String,
 	color: Color,
-	_reduce_motion: bool,
+	reduce_motion: bool,
 	reduce_flashes: bool,
 ) -> void:
 	_feedback_label.text = text
 	_feedback_label.modulate = color
 	_feedback_label.add_theme_constant_override("outline_size", 3 if reduce_flashes else 5)
+	_feedback_label.modulate.a = 0.82 if reduce_flashes else 1.0
 	_feedback_label.visible = true
-	_feedback_remaining = FEEDBACK_SECONDS
+	_feedback_remaining = FEEDBACK_SECONDS * (0.75 if reduce_motion else 1.0)
+
+
+func _register_kills(count: int) -> void:
+	if count <= 0:
+		return
+	if _kill_chain_remaining <= 0.0:
+		_kill_chain_count = 0
+	_kill_chain_count += count
+	_kill_chain_remaining = KILL_CHAIN_SECONDS
+	_refresh_kill_chain()
+
+
+func _set_kill_chain(count: int, remaining_seconds: float) -> void:
+	_kill_chain_count = count
+	_kill_chain_remaining = remaining_seconds
+	_refresh_kill_chain()
+
+
+func _refresh_kill_chain() -> void:
+	_kill_chain.visible = (
+		_kill_chain_count >= KILL_CHAIN_VISIBLE_MINIMUM
+		and _kill_chain_remaining > 0.0
+	)
+	if not _kill_chain.visible:
+		return
+	_kill_chain.text = "CHAIN ×%d" % _kill_chain_count
+	_kill_chain.modulate = Color(1.0, 0.77, 0.28, 0.82 if _reduce_flashes else 1.0)
+	if not _reduce_motion:
+		_kill_chain.pivot_offset = _kill_chain.size * 0.5
+		_kill_chain.scale = Vector2(1.08, 1.08)
+		var tween: Tween = _kill_chain.create_tween()
+		tween.tween_property(_kill_chain, "scale", Vector2.ONE, 0.10)
 
 
 func _format_time(elapsed_seconds: float, boss_active: bool) -> String:

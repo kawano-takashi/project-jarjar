@@ -18,6 +18,8 @@ const SURVIVAL_OVERLAY_SCENE: PackedScene = preload("res://scenes/ui/survival_ov
 const RESULT_SCENE_PATH: String = "res://scenes/ui/result_screen.tscn"
 const FAILED_SCENE_PATH: String = "res://scenes/ui/failed_screen.tscn"
 const FIXED_TICK_SECONDS: float = 1.0 / 60.0
+const BOSS_DEFEAT_HOLD_TICKS: int = 48
+const PLAYER_DEFEAT_HOLD_TICKS: int = 27
 
 var _launch_valid: bool = false
 var _launch: Dictionary = {}
@@ -34,6 +36,11 @@ var _tutorial_overlay: TutorialOverlay = null
 var _audio_pool: AudioVoicePool = null
 var _feedback: SurvivalFeedback = null
 var _release_smoke_validator: RefCounted = null
+var _terminal_hold_phase: GameTypes.RunPhase = GameTypes.RunPhase.BOOT
+var _terminal_hold_ticks_remaining: int = 0
+var _terminal_transition_queued: bool = false
+var _terminal_focus_position: Vector2 = Vector2.ZERO
+var _terminal_event_audio_received: bool = false
 
 var run_state: RunState = null
 var combat_simulation: CombatSimulation = null
@@ -136,6 +143,7 @@ func _process(delta: float) -> void:
 
 func _physics_process(_delta: float) -> void:
 	_advance_smoke_quit()
+	_advance_terminal_hold_tick()
 	if run_state == null or combat_simulation == null:
 		return
 	_resolve_terminal_state()
@@ -178,6 +186,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		_on_pause_resume_requested()
 	elif _survival_overlay.open_pause():
 		_manual_paused = true
+		if _arena != null:
+			_arena.set_simulation_paused(true)
 	get_viewport().set_input_as_handled()
 
 
@@ -191,6 +201,22 @@ func is_manual_paused() -> bool:
 
 func automatic_modal_chain_active() -> bool:
 	return _automatic_modal_chain_active
+
+
+func terminal_presentation_active() -> bool:
+	return _terminal_hold_ticks_remaining > 0 or _terminal_transition_queued
+
+
+static func terminal_hold_ticks_for_phase(phase: GameTypes.RunPhase) -> int:
+	if phase == GameTypes.RunPhase.RESULT:
+		return BOSS_DEFEAT_HOLD_TICKS
+	if phase == GameTypes.RunPhase.FAILED:
+		return PLAYER_DEFEAT_HOLD_TICKS
+	return 0
+
+
+static func terminal_hold_ticks_after_physics_tick(remaining_ticks: int) -> int:
+	return maxi(0, remaining_ticks - 1)
 
 
 func start_new_run_with_seed(run_seed: int) -> bool:
@@ -207,6 +233,11 @@ func start_new_run_with_seed(run_seed: int) -> bool:
 	)
 	combat_simulation = CombatSimulation.new()
 	combat_simulation.initialize(run_state, _definition_catalog)
+	if _audio_pool != null:
+		_audio_pool.reset_admission_metrics()
+	if _feedback != null:
+		_feedback.reset_run_metrics()
+	_reset_terminal_hold()
 	_manual_paused = false
 	_automatic_modal_chain_active = false
 	return _show_combat_arena()
@@ -221,6 +252,7 @@ func _show_title() -> void:
 	_clear_active_screen()
 	run_state = null
 	combat_simulation = null
+	_reset_terminal_hold()
 	_manual_paused = false
 	_automatic_modal_chain_active = false
 	_logical_phase = GameTypes.RunPhase.TITLE
@@ -249,6 +281,11 @@ func _show_combat_arena() -> bool:
 	_active_screen = _arena
 	add_child(_arena)
 	_arena.initialize(combat_simulation)
+	var launch_mode: StringName = _launch.get("mode", LaunchArgumentsScript.MODE_NORMAL)
+	_arena.set_debug_overlay_visible(launch_mode in [
+		LaunchArgumentsScript.MODE_QA_SCENARIO,
+		LaunchArgumentsScript.MODE_PERFORMANCE,
+	])
 
 	var overlay_node: Node = SURVIVAL_OVERLAY_SCENE.instantiate()
 	if not overlay_node is SurvivalOverlay:
@@ -281,10 +318,10 @@ func _sync_run_phase() -> void:
 			_present_chest_outcome()
 		GameTypes.RunPhase.RESULT:
 			if not _active_screen is ResultScreen:
-				_show_result.call_deferred()
+				_sync_terminal_presentation(GameTypes.RunPhase.RESULT)
 		GameTypes.RunPhase.FAILED:
 			if not _active_screen is FailedScreen:
-				_show_failed.call_deferred()
+				_sync_terminal_presentation(GameTypes.RunPhase.FAILED)
 		GameTypes.RunPhase.COMBAT:
 			if _survival_overlay != null and _survival_overlay.automatic_modal_visible():
 				_survival_overlay.hide_automatic_modal()
@@ -359,6 +396,8 @@ func _on_pause_resume_requested() -> void:
 	if not _manual_paused:
 		return
 	_manual_paused = false
+	if _arena != null:
+		_arena.set_simulation_paused(false)
 	if _survival_overlay != null and _survival_overlay.pause_visible():
 		_survival_overlay.close_pause()
 
@@ -380,19 +419,102 @@ func _resolve_terminal_state() -> void:
 func _present_snapshot(snapshot: CombatSnapshot, delta: float) -> void:
 	if _arena != null and snapshot != null:
 		_arena.present_snapshot(snapshot, delta)
+	if _survival_overlay != null and snapshot != null:
+		_survival_overlay.update_build_from_values(snapshot.hud_values)
+	if snapshot != null:
+		_terminal_focus_position = snapshot.player_position
+		if snapshot.important_marker_active:
+			_terminal_focus_position = snapshot.important_marker_position
 
 
 func _consume_snapshot_events(snapshot: CombatSnapshot) -> void:
 	if snapshot == null:
 		return
+	var played_event_ids: Dictionary[StringName, bool] = {}
+	for event: CombatPresentationEvent in snapshot.presentation_events:
+		if event == null:
+			continue
+		var typed_event_id: StringName = event.resolved_event_id()
+		if _arena != null:
+			_arena.present_event(event)
+		if _feedback != null:
+			_feedback.play_presentation_event(event)
+		if not typed_event_id.is_empty():
+			played_event_ids[typed_event_id] = true
+			_tutorial_controller.notify_context(typed_event_id)
+		if event.kind == CombatPresentationEvent.Kind.BOSS_DEFEATED:
+			_terminal_focus_position = event.position
+			_terminal_event_audio_received = true
+		elif event.kind == CombatPresentationEvent.Kind.PLAYER_DEFEATED:
+			_terminal_focus_position = event.position
+			_terminal_event_audio_received = true
 	var events_value: Variant = snapshot.hud_values.get("events", [])
 	if not events_value is Array:
 		return
 	for raw_event: Variant in events_value as Array:
 		var event_id := StringName(str(raw_event))
-		if event_id != &"chest_pickup":
+		if event_id != &"chest_pickup" and not played_event_ids.has(event_id):
 			_feedback.play(event_id)
 		_tutorial_controller.notify_context(event_id)
+
+
+func _sync_terminal_presentation(phase: GameTypes.RunPhase) -> void:
+	if _terminal_transition_queued:
+		return
+	if _terminal_hold_phase == phase:
+		if _terminal_hold_ticks_remaining <= 0:
+			_queue_terminal_summary(phase)
+		return
+	_terminal_hold_phase = phase
+	_terminal_hold_ticks_remaining = terminal_hold_ticks_for_phase(phase)
+	_manual_paused = false
+	if _survival_overlay != null and _survival_overlay.pause_visible():
+		_survival_overlay.close_pause()
+	if _arena != null:
+		var prefer_important: bool = phase == GameTypes.RunPhase.RESULT
+		var focus_position: Vector2 = _terminal_focus_position
+		if focus_position == Vector2.ZERO:
+			focus_position = _arena.terminal_focus_position(prefer_important)
+		_terminal_focus_position = focus_position
+		_arena.begin_terminal_presentation(phase, focus_position)
+	else:
+		_terminal_hold_ticks_remaining = 0
+	if not _terminal_event_audio_received and _feedback != null:
+		_feedback.play(
+			&"boss_defeated" if phase == GameTypes.RunPhase.RESULT else &"player_defeated",
+			AudioVoicePool.Priority.TERMINAL,
+			&"terminal",
+			1.0,
+			true,
+		)
+
+
+func _advance_terminal_hold_tick() -> void:
+	if _terminal_hold_ticks_remaining <= 0:
+		return
+	_terminal_hold_ticks_remaining = terminal_hold_ticks_after_physics_tick(
+		_terminal_hold_ticks_remaining
+	)
+	if _terminal_hold_ticks_remaining <= 0:
+		_queue_terminal_summary(_terminal_hold_phase)
+
+
+func _queue_terminal_summary(phase: GameTypes.RunPhase) -> void:
+	if _terminal_transition_queued:
+		return
+	_terminal_transition_queued = true
+	if phase == GameTypes.RunPhase.RESULT:
+		_show_result.call_deferred()
+	elif phase == GameTypes.RunPhase.FAILED:
+		_show_failed.call_deferred()
+
+
+func _reset_terminal_hold() -> void:
+	_terminal_hold_phase = GameTypes.RunPhase.BOOT
+	_terminal_hold_ticks_remaining = 0
+	_terminal_transition_queued = false
+	_terminal_focus_position = Vector2.ZERO
+	_terminal_event_audio_received = false
 
 
 func _show_result() -> bool:
@@ -418,6 +540,7 @@ func _show_run_summary(scene_path: String, phase: GameTypes.RunPhase) -> bool:
 	screen.connect("exit_requested", _exit_game)
 	screen.call("initialize", run_state, _definition_catalog)
 	add_child(screen)
+	_reset_terminal_hold()
 	_logical_phase = phase
 	_manual_paused = false
 	_refresh_tutorial_overlay()
@@ -496,7 +619,11 @@ func _advance_release_smoke() -> void:
 	if _release_smoke_validator == null:
 		return
 	var stage: StringName = _release_smoke_validator.call("stage_name")
-	if stage == &"awaiting_first_failure" and _logical_phase == GameTypes.RunPhase.FAILED:
+	if (
+		stage == &"awaiting_first_failure"
+		and _logical_phase == GameTypes.RunPhase.FAILED
+		and _active_screen is FailedScreen
+	):
 		var first_result: Dictionary = _release_smoke_validator.call(
 			"validate_first_failure",
 			self,
@@ -509,7 +636,11 @@ func _advance_release_smoke() -> void:
 			self,
 		)
 		_release_smoke_step_succeeded(retry_result)
-	elif stage == &"awaiting_second_failure" and _logical_phase == GameTypes.RunPhase.FAILED:
+	elif (
+		stage == &"awaiting_second_failure"
+		and _logical_phase == GameTypes.RunPhase.FAILED
+		and _active_screen is FailedScreen
+	):
 		var second_result: Dictionary = _release_smoke_validator.call(
 			"validate_second_failure",
 			self,

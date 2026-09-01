@@ -4,7 +4,7 @@ extends SceneTree
 const BotScript = preload("res://tests/balance/difficulty_calibration_bot.gd")
 const AcceptanceScript = preload("res://tests/balance/difficulty_acceptance.gd")
 
-const BALANCE_REVISION: int = 4
+const BALANCE_REVISION: int = 5
 const RUN_SEEDS: Array[int] = [17, 29, 43, 61]
 const POLICIES: Array[int] = [0, 1, 2]
 const CHECKPOINT_TICKS: Array[int] = [
@@ -20,7 +20,7 @@ const CHECKPOINT_TICKS: Array[int] = [
 const MAX_COMBAT_TICK: int = 54_000
 const MAX_MODAL_CHAIN: int = 128
 const RUNNER_TIMEOUT_MS: int = 1_200_000
-const OUTPUT_ROOT: String = "res://artifacts/balance/revision-4"
+const OUTPUT_ROOT: String = "res://artifacts/balance/revision-5"
 const RUNS_FILENAME: String = "difficulty-runs.csv"
 const CHECKPOINTS_FILENAME: String = "difficulty-checkpoints.csv"
 const SUMMARY_FILENAME: String = "difficulty-summary.txt"
@@ -49,6 +49,30 @@ const RUN_COLUMNS: Array[String] = [
 	"net_damage_taken",
 	"boss_hp",
 	"boss_max_hp",
+	"weapon_hits",
+	"weapon_kills",
+	"visible_weapon_hits",
+	"visible_weapon_kills",
+	"offscreen_weapon_hits",
+	"offscreen_weapon_kills",
+	"max_hit_center_distance",
+	"max_kill_center_distance",
+	"max_effect_outer_distance",
+	"peak_visible_enemies",
+	"mean_visible_enemies",
+	"peak_engaged_enemies",
+	"mean_engaged_enemies",
+	"peak_materializing_enemies",
+	"mean_materializing_enemies",
+	"absorbed_normal_count",
+	"absorbed_enemy_projectile_count",
+	"feedback_emitted",
+	"feedback_suppressed",
+	"vfx_admitted",
+	"vfx_suppressed",
+	"important_vfx_dropped",
+	"audio_admitted",
+	"audio_suppressed",
 	"enemy_pool_overflow",
 	"projectile_pool_overflow",
 	"vfx_pool_overflow",
@@ -56,6 +80,32 @@ const RUN_COLUMNS: Array[String] = [
 	"pool_overflow_count",
 	"pool_orphan_count",
 	"digest",
+]
+const VISIBLE_METRIC_KEYS: Array[String] = [
+	"weapon_hits",
+	"weapon_kills",
+	"visible_weapon_hits",
+	"visible_weapon_kills",
+	"offscreen_weapon_hits",
+	"offscreen_weapon_kills",
+	"max_hit_center_distance",
+	"max_kill_center_distance",
+	"max_effect_outer_distance",
+	"peak_visible_enemies",
+	"mean_visible_enemies",
+	"peak_engaged_enemies",
+	"mean_engaged_enemies",
+	"peak_materializing_enemies",
+	"mean_materializing_enemies",
+	"absorbed_normal_count",
+	"absorbed_enemy_projectile_count",
+	"feedback_emitted",
+	"feedback_suppressed",
+	"vfx_admitted",
+	"vfx_suppressed",
+	"important_vfx_dropped",
+	"audio_admitted",
+	"audio_suppressed",
 ]
 const CHECKPOINT_COLUMNS: Array[String] = [
 	"balance_revision",
@@ -188,6 +238,8 @@ func _run_one(
 	simulation.initialize(state, catalog)
 	if not simulation.has_method(&"advance_tick"):
 		return {"infrastructure_error": "combat_simulation_advance_tick_missing"}
+	if not simulation.has_method(&"visible_combat_metrics"):
+		return {"infrastructure_error": "visible_combat_metrics_missing"}
 	var bot: RefCounted = BotScript.new()
 	if not bot.initialize(policy_value, run_seed):
 		return {"infrastructure_error": "bot_policy_invalid"}
@@ -316,7 +368,16 @@ func _run_row(
 		+ simulation.vfx_pool.orphan_count()
 		+ simulation.xp_pickup_pool.orphan_count()
 	)
-	return {
+	var visible_metrics_value: Variant = simulation.call(&"visible_combat_metrics")
+	if typeof(visible_metrics_value) != TYPE_DICTIONARY:
+		return {"infrastructure_error": "visible_combat_metrics_invalid"}
+	var visible_metrics: Dictionary = visible_metrics_value
+	for metric_key: String in VISIBLE_METRIC_KEYS:
+		if not visible_metrics.has(metric_key):
+			return {
+				"infrastructure_error": "visible_combat_metric_missing_%s" % metric_key,
+			}
+	var row: Dictionary = {
 		"infrastructure_error": "",
 		"balance_revision": BALANCE_REVISION,
 		"policy": BotScript.policy_name_for(policy_value),
@@ -360,6 +421,9 @@ func _run_row(
 		"pool_orphan_count": orphan_count,
 		"digest": _digest(simulation, runtime),
 	}
+	for metric_key: String in VISIBLE_METRIC_KEYS:
+		row[metric_key] = visible_metrics[metric_key]
+	return row
 
 
 func _checkpoint_row(
@@ -414,7 +478,23 @@ func _digest(simulation: CombatSimulation, runtime: Dictionary) -> String:
 	for entity_id: int in simulation.enemy_system.enemy_store.snapshot_ids_sorted():
 		var enemy: EnemyEntity = simulation.enemy_system.enemy_store.get_by_id(entity_id)
 		if enemy != null:
-			enemies.append([entity_id, int(enemy.enemy_type), enemy.position, enemy.hp])
+			enemies.append([
+				entity_id,
+				int(enemy.enemy_type),
+				enemy.position,
+				enemy.hp,
+				enemy.activation_tick,
+				enemy.special_elapsed_ticks,
+				enemy.telegraph_elapsed_ticks,
+				enemy.telegraph_active,
+				enemy.barrage_alternate,
+				enemy.boss_charge_active,
+				enemy.boss_charge_elapsed_ticks,
+				enemy.boss_charge_interval_ticks,
+				enemy.boss_charge_spoke_count,
+				enemy.boss_charge_half_step,
+				enemy.boss_action_age_ticks,
+			])
 	var projectile_indices: Array[int] = simulation.projectile_pool.active_indices_snapshot()
 	projectile_indices.sort()
 	var projectiles: Array = []
@@ -428,6 +508,9 @@ func _digest(simulation: CombatSimulation, runtime: Dictionary) -> String:
 			projectile.position,
 			projectile.velocity,
 			projectile.damage,
+			projectile.remaining_distance,
+			projectile.outbound_distance_remaining,
+			projectile.remaining_lifetime,
 		])
 	var xp_indices: Array[int] = simulation.xp_pickup_pool.active_indices_snapshot()
 	xp_indices.sort()
@@ -453,6 +536,7 @@ func _digest(simulation: CombatSimulation, runtime: Dictionary) -> String:
 		state.boss_hp,
 		state.rng_streams.state_digest(),
 		runtime.duplicate(true),
+		simulation.call(&"visible_combat_metrics"),
 		weapons,
 		passives,
 		enemies,
@@ -533,6 +617,16 @@ func _write_summary(
 		"normal_first_evolution_mean_minutes=%.6f" % float(acceptance.get("normal_mean_evolution_minutes", -1.0)),
 		"pool_overflow_runs=%d" % int(acceptance.get("overflow_runs", 0)),
 		"pool_orphan_runs=%d" % int(acceptance.get("orphan_runs", 0)),
+		"missing_visible_metric_runs=%d" % int(acceptance.get("missing_visible_metric_runs", 0)),
+		"no_weapon_combat_runs=%d" % int(acceptance.get("no_weapon_combat_runs", 0)),
+		"offscreen_weapon_hit_runs=%d" % int(acceptance.get("offscreen_weapon_hit_runs", 0)),
+		"offscreen_weapon_kill_runs=%d" % int(acceptance.get("offscreen_weapon_kill_runs", 0)),
+		"hit_distance_runs=%d" % int(acceptance.get("hit_distance_runs", 0)),
+		"kill_distance_runs=%d" % int(acceptance.get("kill_distance_runs", 0)),
+		"effect_outer_distance_runs=%d" % int(acceptance.get("effect_outer_distance_runs", 0)),
+		"feedback_suppressed_runs=%d" % int(acceptance.get("feedback_suppressed_runs", 0)),
+		"audio_admitted_total=%d" % int(acceptance.get("audio_admitted_total", 0)),
+		"audio_suppressed_total=%d" % int(acceptance.get("audio_suppressed_total", 0)),
 		"infrastructure_error=%s" % infrastructure_error,
 		"passed=%s" % str(bool(acceptance.get("passed", false)) and infrastructure_error.is_empty()).to_lower(),
 		"reasons=%s" % " | ".join(reasons),

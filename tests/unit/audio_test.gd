@@ -19,6 +19,14 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 		AudioFactory.evolution(),
 		AudioFactory.boss_spawn(),
 		AudioFactory.player_hit(),
+		AudioFactory.enemy_hit(),
+		AudioFactory.enemy_kill(),
+		AudioFactory.elite_kill(),
+		AudioFactory.boss_charge(),
+		AudioFactory.boss_volley(),
+		AudioFactory.boss_defeated(),
+		AudioFactory.player_defeated(),
+		AudioFactory.absorption(),
 	]
 	for index: int in range(streams.size()):
 		assertions.expect_true(streams[index] != null, "survival audio stream %d exists" % index)
@@ -34,5 +42,16 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 		&"evolution",
 		&"boss_spawn",
 		&"player_hit",
+		&"enemy_hit",
+		&"enemy_kill",
+		&"elite_kill",
+		&"important_spawn",
+		&"boss_charge",
+		&"boss_volley",
+		&"boss_defeated",
+		&"player_defeated",
+		&"absorption",
+		&"boss_phase",
+		&"chain_milestone",
 	]:
 		assertions.expect_true(event_streams.has(event_id), "event stream registered for %s" % event_id)

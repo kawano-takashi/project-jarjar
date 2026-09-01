@@ -4,14 +4,15 @@ extends RefCounted
 
 const MANIFEST_PATH: String = "res://data/balance/survival_content_manifest.tres"
 const EXPECTED_TARGETS: Array[int] = [
-	40, 60, 90, 130, 180, 240, 320, 400, 460, 500,
+	16, 24, 36, 52, 72, 96, 120, 144, 168, 192,
 ]
 const BASELINE_HP_MULTIPLIERS: Array[float] = [
-	1.0, 1.12, 1.28, 1.48, 1.72, 2.0, 2.34, 2.74, 3.2, 3.75,
+	0.15, 0.17, 0.20, 0.24, 0.30, 0.45, 0.65, 0.90, 1.25, 1.75,
 ]
 const BASELINE_DAMAGE_MULTIPLIERS: Array[float] = [
-	1.0, 1.08, 1.16, 1.26, 1.38, 1.52, 1.68, 1.86, 2.06, 2.28,
+	0.18, 0.20, 0.22, 0.25, 0.29, 0.36, 0.45, 0.56, 0.72, 0.95,
 ]
+const MAX_APPROVED_AREA_MULTIPLIER: float = 1.5
 const EXPECTED_ELITE_TICKS: Array[int] = [
 	7200, 14400, 21600, 28800,
 ]
@@ -19,6 +20,7 @@ const WEIGHT_TOLERANCE: float = 0.0001
 const MIN_SEGMENT_TARGET_HP_RATIO: float = 0.10
 const MIN_SEGMENT_DAMAGE_RATIO: float = 0.15
 const MIN_BOSS_TUNING_RATIO: float = 0.25
+const MIN_BOSS_HP_TUNING_RATIO: float = 0.15
 
 var weapons: Dictionary[StringName, WeaponDefinition] = {}
 var passives: Dictionary[StringName, PassiveDefinition] = {}
@@ -198,12 +200,12 @@ func _index_content() -> void:
 
 
 func _validate_globals() -> void:
-	if _manifest.balance == null or _manifest.balance.balance_revision != 4:
-		_add_error("balance revision must be 4")
+	if _manifest.balance == null or _manifest.balance.balance_revision != 5:
+		_add_error("balance revision must be 5")
 	if _manifest.ticks_per_second != 60:
 		_add_error("ticks_per_second must be 60")
-	if not _manifest.arena_size.is_equal_approx(Vector2(40.0, 40.0)):
-		_add_error("arena_size must be 40x40")
+	if not _manifest.arena_size.is_equal_approx(Vector2(30.0, 30.0)):
+		_add_error("arena_size must be 30x30")
 	if _manifest.boss_start_tick != 36000:
 		_add_error("boss_start_tick must be 36000")
 	_validate_xp_contract()
@@ -235,9 +237,15 @@ func _validate_globals() -> void:
 	if _manifest.modal_resume_invulnerability_ticks != 45:
 		_add_error("modal resume invulnerability must be 45 ticks")
 	_validate_tunable_multiplier(
+		_manifest.normal_enemy_damage_scale,
+		SurvivalContentManifest.DEFAULT_NORMAL_ENEMY_DAMAGE_SCALE,
+		"normal enemy damage scale",
+	)
+	_validate_tunable_multiplier(
 		_manifest.boss_hp_multiplier,
 		SurvivalContentManifest.DEFAULT_BOSS_HP_MULTIPLIER,
 		"boss HP multiplier",
+		MIN_BOSS_HP_TUNING_RATIO,
 	)
 	_validate_tunable_multiplier(
 		_manifest.boss_damage_multiplier,
@@ -257,8 +265,6 @@ func _validate_globals() -> void:
 		_add_error("boss attack bonus must be +10% per stack")
 	if not is_equal_approx(_manifest.boss_interval_reduction_per_stack, 0.10):
 		_add_error("boss interval reduction must be -10% per stack")
-	if _manifest.boss_summon_bonus_per_stack != 1:
-		_add_error("boss summon bonus must be +1 per stack")
 	if not weapons.has(_manifest.starter_weapon_id):
 		_add_error("starter weapon is missing")
 	elif _manifest.starter_weapon_id != &"homing_core":
@@ -314,25 +320,33 @@ func _validate_xp_contract() -> void:
 	):
 		_add_error("XP pickup speed must be 14")
 	if (
-		_manifest.xp_yield_percent < 90
+		_manifest.xp_yield_percent < 50
 		or _manifest.xp_yield_percent > 200
 		or _manifest.xp_yield_percent % 5 != 0
 	):
-		_add_error("XP yield percent must be 90-200 in 5% steps")
+		_add_error("XP yield percent must be 50-200 in 5% steps")
 
 
-func _validate_tunable_multiplier(value: float, baseline: float, label: String) -> void:
+func _validate_tunable_multiplier(
+	value: float,
+	baseline: float,
+	label: String,
+	minimum_ratio: float = MIN_BOSS_TUNING_RATIO,
+) -> void:
 	if not is_finite(value) or not is_finite(baseline) or baseline <= 0.0:
 		_add_error("%s must be finite with a positive baseline" % label)
 		return
 	var ratio: float = value / baseline
 	var five_percent_units: float = ratio * 20.0
 	if (
-		ratio < MIN_BOSS_TUNING_RATIO - WEIGHT_TOLERANCE
+		ratio < minimum_ratio - WEIGHT_TOLERANCE
 		or ratio > 1.10 + WEIGHT_TOLERANCE
 		or absf(five_percent_units - roundf(five_percent_units)) > WEIGHT_TOLERANCE
 	):
-		_add_error("%s must be -75%% to +10%% in 5%% steps" % label)
+		_add_error(
+			"%s must be -%d%% to +10%% in 5%% steps"
+			% [label, 100 - roundi(minimum_ratio * 100.0)]
+		)
 
 
 func _validate_weapons() -> void:
@@ -380,8 +394,12 @@ func _validate_weapon_arrays(definition: WeaponDefinition) -> void:
 		_add_error("amount_by_level length mismatch: %s" % definition.weapon_id)
 	if definition.projectile_speed_by_level.size() != size:
 		_add_error("projectile_speed_by_level length mismatch: %s" % definition.weapon_id)
-	if definition.area_by_level.size() != size:
-		_add_error("area_by_level length mismatch: %s" % definition.weapon_id)
+	if definition.range_by_level.size() != size:
+		_add_error("range_by_level length mismatch: %s" % definition.weapon_id)
+	if definition.projectile_radius_by_level.size() != size:
+		_add_error("projectile_radius_by_level length mismatch: %s" % definition.weapon_id)
+	if definition.effect_radius_by_level.size() != size:
+		_add_error("effect_radius_by_level length mismatch: %s" % definition.weapon_id)
 	if definition.duration_ticks_by_level.size() != size:
 		_add_error("duration_ticks_by_level length mismatch: %s" % definition.weapon_id)
 	if definition.pierce_by_level.size() != size:
@@ -392,6 +410,47 @@ func _validate_weapon_arrays(definition: WeaponDefinition) -> void:
 	for value: int in definition.cooldown_ticks_by_level:
 		if value <= 0:
 			_add_error("weapon cooldown must be positive: %s" % definition.weapon_id)
+	for value: float in definition.range_by_level:
+		if not is_finite(value) or value < 0.0:
+			_add_error("weapon range must be finite and non-negative: %s" % definition.weapon_id)
+	for value: float in definition.projectile_radius_by_level:
+		if not is_finite(value) or value < 0.0:
+			_add_error("weapon projectile radius must be finite and non-negative: %s" % definition.weapon_id)
+	for value: float in definition.effect_radius_by_level:
+		if not is_finite(value) or value < 0.0:
+			_add_error("weapon effect radius must be finite and non-negative: %s" % definition.weapon_id)
+	_validate_weapon_envelope(definition)
+
+
+func _validate_weapon_envelope(definition: WeaponDefinition) -> void:
+	for level: int in range(1, definition.max_level + 1):
+		var range_m: float = definition.effective_range_at(
+			level,
+			MAX_APPROVED_AREA_MULTIPLIER,
+		)
+		var projectile_radius: float = definition.effective_projectile_radius_at(
+			level,
+			MAX_APPROVED_AREA_MULTIPLIER,
+		)
+		var effect_radius: float = definition.effective_effect_radius_at(
+			level,
+			MAX_APPROVED_AREA_MULTIPLIER,
+		)
+		var outer_edge: float = 0.0
+		match definition.behavior:
+			GameTypes.WeaponBehavior.MELEE_WAVE:
+				outer_edge = range_m
+			GameTypes.WeaponBehavior.ORBITAL:
+				outer_edge = range_m + effect_radius
+			GameTypes.WeaponBehavior.AURA:
+				outer_edge = effect_radius
+			_:
+				outer_edge = range_m + maxf(projectile_radius, effect_radius)
+		if outer_edge > CombatEnvelope.EFFECT_OUTER_RADIUS + WEIGHT_TOLERANCE:
+			_add_error(
+				"weapon outer edge exceeds combat envelope: %s level %d"
+				% [definition.weapon_id, level]
+			)
 
 
 func _validate_passives() -> void:
@@ -452,6 +511,25 @@ func _validate_enemies() -> void:
 			_add_error("enemy contact values must be positive: %s" % definition.enemy_id)
 		if definition.xp_value < 0:
 			_add_error("enemy XP must not be negative: %s" % definition.enemy_id)
+		if definition.enemy_type != GameTypes.EnemyType.BOSS and (
+			not is_finite(definition.preferred_distance_min)
+			or definition.preferred_distance_min != 0.0
+			or not is_finite(definition.preferred_distance_max)
+			or definition.preferred_distance_max != 0.0
+			or definition.special_interval_ticks != 0
+			or definition.telegraph_ticks != 0
+			or not is_finite(definition.area_radius)
+			or definition.area_radius != 0.0
+			or not is_finite(definition.projectile_damage)
+			or definition.projectile_damage != 0.0
+			or not is_finite(definition.projectile_speed)
+			or definition.projectile_speed != 0.0
+			or not is_finite(definition.projectile_radius)
+			or definition.projectile_radius != 0.0
+			or definition.projectile_lifetime_ticks != 0
+			or definition.volley_count != 0
+		):
+			_add_error("non-boss enemies must be contact-only: %s" % definition.enemy_id)
 	var elite: EnemyDefinition = enemy_for_type(GameTypes.EnemyType.ELITE)
 	var boss: EnemyDefinition = enemy_for_type(GameTypes.EnemyType.BOSS)
 	if elite == null or not elite.drops_chest:

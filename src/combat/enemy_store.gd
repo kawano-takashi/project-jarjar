@@ -36,8 +36,8 @@ func try_spawn(
 	position: Vector2,
 	hp_multiplier: float,
 	damage_multiplier: float,
-	born_tick: int,
-	summoned_by_boss: bool = false,
+	spawn_tick: int,
+	entry_ticks: int = 0,
 ) -> EnemyEntity:
 	if state == null or definition == null:
 		return null
@@ -61,8 +61,8 @@ func try_spawn(
 		position,
 		hp_multiplier,
 		damage_multiplier,
-		born_tick,
-		summoned_by_boss,
+		spawn_tick,
+		entry_ticks,
 		entity_rng,
 	)
 	var active_position: int = entities.size()

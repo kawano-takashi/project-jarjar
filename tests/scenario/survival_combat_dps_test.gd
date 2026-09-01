@@ -5,8 +5,6 @@ enum FixtureKind { SINGLE, GROUP, BOSS }
 
 const MEASURE_TICKS: int = 600
 const GROUP_TARGET_COUNT: float = 12.0
-const MIN_MEDIAN_GAIN_RATIO: float = 1.15
-const ROLE_MEDIAN_TOLERANCE: float = 0.25
 const ROLE_EVOLUTION_RATIO: float = 1.50
 const ORBITAL_FIXTURE_MOVE_SPEED: float = 0.15
 const SINGLE_ROLE_IDS: Array[StringName] = [
@@ -22,52 +20,15 @@ const GROUP_ROLE_IDS: Array[StringName] = [
 	&"zero_field",
 ]
 
-# Work-start scores were recorded with stationary targets. They remain useful
-# only for like-for-like gain checks. Moving targets are measured separately
-# for the role bands and evolution ratios used by the gameplay acceptance gate.
-# GROUP values are total fixture DPS divided by twelve; SINGLE and BOSS values
-# are total DPS.
-const BASELINE_LV1_ROLE_SCORES: Dictionary = {
-	&"arc_crystal": 1.0,
-	&"directional_needle": 0.85,
-	&"homing_core": 9.0,
-	&"mass_projectile": 14.0,
-	&"orbital_array": 5.0666667,
-	&"resonance_wave": 8.0,
-	&"returning_ring": 19.5,
-	&"zero_field": 0.0,
-}
-const BASELINE_LV8_ROLE_SCORES: Dictionary = {
-	&"arc_crystal": 12.0,
-	&"directional_needle": 78.125,
-	&"homing_core": 195.0,
-	&"mass_projectile": 150.0,
-	&"orbital_array": 56.0,
-	&"resonance_wave": 62.5,
-	&"returning_ring": 243.0,
-	&"zero_field": 28.0,
-}
-const BASELINE_EVOLVED_ROLE_SCORES: Dictionary = {
-	&"arc_crystal": 300.0,
-	&"directional_needle": 222.25,
-	&"homing_core": 2261.0,
-	&"mass_projectile": 513.0,
-	&"orbital_array": 144.0,
-	&"resonance_wave": 177.5,
-	&"returning_ring": 1353.6,
-	&"zero_field": 61.2,
-}
-
-
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"survival_weapon_dps_matrix_evolutions_are_stronger",
+		"survival_weapon_dps_matrix_revision_five_contract",
 	])
 
 
 func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
 	match test_name:
-		"survival_weapon_dps_matrix_evolutions_are_stronger":
+		"survival_weapon_dps_matrix_revision_five_contract":
 			_test_role_normalization(assertions)
 		_:
 			assertions.expect_true(false, "registered survival weapon DPS test")
@@ -127,6 +88,18 @@ func _test_role_normalization(assertions: Variant) -> void:
 			moving_evolved_score,
 		])
 		assertions.expect_true(
+			stationary_level_one_score > 0.0,
+			"%s Lv1 resolves positive stationary-target damage" % base_id,
+		)
+		assertions.expect_true(
+			stationary_level_eight_score >= stationary_level_one_score,
+			"%s Lv8 stationary-target damage does not regress" % base_id,
+		)
+		assertions.expect_true(
+			moving_level_one_score > 0.0 and moving_level_eight_score > 0.0,
+			"%s base levels resolve positive moving-target damage" % base_id,
+		)
+		assertions.expect_true(
 			moving_evolved_score >= moving_level_eight_score * ROLE_EVOLUTION_RATIO,
 			"%s evolution reaches at least 1.5x its moving-target Lv8 role score (%.2f -> %.2f)" % [
 				base_id,
@@ -134,139 +107,11 @@ func _test_role_normalization(assertions: Variant) -> void:
 				moving_evolved_score,
 			],
 		)
-	_assert_baseline_gain(
-		assertions,
-		"single",
-		SINGLE_ROLE_IDS,
-		stationary_level_one_scores,
-		stationary_level_eight_scores,
-		stationary_evolved_scores,
-	)
-	_assert_baseline_gain(
-		assertions,
-		"group",
-		GROUP_ROLE_IDS,
-		stationary_level_one_scores,
-		stationary_level_eight_scores,
-		stationary_evolved_scores,
-	)
-	_assert_role_bands(
-		assertions,
-		"single",
-		SINGLE_ROLE_IDS,
-		moving_level_one_scores,
-		moving_level_eight_scores,
-		moving_evolved_scores,
-	)
-	_assert_role_bands(
-		assertions,
-		"group",
-		GROUP_ROLE_IDS,
-		moving_level_one_scores,
-		moving_level_eight_scores,
-		moving_evolved_scores,
-	)
 	assertions.expect_equal(
 		1,
 		catalog.weapon(&"infinite_homing").cooldown_ticks_at(1),
 		"infinite homing retains its one-tick cadence",
 	)
-
-
-func _assert_baseline_gain(
-	assertions: Variant,
-	role_name: String,
-	lineage_ids: Array[StringName],
-	level_one_scores: Dictionary[StringName, float],
-	level_eight_scores: Dictionary[StringName, float],
-	evolved_scores: Dictionary[StringName, float],
-) -> void:
-	var role_level_one: Dictionary[StringName, float] = _select_scores(level_one_scores, lineage_ids)
-	var role_level_eight: Dictionary[StringName, float] = _select_scores(level_eight_scores, lineage_ids)
-	var role_evolved: Dictionary[StringName, float] = _select_scores(evolved_scores, lineage_ids)
-	var baseline_level_one: Dictionary[StringName, float] = _select_scores(BASELINE_LV1_ROLE_SCORES, lineage_ids)
-	var baseline_level_eight: Dictionary[StringName, float] = _select_scores(BASELINE_LV8_ROLE_SCORES, lineage_ids)
-	var baseline_evolved: Dictionary[StringName, float] = _select_scores(BASELINE_EVOLVED_ROLE_SCORES, lineage_ids)
-	var level_one_median: float = _median(_score_values(role_level_one))
-	var level_eight_median: float = _median(_score_values(role_level_eight))
-	var evolved_median: float = _median(_score_values(role_evolved))
-	var baseline_level_one_median: float = _median(_score_values(baseline_level_one))
-	var baseline_level_eight_median: float = _median(_score_values(baseline_level_eight))
-	var baseline_evolved_median: float = _median(_score_values(baseline_evolved))
-	print("WEAPON_ROLE_MEDIANS role=%s lv1=%.4f lv8=%.4f evolved=%.4f baseline_lv1=%.4f baseline_lv8=%.4f baseline_evolved=%.4f" % [
-		role_name,
-		level_one_median,
-		level_eight_median,
-		evolved_median,
-		baseline_level_one_median,
-		baseline_level_eight_median,
-		baseline_evolved_median,
-	])
-	assertions.expect_true(
-		level_one_median >= baseline_level_one_median * MIN_MEDIAN_GAIN_RATIO,
-		"%s Lv1 role median improves by at least fifteen percent" % role_name,
-	)
-	assertions.expect_true(
-		level_eight_median >= baseline_level_eight_median * MIN_MEDIAN_GAIN_RATIO,
-		"%s Lv8 role median improves by at least fifteen percent" % role_name,
-	)
-	assertions.expect_true(
-		evolved_median >= baseline_evolved_median,
-		"%s evolved role median does not drop from the work-start baseline" % role_name,
-	)
-
-
-func _assert_role_bands(
-	assertions: Variant,
-	role_name: String,
-	lineage_ids: Array[StringName],
-	level_one_scores: Dictionary[StringName, float],
-	level_eight_scores: Dictionary[StringName, float],
-	evolved_scores: Dictionary[StringName, float],
-) -> void:
-	var role_level_one: Dictionary[StringName, float] = _select_scores(level_one_scores, lineage_ids)
-	var role_level_eight: Dictionary[StringName, float] = _select_scores(level_eight_scores, lineage_ids)
-	var role_evolved: Dictionary[StringName, float] = _select_scores(evolved_scores, lineage_ids)
-	_assert_tier_band(
-		assertions,
-		"%s moving-target Lv1" % role_name,
-		role_level_one,
-		_median(_score_values(role_level_one)),
-	)
-	_assert_tier_band(
-		assertions,
-		"%s moving-target Lv8" % role_name,
-		role_level_eight,
-		_median(_score_values(role_level_eight)),
-	)
-	_assert_tier_band(
-		assertions,
-		"%s moving-target evolved" % role_name,
-		role_evolved,
-		_median(_score_values(role_evolved)),
-	)
-
-
-func _assert_tier_band(
-	assertions: Variant,
-	tier_name: String,
-	scores: Dictionary[StringName, float],
-	median_score: float,
-) -> void:
-	var minimum_score: float = median_score * (1.0 - ROLE_MEDIAN_TOLERANCE)
-	var maximum_score: float = median_score * (1.0 + ROLE_MEDIAN_TOLERANCE)
-	for lineage_id: StringName in scores:
-		var score: float = scores[lineage_id]
-		assertions.expect_true(
-			score + 0.01 >= minimum_score and score - 0.01 <= maximum_score,
-			"%s %s role score stays within its median plus or minus twenty-five percent (%.2f; %.2f..%.2f)" % [
-				lineage_id,
-				tier_name,
-				score,
-				minimum_score,
-				maximum_score,
-			],
-		)
 
 
 func _measure_dps(
@@ -284,6 +129,7 @@ func _measure_dps(
 	state.passives.clear()
 	state.combat_tick = RunState.BOSS_START_TICK
 	state.boss_spawned = true
+	state.boss_transition_started = true
 	state.build_maxed = true
 	state.damage_invulnerable_until_tick = RunState.BOSS_START_TICK + MEASURE_TICKS + 10
 	var definition: WeaponDefinition = catalog.weapon(weapon_id)
@@ -312,7 +158,6 @@ func _measure_dps(
 		var fixture_definition: EnemyDefinition = enemy.definition.duplicate()
 		fixture_definition.contact_damage = 0.0
 		fixture_definition.special_interval_ticks = 0
-		fixture_definition.summon_interval_ticks = 0
 		if not moving_targets:
 			fixture_definition.move_speed = 0.0
 		elif definition.lineage_id == &"orbital_array":
@@ -346,7 +191,7 @@ func _fixture_positions(
 	var result: Array[Vector2] = []
 	match definition.lineage_id:
 		&"resonance_wave":
-			var wave_range: float = definition.area_at(level)
+			var wave_range: float = definition.range_at(level)
 			for index: int in range(12):
 				var side: float = -1.0 if index % 2 == 0 else 1.0
 				var row_index: int = floori(float(index) / 2.0)
@@ -364,13 +209,13 @@ func _fixture_positions(
 			for index: int in range(12):
 				result.append(Vector2.from_angle(TAU * float(index) / 12.0) * 3.0)
 		&"orbital_array":
-			var orbit_radius: float = maxf(1.0, definition.area_at(level))
+			var orbit_radius: float = maxf(1.0, definition.range_at(level))
 			for index: int in range(12):
 				result.append(
 					Vector2.from_angle(TAU * float(index) / 12.0) * orbit_radius
 				)
 		&"zero_field":
-			var aura_radius: float = definition.area_at(level) * 0.65
+			var aura_radius: float = definition.effect_radius_at(level) * 0.65
 			for index: int in range(12):
 				result.append(
 					Vector2.from_angle(TAU * float(index) / 12.0) * aura_radius

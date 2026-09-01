@@ -3,14 +3,14 @@ extends RefCounted
 
 
 const NODE_SITE_POSITIONS: Array[Vector2] = [
-	Vector2(-13.0, -13.0),
-	Vector2(0.0, -15.0),
-	Vector2(13.0, -13.0),
-	Vector2(15.0, 0.0),
-	Vector2(13.0, 13.0),
-	Vector2(0.0, 15.0),
-	Vector2(-13.0, 13.0),
-	Vector2(-15.0, 0.0),
+	Vector2(-9.75, -9.75),
+	Vector2(0.0, -11.25),
+	Vector2(9.75, -9.75),
+	Vector2(11.25, 0.0),
+	Vector2(9.75, 9.75),
+	Vector2(0.0, 11.25),
+	Vector2(-9.75, 9.75),
+	Vector2(-11.25, 0.0),
 ]
 const INITIAL_ACTIVE_SITES: Array[int] = [0, 2, 4, 6]
 const NODE_MAX_HP: float = 18.0

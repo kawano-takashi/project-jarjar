@@ -17,6 +17,18 @@ const EVOLUTION_END_HZ: float = 1_320.0
 const BOSS_SPAWN_START_HZ: float = 110.0
 const BOSS_SPAWN_END_HZ: float = 55.0
 const PLAYER_HIT_FREQUENCY_HZ: float = 145.0
+const ENEMY_HIT_START_HZ: float = 310.0
+const ENEMY_HIT_END_HZ: float = 190.0
+const ENEMY_KILL_FREQUENCIES_HZ: Array[float] = [330.0, 520.0]
+const ELITE_KILL_FREQUENCIES_HZ: Array[float] = [220.0, 440.0, 660.0]
+const BOSS_CHARGE_START_HZ: float = 72.0
+const BOSS_CHARGE_END_HZ: float = 180.0
+const BOSS_VOLLEY_FREQUENCY_HZ: float = 92.0
+const BOSS_DEFEAT_FREQUENCIES_HZ: Array[float] = [196.0, 147.0, 98.0, 392.0]
+const PLAYER_DEFEAT_START_HZ: float = 180.0
+const PLAYER_DEFEAT_END_HZ: float = 52.0
+const ABSORPTION_START_HZ: float = 280.0
+const ABSORPTION_END_HZ: float = 90.0
 
 
 static func build_event_streams() -> Dictionary[StringName, AudioStream]:
@@ -29,6 +41,17 @@ static func build_event_streams() -> Dictionary[StringName, AudioStream]:
 		&"evolution": evolution(),
 		&"boss_spawn": boss_spawn(),
 		&"player_hit": player_hit(),
+		&"enemy_hit": enemy_hit(),
+		&"enemy_kill": enemy_kill(),
+		&"elite_kill": elite_kill(),
+		&"important_spawn": important_spawn(),
+		&"boss_charge": boss_charge(),
+		&"boss_volley": boss_volley(),
+		&"boss_defeated": boss_defeated(),
+		&"player_defeated": player_defeated(),
+		&"absorption": absorption(),
+		&"boss_phase": important_spawn(),
+		&"chain_milestone": elite_kill(),
 	}
 
 
@@ -58,6 +81,42 @@ static func boss_spawn() -> AudioStreamWAV:
 
 static func player_hit() -> AudioStreamWAV:
 	return create_tone(PLAYER_HIT_FREQUENCY_HZ, 0.09)
+
+
+static func enemy_hit() -> AudioStreamWAV:
+	return create_sweep(ENEMY_HIT_START_HZ, ENEMY_HIT_END_HZ, 0.045)
+
+
+static func enemy_kill() -> AudioStreamWAV:
+	return create_tone_sequence(ENEMY_KILL_FREQUENCIES_HZ, 0.04)
+
+
+static func elite_kill() -> AudioStreamWAV:
+	return create_tone_sequence(ELITE_KILL_FREQUENCIES_HZ, 0.065)
+
+
+static func important_spawn() -> AudioStreamWAV:
+	return create_sweep(140.0, 360.0, 0.24)
+
+
+static func boss_charge() -> AudioStreamWAV:
+	return create_sweep(BOSS_CHARGE_START_HZ, BOSS_CHARGE_END_HZ, 0.30)
+
+
+static func boss_volley() -> AudioStreamWAV:
+	return create_tone(BOSS_VOLLEY_FREQUENCY_HZ, 0.12)
+
+
+static func boss_defeated() -> AudioStreamWAV:
+	return create_tone_sequence(BOSS_DEFEAT_FREQUENCIES_HZ, 0.11)
+
+
+static func player_defeated() -> AudioStreamWAV:
+	return create_sweep(PLAYER_DEFEAT_START_HZ, PLAYER_DEFEAT_END_HZ, 0.42)
+
+
+static func absorption() -> AudioStreamWAV:
+	return create_sweep(ABSORPTION_START_HZ, ABSORPTION_END_HZ, 0.16)
 
 
 static func create_tone(frequency_hz: float, duration_seconds: float) -> AudioStreamWAV:

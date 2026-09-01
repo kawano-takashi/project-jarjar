@@ -5,8 +5,8 @@ func test_names() -> PackedStringArray:
 	return PackedStringArray([
 		"continuous_clock_and_time_only_spawn_targets",
 		"four_elites_and_final_boss_are_guaranteed",
-		"stop_freezes_normal_and_halves_boss",
-		"boss_three_phases_and_thirty_second_enrage",
+		"stop_freezes_normal_and_halves_boss_projectiles",
+		"boss_three_phases_and_activation_relative_enrage",
 		"scheduled_boss_uses_dedicated_manifest_multipliers",
 		"same_tick_boss_victory_beats_player_death",
 		"lethal_enemy_still_resolves_ready_attack_before_death",
@@ -15,7 +15,7 @@ func test_names() -> PackedStringArray:
 		"normal_damage_invulnerability_is_thirty_ticks",
 		"advance_tick_matches_step_gameplay_state",
 		"fixed_seed_replay_ignores_reduce_motion",
-		"focused_build_first_evolves_at_six_minutes",
+		"focused_build_progression_matches_revision5_xp_tuning",
 		"performance_fixture_has_all_survival_loads",
 	])
 
@@ -26,9 +26,9 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 			_test_continuous_clock(assertions)
 		"four_elites_and_final_boss_are_guaranteed":
 			_test_scheduled_elites_and_boss(assertions)
-		"stop_freezes_normal_and_halves_boss":
+		"stop_freezes_normal_and_halves_boss_projectiles":
 			_test_stop_scaling(assertions)
-		"boss_three_phases_and_thirty_second_enrage":
+		"boss_three_phases_and_activation_relative_enrage":
 			_test_boss_phases(assertions)
 		"scheduled_boss_uses_dedicated_manifest_multipliers":
 			_test_scheduled_boss_multiplier_separation(assertions)
@@ -46,7 +46,7 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 			_test_advance_tick_equivalence(assertions)
 		"fixed_seed_replay_ignores_reduce_motion":
 			_test_deterministic_replay(assertions)
-		"focused_build_first_evolves_at_six_minutes":
+		"focused_build_progression_matches_revision5_xp_tuning":
 			_test_focused_build_pacing(assertions)
 		"performance_fixture_has_all_survival_loads":
 			_test_performance_fixture(assertions)
@@ -64,8 +64,8 @@ func _test_continuous_clock(assertions: Variant) -> void:
 	assertions.expect_equal(60, simulation.state.combat_tick, "one second advances exactly sixty combat ticks")
 	assertions.expect_float(1.0, simulation.state.elapsed_seconds(), "HUD clock derives from integer combat ticks")
 	var first_segment: EnemySegmentDefinition = simulation.catalog.segment_for_tick(simulation.state.combat_tick)
-	assertions.expect_equal(4, first_segment.target_active, "first minute uses the calibrated active-enemy target")
-	assertions.expect_true(simulation.enemy_system.enemy_store.active_count() <= 4, "spawn fill never overshoots the segment target")
+	assertions.expect_equal(16, first_segment.target_active, "first minute uses the Revision 5 active-enemy target")
+	assertions.expect_true(simulation.enemy_system.enemy_store.active_count() <= 16, "spawn fill never overshoots the segment target")
 
 
 func _test_scheduled_elites_and_boss(assertions: Variant) -> void:
@@ -114,12 +114,6 @@ func _test_stop_scaling(assertions: Variant) -> void:
 	assertions.expect_equal(normal_before, normal.position, "stop pickup fully freezes a normal enemy")
 	var boss_full_step: float = boss.definition.move_speed / float(RunState.TICKS_PER_SECOND)
 	assertions.expect_float(boss_full_step * 0.5, boss.position.distance_to(boss_before), "stop pickup moves boss at fifty percent")
-	var normal_projectile: ProjectileState = simulation.projectile_pool.acquire(
-		ProjectileState.FACTION_ENEMY, &"shooter", normal.entity_id, Vector2.ZERO,
-		Vector2.RIGHT * 60.0, 0.1, 1.0, 10.0, 1.0, Vector2.RIGHT * 10.0,
-		0, 0, &"enemy_projectile", ProjectileState.MovementKind.STRAIGHT,
-		-1, 60, 0, 0.0, 0.0,
-	)
 	var boss_projectile: ProjectileState = simulation.projectile_pool.acquire(
 		ProjectileState.FACTION_ENEMY, &"boss", boss.entity_id, Vector2.ZERO,
 		Vector2.RIGHT * 60.0, 0.1, 1.0, 10.0, 1.0, Vector2.RIGHT * 10.0,
@@ -134,15 +128,7 @@ func _test_stop_scaling(assertions: Variant) -> void:
 		1,
 		true,
 	)
-	assertions.expect_equal(Vector2.ZERO, normal_projectile.position, "stop fully freezes an existing normal enemy projectile")
 	assertions.expect_float(0.5, boss_projectile.position.x, "stop moves an existing boss projectile at fifty percent")
-	var frozen_hit: Dictionary = simulation.weapon_system.resolve_enemy_projectile(
-		Vector2i(normal_projectile.pool_index, normal_projectile.generation),
-		Vector2.ZERO,
-		1,
-	)
-	assertions.expect_true(frozen_hit.is_empty(), "a fully stopped normal projectile cannot collide with the player")
-	assertions.expect_true(normal_projectile.active, "a fully stopped projectile remains pending until time resumes")
 	var slowed_boss_hit: Dictionary = simulation.weapon_system.resolve_enemy_projectile(
 		Vector2i(boss_projectile.pool_index, boss_projectile.generation),
 		Vector2.ZERO,
@@ -159,8 +145,9 @@ func _test_boss_phases(assertions: Variant) -> void:
 	var boss: EnemyEntity = simulation.spawn_fixture_enemy(
 		GameTypes.EnemyType.BOSS,
 		Vector2(8.0, 8.0),
-		0,
+		RunState.BOSS_START_TICK - CombatEnvelope.BOSS_ENTRY_TICKS,
 		true,
+		false,
 	)
 	simulation.state.boss_spawned = true
 	assertions.expect_float(
@@ -183,10 +170,13 @@ func _test_boss_phases(assertions: Variant) -> void:
 	boss.hp = boss.max_hp * 0.33
 	simulation.enemy_system.advance_snapshot([boss.entity_id], Vector2.ZERO, RunState.BOSS_START_TICK + 3)
 	assertions.expect_equal(3, simulation.state.boss_phase, "boss enters phase three at 33 percent HP")
+	boss.boss_action_age_ticks = float(
+		simulation.catalog.manifest().boss_enrage_interval_ticks - 1
+	)
 	simulation.enemy_system.advance_snapshot(
 		[boss.entity_id],
 		Vector2.ZERO,
-		RunState.BOSS_START_TICK + simulation.catalog.manifest().boss_enrage_interval_ticks,
+		RunState.BOSS_START_TICK + 4,
 	)
 	assertions.expect_equal(1, simulation.state.boss_enrage_stacks, "boss gains one pressure stack after thirty seconds")
 	simulation.state.boss_enrage_stacks = 2
@@ -249,7 +239,7 @@ func _test_scheduled_boss_multiplier_separation(assertions: Variant) -> void:
 	assertions.expect_float(
 		125.0,
 		simulation.enemy_system._boss_action_interval(100, 1),
-		"non-neutral boss action rate changes special and summon cadence",
+		"non-neutral boss action rate changes radial-volley cadence",
 	)
 
 
@@ -426,7 +416,7 @@ func _test_deterministic_replay(assertions: Variant) -> void:
 	var mass_a: RunWeapon = simulation_a.state.weapon_for_lineage(&"mass_projectile")
 	var boss_a: EnemyEntity = simulation_a.enemy_system.enemy_store.get_by_id(int(probe_a["boss_id"]))
 	assertions.expect_true(mass_a != null and mass_a.rng.state != int(probe_a["mass_rng_state"]), "weapon-individual RNG participates in the replay")
-	assertions.expect_true(boss_a != null and boss_a.rng.state != int(probe_a["boss_rng_state"]), "enemy-individual RNG participates in the replay")
+	assertions.expect_true(boss_a != null and boss_a.rng.state == int(probe_a["boss_rng_state"]), "boss radial volleys do not consume private RNG state")
 	assertions.expect_true(simulation_a.projectile_pool.active_count() > 0, "digest contains active projectiles")
 	assertions.expect_true(simulation_a.xp_pickup_pool.active_count() > 0, "digest contains active XP pickups")
 
@@ -459,8 +449,8 @@ func _test_focused_build_pacing(assertions: Variant) -> void:
 	var check_ticks := PackedInt32Array([7200, 14_400, 21_600])
 	var expected_kinds: Array[GameTypes.ChestOutcomeKind] = [
 		GameTypes.ChestOutcomeKind.UPGRADE,
-		GameTypes.ChestOutcomeKind.UPGRADE,
 		GameTypes.ChestOutcomeKind.EVOLUTION,
+		GameTypes.ChestOutcomeKind.UPGRADE,
 	]
 	var check_index: int = 0
 	while simulation.state.combat_tick < check_ticks[check_ticks.size() - 1]:
@@ -482,11 +472,14 @@ func _test_focused_build_pacing(assertions: Variant) -> void:
 					return
 			var homing: RunWeapon = simulation.state.weapon_for_lineage(&"homing_core")
 			var cycle_crystal: RunPassive = simulation.state.passive(&"cycle_crystal")
-			if check_index < 2:
-				assertions.expect_equal(0, simulation.state.evolution_count, "early scheduled chest has no prior evolution")
+			if check_index == 0:
+				assertions.expect_equal(0, simulation.state.evolution_count, "two-minute chest has no prior evolution")
+			elif check_index == 1:
+				assertions.expect_equal(8, homing.level, "focused homing reaches maximum by four minutes with Revision 5 XP tuning")
+				assertions.expect_true(cycle_crystal != null, "focused build owns the paired passive by four minutes")
 			else:
-				assertions.expect_equal(8, homing.level, "focused homing reaches maximum by six minutes")
-				assertions.expect_true(cycle_crystal != null, "focused build owns the paired passive by six minutes")
+				assertions.expect_true(homing.evolved, "focused lineage remains evolved at six minutes")
+				assertions.expect_equal(1, simulation.state.evolution_count, "focused pacing creates only one evolution before six minutes")
 			var cycle_level_before: int = 0 if cycle_crystal == null else cycle_crystal.level
 			simulation.state.pending_chest_sources.append(check_index)
 			var outcome: ChestOutcome = ChestRewardService.create_outcome(
@@ -500,17 +493,17 @@ func _test_focused_build_pacing(assertions: Variant) -> void:
 				outcome.serial,
 			)
 			assertions.expect_true(bool(result.get(&"success", false)), "scheduled chest applies exactly one outcome")
-			if check_index == 2:
+			if check_index == 1:
 				assertions.expect_equal(
 					cycle_level_before,
 					simulation.state.passive(&"cycle_crystal").level,
-					"six-minute evolution does not consume or rank its paired passive",
+					"four-minute evolution does not consume or rank its paired passive",
 				)
 			check_index += 1
 	var evolved: RunWeapon = simulation.state.weapon_for_lineage(&"homing_core")
-	assertions.expect_equal(3, simulation.state.opened_chests, "both early upgrades and the six-minute evolution consume their chest")
-	assertions.expect_equal(1, simulation.state.evolution_count, "six-minute chest is the first evolution")
-	assertions.expect_true(evolved.evolved and evolved.weapon_id == &"infinite_homing", "focused lineage evolves at six minutes")
+	assertions.expect_equal(3, simulation.state.opened_chests, "two upgrades and the four-minute evolution consume their chest")
+	assertions.expect_equal(1, simulation.state.evolution_count, "four-minute chest is the only focused evolution by six minutes")
+	assertions.expect_true(evolved.evolved and evolved.weapon_id == &"infinite_homing", "focused lineage remains evolved after six minutes")
 
 
 func _test_performance_fixture(assertions: Variant) -> void:
@@ -627,7 +620,6 @@ func _prepare_replay(simulation: CombatSimulation, reduce_motion: bool) -> Dicti
 	boss.max_hp = 1_000_000.0
 	boss.hp = boss.max_hp
 	boss.special_elapsed_ticks = float(boss.definition.special_interval_ticks)
-	boss.summon_elapsed_ticks = float(boss.definition.summon_interval_ticks)
 	simulation.state.boss_spawned = true
 	simulation.state.boss_hp = boss.hp
 	simulation.state.boss_max_hp = boss.max_hp
@@ -758,6 +750,7 @@ func _gameplay_digest(simulation: CombatSimulation) -> String:
 		state.opened_chests,
 		state.evolution_count,
 		state.boss_spawned,
+		state.boss_transition_started,
 		state.boss_defeated,
 		state.boss_phase,
 		state.boss_enrage_stacks,
@@ -773,6 +766,29 @@ func _gameplay_digest(simulation: CombatSimulation) -> String:
 		state.normal_kills,
 		state.elite_kills,
 		state.boss_kills,
+		state.absorbed_normal_count,
+		state.absorbed_enemy_projectile_count,
+		state.kill_chain_count,
+		state.kill_chain_last_tick,
+		state.kill_chain_accent_milestone,
+		state.weapon_hit_count,
+		state.weapon_kill_count,
+		state.visible_weapon_hit_count,
+		state.visible_weapon_kill_count,
+		state.offscreen_weapon_hit_count,
+		state.offscreen_weapon_kill_count,
+		state.max_weapon_hit_center_distance,
+		state.max_weapon_kill_center_distance,
+		state.max_weapon_effect_outer_distance,
+		state.visible_enemy_sample_count,
+		state.visible_enemy_count_total,
+		state.engaged_enemy_count_total,
+		state.materializing_enemy_count_total,
+		state.peak_visible_enemy_count,
+		state.peak_engaged_enemy_count,
+		state.peak_materializing_enemy_count,
+		state.feedback_event_emitted_count,
+		state.feedback_event_suppressed_count,
 		streams.spawn_seed,
 		streams.upgrade_seed,
 		streams.chest_seed,
@@ -901,15 +917,22 @@ func _enemy_system_entries(simulation: CombatSimulation) -> Array:
 			enemy.max_hp,
 			enemy.damage_multiplier,
 			enemy.born_tick,
+			enemy.spawn_tick,
+			enemy.activation_tick,
 			enemy.contact_elapsed_ticks,
 			enemy.special_elapsed_ticks,
-			enemy.summon_elapsed_ticks,
 			enemy.telegraph_elapsed_ticks,
 			enemy.telegraph_active,
 			enemy.telegraph_position,
 			enemy.barrage_alternate,
+			enemy.boss_charge_active,
+			enemy.boss_charge_elapsed_ticks,
+			enemy.boss_charge_interval_ticks,
+			enemy.boss_charge_spoke_count,
+			enemy.boss_charge_half_step,
+			enemy.boss_action_age_ticks,
+			enemy.hit_flash_until_tick,
 			enemy.alive,
-			enemy.summoned_by_boss,
 			enemy.elite_serial,
 			enemy.boss_phase,
 			rng_seed,

@@ -5,7 +5,7 @@ extends RefCounted
 enum Policy { CAUTIOUS, NORMAL, EVOLUTION }
 
 const DECISION_INTERVAL_TICKS: int = 15
-const AWARENESS_RADIUS: float = 11.0
+const AWARENESS_RADIUS: float = CombatEnvelope.BOT_AWARENESS_RADIUS
 const MAX_THREATS_PER_KIND: int = 8
 const PLAYER_RADIUS: float = 0.45
 const WALL_MARGIN: float = 2.0

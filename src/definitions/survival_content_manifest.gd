@@ -19,13 +19,14 @@ const DEFAULT_XP_PICKUP_ATTRACT_RADIUS: float = 2.25
 const DEFAULT_XP_PICKUP_COLLECT_RADIUS: float = 0.7
 const DEFAULT_XP_PICKUP_SPEED: float = 14.0
 const DEFAULT_XP_YIELD_PERCENT: int = 100
+const DEFAULT_NORMAL_ENEMY_DAMAGE_SCALE: float = 1.0
 const DEFAULT_BOSS_HP_MULTIPLIER: float = 3.75
 const DEFAULT_BOSS_DAMAGE_MULTIPLIER: float = 2.28
 const DEFAULT_BOSS_ACTION_RATE_MULTIPLIER: float = 1.0
 
 @export var balance: BalanceManifest = null
 @export var ticks_per_second: int = 60
-@export var arena_size: Vector2 = Vector2(40.0, 40.0)
+@export var arena_size: Vector2 = Vector2(30.0, 30.0)
 @export var boss_start_tick: int = 36000
 @export var xp_early_max_level: int = DEFAULT_XP_EARLY_MAX_LEVEL
 @export var xp_early_coefficient: int = DEFAULT_XP_EARLY_COEFFICIENT
@@ -45,7 +46,10 @@ const DEFAULT_BOSS_ACTION_RATE_MULTIPLIER: float = 1.0
 @export var xp_pickup_attract_radius: float = DEFAULT_XP_PICKUP_ATTRACT_RADIUS
 @export var xp_pickup_collect_radius: float = DEFAULT_XP_PICKUP_COLLECT_RADIUS
 @export var xp_pickup_speed: float = DEFAULT_XP_PICKUP_SPEED
-@export_range(90, 200, 5) var xp_yield_percent: int = DEFAULT_XP_YIELD_PERCENT
+@export_range(50, 200, 5) var xp_yield_percent: int = DEFAULT_XP_YIELD_PERCENT
+@export_range(0.25, 1.10, 0.05) var normal_enemy_damage_scale: float = (
+	DEFAULT_NORMAL_ENEMY_DAMAGE_SCALE
+)
 @export var weapon_slot_count: int = 5
 @export var passive_slot_count: int = 5
 @export var level_offer_count: int = 3
@@ -68,7 +72,6 @@ const DEFAULT_BOSS_ACTION_RATE_MULTIPLIER: float = 1.0
 @export var boss_enrage_max_stacks: int = 10
 @export var boss_attack_bonus_per_stack: float = 0.10
 @export var boss_interval_reduction_per_stack: float = 0.10
-@export var boss_summon_bonus_per_stack: int = 1
 @export var weapons: Array[WeaponDefinition] = []
 @export var passives: Array[PassiveDefinition] = []
 @export var evolutions: Array[EvolutionDefinition] = []

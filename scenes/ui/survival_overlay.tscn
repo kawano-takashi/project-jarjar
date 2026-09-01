@@ -273,6 +273,25 @@ theme_override_font_sizes/font_size = 38
 text = "PAUSE"
 horizontal_alignment = 1
 
+[node name="BuildHeading" type="Label" parent="Root/PauseModal/Center/Panel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.42, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 23
+text = "現在のビルド"
+horizontal_alignment = 1
+
+[node name="PauseBuild" type="Label" parent="Root/PauseModal/Center/Panel/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 112)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.88, 0.95, 0.96, 1)
+theme_override_constants/line_spacing = 8
+theme_override_font_sizes/font_size = 18
+text = "武器　読み込み中\nパッシブ　読み込み中"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
 [node name="GuideHeading" type="Label" parent="Root/PauseModal/Center/Panel/Content"]
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 0.75, 0.28, 1)
@@ -282,7 +301,7 @@ horizontal_alignment = 1
 
 [node name="EvolutionGuide" type="Label" parent="Root/PauseModal/Center/Panel/Content"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 220)
+custom_minimum_size = Vector2(0, 120)
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_colors/font_color = Color(0.86, 0.93, 0.94, 1)
