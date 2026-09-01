@@ -10,6 +10,7 @@ const CAMERA_TARGET_X_LIMIT: float = 9.0
 const CAMERA_TARGET_Z_LIMIT: float = 4.5
 const CAMERA_FOLLOW_TAU_SECONDS: float = 0.18
 const CAMERA_OFFSET: Vector3 = Vector3(8.912187, 18.0, 8.912187)
+const CAMERA_INPUT_AXIS_EPSILON_SQUARED: float = 0.000001
 
 @onready var _player_mesh: MeshInstance3D = %PlayerMesh
 @onready var _camera: Camera3D = %ArenaCamera
@@ -71,6 +72,7 @@ func _physics_process(delta: float) -> void:
 			"move_down",
 			0.2
 		)
+		move_input = _camera_relative_move_input(move_input)
 		if (
 			_tutorial != null
 			and _tutorial.should_gate_combat(_simulation.state.wave_number)
@@ -116,6 +118,21 @@ func _physics_process(delta: float) -> void:
 
 func refresh_accessibility() -> void:
 	_apply_accessibility_settings()
+
+
+func _camera_relative_move_input(screen_input: Vector2) -> Vector2:
+	if _camera == null:
+		return screen_input
+	var camera_right_3d: Vector3 = _camera.global_basis.x
+	var camera_right := Vector2(camera_right_3d.x, camera_right_3d.z)
+	if (
+		not camera_right.is_finite()
+		or camera_right.length_squared() <= CAMERA_INPUT_AXIS_EPSILON_SQUARED
+	):
+		return screen_input
+	camera_right = camera_right.normalized()
+	var camera_back := Vector2(-camera_right.y, camera_right.x)
+	return camera_right * screen_input.x + camera_back * screen_input.y
 
 
 func _apply_snapshot(snapshot: CombatSnapshot, delta: float) -> void:
