@@ -302,7 +302,12 @@ func _option_text(option: Variant) -> String:
 	var current_level: int = int(_read_property(option, &"current_level", 0))
 	var next_level: int = int(_read_property(option, &"next_level", current_level + 1))
 	var level_text: String = "新規 Lv %d" % next_level if current_level <= 0 else "Lv %d → %d" % [current_level, next_level]
-	var lines := PackedStringArray([display_name, level_text])
+	var kind: int = int(_read_property(option, &"kind", -1))
+	var lines := PackedStringArray([
+		display_name,
+		level_text,
+		"種別：%s" % _upgrade_kind_label(kind),
+	])
 	if not description.is_empty():
 		lines.append("")
 		lines.append(description)
@@ -310,6 +315,15 @@ func _option_text(option: Variant) -> String:
 		lines.append("")
 		lines.append(pairing_hint)
 	return "\n".join(lines)
+
+
+func _upgrade_kind_label(kind: int) -> String:
+	match kind:
+		GameTypes.UpgradeKind.WEAPON:
+			return "武器"
+		GameTypes.UpgradeKind.PASSIVE:
+			return "パッシブ"
+	return "不明"
 
 
 func _refresh_evolution_guide() -> void:

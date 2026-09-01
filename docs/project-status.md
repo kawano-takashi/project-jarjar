@@ -1,7 +1,7 @@
 # Project JARJAR 現在の状態
 
 - 更新日: 2026-09-02 (JST)
-- 状態: **Survivors型全面再設計 revision 5 source gate PASS・正式candidate未固定**
+- 状態: **Survivors型全面再設計 revision 5 source gate PASS・報酬種別表示反映・正式candidate未固定**
 - playable baseline: 未固定（revision 5 作業ツリー）
 - balance revision: `5`（source調整完了）
 - 正式playtest target: 未固定
@@ -15,7 +15,8 @@
 着脱装備、倉庫、合成、装備スコアは互換層を設けず削除済みである。
 
 新しいランでは追尾核Lv1から開始し、敵の経験値結晶でレベルアップする。戦闘を停止した3択から
-武器5枠・パッシブ5枠を育てる。所持枠が埋まる前は通常weight抽選より先に所持品優先抽選を2回試行する。
+武器5枠・パッシブ5枠を育てる。各候補は名前、レベル、`種別：武器`または`種別：パッシブ`、説明、
+進化情報の順に表示する。所持枠が埋まる前は通常weight抽選より先に所持品優先抽選を2回試行する。
 各試行の成功確率は `p = clamp(1 + 0.3 × x - 1 / totalLuck, 0, 1)`、`x`はoffer発生時のlevelが偶数なら2、奇数なら1とし、
 成功時は未最大の所持品から一様抽選する。2回目が1回目と重複した場合は代替を再抽選せず、その枠を
 通常weightの重複なし抽選へ戻す。残りも同じ通常抽選で埋め、最大3択とする。
@@ -37,6 +38,7 @@ revision 5の画面内戦闘契約は次のとおりである。
 - 通常敵、エリート、最終ボスはそれぞれ21/36/60 combat tickの出現待機を持つ。ボス召喚は削除し、最終ボスは中央へ登場する。
 - 戦闘範囲は標的中心8m、効果外縁9m、damage中心10m。安定化した直交投影カメラはsize `18`、follow tau `0.12`秒である。
 - compact HUD、撃破feedback、重要VFX保護、audio admissionを含む画面内presentation契約を実装した。
+- レベルアップ候補は既存の種別データを表示に使用し、未知の種別は武器へ誤分類せず`種別：不明`とする。
 
 自動調整の最終値は次のとおりである。
 
@@ -72,8 +74,11 @@ revision 5の画面内戦闘契約は次のとおりである。
 - 全pool overflow: 0run、全pool orphan: 0run
 - audio cue: admitted 53,321、suppressed 181,691
 
-実測CSVとsummaryは`artifacts/balance/revision-5/`に保存している。同じ作業ツリーの全GDScript回帰は
+実測CSVとsummaryは`artifacts/balance/revision-5/`に保存している。source gate実施時の全GDScript回帰は
 112/112 PASS、GDScript guardは97ファイルPASS、変更GDScriptのcheck-onlyは41/41 PASSである。
+その後、候補抽選とbalance値を変更せず報酬種別表示を追記した作業ツリーでも、全回帰112/112、
+GDScript guard 97ファイル、今回変更したGDScript 2/2のcheck-only、`git diff --check`がPASSした。
+設定済みの1920×1080 viewportと1280×720 window overrideで、3候補の表示がカード内に収まることも確認した。
 このsource gateは自動調整完了の証拠であり、人間playtestの参加・回答・計測値や
 正式candidateのidentity、正式性能試験、Release検証を代替しない。
 
