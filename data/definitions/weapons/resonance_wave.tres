@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="WeaponDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/weapon_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+weapon_id = &"resonance_wave"
+display_name = "共鳴波"
+description = "左右を薙ぐ貫通波動。"
+lineage_id = &"resonance_wave"
+behavior = 0
+max_level = 8
+selection_weight = 100.0
+paired_passive_id = &"life_lattice"
+damage_by_level = PackedFloat32Array(9, 10, 15, 16, 21, 22, 25, 27)
+cooldown_ticks_by_level = PackedInt32Array(78, 78, 78, 70, 70, 70, 70, 62)
+amount_by_level = PackedInt32Array(2, 3, 3, 3, 4, 4, 4, 5)
+projectile_speed_by_level = PackedFloat32Array(0, 0, 0, 0, 0, 0, 0, 0)
+area_by_level = PackedFloat32Array(2.2, 2.3714286, 2.5428571, 2.7142857, 2.8857143, 3.0571429, 3.2285714, 3.4)
+duration_ticks_by_level = PackedInt32Array(12, 12, 12, 14, 14, 16, 16, 18)
+pierce_by_level = PackedInt32Array(999, 999, 999, 999, 999, 999, 999, 999)

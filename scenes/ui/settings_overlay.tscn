@@ -63,7 +63,7 @@ grow_vertical = 2
 mouse_filter = 1
 
 [node name="Panel" type="PanelContainer" parent="Center"]
-custom_minimum_size = Vector2(720, 680)
+custom_minimum_size = Vector2(720, 600)
 layout_mode = 2
 theme_override_styles/panel = SubResource("OverlayPanel")
 
@@ -112,35 +112,6 @@ custom_minimum_size = Vector2(60, 0)
 layout_mode = 2
 theme_override_font_sizes/font_size = 22
 text = "100"
-horizontal_alignment = 2
-
-[node name="MusicRow" type="HBoxContainer" parent="Center/Panel/Content"]
-layout_mode = 2
-theme_override_constants/separation = 14
-
-[node name="Label" type="Label" parent="Center/Panel/Content/MusicRow"]
-custom_minimum_size = Vector2(210, 0)
-layout_mode = 2
-theme_override_font_sizes/font_size = 22
-text = "音楽音量"
-
-[node name="SettingsMusic" type="HSlider" parent="Center/Panel/Content/MusicRow"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(390, 48)
-layout_mode = 2
-size_flags_horizontal = 3
-focus_mode = 2
-theme_override_styles/focus = SubResource("FocusStyle")
-max_value = 100.0
-step = 1.0
-value = 80.0
-
-[node name="MusicValue" type="Label" parent="Center/Panel/Content/MusicRow"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(60, 0)
-layout_mode = 2
-theme_override_font_sizes/font_size = 22
-text = "80"
 horizontal_alignment = 2
 
 [node name="SfxRow" type="HBoxContainer" parent="Center/Panel/Content"]

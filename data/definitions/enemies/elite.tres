@@ -1,24 +1,24 @@
 [gd_resource type="Resource" script_class="EnemyDefinition" load_steps=2 format=3]
 
-[ext_resource type="Script" path="res://src/definitions/enemy_definition.gd" id="1_enemy"]
+[ext_resource type="Script" path="res://src/definitions/enemy_definition.gd" id="1"]
 
 [resource]
-script = ExtResource("1_enemy")
+script = ExtResource("1")
 enemy_id = &"elite"
-base_hp = 650.0
-move_speed = 1.6
-body_radius = 0.9
-contact_interval = 1.0
+display_name = "宝冠二十面体"
+enemy_type = 4
+base_hp = 800.0
+move_speed = 2.0
+body_radius = 0.82
+contact_interval_ticks = 45
 contact_damage = 18.0
-preferred_distance_min = 0.0
-preferred_distance_max = 0.0
-special_interval = 4.0
-telegraph_seconds = 1.2
-area_radius = 2.5
-projectile_damage = 25.0
-projectile_speed = 0.0
-projectile_radius = 0.0
-projectile_lifetime = 0.0
-volley_count = 0
-summon_interval = 0.0
-summon_count = 0
+special_interval_ticks = 150
+telegraph_ticks = 36
+area_radius = 3.0
+projectile_damage = 12.0
+projectile_speed = 7.0
+projectile_radius = 0.22
+projectile_lifetime_ticks = 240
+volley_count = 6
+xp_value = 50
+drops_chest = true

@@ -2,9 +2,6 @@ class_name TutorialOverlay
 extends CanvasLayer
 
 
-signal cancel_input_observed
-
-
 var _panel: PanelContainer = null
 var _label: Label = null
 
@@ -51,12 +48,6 @@ func _ready() -> void:
 	_label.focus_mode = Control.FOCUS_NONE
 	_panel.add_child(_label)
 	visible = false
-
-
-func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("ui_cancel") and not event.is_echo():
-		cancel_input_observed.emit()
-		get_viewport().set_input_as_handled()
 
 
 func show_message(message: String) -> void:

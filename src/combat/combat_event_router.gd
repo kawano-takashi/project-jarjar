@@ -12,8 +12,7 @@ func create_primary(
 	direction: Vector2 = Vector2.ZERO,
 ) -> CombatEvent:
 	var event := CombatEvent.new()
-	event.event_serial = state.next_event_serial
-	state.next_event_serial += 1
+	event.event_serial = state.allocate_event_serial()
 	event.event_type = event_type
 	event.source_entity_id = source_entity_id
 	event.source_effect_id = source_effect_id

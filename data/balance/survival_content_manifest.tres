@@ -1,0 +1,99 @@
+[gd_resource type="Resource" script_class="SurvivalContentManifest" load_steps=56 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/survival_content_manifest.gd" id="1_manifest"]
+[ext_resource type="Resource" path="res://data/balance/balance_manifest.tres" id="2_balance"]
+[ext_resource type="Resource" path="res://data/definitions/weapons/resonance_wave.tres" id="3_w01"]
+[ext_resource type="Resource" path="res://data/definitions/weapons/homing_core.tres" id="4_w02"]
+[ext_resource type="Resource" path="res://data/definitions/weapons/directional_needle.tres" id="5_w03"]
+[ext_resource type="Resource" path="res://data/definitions/weapons/arc_crystal.tres" id="6_w04"]
+[ext_resource type="Resource" path="res://data/definitions/weapons/returning_ring.tres" id="7_w05"]
+[ext_resource type="Resource" path="res://data/definitions/weapons/orbital_array.tres" id="8_w06"]
+[ext_resource type="Resource" path="res://data/definitions/weapons/mass_projectile.tres" id="9_w07"]
+[ext_resource type="Resource" path="res://data/definitions/weapons/zero_field.tres" id="10_w08"]
+[ext_resource type="Resource" path="res://data/definitions/weapons/vital_resonance.tres" id="11_we01"]
+[ext_resource type="Resource" path="res://data/definitions/weapons/infinite_homing.tres" id="12_we02"]
+[ext_resource type="Resource" path="res://data/definitions/weapons/infinite_needles.tres" id="13_we03"]
+[ext_resource type="Resource" path="res://data/definitions/weapons/spiral_crystal.tres" id="14_we04"]
+[ext_resource type="Resource" path="res://data/definitions/weapons/critical_ring.tres" id="15_we05"]
+[ext_resource type="Resource" path="res://data/definitions/weapons/eternal_orbit.tres" id="16_we06"]
+[ext_resource type="Resource" path="res://data/definitions/weapons/collapse_projectile.tres" id="17_we07"]
+[ext_resource type="Resource" path="res://data/definitions/weapons/absorption_field.tres" id="18_we08"]
+[ext_resource type="Resource" path="res://data/definitions/passives/life_lattice.tres" id="19_p01"]
+[ext_resource type="Resource" path="res://data/definitions/passives/cycle_crystal.tres" id="20_p02"]
+[ext_resource type="Resource" path="res://data/definitions/passives/speed_gate.tres" id="21_p03"]
+[ext_resource type="Resource" path="res://data/definitions/passives/scale_lens.tres" id="22_p04"]
+[ext_resource type="Resource" path="res://data/definitions/passives/probability_core.tres" id="23_p05"]
+[ext_resource type="Resource" path="res://data/definitions/passives/duration_ring.tres" id="24_p06"]
+[ext_resource type="Resource" path="res://data/definitions/passives/amplifier_core.tres" id="25_p07"]
+[ext_resource type="Resource" path="res://data/definitions/passives/repair_core.tres" id="26_p08"]
+[ext_resource type="Resource" path="res://data/definitions/evolutions/resonance_wave.tres" id="27_e01"]
+[ext_resource type="Resource" path="res://data/definitions/evolutions/homing_core.tres" id="28_e02"]
+[ext_resource type="Resource" path="res://data/definitions/evolutions/directional_needle.tres" id="29_e03"]
+[ext_resource type="Resource" path="res://data/definitions/evolutions/arc_crystal.tres" id="30_e04"]
+[ext_resource type="Resource" path="res://data/definitions/evolutions/returning_ring.tres" id="31_e05"]
+[ext_resource type="Resource" path="res://data/definitions/evolutions/orbital_array.tres" id="32_e06"]
+[ext_resource type="Resource" path="res://data/definitions/evolutions/mass_projectile.tres" id="33_e07"]
+[ext_resource type="Resource" path="res://data/definitions/evolutions/zero_field.tres" id="34_e08"]
+[ext_resource type="Resource" path="res://data/definitions/enemies/pursuer.tres" id="35_n01"]
+[ext_resource type="Resource" path="res://data/definitions/enemies/swarmer.tres" id="36_n02"]
+[ext_resource type="Resource" path="res://data/definitions/enemies/bulwark.tres" id="37_n03"]
+[ext_resource type="Resource" path="res://data/definitions/enemies/shooter.tres" id="38_n04"]
+[ext_resource type="Resource" path="res://data/definitions/enemies/elite.tres" id="39_n05"]
+[ext_resource type="Resource" path="res://data/definitions/enemies/boss.tres" id="40_n06"]
+[ext_resource type="Resource" path="res://data/definitions/segments/segment_01.tres" id="41_s01"]
+[ext_resource type="Resource" path="res://data/definitions/segments/segment_02.tres" id="42_s02"]
+[ext_resource type="Resource" path="res://data/definitions/segments/segment_03.tres" id="43_s03"]
+[ext_resource type="Resource" path="res://data/definitions/segments/segment_04.tres" id="44_s04"]
+[ext_resource type="Resource" path="res://data/definitions/segments/segment_05.tres" id="45_s05"]
+[ext_resource type="Resource" path="res://data/definitions/segments/segment_06.tres" id="46_s06"]
+[ext_resource type="Resource" path="res://data/definitions/segments/segment_07.tres" id="47_s07"]
+[ext_resource type="Resource" path="res://data/definitions/segments/segment_08.tres" id="48_s08"]
+[ext_resource type="Resource" path="res://data/definitions/segments/segment_09.tres" id="49_s09"]
+[ext_resource type="Resource" path="res://data/definitions/segments/segment_10.tres" id="50_s10"]
+[ext_resource type="Script" path="res://src/definitions/weapon_definition.gd" id="51_weapon_script"]
+[ext_resource type="Script" path="res://src/definitions/passive_definition.gd" id="52_passive_script"]
+[ext_resource type="Script" path="res://src/definitions/evolution_definition.gd" id="53_evolution_script"]
+[ext_resource type="Script" path="res://src/definitions/enemy_definition.gd" id="54_enemy_script"]
+[ext_resource type="Script" path="res://src/definitions/enemy_segment_definition.gd" id="55_segment_script"]
+
+[resource]
+script = ExtResource("1_manifest")
+balance = ExtResource("2_balance")
+xp_early_max_level = 19
+xp_early_coefficient = 10
+xp_early_offset = -5
+xp_level_20_requirement = 795
+xp_middle_max_level = 39
+xp_middle_coefficient = 13
+xp_middle_offset = -65
+xp_level_40_requirement = 2855
+xp_late_coefficient = 16
+xp_late_offset = -185
+xp_growth_compensation_levels = PackedInt32Array(20, 40)
+xp_growth_compensation_multiplier = 2.0
+xp_pool_capacity = 2048
+xp_pickup_attract_radius = 2.25
+xp_pickup_collect_radius = 0.7
+xp_pickup_speed = 14.0
+xp_yield_percent = 165
+weapon_slot_count = 5
+passive_slot_count = 5
+level_offer_count = 3
+owned_offer_attempt_count = 2
+owned_offer_luck_coefficient = 0.3
+starter_weapon_id = &"homing_core"
+damage_invulnerability_ticks = 30
+modal_resume_invulnerability_ticks = 45
+boss_hp_multiplier = 1.5
+boss_damage_multiplier = 0.798
+boss_action_rate_multiplier = 1.0
+boss_enrage_interval_ticks = 1800
+boss_enrage_max_stacks = 10
+boss_attack_bonus_per_stack = 0.1
+boss_interval_reduction_per_stack = 0.1
+boss_summon_bonus_per_stack = 1
+weapons = Array[ExtResource("51_weapon_script")]([ExtResource("3_w01"), ExtResource("4_w02"), ExtResource("5_w03"), ExtResource("6_w04"), ExtResource("7_w05"), ExtResource("8_w06"), ExtResource("9_w07"), ExtResource("10_w08"), ExtResource("11_we01"), ExtResource("12_we02"), ExtResource("13_we03"), ExtResource("14_we04"), ExtResource("15_we05"), ExtResource("16_we06"), ExtResource("17_we07"), ExtResource("18_we08")])
+passives = Array[ExtResource("52_passive_script")]([ExtResource("19_p01"), ExtResource("20_p02"), ExtResource("21_p03"), ExtResource("22_p04"), ExtResource("23_p05"), ExtResource("24_p06"), ExtResource("25_p07"), ExtResource("26_p08")])
+evolutions = Array[ExtResource("53_evolution_script")]([ExtResource("27_e01"), ExtResource("28_e02"), ExtResource("29_e03"), ExtResource("30_e04"), ExtResource("31_e05"), ExtResource("32_e06"), ExtResource("33_e07"), ExtResource("34_e08")])
+enemies = Array[ExtResource("54_enemy_script")]([ExtResource("35_n01"), ExtResource("36_n02"), ExtResource("37_n03"), ExtResource("38_n04"), ExtResource("39_n05"), ExtResource("40_n06")])
+segments = Array[ExtResource("55_segment_script")]([ExtResource("41_s01"), ExtResource("42_s02"), ExtResource("43_s03"), ExtResource("44_s04"), ExtResource("45_s05"), ExtResource("46_s06"), ExtResource("47_s07"), ExtResource("48_s08"), ExtResource("49_s09"), ExtResource("50_s10")])

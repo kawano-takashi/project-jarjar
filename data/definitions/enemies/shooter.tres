@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="EnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+enemy_id = &"shooter"
+display_name = "射線錐"
+enemy_type = 3
+base_hp = 32.0
+move_speed = 1.8
+body_radius = 0.4
+contact_interval_ticks = 50
+contact_damage = 7.0
+preferred_distance_min = 6.0
+preferred_distance_max = 9.0
+special_interval_ticks = 120
+telegraph_ticks = 30
+projectile_damage = 8.0
+projectile_speed = 6.5
+projectile_radius = 0.18
+projectile_lifetime_ticks = 210
+volley_count = 1
+xp_value = 2

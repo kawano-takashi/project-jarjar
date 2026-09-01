@@ -9,18 +9,18 @@ const MODE_PERFORMANCE: StringName = &"performance"
 const MODE_RELEASE_SMOKE: StringName = &"release_smoke"
 const MODE_RELEASE_PACK_AUDIT: StringName = &"release_pack_audit"
 const QA_SCENARIOS: Array[String] = [
-	"weapon_wood_stick",
-	"weapon_bow",
-	"weapon_staff",
-	"weapon_sword",
-	"weapon_stagger",
-	"pre_quota_death",
-	"pre_quota_timeout",
-	"post_quota_death",
-	"reward_controls",
-	"inventory_controller",
-	"result_controller",
-	"boss_299",
+	"weapon_resonance_wave",
+	"weapon_homing_core",
+	"weapon_direction_needle",
+	"weapon_arc_crystal",
+	"weapon_return_ring",
+	"weapon_orbit_array",
+	"weapon_mass_shot",
+	"weapon_zero_field",
+	"level_up_modal",
+	"chest_reward",
+	"boss_phase_three",
+	"result",
 ]
 
 const DEBUG_OPTIONS: Array[String] = [

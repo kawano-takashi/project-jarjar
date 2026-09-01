@@ -38,7 +38,7 @@ New-Item -ItemType Directory -Force -Path .\build\windows | Out-Null
 
 ## Constraints
 
-- 承認済みのbalance、確率、score係数、受入閾値を、ユーザーの明示承認なしに変更しない。
+- 承認済みのbalance値、確率、進化時刻、受入閾値を、ユーザーの明示承認なしに変更しない。
 - QAとplaytestは `tests/release.ps1` を使い、実ユーザー設定を汚さない。
 - `build/windows/ProjectJARJAR.exe`、`.console.exe`、`.pck`を手動で差し替えない。
 - GDScriptを変更する前に `.codex/skills/godot-gdscript-guard/SKILL.md` を読み、Python構文を持ち込まない。

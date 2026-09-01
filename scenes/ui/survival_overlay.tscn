@@ -1,0 +1,334 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://src/ui/survival_overlay.gd" id="1_overlay"]
+[ext_resource type="PackedScene" path="res://scenes/ui/settings_overlay.tscn" id="2_settings"]
+[ext_resource type="PackedScene" path="res://scenes/ui/confirmation_dialog.tscn" id="3_confirm"]
+[ext_resource type="Script" path="res://src/ui/strict_chest_action.gd" id="4_chest_action"]
+
+[sub_resource type="StyleBoxFlat" id="ModalPanel"]
+content_margin_left = 32.0
+content_margin_top = 28.0
+content_margin_right = 32.0
+content_margin_bottom = 28.0
+bg_color = Color(0.025, 0.039, 0.055, 0.98)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(0.31, 0.8, 0.7, 1)
+corner_radius_top_left = 14
+corner_radius_top_right = 14
+corner_radius_bottom_right = 14
+corner_radius_bottom_left = 14
+
+[sub_resource type="StyleBoxFlat" id="ChoiceFocus"]
+content_margin_left = 18.0
+content_margin_top = 18.0
+content_margin_right = 18.0
+content_margin_bottom = 18.0
+bg_color = Color(0.12, 0.19, 0.23, 1)
+border_width_left = 4
+border_width_top = 4
+border_width_right = 4
+border_width_bottom = 4
+border_color = Color(1, 0.73, 0.26, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="ChestAction"]
+content_margin_left = 18.0
+content_margin_top = 14.0
+content_margin_right = 18.0
+content_margin_bottom = 14.0
+bg_color = Color(0.1, 0.16, 0.2, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.31, 0.8, 0.7, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[node name="SurvivalOverlay" type="CanvasLayer"]
+layer = 100
+script = ExtResource("1_overlay")
+
+[node name="Root" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="LevelUpModal" type="Control" parent="Root"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+
+[node name="Dim" type="ColorRect" parent="Root/LevelUpModal"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+color = Color(0, 0, 0, 0.74)
+
+[node name="Center" type="CenterContainer" parent="Root/LevelUpModal"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="Root/LevelUpModal/Center"]
+custom_minimum_size = Vector2(1320, 590)
+layout_mode = 2
+theme_override_styles/panel = SubResource("ModalPanel")
+
+[node name="Content" type="VBoxContainer" parent="Root/LevelUpModal/Center/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 18
+
+[node name="Heading" type="Label" parent="Root/LevelUpModal/Center/Panel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.75, 0.28, 1)
+theme_override_font_sizes/font_size = 42
+text = "LEVEL UP"
+horizontal_alignment = 1
+
+[node name="Hint" type="Label" parent="Root/LevelUpModal/Center/Panel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.76, 0.84, 0.86, 1)
+theme_override_font_sizes/font_size = 19
+text = "方向キー／左スティックで選択　A／Enter／クリックで決定"
+horizontal_alignment = 1
+
+[node name="Choices" type="HBoxContainer" parent="Root/LevelUpModal/Center/Panel/Content"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 22
+alignment = 1
+
+[node name="LevelChoice0" type="Button" parent="Root/LevelUpModal/Center/Panel/Content/Choices"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(390, 390)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 2
+theme_override_font_sizes/font_size = 21
+theme_override_styles/focus = SubResource("ChoiceFocus")
+text = "CHOICE 1"
+autowrap_mode = 2
+
+[node name="LevelChoice1" type="Button" parent="Root/LevelUpModal/Center/Panel/Content/Choices"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(390, 390)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 2
+theme_override_font_sizes/font_size = 21
+theme_override_styles/focus = SubResource("ChoiceFocus")
+text = "CHOICE 2"
+autowrap_mode = 2
+
+[node name="LevelChoice2" type="Button" parent="Root/LevelUpModal/Center/Panel/Content/Choices"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(390, 390)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 2
+theme_override_font_sizes/font_size = 21
+theme_override_styles/focus = SubResource("ChoiceFocus")
+text = "CHOICE 3"
+autowrap_mode = 2
+
+[node name="ChestModal" type="Control" parent="Root"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+
+[node name="Dim" type="ColorRect" parent="Root/ChestModal"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+color = Color(0, 0, 0, 0.76)
+
+[node name="Center" type="CenterContainer" parent="Root/ChestModal"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="Root/ChestModal/Center"]
+custom_minimum_size = Vector2(820, 420)
+layout_mode = 2
+theme_override_styles/panel = SubResource("ModalPanel")
+
+[node name="Content" type="VBoxContainer" parent="Root/ChestModal/Center/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 24
+
+[node name="ChestHeading" type="Label" parent="Root/ChestModal/Center/Panel/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.75, 0.28, 1)
+theme_override_font_sizes/font_size = 40
+text = "宝箱"
+horizontal_alignment = 1
+
+[node name="ChestResult" type="Label" parent="Root/ChestModal/Center/Panel/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 28
+text = "結果"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="ChestContinue" type="PanelContainer" parent="Root/ChestModal/Center/Panel/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 64)
+layout_mode = 2
+focus_mode = 2
+theme_override_styles/panel = SubResource("ChestAction")
+script = ExtResource("4_chest_action")
+
+[node name="Label" type="Label" parent="Root/ChestModal/Center/Panel/Content/ChestContinue"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_font_sizes/font_size = 22
+text = "続ける　A／Enter／クリック（2秒で自動）"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="PauseModal" type="Control" parent="Root"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+
+[node name="Dim" type="ColorRect" parent="Root/PauseModal"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+color = Color(0, 0, 0, 0.68)
+
+[node name="Center" type="CenterContainer" parent="Root/PauseModal"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="Root/PauseModal/Center"]
+custom_minimum_size = Vector2(1080, 760)
+layout_mode = 2
+theme_override_styles/panel = SubResource("ModalPanel")
+
+[node name="Content" type="VBoxContainer" parent="Root/PauseModal/Center/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="Heading" type="Label" parent="Root/PauseModal/Center/Panel/Content"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 38
+text = "PAUSE"
+horizontal_alignment = 1
+
+[node name="GuideHeading" type="Label" parent="Root/PauseModal/Center/Panel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.75, 0.28, 1)
+theme_override_font_sizes/font_size = 25
+text = "進化ガイド"
+horizontal_alignment = 1
+
+[node name="EvolutionGuide" type="Label" parent="Root/PauseModal/Center/Panel/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 220)
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_colors/font_color = Color(0.86, 0.93, 0.94, 1)
+theme_override_constants/line_spacing = 5
+theme_override_font_sizes/font_size = 19
+text = "進化ペアを読み込み中"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="GuideCondition" type="Label" parent="Root/PauseModal/Center/Panel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.66, 0.77, 0.8, 1)
+theme_override_font_sizes/font_size = 17
+text = "武器Lv8 ＋ 対応パッシブ所持で、次の宝箱から進化候補になります"
+horizontal_alignment = 1
+
+[node name="PauseResume" type="Button" parent="Root/PauseModal/Center/Panel/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 68)
+layout_mode = 2
+focus_mode = 2
+theme_override_font_sizes/font_size = 24
+theme_override_styles/focus = SubResource("ChoiceFocus")
+text = "再開　A／Enter"
+
+[node name="PauseSettings" type="Button" parent="Root/PauseModal/Center/Panel/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 68)
+layout_mode = 2
+focus_mode = 2
+theme_override_font_sizes/font_size = 24
+theme_override_styles/focus = SubResource("ChoiceFocus")
+text = "設定"
+
+[node name="PauseTitle" type="Button" parent="Root/PauseModal/Center/Panel/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 68)
+layout_mode = 2
+focus_mode = 2
+theme_override_font_sizes/font_size = 24
+theme_override_styles/focus = SubResource("ChoiceFocus")
+text = "タイトルへ戻る"
+
+[node name="SettingsOverlay" parent="Root" instance=ExtResource("2_settings")]
+unique_name_in_owner = true
+
+[node name="TitleConfirmation" parent="Root" instance=ExtResource("3_confirm")]
+unique_name_in_owner = true

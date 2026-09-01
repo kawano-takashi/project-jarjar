@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="PassiveDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/passive_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+passive_id = &"amplifier_core"
+display_name = "増幅核"
+description = "威力 +10%/Lv"
+selection_weight = 100.0
+stat_id = &"might_pct"
+amount_per_level = 10.0
+paired_weapon_id = &"mass_projectile"

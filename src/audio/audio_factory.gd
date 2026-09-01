@@ -7,90 +7,57 @@ const MAX_AMPLITUDE: float = 0.65
 const ENVELOPE_SECONDS: float = 0.005
 const PCM16_POSITIVE_MAX: float = 32_767.0
 
-const PICKUP_FREQUENCY_HZ: float = 880.0
-const PICKUP_DURATION_SECONDS: float = 0.05
-const NORMAL_OPEN_FREQUENCY_HZ: float = 523.0
-const NORMAL_OPEN_DURATION_SECONDS: float = 0.08
-const RARE_OPEN_FREQUENCY_HZ: float = 659.0
-const RARE_OPEN_DURATION_SECONDS: float = 0.12
-const EPIC_PREALERT_START_HZ: float = 220.0
-const EPIC_PREALERT_END_HZ: float = 880.0
-const EPIC_PREALERT_DURATION_SECONDS: float = 0.55
-const LEGENDARY_PREALERT_START_HZ: float = 330.0
-const LEGENDARY_PREALERT_END_HZ: float = 1_320.0
-const LEGENDARY_PREALERT_DURATION_SECONDS: float = 0.75
-const WAVE_CLEAR_FREQUENCIES_HZ: Array[float] = [523.0, 659.0, 784.0]
-const WAVE_CLEAR_NOTE_DURATION_SECONDS: float = 0.12
-const FUSION_START_HZ: float = 392.0
-const FUSION_END_HZ: float = 784.0
-const FUSION_DURATION_SECONDS: float = 0.30
+const XP_PICKUP_FREQUENCY_HZ: float = 920.0
+const XP_PICKUP_DURATION_SECONDS: float = 0.035
+const STOP_PICKUP_FREQUENCIES_HZ: Array[float] = [660.0, 440.0]
+const LEVEL_UP_FREQUENCIES_HZ: Array[float] = [523.0, 659.0, 784.0]
+const CHEST_OPEN_FREQUENCIES_HZ: Array[float] = [392.0, 523.0, 659.0]
+const EVOLUTION_START_HZ: float = 330.0
+const EVOLUTION_END_HZ: float = 1_320.0
+const BOSS_SPAWN_START_HZ: float = 110.0
+const BOSS_SPAWN_END_HZ: float = 55.0
+const PLAYER_HIT_FREQUENCY_HZ: float = 145.0
 
 
-static func pickup() -> AudioStreamWAV:
-	return create_tone(PICKUP_FREQUENCY_HZ, PICKUP_DURATION_SECONDS)
+static func build_event_streams() -> Dictionary[StringName, AudioStream]:
+	return {
+		&"xp_pickup": xp_pickup(),
+		&"stop_pickup": stop_pickup(),
+		&"level_up": level_up(),
+		&"chest_pickup": chest_open(),
+		&"chest_open": chest_open(),
+		&"evolution": evolution(),
+		&"boss_spawn": boss_spawn(),
+		&"player_hit": player_hit(),
+	}
 
 
-static func normal_open() -> AudioStreamWAV:
-	return create_tone(NORMAL_OPEN_FREQUENCY_HZ, NORMAL_OPEN_DURATION_SECONDS)
+static func xp_pickup() -> AudioStreamWAV:
+	return create_tone(XP_PICKUP_FREQUENCY_HZ, XP_PICKUP_DURATION_SECONDS)
 
 
-static func rare_open() -> AudioStreamWAV:
-	return create_tone(RARE_OPEN_FREQUENCY_HZ, RARE_OPEN_DURATION_SECONDS)
+static func stop_pickup() -> AudioStreamWAV:
+	return create_tone_sequence(STOP_PICKUP_FREQUENCIES_HZ, 0.07)
 
 
-static func epic_prealert() -> AudioStreamWAV:
-	return create_sweep(
-		EPIC_PREALERT_START_HZ,
-		EPIC_PREALERT_END_HZ,
-		EPIC_PREALERT_DURATION_SECONDS,
-	)
+static func level_up() -> AudioStreamWAV:
+	return create_tone_sequence(LEVEL_UP_FREQUENCIES_HZ, 0.09)
 
 
-static func legendary_prealert() -> AudioStreamWAV:
-	return create_sweep(
-		LEGENDARY_PREALERT_START_HZ,
-		LEGENDARY_PREALERT_END_HZ,
-		LEGENDARY_PREALERT_DURATION_SECONDS,
-	)
+static func chest_open() -> AudioStreamWAV:
+	return create_tone_sequence(CHEST_OPEN_FREQUENCIES_HZ, 0.11)
 
 
-static func wave_clear() -> AudioStreamWAV:
-	return create_tone_sequence(
-		WAVE_CLEAR_FREQUENCIES_HZ,
-		WAVE_CLEAR_NOTE_DURATION_SECONDS,
-	)
+static func evolution() -> AudioStreamWAV:
+	return create_sweep(EVOLUTION_START_HZ, EVOLUTION_END_HZ, 0.65)
 
 
-static func fusion() -> AudioStreamWAV:
-	return create_sweep(FUSION_START_HZ, FUSION_END_HZ, FUSION_DURATION_SECONDS)
+static func boss_spawn() -> AudioStreamWAV:
+	return create_sweep(BOSS_SPAWN_START_HZ, BOSS_SPAWN_END_HZ, 0.55)
 
 
-static func create_pickup() -> AudioStreamWAV:
-	return pickup()
-
-
-static func create_normal_open() -> AudioStreamWAV:
-	return normal_open()
-
-
-static func create_rare_open() -> AudioStreamWAV:
-	return rare_open()
-
-
-static func create_epic_prealert() -> AudioStreamWAV:
-	return epic_prealert()
-
-
-static func create_legendary_prealert() -> AudioStreamWAV:
-	return legendary_prealert()
-
-
-static func create_wave_clear() -> AudioStreamWAV:
-	return wave_clear()
-
-
-static func create_fusion() -> AudioStreamWAV:
-	return fusion()
+static func player_hit() -> AudioStreamWAV:
+	return create_tone(PLAYER_HIT_FREQUENCY_HZ, 0.09)
 
 
 static func create_tone(frequency_hz: float, duration_seconds: float) -> AudioStreamWAV:

@@ -178,8 +178,12 @@ func _collect_project_paths(
 
 func _preflight_resources(resource_paths: Array[String]) -> bool:
 	for resource_path in resource_paths:
-		if ResourceLoader.load(resource_path) == null:
+		var resource: Resource = ResourceLoader.load(resource_path)
+		if resource == null:
 			print("SOURCE_PREFLIGHT_FAILED path=%s" % resource_path)
+			return false
+		if resource is Script and not (resource as Script).can_instantiate():
+			print("SOURCE_PREFLIGHT_FAILED path=%s reason=script_cannot_instantiate" % resource_path)
 			return false
 	return true
 
@@ -190,6 +194,8 @@ func _discover_tests(test_script_paths: Array[String]) -> Dictionary:
 		var test_script := ResourceLoader.load(script_path)
 		if test_script == null:
 			return {"valid": false, "reason": "test-load path=%s" % script_path, "tests": []}
+		if test_script is Script and not (test_script as Script).can_instantiate():
+			return {"valid": false, "reason": "test-parse path=%s" % script_path, "tests": []}
 		var test_instance: Variant = test_script.new()
 		if not test_instance.has_method("test_names") or not test_instance.has_method("run_test"):
 			return {"valid": false, "reason": "test-contract path=%s" % script_path, "tests": []}

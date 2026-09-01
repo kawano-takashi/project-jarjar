@@ -2,263 +2,213 @@ class_name CombatHud
 extends Control
 
 
-const MIN_FEEDBACK_DURATION_SECONDS: float = 0.40
-const FLASH_PULSE_DURATION_SECONDS: float = 0.50
-const REDUCED_FLASH_OUTLINE_SIZE: int = 5
-const InventoryItemVisualsScript := preload("res://src/ui/inventory_item_visuals.gd")
+const FEEDBACK_SECONDS: float = 0.45
 
-@onready var _wave_value: Label = %WaveValue
 @onready var _time_value: Label = %TimeValue
-@onready var _kills_value: Label = %KillsValue
+@onready var _level_kills: Label = %LevelKills
 @onready var _hp_value: Label = %HpValue
-@onready var _chests_value: Label = %ChestsValue
-@onready var _weapon_icons: Array[TextureRect] = [
-	%WeaponSlot0Icon,
-	%WeaponSlot1Icon,
-	%WeaponSlot2Icon,
+@onready var _hp_bar: ProgressBar = %HpBar
+@onready var _xp_value: Label = %XpValue
+@onready var _xp_bar: ProgressBar = %XpBar
+@onready var _boss_panel: PanelContainer = %BossPanel
+@onready var _boss_hp_value: Label = %BossHpValue
+@onready var _boss_hp_bar: ProgressBar = %BossHpBar
+@onready var _weapon_slots: Array[Label] = [
+	%WeaponSlot0,
+	%WeaponSlot1,
+	%WeaponSlot2,
+	%WeaponSlot3,
+	%WeaponSlot4,
 ]
-@onready var _weapon_values: Array[Label] = [
-	%WeaponSlot0Value,
-	%WeaponSlot1Value,
-	%WeaponSlot2Value,
+@onready var _passive_slots: Array[Label] = [
+	%PassiveSlot0,
+	%PassiveSlot1,
+	%PassiveSlot2,
+	%PassiveSlot3,
+	%PassiveSlot4,
 ]
-@onready var _bonus_time: Label = %BonusTime
-@onready var _boss_requirement: Label = %BossRequirement
-@onready var _boss_spawn_status: Label = %BossSpawnStatus
-@onready var _debug_overlay: PanelContainer = %DebugOverlay
-@onready var _debug_active: Label = %DebugActive
-@onready var _debug_overflow: Label = %DebugOverflow
 @onready var _feedback_label: Label = %FeedbackLabel
+@onready var _debug_overlay: Label = %DebugOverlay
 
 var _feedback_remaining: float = 0.0
-var _feedback_duration: float = 0.0
-var _feedback_elapsed: float = 0.0
-var _feedback_reduce_motion: bool = false
-var _feedback_reduce_flashes: bool = false
-var _feedback_pulse_start_count: int = 0
-var _feedback_merged_event_count: int = 0
 
 
 func _ready() -> void:
-	_debug_overlay.visible = OS.is_debug_build()
-	set_process(false)
+	_feedback_label.visible = false
+	update_from_values({})
 
 
 func _process(delta: float) -> void:
-	var safe_delta: float = maxf(0.0, delta)
-	_feedback_remaining = maxf(0.0, _feedback_remaining - safe_delta)
-	_feedback_elapsed += safe_delta
+	if _feedback_remaining <= 0.0 or delta <= 0.0:
+		return
+	_feedback_remaining = maxf(0.0, _feedback_remaining - delta)
 	if _feedback_remaining <= 0.0:
 		_feedback_label.visible = false
-		set_process(false)
-		return
-	var progress: float = clampf(_feedback_elapsed / _feedback_duration, 0.0, 1.0)
-	var flash_progress: float = clampf(
-		_feedback_elapsed / FLASH_PULSE_DURATION_SECONDS,
-		0.0,
-		1.0,
-	)
-	_feedback_label.modulate.a = (
-		1.0
-		if _feedback_reduce_flashes
-		else 0.72 + 0.28 * sin(flash_progress * PI)
-	)
-	_feedback_label.scale = (
-		Vector2.ONE
-		if _feedback_reduce_motion
-		else Vector2.ONE * (1.0 + 0.05 * sin(progress * PI))
-	)
 
 
-func present_damage(reduce_motion: bool, reduce_flashes: bool) -> void:
-	_show_feedback(
-		"DAMAGE",
-		Color(1.0, 0.52, 0.42),
-		MIN_FEEDBACK_DURATION_SECONDS,
-		reduce_motion,
-		reduce_flashes,
-	)
+func update_from_snapshot(snapshot: Variant) -> void:
+	var values: Variant = _read_property(snapshot, &"hud_values", {})
+	if values is Dictionary:
+		update_from_values(values as Dictionary)
+	else:
+		update_from_values({})
 
 
-func present_pickup(count: int, reduce_motion: bool, reduce_flashes: bool) -> void:
-	_show_feedback(
-		"箱を自動回収 +%d" % maxi(1, count),
-		Color(1.0, 0.78, 0.32),
-		0.50,
-		reduce_motion,
-		reduce_flashes,
-	)
+func update_from_values(values: Dictionary) -> void:
+	var combat_tick: int = int(values.get("combat_tick", 0))
+	var elapsed_seconds: float = float(values.get(
+		"time_seconds",
+		values.get("elapsed_seconds", float(combat_tick) / 60.0),
+	))
+	var boss_active: bool = bool(values.get("boss_active", values.get("boss_spawned", false)))
+	_time_value.text = _format_time(elapsed_seconds, boss_active)
+
+	var level: int = int(values.get("level", values.get("player_level", 1)))
+	var total_kills: int = int(values.get("total_kills", values.get("kills", 0)))
+	_level_kills.text = "LEVEL %d　撃破 %d" % [level, total_kills]
+
+	var current_hp: float = maxf(0.0, float(values.get("current_hp", 100.0)))
+	var max_hp: float = maxf(1.0, float(values.get("max_hp", 100.0)))
+	_hp_bar.max_value = max_hp
+	_hp_bar.value = minf(current_hp, max_hp)
+	_hp_value.text = "HP %s / %s" % [_format_number(current_hp), _format_number(max_hp)]
+
+	var build_maxed: bool = bool(values.get("build_maxed", false))
+	if build_maxed:
+		_xp_bar.max_value = 1.0
+		_xp_bar.value = 1.0
+		_xp_value.text = "XP MAX"
+	else:
+		var xp: int = maxi(0, int(values.get("xp_into_level", values.get("xp", 0))))
+		var xp_for_next: int = maxi(1, int(values.get("xp_for_next_level", 1)))
+		_xp_bar.max_value = xp_for_next
+		_xp_bar.value = mini(xp, xp_for_next)
+		_xp_value.text = "XP %d / %d" % [xp, xp_for_next]
+
+	_update_build_slots(_weapon_slots, values.get("weapons", []), true)
+	_update_build_slots(_passive_slots, values.get("passives", []), false)
+	_update_boss(values, boss_active)
+	_update_debug(values)
 
 
-func present_wave_clear(reduce_motion: bool, reduce_flashes: bool) -> void:
-	_show_feedback(
-		"WAVE CLEAR",
-		Color(0.46, 0.95, 0.72),
-		0.80,
-		reduce_motion,
-		reduce_flashes,
-	)
+func present_damage(reduce_motion: bool = false, reduce_flashes: bool = false) -> void:
+	_show_feedback("HIT", Color(1.0, 0.34, 0.28, 1.0), reduce_motion, reduce_flashes)
 
 
-func test_tick_feedback(delta: float) -> void:
-	_process(delta)
+func present_pickup(count: int = 1, reduce_motion: bool = false, reduce_flashes: bool = false) -> void:
+	var text: String = "+XP" if count <= 1 else "+XP ×%d" % count
+	_show_feedback(text, Color(0.48, 0.9, 1.0, 1.0), reduce_motion, reduce_flashes)
 
 
-func debug_feedback_state() -> Dictionary:
+func present_level_up(reduce_motion: bool = false, reduce_flashes: bool = false) -> void:
+	_show_feedback("LEVEL UP", Color(1.0, 0.76, 0.28, 1.0), reduce_motion, reduce_flashes)
+
+
+func present_evolution(reduce_motion: bool = false, reduce_flashes: bool = false) -> void:
+	_show_feedback("EVOLUTION", Color(0.76, 0.54, 1.0, 1.0), reduce_motion, reduce_flashes)
+
+
+func debug_state() -> Dictionary:
+	var weapons := PackedStringArray()
+	var passives := PackedStringArray()
+	for label: Label in _weapon_slots:
+		weapons.append(label.text)
+	for label: Label in _passive_slots:
+		passives.append(label.text)
 	return {
-		"visible": _feedback_label.visible,
-		"text": _feedback_label.text,
-		"scale": _feedback_label.scale,
-		"alpha": _feedback_label.modulate.a,
-		"outline_size": _feedback_label.get_theme_constant("outline_size"),
-		"reduce_motion": _feedback_reduce_motion,
-		"reduce_flashes": _feedback_reduce_flashes,
-		"pulse_start_count": _feedback_pulse_start_count,
-		"merged_event_count": _feedback_merged_event_count,
-		"elapsed": _feedback_elapsed,
-		"remaining": _feedback_remaining,
+		"time": _time_value.text,
+		"level_kills": _level_kills.text,
+		"hp": _hp_value.text,
+		"xp": _xp_value.text,
+		"boss_visible": _boss_panel.visible,
+		"boss_hp": _boss_hp_value.text,
+		"weapons": weapons,
+		"passives": passives,
+		"feedback_visible": _feedback_label.visible,
+		"feedback": _feedback_label.text,
 	}
 
 
-func update_from_snapshot(snapshot: CombatSnapshot) -> void:
-	if snapshot == null:
+func _update_build_slots(labels: Array[Label], value: Variant, weapon: bool) -> void:
+	var entries: Array = []
+	if value is Array:
+		entries.assign(value)
+	for index: int in range(labels.size()):
+		var label: Label = labels[index]
+		if index >= entries.size():
+			label.text = "空き"
+			label.modulate = Color(0.56, 0.62, 0.65, 1.0)
+			continue
+		var entry: Variant = entries[index]
+		var display_name: String = str(_read_property(
+			entry,
+			&"display_name",
+			_read_property(entry, &"definition_id", ""),
+		))
+		if display_name.is_empty():
+			display_name = "武器" if weapon else "パッシブ"
+		var level: int = maxi(1, int(_read_property(entry, &"level", 1)))
+		var evolved: bool = bool(_read_property(entry, &"evolved", false))
+		label.text = "%s\n%s" % [display_name, "EVOLVED" if evolved else "Lv %d" % level]
+		label.modulate = Color(1.0, 0.8, 0.38, 1.0) if evolved else Color.WHITE
+
+
+func _update_boss(values: Dictionary, boss_active: bool) -> void:
+	_boss_panel.visible = boss_active
+	if not boss_active:
 		return
-	var values: Dictionary = snapshot.hud_values
-	var wave_number := int(values.get("wave_number", 1))
-	var time_remaining := maxf(0.0, float(values.get("time_remaining", 0.0)))
-	var wave_kills := int(values.get("wave_kills", 0))
-	var kill_quota := int(values.get("kill_quota", 0))
-	var current_hp := maxf(0.0, float(values.get("current_hp", 0.0)))
-	var max_hp := maxf(0.0, float(values.get("max_hp", 0.0)))
-	var wave_chests := int(values.get("wave_chests", 0))
-	var wave_cleared := bool(values.get("wave_cleared", false))
-	var boss_defeated := bool(values.get("boss_defeated", false))
-	var non_boss_spawned := int(values.get("non_boss_spawned", 0))
-
-	_wave_value.text = "WAVE %d" % wave_number
-	_time_value.text = "残り %d 秒" % int(ceil(time_remaining))
-	_kills_value.text = "撃破 %d / %d" % [wave_kills, kill_quota]
-	_hp_value.text = "HP %s / %s" % [_format_health(current_hp), _format_health(max_hp)]
-	_chests_value.text = "箱  %d" % wave_chests
-	var weapon_slots: Array = values.get("weapon_slots", []) as Array
-	for index: int in range(_weapon_values.size()):
-		_update_weapon_slot(weapon_slots, index)
-	_bonus_time.visible = wave_cleared
-	_update_boss_gate(wave_number, boss_defeated, non_boss_spawned)
-	_update_debug_overlay(values, snapshot)
+	var boss_hp: float = maxf(0.0, float(values.get("boss_hp", 0.0)))
+	var boss_max_hp: float = maxf(1.0, float(values.get("boss_max_hp", 1.0)))
+	_boss_hp_bar.max_value = boss_max_hp
+	_boss_hp_bar.value = minf(boss_hp, boss_max_hp)
+	_boss_hp_value.text = "FINAL BOSS %s / %s" % [
+		_format_number(boss_hp),
+		_format_number(boss_max_hp),
+	]
 
 
-func _update_weapon_slot(weapon_slots: Array, slot_index: int) -> void:
-	var icon: TextureRect = _weapon_icons[slot_index]
-	var label: Label = _weapon_values[slot_index]
-	if slot_index < 0 or slot_index >= weapon_slots.size():
-		icon.texture = null
-		label.text = "空き"
-		return
-	var slot: Dictionary = weapon_slots[slot_index] as Dictionary
-	var weapon_type: int = int(slot.get("weapon_type", GameTypes.WeaponType.NONE))
-	var rarity: int = int(slot.get("rarity", -1))
-	if weapon_type == GameTypes.WeaponType.NONE or rarity < 0:
-		icon.texture = null
-		label.text = "空き"
-		return
-	icon.texture = InventoryItemVisualsScript.icon_for_weapon_type(weapon_type)
-	icon.modulate = UiPolish.rarity_color(rarity)
-	label.text = _rarity_label(rarity)
-	label.add_theme_color_override(&"font_color", UiPolish.rarity_color(rarity))
-
-
-func _rarity_label(rarity: int) -> String:
-	match rarity:
-		GameTypes.Rarity.RARE:
-			return "RARE"
-		GameTypes.Rarity.EPIC:
-			return "EPIC"
-		GameTypes.Rarity.LEGENDARY:
-			return "LEGENDARY"
-	return "COMMON"
-
-
-func _update_boss_gate(
-	wave_number: int,
-	boss_defeated: bool,
-	non_boss_spawned: int
-) -> void:
-	if wave_number != 8:
-		_boss_requirement.visible = false
-		_boss_spawn_status.visible = false
-		return
-	_boss_requirement.visible = true
-	if boss_defeated:
-		_boss_requirement.text = "ボス撃破済み／通常敵スポーン中"
-		_boss_spawn_status.visible = false
-		return
-	_boss_requirement.text = "300到達にはボス撃破が必要"
-	_boss_spawn_status.text = "通常敵スポーン停止中"
-	_boss_spawn_status.visible = non_boss_spawned >= 299
-
-
-func _update_debug_overlay(values: Dictionary, snapshot: CombatSnapshot) -> void:
-	if not OS.is_debug_build():
-		_debug_overlay.visible = false
-		return
-	_debug_overlay.visible = true
-	var active_enemy := int(values.get("active_enemy", snapshot.active_enemy_count))
-	var active_projectile := int(
-		values.get("active_projectile", snapshot.active_projectile_count)
-	)
-	var active_vfx := int(values.get("active_vfx", snapshot.active_vfx_count))
-	var enemy_overflow := int(values.get("enemy_pool_overflow", 0))
-	var projectile_overflow := int(values.get("projectile_pool_overflow", 0))
-	var vfx_overflow := int(values.get("vfx_pool_overflow", 0))
-	_debug_active.text = (
-		"ACTIVE  ENEMY %d  PROJECTILE %d  VFX %d"
-		% [active_enemy, active_projectile, active_vfx]
-	)
-	_debug_overflow.text = (
-		"POOL OVERFLOW  ENEMY %d  PROJECTILE %d  VFX %d"
-		% [enemy_overflow, projectile_overflow, vfx_overflow]
-	)
-
-
-func _format_health(value: float) -> String:
-	if is_equal_approx(value, roundf(value)):
-		return str(int(roundf(value)))
-	return "%.1f" % value
+func _update_debug(values: Dictionary) -> void:
+	_debug_overlay.text = "E %d / P %d / FX %d / XP %d" % [
+		int(values.get("active_enemy", 0)),
+		int(values.get("active_projectile", 0)),
+		int(values.get("active_vfx", 0)),
+		int(values.get(
+			"active_xp",
+			values.get("active_xp_pickup", values.get("active_pickup", 0)),
+		)),
+	]
 
 
 func _show_feedback(
 	text: String,
 	color: Color,
-	duration: float,
-	reduce_motion: bool,
+	_reduce_motion: bool,
 	reduce_flashes: bool,
 ) -> void:
-	var was_visible: bool = _feedback_label.visible
 	_feedback_label.text = text
-	_feedback_label.add_theme_color_override("font_color", color)
-	_feedback_label.add_theme_color_override("font_outline_color", Color(0.02, 0.03, 0.04, 1.0))
-	_feedback_label.add_theme_constant_override(
-		"outline_size",
-		REDUCED_FLASH_OUTLINE_SIZE if reduce_flashes else 2,
-	)
-	if was_visible:
-		_feedback_merged_event_count += 1
-	else:
-		_feedback_elapsed = 0.0
-		_feedback_pulse_start_count += 1
-		_feedback_label.modulate = Color.WHITE
-		_feedback_label.scale = Vector2.ONE
+	_feedback_label.modulate = color
+	_feedback_label.add_theme_constant_override("outline_size", 3 if reduce_flashes else 5)
 	_feedback_label.visible = true
-	var safe_duration: float = maxf(MIN_FEEDBACK_DURATION_SECONDS, duration)
-	if was_visible:
-		_feedback_remaining = maxf(_feedback_remaining, safe_duration)
-		_feedback_duration = maxf(_feedback_duration, safe_duration)
-	else:
-		_feedback_remaining = safe_duration
-		_feedback_duration = safe_duration
-	_feedback_reduce_motion = reduce_motion
-	_feedback_reduce_flashes = reduce_flashes
-	if not was_visible:
-		_feedback_label.modulate.a = 1.0 if reduce_flashes else 0.72
-	set_process(true)
+	_feedback_remaining = FEEDBACK_SECONDS
+
+
+func _format_time(elapsed_seconds: float, boss_active: bool) -> String:
+	var total_seconds: int = floori(maxf(0.0, elapsed_seconds))
+	var minutes: int = floori(float(total_seconds) / 60.0)
+	var base: String = "%02d:%02d" % [minutes, total_seconds % 60]
+	return "%s  BOSS" % base if boss_active else base
+
+
+func _format_number(value: float) -> String:
+	return "%d" % roundi(value)
+
+
+func _read_property(value: Variant, property_name: StringName, fallback: Variant) -> Variant:
+	if value is Dictionary:
+		return (value as Dictionary).get(property_name, fallback)
+	if value is Object:
+		var object := value as Object
+		for property: Dictionary in object.get_property_list():
+			if StringName(property.get("name", "")) == property_name:
+				return object.get(property_name)
+	return fallback

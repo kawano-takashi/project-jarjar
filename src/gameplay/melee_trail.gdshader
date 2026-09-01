@@ -6,10 +6,10 @@ varying vec4 trail_color;
 varying vec4 trail_custom_data;
 
 const float SWEEP_PORTION = 0.6666667;
-const float WOOD_HALF_ANGLE = 0.4799655;
-const float SWORD_HALF_ANGLE = 1.0471976;
-const float WOOD_INNER_RADIUS = 0.62;
-const float SWORD_INNER_RADIUS = 0.82;
+const float WAVE_HALF_ANGLE = 0.4799655;
+const float AURA_HALF_ANGLE = 1.0471976;
+const float WAVE_INNER_RADIUS = 0.62;
+const float AURA_INNER_RADIUS = 0.82;
 
 void vertex() {
 	local_plane_position = vec2(VERTEX.x, VERTEX.z);
@@ -39,8 +39,8 @@ void fragment() {
 	if (effect_kind < 0.5) {
 		mask = 1.0 - smoothstep(0.72, 1.0, radius);
 	} else {
-		float half_angle = effect_kind < 1.5 ? WOOD_HALF_ANGLE : SWORD_HALF_ANGLE;
-		float inner_radius = effect_kind < 1.5 ? WOOD_INNER_RADIUS : SWORD_INNER_RADIUS;
+		float half_angle = effect_kind < 1.5 ? WAVE_HALF_ANGLE : AURA_HALF_ANGLE;
+		float inner_radius = effect_kind < 1.5 ? WAVE_INNER_RADIUS : AURA_INNER_RADIUS;
 		float angle = atan(local_plane_position.x, local_plane_position.y);
 		float normalized_angle = clamp((angle + half_angle) / (2.0 * half_angle), 0.0, 1.0);
 		float sweep_progress = clamp(age / SWEEP_PORTION, 0.0, 1.0);

@@ -1,4 +1,4 @@
-[gd_scene load_steps=23 format=3]
+[gd_scene load_steps=32 format=3]
 
 [ext_resource type="Script" path="res://src/gameplay/arena_presenter.gd" id="1_presenter"]
 [ext_resource type="PackedScene" path="res://scenes/ui/combat_hud.tscn" id="2_hud"]
@@ -10,7 +10,7 @@ roughness = 0.9
 
 [sub_resource type="BoxMesh" id="FloorMesh"]
 material = SubResource("FloorMaterial")
-size = Vector3(30, 0.1, 18)
+size = Vector3(40, 0.1, 40)
 
 [sub_resource type="StandardMaterial3D" id="BoundaryMaterial"]
 albedo_color = Color(0.28, 0.64, 0.53, 1)
@@ -21,11 +21,11 @@ roughness = 0.65
 
 [sub_resource type="BoxMesh" id="BoundaryHorizontalMesh"]
 material = SubResource("BoundaryMaterial")
-size = Vector3(30.5, 0.25, 0.25)
+size = Vector3(40.5, 0.25, 0.25)
 
 [sub_resource type="BoxMesh" id="BoundaryVerticalMesh"]
 material = SubResource("BoundaryMaterial")
-size = Vector3(0.25, 0.25, 18)
+size = Vector3(0.25, 0.25, 40)
 
 [sub_resource type="StandardMaterial3D" id="PlayerMaterial"]
 albedo_color = Color(0.3, 0.78, 0.96, 1)
@@ -97,7 +97,58 @@ size = Vector3(0.7, 0.48, 0.5)
 [sub_resource type="MultiMesh" id="ChestMultiMesh"]
 transform_format = 1
 mesh = SubResource("ChestMesh")
-instance_count = 128
+instance_count = 8
+visible_instance_count = 0
+
+[sub_resource type="StandardMaterial3D" id="XpMaterial"]
+albedo_color = Color(0.2, 0.92, 1, 1)
+emission_enabled = true
+emission = Color(0.02, 0.55, 0.75, 1)
+emission_energy_multiplier = 2.2
+
+[sub_resource type="SphereMesh" id="XpMesh"]
+material = SubResource("XpMaterial")
+radius = 0.12
+height = 0.28
+
+[sub_resource type="MultiMesh" id="XpMultiMesh"]
+transform_format = 1
+mesh = SubResource("XpMesh")
+instance_count = 2048
+visible_instance_count = 0
+
+[sub_resource type="StandardMaterial3D" id="PickupMaterial"]
+albedo_color = Color(0.96, 0.38, 0.92, 1)
+emission_enabled = true
+emission = Color(0.52, 0.04, 0.45, 1)
+emission_energy_multiplier = 1.8
+
+[sub_resource type="BoxMesh" id="PickupMesh"]
+material = SubResource("PickupMaterial")
+size = Vector3(0.45, 0.45, 0.45)
+
+[sub_resource type="MultiMesh" id="PickupMultiMesh"]
+transform_format = 1
+mesh = SubResource("PickupMesh")
+instance_count = 32
+visible_instance_count = 0
+
+[sub_resource type="StandardMaterial3D" id="NodeMaterial"]
+albedo_color = Color(0.58, 0.34, 0.94, 1)
+emission_enabled = true
+emission = Color(0.22, 0.05, 0.55, 1)
+emission_energy_multiplier = 1.6
+
+[sub_resource type="CylinderMesh" id="NodeMesh"]
+material = SubResource("NodeMaterial")
+top_radius = 0.3
+bottom_radius = 0.5
+height = 1.0
+
+[sub_resource type="MultiMesh" id="NodeMultiMesh"]
+transform_format = 1
+mesh = SubResource("NodeMesh")
+instance_count = 8
 visible_instance_count = 0
 
 [node name="ArenaCombat" type="Node3D"]
@@ -108,19 +159,19 @@ position = Vector3(0, -0.05, 0)
 mesh = SubResource("FloorMesh")
 
 [node name="BoundaryNorth" type="MeshInstance3D" parent="."]
-position = Vector3(0, 0.125, -9)
+position = Vector3(0, 0.125, -20)
 mesh = SubResource("BoundaryHorizontalMesh")
 
 [node name="BoundarySouth" type="MeshInstance3D" parent="."]
-position = Vector3(0, 0.125, 9)
+position = Vector3(0, 0.125, 20)
 mesh = SubResource("BoundaryHorizontalMesh")
 
 [node name="BoundaryWest" type="MeshInstance3D" parent="."]
-position = Vector3(-15, 0.125, 0)
+position = Vector3(-20, 0.125, 0)
 mesh = SubResource("BoundaryVerticalMesh")
 
 [node name="BoundaryEast" type="MeshInstance3D" parent="."]
-position = Vector3(15, 0.125, 0)
+position = Vector3(20, 0.125, 0)
 mesh = SubResource("BoundaryVerticalMesh")
 
 [node name="PlayerMesh" type="MeshInstance3D" parent="."]
@@ -144,6 +195,18 @@ multimesh = SubResource("VfxMultiMesh")
 [node name="ChestInstances" type="MultiMeshInstance3D" parent="."]
 unique_name_in_owner = true
 multimesh = SubResource("ChestMultiMesh")
+
+[node name="XpInstances" type="MultiMeshInstance3D" parent="."]
+unique_name_in_owner = true
+multimesh = SubResource("XpMultiMesh")
+
+[node name="PickupInstances" type="MultiMeshInstance3D" parent="."]
+unique_name_in_owner = true
+multimesh = SubResource("PickupMultiMesh")
+
+[node name="NodeInstances" type="MultiMeshInstance3D" parent="."]
+unique_name_in_owner = true
+multimesh = SubResource("NodeMultiMesh")
 
 [node name="KeyLight" type="DirectionalLight3D" parent="."]
 rotation_degrees = Vector3(-58, -35, 0)

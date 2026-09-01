@@ -2,7 +2,7 @@ class_name VfxState
 extends RefCounted
 
 
-enum EffectKind { GENERIC, WOOD_STICK_TRAIL, SWORD_TRAIL }
+enum EffectKind { GENERIC, ENERGY_WAVE, AURA_PULSE }
 
 
 var pool_index: int = -1
@@ -16,7 +16,7 @@ var sweep_sign: float = 1.0
 var total_lifetime: float = 0.0
 var remaining_lifetime: float = 0.0
 var color: Color = Color.WHITE
-var born_physics_tick: int = 0
+var born_tick: int = 0
 
 
 func activate(
@@ -24,7 +24,7 @@ func activate(
 	p_scale_m: float,
 	p_lifetime: float,
 	p_color: Color,
-	p_born_physics_tick: int,
+	p_born_tick: int,
 	p_effect_kind: EffectKind = EffectKind.GENERIC,
 	p_direction: Vector2 = Vector2.RIGHT,
 	p_sweep_sign: float = 1.0,
@@ -40,7 +40,7 @@ func activate(
 	total_lifetime = maxf(0.0, p_lifetime)
 	remaining_lifetime = total_lifetime
 	color = p_color
-	born_physics_tick = p_born_physics_tick
+	born_tick = p_born_tick
 
 
 func normalized_progress() -> float:
@@ -79,4 +79,4 @@ func deactivate() -> void:
 	total_lifetime = 0.0
 	remaining_lifetime = 0.0
 	color = Color.WHITE
-	born_physics_tick = 0
+	born_tick = 0

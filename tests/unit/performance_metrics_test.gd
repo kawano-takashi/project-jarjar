@@ -106,8 +106,11 @@ func _test_csv_buffer_contract(assertions: Variant) -> void:
 		"active_enemy": 500,
 		"active_projectile": 1_200,
 		"active_vfx": 800,
+		"active_xp": 1_024,
+		"active_weapon": 5,
 		"projectile_pool_used": 1_200,
 		"vfx_pool_used": 800,
+		"xp_pool_used": 1_024,
 		"static_memory_bytes": 80_000_000,
 	}
 	runner.call("_record_csv_frame", 1_234, values)
@@ -135,10 +138,12 @@ func _test_csv_buffer_contract(assertions: Variant) -> void:
 	values["active_enemy"] = 499
 	values["active_projectile"] = 1_199
 	values["active_vfx"] = 799
+	values["active_xp"] = 1_023
+	values["active_weapon"] = 4
 	runner.call("_record_csv_frame", 2_345, values)
 	var overrides: Dictionary = runner.get("_csv_count_overrides")
 	assertions.expect_equal(
-		PackedInt64Array([499, 1_199, 799]),
+		PackedInt64Array([499, 1_199, 799, 1_023, 4]),
 		overrides.get(1, PackedInt64Array()),
 		"count deviations are retained for exact CSV reconstruction",
 	)
@@ -164,31 +169,40 @@ func _test_fixture_contract(assertions: Variant, context: Dictionary) -> void:
 	assertions.expect_equal(500, simulation.enemy_system.enemy_store.active_count(), "performance fixture enemy count")
 	assertions.expect_equal(1_200, simulation.projectile_pool.active_count(), "performance fixture projectile count")
 	assertions.expect_equal(800, simulation.vfx_pool.active_count(), "performance fixture VFX count")
-	assertions.expect_true(simulation.freeze_enemy_ai, "performance fixture freezes enemy AI")
-	assertions.expect_true(simulation.freeze_enemy_timers, "performance fixture freezes enemy timers")
-	assertions.expect_true(simulation.freeze_normal_spawn, "performance fixture freezes normal spawn")
-	assertions.expect_true(simulation.freeze_countdown, "performance fixture freezes countdown")
-	assertions.expect_true(simulation.freeze_all_updates, "performance fixture freezes state updates")
-	var initial_tick: int = simulation.state.physics_tick
-	var initial_rng := {
-		"combat": simulation.state.rng_streams.combat_rng.state,
-		"loot": simulation.state.rng_streams.loot_rng.state,
-		"fusion": simulation.state.rng_streams.fusion_rng.state,
-	}
+	assertions.expect_equal(1_024, simulation.xp_pickup_pool.active_count(), "performance fixture XP count")
+	assertions.expect_equal(5, simulation.state.weapons.size(), "performance fixture weapon count")
+	assertions.expect_true(simulation.freeze_all_updates, "performance fixture keeps the runner compatibility flag")
+	var initial_tick: int = simulation.state.combat_tick
 	for _tick: int in range(600):
 		simulation.step(Vector2.RIGHT, 1.0 / 60.0)
-	assertions.expect_equal(initial_tick, simulation.state.physics_tick, "performance fixture does not advance combat ticks")
+	assertions.expect_equal(initial_tick + 600, simulation.state.combat_tick, "performance fixture advances active combat ticks")
 	assertions.expect_equal(500, simulation.enemy_system.enemy_store.active_count(), "performance enemies remain exact across 600 steps")
 	assertions.expect_equal(1_200, simulation.projectile_pool.active_count(), "performance projectiles remain exact across 600 steps")
 	assertions.expect_equal(800, simulation.vfx_pool.active_count(), "performance VFX remain exact across 600 steps")
+	assertions.expect_equal(1_024, simulation.xp_pickup_pool.active_count(), "performance XP remains exact across 600 steps")
+	assertions.expect_equal(5, simulation.state.weapons.size(), "performance weapons remain exact across 600 steps")
 	assertions.expect_equal(0, simulation.enemy_system.enemy_store.overflow_count, "performance enemy overflow remains zero")
 	assertions.expect_equal(0, simulation.projectile_pool.overflow_count, "performance projectile overflow remains zero")
 	assertions.expect_equal(0, simulation.vfx_pool.overflow_count, "performance VFX overflow remains zero")
-	assertions.expect_equal(initial_rng, {
-		"combat": simulation.state.rng_streams.combat_rng.state,
-		"loot": simulation.state.rng_streams.loot_rng.state,
-		"fusion": simulation.state.rng_streams.fusion_rng.state,
-	}, "performance fixture preserves all RNG states")
+	assertions.expect_equal(0, simulation.xp_pickup_pool.overflow_merge_count, "performance XP overflow remains zero")
+	var workload_metrics: Dictionary = simulation.performance_fixture_metrics()
+	assertions.expect_true(bool(workload_metrics["active_workload"]), "performance fixture executes active workload")
+	assertions.expect_true(bool(workload_metrics["exact_counts"]), "performance fixture maintains exact active counts")
+	assertions.expect_equal(600, workload_metrics["workload_ticks"], "performance workload covers every requested step")
+	assertions.expect_equal(600, workload_metrics["grid_updates"], "performance workload updates the grid every step")
+	assertions.expect_true(int(workload_metrics["projectile_collision_resolutions"]) > 0, "performance workload resolves projectile collisions")
+	assertions.expect_true(int(workload_metrics["weapon_attacks"]) > 0, "performance workload fires equipped weapons")
+	assertions.expect_true(int(workload_metrics["enemy_pool_reuse"]) > 0, "performance enemy pool reuses slots")
+	assertions.expect_true(int(workload_metrics["projectile_pool_reuse"]) > 0, "performance projectile pool reuses slots")
+	assertions.expect_true(int(workload_metrics["vfx_pool_reuse"]) > 0, "performance VFX pool reuses slots")
+	assertions.expect_true(int(workload_metrics["xp_pool_reuse"]) > 0, "performance XP pool reuses slots")
+	assertions.expect_equal(0, workload_metrics["pool_orphan_count"], "performance pools have no orphan indices")
+	runner.call("_capture_and_validate_workload_metrics")
+	assertions.expect_equal(PackedStringArray(), runner.get("_failure_reasons"), "formal runner accepts active workload counters")
+	var summary: Dictionary = runner.call("_build_summary", {})
+	assertions.expect_true(bool(summary["active_workload"]), "formal summary records active workload")
+	assertions.expect_equal(600, summary["workload_ticks"], "formal summary records workload tick count")
+	assertions.expect_equal(0, summary["pool_orphan_count"], "formal summary records zero pool orphans")
 	runner.free()
 
 	var wrong_seed_simulation := _new_simulation(RunnerScript.RUN_SEED + 1, catalog)
@@ -206,7 +220,7 @@ func _test_fixture_contract(assertions: Variant, context: Dictionary) -> void:
 	wrong_seed_runner.free()
 
 	var partial_simulation := _new_simulation(RunnerScript.RUN_SEED, catalog)
-	partial_simulation.spawn_fixture_enemy(GameTypes.EnemyType.TRACKER, Vector2.ZERO)
+	partial_simulation.spawn_fixture_enemy(GameTypes.EnemyType.PURSUER, Vector2.ZERO)
 	var partial_runner: Variant = RunnerScript.new()
 	assertions.expect_equal(
 		ERR_INVALID_DATA,
@@ -222,7 +236,7 @@ func _test_fixture_contract(assertions: Variant, context: Dictionary) -> void:
 
 
 func _new_simulation(run_seed: int, catalog: DefinitionCatalog) -> CombatSimulation:
-	var state: RunState = RunStateFactory.create(run_seed, catalog.wave(1))
+	var state: RunState = RunStateFactory.create(run_seed, catalog)
 	var simulation := CombatSimulation.new()
 	simulation.initialize(state, catalog)
 	return simulation

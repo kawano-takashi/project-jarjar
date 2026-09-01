@@ -2,391 +2,615 @@ class_name DefinitionCatalog
 extends RefCounted
 
 
-const Types := preload("res://src/core/game_types.gd")
-
-const WEAPON_PATHS: PackedStringArray = [
-	"res://data/definitions/weapons/wood_stick.tres",
-	"res://data/definitions/weapons/bow.tres",
-	"res://data/definitions/weapons/staff.tres",
-	"res://data/definitions/weapons/sword.tres",
+const MANIFEST_PATH: String = "res://data/balance/survival_content_manifest.tres"
+const EXPECTED_TARGETS: Array[int] = [
+	40, 60, 90, 130, 180, 240, 320, 400, 460, 500,
 ]
-const ENEMY_PATHS: PackedStringArray = [
-	"res://data/definitions/enemies/tracker.tres",
-	"res://data/definitions/enemies/fast.tres",
-	"res://data/definitions/enemies/armored.tres",
-	"res://data/definitions/enemies/ranged.tres",
-	"res://data/definitions/enemies/elite.tres",
-	"res://data/definitions/enemies/boss.tres",
+const BASELINE_HP_MULTIPLIERS: Array[float] = [
+	1.0, 1.12, 1.28, 1.48, 1.72, 2.0, 2.34, 2.74, 3.2, 3.75,
 ]
-const WAVE_PATHS: PackedStringArray = [
-	"res://data/definitions/waves/wave_01.tres",
-	"res://data/definitions/waves/wave_02.tres",
-	"res://data/definitions/waves/wave_03.tres",
-	"res://data/definitions/waves/wave_04.tres",
-	"res://data/definitions/waves/wave_05.tres",
-	"res://data/definitions/waves/wave_06.tres",
-	"res://data/definitions/waves/wave_07.tres",
-	"res://data/definitions/waves/wave_08.tres",
+const BASELINE_DAMAGE_MULTIPLIERS: Array[float] = [
+	1.0, 1.08, 1.16, 1.26, 1.38, 1.52, 1.68, 1.86, 2.06, 2.28,
 ]
-const RARITY_PATHS: PackedStringArray = [
-	"res://data/definitions/rarities/common.tres",
-	"res://data/definitions/rarities/rare.tres",
-	"res://data/definitions/rarities/epic.tres",
-	"res://data/definitions/rarities/legendary.tres",
+const EXPECTED_ELITE_TICKS: Array[int] = [
+	7200, 14400, 21600, 28800,
 ]
-const AFFIX_PATHS: PackedStringArray = [
-	"res://data/definitions/affixes/damage_pct.tres",
-	"res://data/definitions/affixes/attack_speed_pct.tres",
-	"res://data/definitions/affixes/area_pct.tres",
-	"res://data/definitions/affixes/pierce.tres",
-	"res://data/definitions/affixes/max_hp.tres",
-	"res://data/definitions/affixes/damage_reduction_pct.tres",
-	"res://data/definitions/affixes/move_speed_pct.tres",
-]
-const SCORE_PATH: String = "res://data/definitions/score.tres"
-const BALANCE_MANIFEST_PATH: String = "res://data/balance/balance_manifest.tres"
-const NORMAL_RARITY_COUNT: int = 4
-const WEIGHT_SUM_TOLERANCE: float = 0.000001
+const WEIGHT_TOLERANCE: float = 0.0001
+const MIN_SEGMENT_TARGET_HP_RATIO: float = 0.10
+const MIN_SEGMENT_DAMAGE_RATIO: float = 0.15
+const MIN_BOSS_TUNING_RATIO: float = 0.25
 
 var weapons: Dictionary[StringName, WeaponDefinition] = {}
+var passives: Dictionary[StringName, PassiveDefinition] = {}
 var enemies: Dictionary[StringName, EnemyDefinition] = {}
-var waves: Dictionary[int, WaveDefinition] = {}
-var rarities: Dictionary[int, RarityDefinition] = {}
-var affixes: Dictionary[StringName, AffixDefinition] = {}
+var segments: Dictionary[int, EnemySegmentDefinition] = {}
+var evolutions: Dictionary[StringName, EvolutionDefinition] = {}
 var is_valid: bool = false
 var error_text: String = ""
 var validation_errors: PackedStringArray = PackedStringArray()
 
-var _weapons_by_type: Dictionary[int, WeaponDefinition] = {}
-var _score_definition: ScoreDefinition = null
-var _balance_manifest: BalanceManifest = null
+var _manifest: SurvivalContentManifest = null
+var _enemies_by_type: Dictionary[int, EnemyDefinition] = {}
+var _evolved_weapon_ids: Dictionary[StringName, bool] = {}
 
 
 func load_and_validate() -> bool:
+	var loaded: Resource = ResourceLoader.load(MANIFEST_PATH)
+	if not loaded is SurvivalContentManifest:
+		_reset()
+		_add_error("Missing or invalid SurvivalContentManifest: %s" % MANIFEST_PATH)
+		_finish_validation()
+		return false
+	return validate_manifest(loaded as SurvivalContentManifest)
+
+
+func validate_manifest(content_manifest: SurvivalContentManifest) -> bool:
 	_reset()
-	_load_weapons()
-	_load_enemies()
-	_load_waves()
-	_load_rarities()
-	_load_affixes()
-	_load_score()
-	_load_balance_manifest()
-	_validate_catalog_shape()
-	is_valid = validation_errors.is_empty()
-	error_text = "\n".join(validation_errors)
+	if content_manifest == null:
+		_add_error("SurvivalContentManifest must not be null")
+		_finish_validation()
+		return false
+	_manifest = content_manifest
+	_index_content()
+	_validate_globals()
+	_validate_weapons()
+	_validate_passives()
+	_validate_evolutions()
+	_validate_enemies()
+	_validate_segments()
+	_finish_validation()
 	return is_valid
+
+
+func manifest() -> SurvivalContentManifest:
+	return _manifest
+
+
+func balance_manifest() -> BalanceManifest:
+	return null if _manifest == null else _manifest.balance
 
 
 func weapon(weapon_id: StringName) -> WeaponDefinition:
 	return weapons.get(weapon_id) as WeaponDefinition
 
 
-func weapon_for_type(weapon_type: Types.WeaponType) -> WeaponDefinition:
-	return _weapons_by_type.get(int(weapon_type)) as WeaponDefinition
+func passive(passive_id: StringName) -> PassiveDefinition:
+	return passives.get(passive_id) as PassiveDefinition
 
 
 func enemy(enemy_id: StringName) -> EnemyDefinition:
 	return enemies.get(enemy_id) as EnemyDefinition
 
 
-func wave(wave_number: int) -> WaveDefinition:
-	return waves.get(wave_number) as WaveDefinition
+func enemy_for_type(enemy_type: GameTypes.EnemyType) -> EnemyDefinition:
+	return _enemies_by_type.get(int(enemy_type)) as EnemyDefinition
 
 
-func rarity(rarity_value: Types.Rarity) -> RarityDefinition:
-	return rarities.get(int(rarity_value)) as RarityDefinition
+func segment(segment_index: int) -> EnemySegmentDefinition:
+	return segments.get(segment_index) as EnemySegmentDefinition
 
 
-func affix(affix_id: StringName) -> AffixDefinition:
-	return affixes.get(affix_id) as AffixDefinition
+func segment_for_tick(combat_tick: int) -> EnemySegmentDefinition:
+	if segments.is_empty():
+		return null
+	var index: int = clampi(
+		int(floor(float(combat_tick) / 3600.0)),
+		0,
+		segments.size() - 1,
+	)
+	return segment(index)
 
 
-func affix_ids() -> Array[StringName]:
+func evolution_for_weapon(base_weapon_id: StringName) -> EvolutionDefinition:
+	return evolutions.get(base_weapon_id) as EvolutionDefinition
+
+
+func is_evolved_weapon(weapon_id: StringName) -> bool:
+	return _evolved_weapon_ids.has(weapon_id)
+
+
+func basic_weapon_ids() -> Array[StringName]:
 	var result: Array[StringName] = []
-	for affix_id: StringName in affixes:
-		result.append(affix_id)
-	result.sort_custom(_string_name_ordinal_less)
+	for definition: WeaponDefinition in weapons.values():
+		if not definition.is_evolved:
+			result.append(definition.weapon_id)
+	result.sort_custom(_string_name_less)
 	return result
 
 
-func score_definition() -> ScoreDefinition:
-	return _score_definition
+func evolved_weapon_ids() -> Array[StringName]:
+	var result: Array[StringName] = []
+	for weapon_id: StringName in _evolved_weapon_ids:
+		result.append(weapon_id)
+	result.sort_custom(_string_name_less)
+	return result
 
 
-func balance_manifest() -> BalanceManifest:
-	return _balance_manifest
+func passive_ids() -> Array[StringName]:
+	var result: Array[StringName] = []
+	for passive_id: StringName in passives:
+		result.append(passive_id)
+	result.sort_custom(_string_name_less)
+	return result
 
 
 func _reset() -> void:
 	weapons.clear()
-	_weapons_by_type.clear()
+	passives.clear()
 	enemies.clear()
-	waves.clear()
-	rarities.clear()
-	affixes.clear()
-	_score_definition = null
-	_balance_manifest = null
+	segments.clear()
+	evolutions.clear()
+	_enemies_by_type.clear()
+	_evolved_weapon_ids.clear()
+	_manifest = null
 	is_valid = false
 	error_text = ""
 	validation_errors.clear()
 
 
-func _load_weapons() -> void:
-	for path: String in WEAPON_PATHS:
-		var loaded: Resource = ResourceLoader.load(path)
-		if not loaded is WeaponDefinition:
-			_add_error("Missing or invalid WeaponDefinition: %s" % path)
+func _index_content() -> void:
+	for definition: WeaponDefinition in _manifest.weapons:
+		if definition == null:
+			_add_error("Manifest contains a null weapon")
 			continue
-		var definition := loaded as WeaponDefinition
-		_validate_id(definition.weapon_id, StringName(path.get_file().get_basename()), path)
 		if weapons.has(definition.weapon_id):
 			_add_error("Duplicate weapon_id: %s" % definition.weapon_id)
 		else:
 			weapons[definition.weapon_id] = definition
-		if definition.weapon_type <= Types.WeaponType.NONE or definition.weapon_type >= Types.WeaponType.size():
-			_add_error("Invalid weapon_type: %s" % path)
-		elif _weapons_by_type.has(int(definition.weapon_type)):
-			_add_error("Duplicate weapon_type: %s" % path)
-		else:
-			_weapons_by_type[int(definition.weapon_type)] = definition
-		_validate_float_array(definition.damage_by_rarity, NORMAL_RARITY_COUNT, "damage_by_rarity", path, true)
-		_validate_positive_float(definition.base_interval, "base_interval", path)
-		_validate_positive_float(definition.range_m, "range_m", path)
-		_validate_non_negative_float(definition.projectile_speed, "projectile_speed", path)
-		_validate_non_negative_float(definition.projectile_radius, "projectile_radius", path)
-		_validate_non_negative_float(definition.aoe_radius, "aoe_radius", path)
-		_validate_non_negative_float(definition.arc_degrees, "arc_degrees", path)
-		if definition.weapon_type == Types.WeaponType.WOOD_STICK and definition.lootable:
-			_add_error("Wood stick must be starter-only: %s" % path)
-		if definition.weapon_type != Types.WeaponType.WOOD_STICK and not definition.lootable:
-			_add_error("Regular weapon must be lootable: %s" % path)
-
-
-func _load_enemies() -> void:
-	for path: String in ENEMY_PATHS:
-		var loaded: Resource = ResourceLoader.load(path)
-		if not loaded is EnemyDefinition:
-			_add_error("Missing or invalid EnemyDefinition: %s" % path)
+		if definition.is_evolved:
+			_evolved_weapon_ids[definition.weapon_id] = true
+	for definition: PassiveDefinition in _manifest.passives:
+		if definition == null:
+			_add_error("Manifest contains a null passive")
 			continue
-		var definition := loaded as EnemyDefinition
-		_validate_id(definition.enemy_id, StringName(path.get_file().get_basename()), path)
+		if passives.has(definition.passive_id):
+			_add_error("Duplicate passive_id: %s" % definition.passive_id)
+		else:
+			passives[definition.passive_id] = definition
+	for definition: EvolutionDefinition in _manifest.evolutions:
+		if definition == null:
+			_add_error("Manifest contains a null evolution")
+			continue
+		if evolutions.has(definition.base_weapon_id):
+			_add_error("Duplicate evolution base weapon: %s" % definition.base_weapon_id)
+		else:
+			evolutions[definition.base_weapon_id] = definition
+	for definition: EnemyDefinition in _manifest.enemies:
+		if definition == null:
+			_add_error("Manifest contains a null enemy")
+			continue
 		if enemies.has(definition.enemy_id):
 			_add_error("Duplicate enemy_id: %s" % definition.enemy_id)
 		else:
 			enemies[definition.enemy_id] = definition
-		_validate_positive_float(definition.base_hp, "base_hp", path)
-		_validate_positive_float(definition.move_speed, "move_speed", path)
-		_validate_positive_float(definition.body_radius, "body_radius", path)
-		_validate_positive_float(definition.contact_interval, "contact_interval", path)
-		_validate_non_negative_float(definition.contact_damage, "contact_damage", path)
-		_validate_non_negative_float(definition.preferred_distance_min, "preferred_distance_min", path)
-		_validate_non_negative_float(definition.preferred_distance_max, "preferred_distance_max", path)
-		if definition.preferred_distance_min > definition.preferred_distance_max:
-			_add_error("Preferred distance range is reversed: %s" % path)
-		_validate_non_negative_float(definition.special_interval, "special_interval", path)
-		_validate_non_negative_float(definition.telegraph_seconds, "telegraph_seconds", path)
-		_validate_non_negative_float(definition.area_radius, "area_radius", path)
-		_validate_non_negative_float(definition.projectile_damage, "projectile_damage", path)
-		_validate_non_negative_float(definition.projectile_speed, "projectile_speed", path)
-		_validate_non_negative_float(definition.projectile_radius, "projectile_radius", path)
-		_validate_non_negative_float(definition.projectile_lifetime, "projectile_lifetime", path)
-		_validate_non_negative_int(definition.volley_count, "volley_count", path)
-		_validate_non_negative_float(definition.summon_interval, "summon_interval", path)
-		_validate_non_negative_int(definition.summon_count, "summon_count", path)
-
-
-func _load_waves() -> void:
-	for index: int in range(WAVE_PATHS.size()):
-		var path: String = WAVE_PATHS[index]
-		var loaded: Resource = ResourceLoader.load(path)
-		if not loaded is WaveDefinition:
-			_add_error("Missing or invalid WaveDefinition: %s" % path)
-			continue
-		var definition := loaded as WaveDefinition
-		if definition.wave_number != index + 1:
-			_add_error("wave_number does not match fixed path: %s" % path)
-		elif waves.has(definition.wave_number):
-			_add_error("Duplicate wave_number: %d" % definition.wave_number)
+		if _enemies_by_type.has(int(definition.enemy_type)):
+			_add_error("Duplicate enemy_type: %s" % definition.enemy_id)
 		else:
-			waves[definition.wave_number] = definition
-		_validate_positive_float(definition.duration_seconds, "duration_seconds", path)
-		_validate_non_negative_int(definition.kill_quota, "kill_quota", path)
-		_validate_weights(definition.enemy_weights, [
-			Types.EnemyType.TRACKER,
-			Types.EnemyType.FAST,
-			Types.EnemyType.ARMORED,
-			Types.EnemyType.RANGED,
-		], "enemy_weights", path)
-		_validate_positive_float(definition.hp_multiplier, "hp_multiplier", path)
-		_validate_positive_float(definition.damage_multiplier, "damage_multiplier", path)
-		_validate_non_negative_float(definition.spawn_rate_start, "spawn_rate_start", path)
-		_validate_non_negative_float(definition.spawn_rate_end, "spawn_rate_end", path)
-		_validate_probability(definition.normal_chest_rate, "normal_chest_rate", path)
-		_validate_weights(definition.rarity_weights, [
-			Types.Rarity.COMMON,
-			Types.Rarity.RARE,
-			Types.Rarity.EPIC,
-			Types.Rarity.LEGENDARY,
-		], "rarity_weights", path)
-		if not is_finite(definition.elite_spawn_elapsed) or (
-			definition.elite_spawn_elapsed < 0.0 and definition.elite_spawn_elapsed != -1.0
+			_enemies_by_type[int(definition.enemy_type)] = definition
+	for definition: EnemySegmentDefinition in _manifest.segments:
+		if definition == null:
+			_add_error("Manifest contains a null segment")
+			continue
+		if segments.has(definition.segment_index):
+			_add_error("Duplicate segment_index: %d" % definition.segment_index)
+		else:
+			segments[definition.segment_index] = definition
+
+
+func _validate_globals() -> void:
+	if _manifest.balance == null or _manifest.balance.balance_revision != 4:
+		_add_error("balance revision must be 4")
+	if _manifest.ticks_per_second != 60:
+		_add_error("ticks_per_second must be 60")
+	if not _manifest.arena_size.is_equal_approx(Vector2(40.0, 40.0)):
+		_add_error("arena_size must be 40x40")
+	if _manifest.boss_start_tick != 36000:
+		_add_error("boss_start_tick must be 36000")
+	_validate_xp_contract()
+	if _manifest.weapon_slot_count != 5 or _manifest.passive_slot_count != 5:
+		_add_error("run slots must be five weapons and five passives")
+	if _manifest.level_offer_count != 3:
+		_add_error("level_offer_count must be 3")
+	if (
+		_manifest.owned_offer_attempt_count != 2
+		or not is_equal_approx(_manifest.owned_offer_luck_coefficient, 0.3)
+	):
+		_add_error("owned offer must use two attempts and coefficient 0.3")
+	if _manifest.elite_spawn_ticks != PackedInt32Array(EXPECTED_ELITE_TICKS):
+		_add_error("elite spawn ticks do not match 2/4/6/8 minutes")
+	if _manifest.node_site_count != 8 or _manifest.active_node_count != 4:
+		_add_error("node site/active counts must be 8/4")
+	if _manifest.node_respawn_ticks != 1800:
+		_add_error("node respawn must be 1800 ticks")
+	if not is_equal_approx(_manifest.node_heal_amount, 30.0):
+		_add_error("node heal must be 30")
+	if _manifest.node_stop_ticks != 300:
+		_add_error("node stop must be 300 ticks")
+	_validate_probability_weights(_manifest.node_drop_weights, "node_drop_weights")
+	var expected_node_weights := PackedFloat32Array([0.55, 0.35, 0.07, 0.03])
+	if not _float_arrays_equal(_manifest.node_drop_weights, expected_node_weights):
+		_add_error("node drop weights differ from approved values")
+	if _manifest.damage_invulnerability_ticks != 30:
+		_add_error("damage invulnerability must be 30 ticks")
+	if _manifest.modal_resume_invulnerability_ticks != 45:
+		_add_error("modal resume invulnerability must be 45 ticks")
+	_validate_tunable_multiplier(
+		_manifest.boss_hp_multiplier,
+		SurvivalContentManifest.DEFAULT_BOSS_HP_MULTIPLIER,
+		"boss HP multiplier",
+	)
+	_validate_tunable_multiplier(
+		_manifest.boss_damage_multiplier,
+		SurvivalContentManifest.DEFAULT_BOSS_DAMAGE_MULTIPLIER,
+		"boss damage multiplier",
+	)
+	_validate_tunable_multiplier(
+		_manifest.boss_action_rate_multiplier,
+		SurvivalContentManifest.DEFAULT_BOSS_ACTION_RATE_MULTIPLIER,
+		"boss action rate multiplier",
+	)
+	if _manifest.boss_enrage_interval_ticks != 1800:
+		_add_error("boss enrage interval must be 1800 ticks")
+	if _manifest.boss_enrage_max_stacks != 10:
+		_add_error("boss enrage cap must be 10 stacks")
+	if not is_equal_approx(_manifest.boss_attack_bonus_per_stack, 0.10):
+		_add_error("boss attack bonus must be +10% per stack")
+	if not is_equal_approx(_manifest.boss_interval_reduction_per_stack, 0.10):
+		_add_error("boss interval reduction must be -10% per stack")
+	if _manifest.boss_summon_bonus_per_stack != 1:
+		_add_error("boss summon bonus must be +1 per stack")
+	if not weapons.has(_manifest.starter_weapon_id):
+		_add_error("starter weapon is missing")
+	elif _manifest.starter_weapon_id != &"homing_core":
+		_add_error("starter weapon must be homing_core")
+
+
+func _validate_xp_contract() -> void:
+	if (
+		_manifest.xp_early_max_level != SurvivalContentManifest.DEFAULT_XP_EARLY_MAX_LEVEL
+		or _manifest.xp_early_coefficient != SurvivalContentManifest.DEFAULT_XP_EARLY_COEFFICIENT
+		or _manifest.xp_early_offset != SurvivalContentManifest.DEFAULT_XP_EARLY_OFFSET
+	):
+		_add_error("early XP formula must be 10L-5 through level 19")
+	if _manifest.xp_level_20_requirement != SurvivalContentManifest.DEFAULT_XP_LEVEL_20_REQUIREMENT:
+		_add_error("level 20 XP requirement must be 795")
+	if (
+		_manifest.xp_middle_max_level != SurvivalContentManifest.DEFAULT_XP_MIDDLE_MAX_LEVEL
+		or _manifest.xp_middle_coefficient != SurvivalContentManifest.DEFAULT_XP_MIDDLE_COEFFICIENT
+		or _manifest.xp_middle_offset != SurvivalContentManifest.DEFAULT_XP_MIDDLE_OFFSET
+	):
+		_add_error("middle XP formula must be 13L-65 through level 39")
+	if _manifest.xp_level_40_requirement != SurvivalContentManifest.DEFAULT_XP_LEVEL_40_REQUIREMENT:
+		_add_error("level 40 XP requirement must be 2855")
+	if (
+		_manifest.xp_late_coefficient != SurvivalContentManifest.DEFAULT_XP_LATE_COEFFICIENT
+		or _manifest.xp_late_offset != SurvivalContentManifest.DEFAULT_XP_LATE_OFFSET
+	):
+		_add_error("late XP formula must be 16L-185 from level 41")
+	if (
+		_manifest.xp_growth_compensation_levels
+		!= PackedInt32Array(SurvivalContentManifest.DEFAULT_XP_GROWTH_COMPENSATION_LEVELS)
+		or not is_equal_approx(
+			_manifest.xp_growth_compensation_multiplier,
+			SurvivalContentManifest.DEFAULT_XP_GROWTH_COMPENSATION_MULTIPLIER,
+		)
+	):
+		_add_error("Growth compensation must be 2x at levels 20 and 40")
+	if _manifest.xp_pool_capacity != SurvivalContentManifest.DEFAULT_XP_POOL_CAPACITY:
+		_add_error("XP pickup capacity must be 2048")
+	if not is_equal_approx(
+		_manifest.xp_pickup_attract_radius,
+		SurvivalContentManifest.DEFAULT_XP_PICKUP_ATTRACT_RADIUS,
+	):
+		_add_error("XP pickup attract radius must be 2.25")
+	if not is_equal_approx(
+		_manifest.xp_pickup_collect_radius,
+		SurvivalContentManifest.DEFAULT_XP_PICKUP_COLLECT_RADIUS,
+	):
+		_add_error("XP pickup collect radius must be 0.7")
+	if not is_equal_approx(
+		_manifest.xp_pickup_speed,
+		SurvivalContentManifest.DEFAULT_XP_PICKUP_SPEED,
+	):
+		_add_error("XP pickup speed must be 14")
+	if (
+		_manifest.xp_yield_percent < 90
+		or _manifest.xp_yield_percent > 200
+		or _manifest.xp_yield_percent % 5 != 0
+	):
+		_add_error("XP yield percent must be 90-200 in 5% steps")
+
+
+func _validate_tunable_multiplier(value: float, baseline: float, label: String) -> void:
+	if not is_finite(value) or not is_finite(baseline) or baseline <= 0.0:
+		_add_error("%s must be finite with a positive baseline" % label)
+		return
+	var ratio: float = value / baseline
+	var five_percent_units: float = ratio * 20.0
+	if (
+		ratio < MIN_BOSS_TUNING_RATIO - WEIGHT_TOLERANCE
+		or ratio > 1.10 + WEIGHT_TOLERANCE
+		or absf(five_percent_units - roundf(five_percent_units)) > WEIGHT_TOLERANCE
+	):
+		_add_error("%s must be -75%% to +10%% in 5%% steps" % label)
+
+
+func _validate_weapons() -> void:
+	if weapons.size() != 16:
+		_add_error("weapon count must be 8 base + 8 evolved")
+	var basic_count: int = 0
+	var evolved_count: int = 0
+	var seen_behaviors: Dictionary[int, bool] = {}
+	for definition: WeaponDefinition in weapons.values():
+		if definition.weapon_id == &"" or definition.display_name.is_empty():
+			_add_error("weapon id/name must not be empty")
+		if definition.lineage_id == &"":
+			_add_error("weapon lineage must not be empty: %s" % definition.weapon_id)
+		var expected_levels: int = 1 if definition.is_evolved else 8
+		if definition.max_level != expected_levels:
+			_add_error("weapon max level mismatch: %s" % definition.weapon_id)
+		_validate_weapon_arrays(definition)
+		if definition.is_evolved:
+			evolved_count += 1
+			if not is_zero_approx(definition.selection_weight):
+				_add_error("evolved weapon must not enter offers: %s" % definition.weapon_id)
+		else:
+			basic_count += 1
+			if definition.selection_weight <= 0.0:
+				_add_error("base weapon must have positive weight: %s" % definition.weapon_id)
+			if not is_equal_approx(
+				definition.selection_weight,
+				_expected_weapon_weight(definition.weapon_id),
+			):
+				_add_error("base weapon weight differs from approved value: %s" % definition.weapon_id)
+			if seen_behaviors.has(int(definition.behavior)):
+				_add_error("duplicate base weapon behavior: %s" % definition.weapon_id)
+			seen_behaviors[int(definition.behavior)] = true
+	if basic_count != 8 or evolved_count != 8 or seen_behaviors.size() != 8:
+		_add_error("weapon role count must be exactly eight base/evolved")
+
+
+func _validate_weapon_arrays(definition: WeaponDefinition) -> void:
+	var size: int = definition.max_level
+	if definition.damage_by_level.size() != size:
+		_add_error("damage_by_level length mismatch: %s" % definition.weapon_id)
+	if definition.cooldown_ticks_by_level.size() != size:
+		_add_error("cooldown_ticks_by_level length mismatch: %s" % definition.weapon_id)
+	if definition.amount_by_level.size() != size:
+		_add_error("amount_by_level length mismatch: %s" % definition.weapon_id)
+	if definition.projectile_speed_by_level.size() != size:
+		_add_error("projectile_speed_by_level length mismatch: %s" % definition.weapon_id)
+	if definition.area_by_level.size() != size:
+		_add_error("area_by_level length mismatch: %s" % definition.weapon_id)
+	if definition.duration_ticks_by_level.size() != size:
+		_add_error("duration_ticks_by_level length mismatch: %s" % definition.weapon_id)
+	if definition.pierce_by_level.size() != size:
+		_add_error("pierce_by_level length mismatch: %s" % definition.weapon_id)
+	for value: float in definition.damage_by_level:
+		if not is_finite(value) or value <= 0.0:
+			_add_error("weapon damage must be positive: %s" % definition.weapon_id)
+	for value: int in definition.cooldown_ticks_by_level:
+		if value <= 0:
+			_add_error("weapon cooldown must be positive: %s" % definition.weapon_id)
+
+
+func _validate_passives() -> void:
+	if passives.size() != 8:
+		_add_error("passive count must be eight")
+	for definition: PassiveDefinition in passives.values():
+		if definition.passive_id == &"" or definition.display_name.is_empty():
+			_add_error("passive id/name must not be empty")
+		if definition.max_level != 5:
+			_add_error("passive max level must be five: %s" % definition.passive_id)
+		if definition.selection_weight <= 0.0:
+			_add_error("passive weight must be positive: %s" % definition.passive_id)
+		if definition.stat_id == &"" or not weapons.has(definition.paired_weapon_id):
+			_add_error("passive effect/pair is invalid: %s" % definition.passive_id)
+		var approved: Dictionary = _expected_passive_spec(definition.passive_id)
+		if approved.is_empty():
+			_add_error("unknown passive identity: %s" % definition.passive_id)
+		elif (
+			definition.stat_id != approved[&"stat_id"]
+			or not is_equal_approx(definition.amount_per_level, float(approved[&"amount"]))
+			or not is_equal_approx(definition.selection_weight, float(approved[&"weight"]))
 		):
-			_add_error("elite_spawn_elapsed must be -1 or non-negative: %s" % path)
+			_add_error("passive spec differs from approved value: %s" % definition.passive_id)
 
 
-func _load_rarities() -> void:
-	for index: int in range(RARITY_PATHS.size()):
-		var path: String = RARITY_PATHS[index]
-		var loaded: Resource = ResourceLoader.load(path)
-		if not loaded is RarityDefinition:
-			_add_error("Missing or invalid RarityDefinition: %s" % path)
+func _validate_evolutions() -> void:
+	if evolutions.size() != 8:
+		_add_error("evolution count must be eight")
+	var evolved_targets: Dictionary[StringName, bool] = {}
+	for definition: EvolutionDefinition in evolutions.values():
+		var base: WeaponDefinition = weapon(definition.base_weapon_id)
+		var evolved: WeaponDefinition = weapon(definition.evolved_weapon_id)
+		var paired_passive: PassiveDefinition = passive(definition.passive_id)
+		if base == null or base.is_evolved:
+			_add_error("evolution base is invalid: %s" % definition.base_weapon_id)
+		if evolved == null or not evolved.is_evolved:
+			_add_error("evolution target is invalid: %s" % definition.evolved_weapon_id)
+		if paired_passive == null:
+			_add_error("evolution passive is invalid: %s" % definition.passive_id)
+		if base != null and base.paired_passive_id != definition.passive_id:
+			_add_error("weapon/passive evolution pair mismatch: %s" % definition.base_weapon_id)
+		if evolved != null and evolved.lineage_id != definition.base_weapon_id:
+			_add_error("evolution lineage mismatch: %s" % definition.evolved_weapon_id)
+		if evolved_targets.has(definition.evolved_weapon_id):
+			_add_error("duplicate evolution target: %s" % definition.evolved_weapon_id)
+		evolved_targets[definition.evolved_weapon_id] = true
+
+
+func _validate_enemies() -> void:
+	if enemies.size() != GameTypes.EnemyType.size():
+		_add_error("enemy count must match EnemyType")
+	for definition: EnemyDefinition in enemies.values():
+		if definition.enemy_id == &"" or definition.display_name.is_empty():
+			_add_error("enemy id/name must not be empty")
+		if definition.base_hp <= 0.0 or definition.move_speed <= 0.0:
+			_add_error("enemy hp/speed must be positive: %s" % definition.enemy_id)
+		if definition.contact_interval_ticks <= 0 or definition.contact_damage <= 0.0:
+			_add_error("enemy contact values must be positive: %s" % definition.enemy_id)
+		if definition.xp_value < 0:
+			_add_error("enemy XP must not be negative: %s" % definition.enemy_id)
+	var elite: EnemyDefinition = enemy_for_type(GameTypes.EnemyType.ELITE)
+	var boss: EnemyDefinition = enemy_for_type(GameTypes.EnemyType.BOSS)
+	if elite == null or not elite.drops_chest:
+		_add_error("elite must drop a chest")
+	if boss == null or not boss.is_boss:
+		_add_error("boss definition must be marked as boss")
+
+
+func _validate_segments() -> void:
+	if segments.size() != 10:
+		_add_error("segment count must be ten")
+	for index: int in range(10):
+		var definition: EnemySegmentDefinition = segment(index)
+		if definition == null:
+			_add_error("missing segment %d" % index)
 			continue
-		var definition := loaded as RarityDefinition
-		if int(definition.rarity) != index:
-			_add_error("rarity does not match fixed path: %s" % path)
-		elif rarities.has(index):
-			_add_error("Duplicate rarity: %d" % index)
+		if definition.start_tick != index * 3600 or definition.end_tick != (index + 1) * 3600:
+			_add_error("segment tick bounds mismatch: %d" % index)
+		_validate_segment_target_tuning(definition, index)
+		_validate_segment_multiplier_tuning(
+			definition.hp_multiplier,
+			BASELINE_HP_MULTIPLIERS[index],
+			index,
+			"HP",
+			MIN_SEGMENT_TARGET_HP_RATIO,
+		)
+		_validate_segment_multiplier_tuning(
+			definition.damage_multiplier,
+			BASELINE_DAMAGE_MULTIPLIERS[index],
+			index,
+			"damage",
+			MIN_SEGMENT_DAMAGE_RATIO,
+		)
+		_validate_probability_weights(definition.spawn_weights, "segment_%02d weights" % (index + 1))
+		if definition.spawn_weights.size() != GameTypes.EnemyType.size():
+			_add_error(
+				"segment spawn weights must contain exactly one entry per EnemyType: %d"
+				% index
+			)
 		else:
-			rarities[index] = definition
-		if definition.affix_count != index + 1:
-			_add_error("affix_count must be rarity index + 1: %s" % path)
+			if (
+				not is_zero_approx(definition.spawn_weights[GameTypes.EnemyType.ELITE])
+				or not is_zero_approx(definition.spawn_weights[GameTypes.EnemyType.BOSS])
+			):
+				_add_error("segments may only spawn normal enemy types: %d" % index)
 
 
-func _load_affixes() -> void:
-	for path: String in AFFIX_PATHS:
-		var loaded: Resource = ResourceLoader.load(path)
-		if not loaded is AffixDefinition:
-			_add_error("Missing or invalid AffixDefinition: %s" % path)
-			continue
-		var definition := loaded as AffixDefinition
-		_validate_id(definition.affix_id, StringName(path.get_file().get_basename()), path)
-		if affixes.has(definition.affix_id):
-			_add_error("Duplicate affix_id: %s" % definition.affix_id)
-		else:
-			affixes[definition.affix_id] = definition
-		_validate_float_array(definition.values_by_rarity, NORMAL_RARITY_COUNT, "values_by_rarity", path, false)
-
-
-func _load_score() -> void:
-	var loaded: Resource = ResourceLoader.load(SCORE_PATH)
-	if not loaded is ScoreDefinition:
-		_add_error("Missing or invalid ScoreDefinition: %s" % SCORE_PATH)
+func _validate_probability_weights(values: PackedFloat32Array, label: String) -> void:
+	if values.is_empty():
+		_add_error("%s must not be empty" % label)
 		return
-	_score_definition = loaded as ScoreDefinition
-	_validate_non_negative_int(_score_definition.normal_kill, "normal_kill", SCORE_PATH)
-	_validate_non_negative_int(_score_definition.post_quota_bonus, "post_quota_bonus", SCORE_PATH)
-	_validate_non_negative_int(_score_definition.elite_kill, "elite_kill", SCORE_PATH)
-	_validate_non_negative_int(_score_definition.boss_kill, "boss_kill", SCORE_PATH)
-	_validate_non_negative_int(_score_definition.wave_clear, "wave_clear", SCORE_PATH)
-	_validate_non_negative_int(_score_definition.run_clear, "run_clear", SCORE_PATH)
-	if _score_definition.equipment_scores.size() != NORMAL_RARITY_COUNT:
-		_add_error("equipment_scores length mismatch: %s" % SCORE_PATH)
-	for value: int in _score_definition.equipment_scores:
-		_validate_non_negative_int(value, "equipment_scores", SCORE_PATH)
-
-
-func _load_balance_manifest() -> void:
-	var loaded: Resource = ResourceLoader.load(BALANCE_MANIFEST_PATH)
-	if not loaded is BalanceManifest:
-		_add_error("Missing or invalid BalanceManifest: %s" % BALANCE_MANIFEST_PATH)
-		return
-	_balance_manifest = loaded as BalanceManifest
-	_validate_non_negative_int(_balance_manifest.balance_revision, "balance_revision", BALANCE_MANIFEST_PATH)
-
-
-func _validate_catalog_shape() -> void:
-	_validate_count(weapons.size(), WEAPON_PATHS.size(), "WeaponDefinition")
-	_validate_count(_weapons_by_type.size(), WEAPON_PATHS.size(), "WeaponType")
-	_validate_count(enemies.size(), ENEMY_PATHS.size(), "EnemyDefinition")
-	_validate_count(waves.size(), WAVE_PATHS.size(), "WaveDefinition")
-	_validate_count(rarities.size(), RARITY_PATHS.size(), "RarityDefinition")
-	_validate_count(affixes.size(), AFFIX_PATHS.size(), "AffixDefinition")
-	var elite_wave_count: int = 0
-	var boss_wave_count: int = 0
-	for definition: WaveDefinition in waves.values():
-		if definition.elite_spawn_elapsed >= 0.0:
-			elite_wave_count += 1
-		if definition.boss_at_start:
-			boss_wave_count += 1
-	if elite_wave_count != 1:
-		_add_error("Elite wave count does not match the fixed table")
-	if boss_wave_count != 1:
-		_add_error("Boss wave count does not match the fixed table")
-
-
-func _validate_id(actual: StringName, expected: StringName, path: String) -> void:
-	if actual.is_empty() or actual != expected:
-		_add_error("Definition ID does not match fixed path: %s" % path)
-
-
-func _validate_count(actual: int, expected: int, resource_type: String) -> void:
-	if actual != expected:
-		_add_error("%s count mismatch: expected %d, got %d" % [resource_type, expected, actual])
-
-
-func _validate_positive_float(value: float, field_name: String, path: String) -> void:
-	if not is_finite(value) or value <= 0.0:
-		_add_error("%s must be finite and positive: %s" % [field_name, path])
-
-
-func _validate_non_negative_float(value: float, field_name: String, path: String) -> void:
-	if not is_finite(value) or value < 0.0:
-		_add_error("%s must be finite and non-negative: %s" % [field_name, path])
-
-
-func _validate_non_negative_int(value: int, field_name: String, path: String) -> void:
-	if value < 0:
-		_add_error("%s must be non-negative: %s" % [field_name, path])
-
-
-func _validate_probability(value: float, field_name: String, path: String) -> void:
-	if not is_finite(value) or value < 0.0 or value > 1.0:
-		_add_error("%s must be a finite probability: %s" % [field_name, path])
-
-
-func _validate_float_array(
-	values: PackedFloat32Array,
-	expected_size: int,
-	field_name: String,
-	path: String,
-	require_positive: bool,
-) -> void:
-	if values.size() != expected_size:
-		_add_error("%s length mismatch: %s" % [field_name, path])
-	for value: float in values:
-		if require_positive:
-			_validate_positive_float(value, field_name, path)
-		else:
-			_validate_non_negative_float(value, field_name, path)
-
-
-func _validate_weights(
-	weights: Dictionary,
-	expected_keys: Array[int],
-	field_name: String,
-	path: String,
-) -> void:
-	if weights.size() != expected_keys.size():
-		_add_error("%s key count mismatch: %s" % [field_name, path])
 	var total: float = 0.0
-	for key: int in expected_keys:
-		if not weights.has(key):
-			_add_error("%s is missing enum key %d: %s" % [field_name, key, path])
-			continue
-		var raw_value: Variant = weights[key]
-		if typeof(raw_value) != TYPE_FLOAT and typeof(raw_value) != TYPE_INT:
-			_add_error("%s contains a non-numeric weight: %s" % [field_name, path])
-			continue
-		var value: float = float(raw_value)
-		_validate_non_negative_float(value, field_name, path)
+	for value: float in values:
+		if not is_finite(value) or value < 0.0:
+			_add_error("%s contains an invalid value" % label)
 		total += value
-	if not is_finite(total) or absf(total - 1.0) > WEIGHT_SUM_TOLERANCE:
-		_add_error("%s must sum to 1: %s" % [field_name, path])
+	if absf(total - 1.0) > WEIGHT_TOLERANCE:
+		_add_error("%s must sum to one" % label)
+
+
+func _validate_segment_target_tuning(
+	definition: EnemySegmentDefinition,
+	segment_index: int,
+) -> void:
+	var baseline: int = EXPECTED_TARGETS[segment_index]
+	var maximum_step: int = 22 if segment_index >= 6 else 20
+	for five_percent_step: int in range(
+		roundi(MIN_SEGMENT_TARGET_HP_RATIO * 20.0),
+		maximum_step + 1,
+	):
+		var allowed_target: int = roundi(
+			float(baseline) * float(five_percent_step) / 20.0
+		)
+		if definition.target_active == allowed_target:
+			return
+	_add_error(
+		"segment target must be -90%%..%s in 5%% steps: %d"
+		% ["+10%" if segment_index >= 6 else "baseline", segment_index]
+	)
+
+
+func _validate_segment_multiplier_tuning(
+	value: float,
+	baseline: float,
+	segment_index: int,
+	label: String,
+	minimum_ratio: float,
+) -> void:
+	if not is_finite(value) or not is_finite(baseline) or baseline <= 0.0:
+		_add_error("segment %s multiplier must be finite with a positive baseline: %d" % [label, segment_index])
+		return
+	var ratio: float = value / baseline
+	var maximum_ratio: float = 1.10 if segment_index >= 6 else 1.0
+	var five_percent_units: float = ratio * 20.0
+	if (
+		ratio < minimum_ratio - WEIGHT_TOLERANCE
+		or ratio > maximum_ratio + WEIGHT_TOLERANCE
+		or absf(five_percent_units - roundf(five_percent_units)) > WEIGHT_TOLERANCE
+	):
+		_add_error(
+			"segment %s must be -%d%%..%s in 5%% steps: %d"
+			% [
+				label,
+				100 - roundi(minimum_ratio * 100.0),
+				"+10%" if segment_index >= 6 else "baseline",
+				segment_index,
+			]
+		)
+
+
+func _float_arrays_equal(left: PackedFloat32Array, right: PackedFloat32Array) -> bool:
+	if left.size() != right.size():
+		return false
+	for index: int in range(left.size()):
+		if not is_equal_approx(left[index], right[index]):
+			return false
+	return true
+
+
+func _finish_validation() -> void:
+	is_valid = validation_errors.is_empty()
+	error_text = "\n".join(validation_errors)
 
 
 func _add_error(message: String) -> void:
 	validation_errors.append(message)
 
 
-func _string_name_ordinal_less(left: StringName, right: StringName) -> bool:
+func _expected_weapon_weight(weapon_id: StringName) -> float:
+	match weapon_id:
+		&"resonance_wave", &"homing_core", &"directional_needle", &"arc_crystal":
+			return 100.0
+		&"returning_ring", &"orbital_array", &"mass_projectile":
+			return 80.0
+		&"zero_field":
+			return 70.0
+	return -1.0
+
+
+func _expected_passive_spec(passive_id: StringName) -> Dictionary:
+	match passive_id:
+		&"life_lattice":
+			return {&"stat_id": &"max_hp_pct", &"amount": 20.0, &"weight": 90.0}
+		&"cycle_crystal":
+			return {&"stat_id": &"cooldown_pct", &"amount": -8.0, &"weight": 50.0}
+		&"speed_gate":
+			return {&"stat_id": &"projectile_speed_pct", &"amount": 10.0, &"weight": 100.0}
+		&"scale_lens":
+			return {&"stat_id": &"area_pct", &"amount": 10.0, &"weight": 100.0}
+		&"probability_core":
+			return {&"stat_id": &"luck_pct", &"amount": 10.0, &"weight": 100.0}
+		&"duration_ring":
+			return {&"stat_id": &"duration_pct", &"amount": 10.0, &"weight": 100.0}
+		&"amplifier_core":
+			return {&"stat_id": &"might_pct", &"amount": 10.0, &"weight": 100.0}
+		&"repair_core":
+			return {&"stat_id": &"recovery_per_second", &"amount": 0.2, &"weight": 90.0}
+	return {}
+
+
+func _string_name_less(left: StringName, right: StringName) -> bool:
 	return String(left) < String(right)

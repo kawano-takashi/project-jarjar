@@ -1,25 +1,54 @@
 # Project JARJAR 人間プレイテスト手順
 
-**状態: 使用禁止（ユーザー最終調整待ち）**
+**状態: 使用禁止（revision 4自動調整完了・正式候補未固定）**
 
 現在フェーズは `docs/project-status.md` を正とする。正式プレイテスト対象はまだ固定していないため、
 現時点では候補者を採用せず、資格確認も結果収集も行わない。
 
 ## 正式対象の固定条件
 
-ユーザー最終調整後に全検証とRelease exportを再実施し、
+ユーザーが最終調整完了を明示するまで、正式性能試験、Release export、Verify、ManualQa、人間playtestを実施しない。
+完了明示後に全検証とRelease exportを再実施し、`docs/final-qa.md`へ人間によるManual QAのPASSを記録した後、
 `artifacts/playtest/target.txt`へ次の4行を手動で記録する。
 
 ```text
 candidate_head=<40hex>
 exe_sha256=<64hex>
 pck_sha256=<64hex>
-balance_revision=<integer>
+balance_revision=4
 ```
 
-`docs/project-status.md`が「正式playtest対象固定済み」へ更新され、同じ4値が一致するまで
-下記手順を開始しない。EXE/PCK、balance revision、または候補HEADが
-変わった場合、以前の対象やデータを流用しない。
+`docs/project-status.md`が「正式playtest対象固定済み」へ更新され、同じ4値が一致するまで下記手順を開始しない。
+EXE/PCK、balance revision、候補HEADのいずれかが変わった場合、以前の対象やデータを流用しない。
+
+## 専用12run調整ゲート
+
+正式候補の固定前に、専用fixtureの決定的12runで実際の候補抽選、XP取得、宝箱取得を含む初回進化時刻を検査する。
+
+- 12run全体で3:00までの初回進化が0件。
+- 2:00以前の死亡が0/12、最終ボス到達が9〜11/12、撃破が5〜8/12。
+- normal方針4runのうち正確に2runが5:00までに初回進化する。
+- normal方針4runすべてが7:00までに初回進化する。
+- normal方針4runの初回進化時刻の算術平均が288秒以上324秒以下。
+- 全runでpool overflowとorphanが0。
+
+2026-09-01のsource gateは12runでPASSした。実測は2:00以前死亡0/12、最終ボス到達9/12、撃破8/12、
+3:00まで進化0/12、normal方針は5:00まで2/4・7:00まで4/4・初回進化平均322.883秒、
+pool overflow 0run、orphan 0runである。実測CSVとsummaryは`artifacts/balance/revision-4/`に保存している。
+
+この自動調整の最終値はstarter `homing_core`、`xp_yield_percent=165`、elite `xp_value=50`、bossのHP `1.5`、
+damage `0.798`、action rate `1.0`である。segment値は次のとおりである。
+
+| segment | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| target_active | 4 | 6 | 9 | 13 | 18 | 36 | 48 | 60 | 69 | 100 |
+| hp_multiplier | 0.15 | 0.168 | 0.192 | 0.222 | 0.258 | 0.6 | 0.936 | 0.959 | 1.44 | 2.625 |
+| damage_multiplier | 0.25 | 0.27 | 0.29 | 0.315 | 0.345 | 0.532 | 0.672 | 0.651 | 0.824 | 1.368 |
+
+この12runは調整用の自動ゲートであり、下記の初見tester、人間の回答、人間playtestの計測値として数えない。
+上記のstarter、XP、segment、boss、候補抽選、進化条件のいずれかを変更した場合、このsource gate結果を無効として再実行する。
+ユーザーが最終調整完了を明示するまで正式candidateは固定せず、Full HD性能試験、Release export、Verify、ManualQa、
+人間playtestは未実施のままとする。
 
 ## 初見資格
 
@@ -28,13 +57,12 @@ balance_revision=<integer>
 1. 「Project JARJARの過去または現行buildを、一度もプレイしたことがありませんか。」
 2. 「Project JARJARのゲームプレイを、対面・配信・録画のいずれでも一度も見たことがありませんか。」
 
-両方に「はい」と回答し、かつ過去のどの`balance_revision`の受入データにも参加していない人だけを採用する。
-このQAの実機ゲームパッド操作者はtesterへ数えない。氏名、メールアドレス、端末識別子などの
-個人情報は記録しない。
+両方に「はい」と回答し、過去のどの`balance_revision`の受入データにも参加していない人だけを採用する。
+このQAの実機操作者はtesterへ数えない。氏名、メールアドレス、端末識別子などの個人情報は記録しない。
 
 | balance_revision | 全testerの初見資格確認済み | 確認日 (YYYY-MM-DD) |
 |---:|---|---|
-| 2 | 未確認 |  |
+| 4 | 未確認 |  |
 
 実際に全員の条件を確認するまでは、上表を`yes`へ変更しない。
 
@@ -42,10 +70,10 @@ balance_revision=<integer>
 
 - 新規tester 5人以上を採用し、`T01`から欠番なく割り当てる。
 - 各testerは同じRelease buildで、同じ1process内に3runを続けて実施する。
-- 設定は既定値のまま変更しない。全runでWASDを使用する。
+- 設定は既定値のまま変更しない。全runで同じ入力方式を使用する。
 - run 1はTITLEの「開始」で新seedを開始する。
 - run 2、run 3は直前のRESULTまたはFAILEDで「新しいseedで再挑戦」を選ぶ。
-- 「同じseedで再挑戦」は選ばない。
+- 「同じseedで再挑戦」は使用しない。
 
 各testerの開始時に新しいPowerShell sessionで次を実行し、`T01`だけを割当IDへ置換する。
 
@@ -54,8 +82,8 @@ balance_revision=<integer>
 ```
 
 3run終了までPowerShell sessionを閉じない。終了コードが0でなければ、そのprocessは不合格とする。
-最初のCOMBATより前の起動失敗だけは同じ人がclean settingsから再試行できる。COMBAT開始後に
-中断した場合、その人の全行を破棄して再採用せず、別の未経験者へ空いた最小tester IDを割り当てる。
+最初のCOMBATより前の起動失敗だけは同じ人がclean settingsから再試行できる。COMBAT開始後に中断した場合、
+その人の全行を破棄して再採用せず、別の未経験者へ空いた最小tester IDを割り当てる。
 
 ## 各runの記録
 
@@ -63,68 +91,61 @@ RESULTまたはFAILEDを表示した直後、次の導線を選ぶ前に、聞�
 
 - run seed
 - RESULTなら`run_clear=yes`、FAILEDなら`run_clear=no`
-- cleared waves
-- combat score
-- final build score
-- total score
-
-画面上で`combat_score + final_build_score = total_score`も照合する。不一致ならそのbuildの
-プレイテストを中止し、当該データを集計しない。
+- survival_seconds
+- final_level
+- total_kills
+- elite_kills
+- boss_result（`defeated`、`player_defeated`、`not_reached`）
+- evolution_count
 
 続けて、聞き手が次の3問を順番どおり質問する。
 
-1. 「このランの宝箱開封・整理・合成体験を、1=非常に悪い、2=悪い、3=普通、4=良い、5=非常に良いで評価してください」
+1. 「このランの成長と3択の体験を、1=非常に悪い、2=悪い、3=普通、4=良い、5=非常に良いで評価してください」
 2. 「今すぐもう1ラン遊びたいですか。yesかnoで答えてください」
 3. 「このランで、ゲームを壊したと感じるほど強いビルドを経験しましたか。yesかnoで答えてください」
 
 run 1だけは上の3問に続けて、次の理解度質問をそのまま質問する。説明や誘導を追加してから
 答え直してもらってはならない。
 
-4. 「武器はそれぞれ個別に自動攻撃し、お守りは武器とプレイヤー全体を強化する、と分かりやすく理解できましたか。yesかnoで答えてください」
+4. 「基本武器をLv8にして対応パッシブを持ち、宝箱を取ると進化できる、と分かりやすく理解できましたか。yesかnoで答えてください」
 
+各runについて、進化を1回以上経験したかを記録する。経験した場合は画面のラン時間から最初の進化秒を転記する。
 run 3の回答後はTITLEへ戻り、ゲーム内の「終了」で閉じる。
-
-## 整理時間
-
-聞き手がゲーム外のstopwatchで、全報酬公開後にINVENTORYへ入った瞬間から、次のCOMBATまたは
-RESULTへ遷移する瞬間までを計測する。W8最終整理を含む。REWARD_REVEALの時間、設定画面滞在、
-失敗waveは記録しない。秒数は0より大きく、小数3桁以内で記録する。
-
-各results行のinventory-timesは、`cleared_waves=0`なら0行、それ以外はwave `1..cleared_waves`を
-重複なく完全に含める。
 
 ## CSV制約
 
 - `docs/playtest-results.csv`: 1runにつき1行。
-- `docs/playtest-inventory-times.csv`: 1整理区間につき1行。
+- `docs/playtest-build-experiences.csv`: 1runにつき1行。
 - `docs/playtest-understanding.csv`: 1testerにつきrun 1直後の理解度回答を1行。
 - UTF-8 BOMなし、LF、カンマ区切り、空セルなし。
 - yes/no列は小文字`yes`または`no`だけ。
 - `run_index`は1..3、`run_seed`は画面表示と一致する0..9,223,372,036,854,775,807。
-- rewardは整数1..5、`cleared_waves`は整数0..8、scoreは0以上の整数。
-- `is_first_run=yes`は各testerのrun 1だけ。
-- 採用testerの全3行で`first_time_eligible_yes_no=yes`。
-- `run_clear=yes`なら`cleared_waves=8`、noなら0..7。
-- resultsの一意キーは`(tester_id, run_index)`。
-- inventory-timesの一意キーは`(tester_id, run_index, wave_number)`。
-- understandingの一意キーは`tester_id`で、`run_index=1`、`weapon_charm_understanding_yes_no`は小文字の`yes`または`no`だけ。
+- `is_first_run=yes`と`run_index=1`は同値とする。run 1は必ず`yes`、run 2とrun 3は必ず`no`とする。
+- `growth_choice_experience_1_to_5`は整数1..5、`survival_seconds`は0以上、`final_level`は1以上。
+- `boss_result`は`defeated`、`player_defeated`、`not_reached`だけ。
+- `run_clear=yes`なら`boss_result=defeated`、noなら`player_defeated`または`not_reached`。
+- `evolution_count`は0..4。`evolution_experienced_yes_no=yes`なら1..4と一致し、`first_evolution_seconds`は0より大きい。
+- 進化なしの場合、`evolution_experienced_yes_no=no`かつ`first_evolution_seconds=0`とする。
+- resultsとbuild-experiencesの一意キーは`(tester_id, run_index)`で完全一致する。
+- understandingの一意キーは`tester_id`で、`run_index=1`とする。
 - resultsに存在する全testerがunderstandingにちょうど1行存在し、understandingに余分なtesterを含めない。
-- 同一tester内でrun seedを重複させない。
+- 各testerは3runを持ち、同一tester内でrun seedを重複させない。
+- 採用testerの全3行で`first_time_eligible_yes_no=yes`とする。
 
 ## 合格判定
 
 5人以上×各3run、合計15run以上が有効であることを確認してから集計する。
 
-- 報酬体験平均: 4.0以上
+- 成長・選択体験平均: 4.0以上
 - 即時再挑戦yes: 全回答の70%以上
-- 全整理区間のseconds中央値: 30..60秒
-- 各testerのrun 1だけによる初見クリア率: 40..60%
-- run 1直後の「武器＝個別自動攻撃、お守り＝全体能力補正」理解度yes: 全testerの80%以上
-- 全testerが3run以内にbroken buildを1回以上経験
-- 完走runの`combat_score / total_score`中央値: 65..75%
+- 各testerのrun 1だけによる初見クリア率: 40%以上60%以下
+- 最終ボス到達率: 全有効runのうち `boss_result` が `defeated` または `player_defeated` であるrunが70%以上80%以下
+- run 1直後の進化条件理解度yes: 全testerの80%以上
+- 全testerが3run以内に進化を1回以上経験
+- 全testerが3run以内に圧倒的なビルドを1回以上経験
 
-中央値は昇順で、奇数件は中央1値、偶数件は中央2値の算術平均とする。百分率は丸めずに判定する。
-条件未達時は実測表と原因仮説を報告し、値や実装を独断で変更しない。
+百分率は丸めずに判定する。条件未達時は実測表と原因仮説を報告し、値や実装を独断で変更しない。
+人間の参加、回答、測定値を生成または補完してはならない。
 
 ## 再開指示（正式対象固定後のみ）
 
@@ -132,6 +153,5 @@ RESULTへ遷移する瞬間までを計測する。W8最終整理を含む。REW
 
 `正式プレイテスト集計を再開 H`
 
-`H`は`artifacts/playtest/target.txt`へ記録した40文字候補HEADへ置換する。再開時に
-現在HEAD、target記録、EXE/PCK SHA-256、balance revision、初見資格`yes`、全CSV制約を再検証する。
-不一致が1件でもあれば集計しない。
+`H`は`artifacts/playtest/target.txt`へ記録した40文字候補HEADへ置換する。再開時に現在HEAD、target記録、
+EXE/PCK SHA-256、balance revision、初見資格`yes`、全CSV制約を再検証する。不一致が1件でもあれば集計しない。

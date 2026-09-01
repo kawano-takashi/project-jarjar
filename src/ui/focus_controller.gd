@@ -2,7 +2,9 @@ class_name FocusController
 extends RefCounted
 
 
-const UiPolishScript := preload("res://src/ui/ui_polish.gd")
+const FOCUS_FRAME_NODE_NAME: StringName = &"__FocusShapeFrame"
+const FOCUS_FRAME_WIDTH: int = 4
+const FOCUS_FRAME_COLOR := Color(1.0, 0.78, 0.22, 1.0)
 const DIRECTION_TOP: StringName = &"top"
 const DIRECTION_BOTTOM: StringName = &"bottom"
 const DIRECTION_LEFT: StringName = &"left"
@@ -30,7 +32,7 @@ static func configure_vertical_cycle(controls: Array) -> void:
 		var previous: Control = controls[(index - 1 + controls.size()) % controls.size()]
 		var next: Control = controls[(index + 1) % controls.size()]
 		control.focus_mode = Control.FOCUS_ALL
-		UiPolishScript.install_focus_frame(control)
+		_install_focus_frame(control)
 		control.focus_neighbor_top = control.get_path_to(previous)
 		control.focus_neighbor_bottom = control.get_path_to(next)
 		control.focus_neighbor_left = control.get_path_to(control)
@@ -47,7 +49,7 @@ static func configure_horizontal_cycle(controls: Array) -> void:
 		var previous: Control = controls[(index - 1 + controls.size()) % controls.size()]
 		var next: Control = controls[(index + 1) % controls.size()]
 		control.focus_mode = Control.FOCUS_ALL
-		UiPolishScript.install_focus_frame(control)
+		_install_focus_frame(control)
 		control.focus_neighbor_top = control.get_path_to(control)
 		control.focus_neighbor_bottom = control.get_path_to(control)
 		control.focus_neighbor_left = control.get_path_to(previous)
@@ -167,7 +169,7 @@ func register_control(focus_id: String, control: Control) -> void:
 	_controls[focus_id] = control
 	control.set_meta("focus_id", focus_id)
 	control.focus_mode = Control.FOCUS_ALL
-	UiPolishScript.install_focus_frame(control)
+	_install_focus_frame(control)
 	if not _neighbors.has(focus_id):
 		_neighbors[focus_id] = _self_neighbors(focus_id)
 
@@ -418,3 +420,37 @@ func _self_neighbors(focus_id: String) -> Dictionary:
 		DIRECTION_LEFT: focus_id,
 		DIRECTION_RIGHT: focus_id,
 	}
+
+
+static func _install_focus_frame(control: Control) -> void:
+	if control == null:
+		return
+	var existing := control.get_node_or_null(NodePath(FOCUS_FRAME_NODE_NAME)) as Panel
+	if existing != null:
+		return
+	var frame := Panel.new()
+	frame.name = FOCUS_FRAME_NODE_NAME
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	frame.focus_mode = Control.FOCUS_NONE
+	frame.z_index = 4096
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color.TRANSPARENT
+	style.border_color = FOCUS_FRAME_COLOR
+	style.set_border_width_all(FOCUS_FRAME_WIDTH)
+	style.corner_radius_top_left = 14
+	style.corner_radius_top_right = 2
+	style.corner_radius_bottom_right = 14
+	style.corner_radius_bottom_left = 2
+	frame.add_theme_stylebox_override("panel", style)
+	control.add_child(frame)
+	frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	frame.visible = control.has_focus()
+	control.set_meta("focus_shape_kind", "asymmetric_outline")
+	control.set_meta("focus_shape_border_width", FOCUS_FRAME_WIDTH)
+	control.focus_entered.connect(_set_focus_frame_visible.bind(frame, true))
+	control.focus_exited.connect(_set_focus_frame_visible.bind(frame, false))
+
+
+static func _set_focus_frame_visible(frame: Panel, should_show: bool) -> void:
+	if is_instance_valid(frame):
+		frame.visible = should_show

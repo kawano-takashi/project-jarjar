@@ -2,12 +2,8 @@ class_name ArenaPresenter
 extends Node3D
 
 
-signal phase_changed(phase: GameTypes.RunPhase)
-signal audio_event_requested(event_id: StringName)
-
-
-const CAMERA_TARGET_X_LIMIT: float = 9.0
-const CAMERA_TARGET_Z_LIMIT: float = 4.5
+const CAMERA_TARGET_X_LIMIT: float = 12.5
+const CAMERA_TARGET_Z_LIMIT: float = 12.5
 const CAMERA_FOLLOW_TAU_SECONDS: float = 0.18
 const CAMERA_OFFSET: Vector3 = Vector3(8.912187, 18.0, 8.912187)
 const CAMERA_INPUT_AXIS_EPSILON_SQUARED: float = 0.000001
@@ -18,106 +14,50 @@ const CAMERA_INPUT_AXIS_EPSILON_SQUARED: float = 0.000001
 @onready var _projectile_instances: MultiMeshInstance3D = %ProjectileInstances
 @onready var _vfx_instances: MultiMeshInstance3D = %VfxInstances
 @onready var _chest_instances: MultiMeshInstance3D = %ChestInstances
+@onready var _xp_instances: MultiMeshInstance3D = %XpInstances
+@onready var _pickup_instances: MultiMeshInstance3D = %PickupInstances
+@onready var _node_instances: MultiMeshInstance3D = %NodeInstances
 @onready var _combat_hud: CombatHud = %CombatHUD
 
-var _simulation: CombatSimulation = null
-var _tutorial: RefCounted = null
-var _simulation_paused: bool = false
+var _simulation: RefCounted = null
 var _smoothed_camera_target: Vector3 = Vector3.ZERO
 var _camera_target_initialized: bool = false
 
 
 func _ready() -> void:
-	set_physics_process(_simulation != null)
+	set_physics_process(false)
 	if _simulation != null:
 		_apply_snapshot(_simulation.build_snapshot(), 0.0)
 
 
 func initialize(
-	simulation: CombatSimulation,
-	tutorial: RefCounted = null,
+	simulation: RefCounted,
 ) -> void:
 	_simulation = simulation
-	_tutorial = tutorial
 	_camera_target_initialized = false
 	_apply_accessibility_settings()
 	if not is_node_ready():
 		return
-	set_physics_process(_simulation != null)
+	set_physics_process(false)
 	if _simulation != null:
 		_apply_snapshot(_simulation.build_snapshot(), 0.0)
 
 
-func set_simulation_paused(paused: bool) -> void:
-	_simulation_paused = paused
+func set_simulation_paused(_paused: bool) -> void:
 	if _simulation != null and is_node_ready():
 		_apply_snapshot(_simulation.build_snapshot(), 0.0)
 
 
-func _physics_process(delta: float) -> void:
-	if _simulation == null:
-		return
-	var snapshot: CombatSnapshot
-	var previous_phase: GameTypes.RunPhase = _simulation.state.phase
-	var previous_hp: float = _simulation.state.current_hp
-	var previous_wave_cleared: bool = _simulation.state.wave_cleared
-	var previous_absorb_count: int = _simulation.chest_visual_pool.completed_absorb_count
-	if _simulation_paused:
-		snapshot = _simulation.build_snapshot()
-	else:
-		var move_input := Input.get_vector(
-			"move_left",
-			"move_right",
-			"move_up",
-			"move_down",
-			0.2
-		)
-		move_input = _camera_relative_move_input(move_input)
-		if (
-			_tutorial != null
-			and _tutorial.should_gate_combat(_simulation.state.wave_number)
-		):
-			var previous_position: Vector2 = _simulation.player_position
-			snapshot = _simulation.step_tutorial_movement(move_input, delta)
-			_tutorial.advance_move(
-				_simulation.player_position - previous_position,
-				delta,
-			)
-		else:
-			snapshot = _simulation.step(move_input, delta)
-			if _tutorial != null:
-				_tutorial.advance_combat(delta)
-				if (
-					_simulation.chest_visual_pool.completed_absorb_count
-					> previous_absorb_count
-				):
-					_tutorial.notify_first_pickup()
-			if (
-				_simulation.chest_visual_pool.completed_absorb_count
-				> previous_absorb_count
-			):
-				var absorbed_count := (
-					_simulation.chest_visual_pool.completed_absorb_count
-					- previous_absorb_count
-				)
-				_combat_hud.present_pickup(
-					absorbed_count,
-					_reduce_motion_enabled(),
-					_reduce_flashes_enabled(),
-				)
-				audio_event_requested.emit(&"pickup")
-	_apply_snapshot(snapshot, delta)
-	if _simulation.state.current_hp < previous_hp:
-		_combat_hud.present_damage(_reduce_motion_enabled(), _reduce_flashes_enabled())
-	if not previous_wave_cleared and _simulation.state.wave_cleared:
-		_combat_hud.present_wave_clear(_reduce_motion_enabled(), _reduce_flashes_enabled())
-		audio_event_requested.emit(&"wave_clear")
-	if _simulation.state.phase != previous_phase:
-		phase_changed.emit(_simulation.state.phase)
+func present_snapshot(snapshot: CombatSnapshot, delta: float) -> void:
+	_apply_snapshot(snapshot, maxf(0.0, delta))
 
 
 func refresh_accessibility() -> void:
 	_apply_accessibility_settings()
+
+
+func camera_relative_move_input(screen_input: Vector2) -> Vector2:
+	return _camera_relative_move_input(screen_input)
 
 
 func _camera_relative_move_input(screen_input: Vector2) -> Vector2:
@@ -147,6 +87,9 @@ func _apply_snapshot(snapshot: CombatSnapshot, delta: float) -> void:
 	_copy_transform_prefix(snapshot.projectile_transforms, _projectile_instances)
 	_copy_vfx_prefix(snapshot, _vfx_instances)
 	_copy_transform_prefix(snapshot.chest_transforms, _chest_instances)
+	_copy_transform_prefix(snapshot.xp_transforms, _xp_instances)
+	_copy_transform_prefix(snapshot.pickup_transforms, _pickup_instances)
+	_copy_transform_prefix(snapshot.node_transforms, _node_instances)
 	_combat_hud.update_from_snapshot(snapshot)
 	_update_camera(snapshot.player_position, delta)
 

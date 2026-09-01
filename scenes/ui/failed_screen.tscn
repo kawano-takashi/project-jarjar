@@ -91,7 +91,7 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.9, 0.78, 0.8, 1)
 theme_override_font_sizes/font_size = 24
-text = "WAVE 1 で敗北"
+text = "生存時間 00:00"
 horizontal_alignment = 1
 
 [node name="Columns" type="HBoxContainer" parent="Margin/Content"]
@@ -122,22 +122,22 @@ theme_override_styles/panel = SubResource("StylePanel")
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 19
-text = "最終装備"
+text = "最終ビルド"
 vertical_alignment = 1
 autowrap_mode = 2
 
-[node name="ScorePanel" type="PanelContainer" parent="Margin/Content/Columns"]
+[node name="DamagePanel" type="PanelContainer" parent="Margin/Content/Columns"]
 custom_minimum_size = Vector2(430, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_styles/panel = SubResource("StylePanel")
 
-[node name="SummaryScoreText" type="Label" parent="Margin/Content/Columns/ScorePanel"]
+[node name="SummaryDamageText" type="Label" parent="Margin/Content/Columns/DamagePanel"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.95, 0.84, 0.45, 1)
 theme_override_font_sizes/font_size = 18
-text = "スコア"
+text = "DAMAGE BY LINEAGE"
 vertical_alignment = 1
 
 [node name="Actions" type="VBoxContainer" parent="Margin/Content/Columns"]

@@ -4,303 +4,195 @@ extends RefCounted
 
 const FIXED_SEED: int = 20260827
 const VALID_IDS: Array[String] = [
-	"weapon_wood_stick",
-	"weapon_bow",
-	"weapon_staff",
-	"weapon_sword",
-	"weapon_stagger",
-	"pre_quota_death",
-	"pre_quota_timeout",
-	"post_quota_death",
-	"reward_controls",
-	"inventory_controller",
-	"result_controller",
-	"boss_299",
+	"weapon_resonance_wave",
+	"weapon_homing_core",
+	"weapon_direction_needle",
+	"weapon_arc_crystal",
+	"weapon_return_ring",
+	"weapon_orbit_array",
+	"weapon_mass_shot",
+	"weapon_zero_field",
+	"level_up_modal",
+	"chest_reward",
+	"boss_phase_three",
+	"result",
 ]
+const WEAPON_SCENARIO_IDS: Dictionary[String, StringName] = {
+	"weapon_resonance_wave": &"resonance_wave",
+	"weapon_homing_core": &"homing_core",
+	"weapon_direction_needle": &"directional_needle",
+	"weapon_arc_crystal": &"arc_crystal",
+	"weapon_return_ring": &"returning_ring",
+	"weapon_orbit_array": &"orbital_array",
+	"weapon_mass_shot": &"mass_projectile",
+	"weapon_zero_field": &"zero_field",
+}
 
 
 static func build(scenario_id: String, catalog: DefinitionCatalog) -> Dictionary:
 	if catalog == null or not catalog.is_valid or not scenario_id in VALID_IDS:
 		return {"valid": false}
-	var first_wave: WaveDefinition = catalog.wave(1)
-	if first_wave == null:
-		return {"valid": false}
-	var state: RunState = RunStateFactory.create(FIXED_SEED, first_wave)
-	var rng_before: Dictionary = _rng_snapshot(state)
-	var fixture_valid: bool = true
-	match scenario_id:
-		"weapon_bow":
-			fixture_valid = _replace_starter_weapon(state, catalog, GameTypes.WeaponType.BOW)
-		"weapon_staff":
-			fixture_valid = _replace_starter_weapon(state, catalog, GameTypes.WeaponType.STAFF)
-		"weapon_sword":
-			fixture_valid = _replace_starter_weapon(state, catalog, GameTypes.WeaponType.SWORD)
-		"weapon_stagger":
-			fixture_valid = _prepare_weapon_stagger_state(state, catalog)
-		"reward_controls":
-			fixture_valid = _prepare_rewards(state, catalog)
-		"inventory_controller":
-			fixture_valid = _prepare_inventory(state, catalog)
-		"result_controller":
-			fixture_valid = _prepare_result(state, catalog)
-		"boss_299":
-			state.wave_number = 8
-			state.time_remaining = catalog.wave(8).duration_seconds
-		_:
-			pass
-	if not fixture_valid:
-		return {"valid": false, "rng_unchanged": rng_before == _rng_snapshot(state)}
+	var state: RunState = RunStateFactory.create(FIXED_SEED, catalog)
+	var rng_before: Dictionary = state.rng_streams.state_digest()
 	var simulation := CombatSimulation.new()
+	var valid: bool = true
+	if WEAPON_SCENARIO_IDS.has(scenario_id):
+		valid = _prepare_weapon_state(
+			state,
+			catalog,
+			WEAPON_SCENARIO_IDS[scenario_id],
+		)
+	elif scenario_id == "level_up_modal":
+		valid = _prepare_level_up_state(state, catalog)
+	elif scenario_id == "chest_reward":
+		valid = _prepare_chest_state(state, catalog)
+	elif scenario_id == "result":
+		_prepare_result_state(state, catalog)
+	if not valid:
+		return {
+			"valid": false,
+			"rng_unchanged": rng_before == state.rng_streams.state_digest(),
+		}
+
 	simulation.initialize(state, catalog)
-	match scenario_id:
-		"weapon_wood_stick", "weapon_bow", "weapon_staff", "weapon_sword":
-			_prepare_weapon_combat(scenario_id, simulation)
-		"weapon_stagger":
-			_prepare_weapon_stagger(simulation)
-		"pre_quota_death":
-			_prepare_quota_resolution(simulation, false, true)
-		"pre_quota_timeout":
-			_prepare_quota_resolution(simulation, false, false)
-		"post_quota_death":
-			_prepare_quota_resolution(simulation, true, true)
-		"reward_controls":
-			simulation.enemy_system.enemy_store.clear()
-			state.phase = GameTypes.RunPhase.REWARD_REVEAL
-		"inventory_controller":
-			simulation.enemy_system.enemy_store.clear()
-			state.phase = GameTypes.RunPhase.INVENTORY
-		"result_controller":
-			simulation.enemy_system.enemy_store.clear()
-			state.phase = GameTypes.RunPhase.RESULT
-		"boss_299":
-			state.non_boss_spawned = 299
-			simulation.freeze_normal_spawn = true
-		_:
-			pass
+	if WEAPON_SCENARIO_IDS.has(scenario_id):
+		_prepare_weapon_combat(simulation)
+	elif scenario_id == "boss_phase_three":
+		valid = _prepare_boss_phase_three(state, simulation)
+	_restore_rng_states(state.rng_streams, rng_before)
 	return {
-		"valid": true,
+		"valid": valid,
 		"state": state,
 		"simulation": simulation,
 		"tutorial_active": false,
-		"rng_unchanged": rng_before == _rng_snapshot(state),
+		"rng_unchanged": rng_before == state.rng_streams.state_digest(),
 	}
 
 
-static func _replace_starter_weapon(
+static func _prepare_weapon_state(
 	state: RunState,
 	catalog: DefinitionCatalog,
-	weapon_type: GameTypes.WeaponType,
+	weapon_id: StringName,
 ) -> bool:
-	var weapon: ItemInstance = QaItemBuilder.weapon(
-		catalog,
-		"qa-weapon-%s" % GameTypes.weapon_type_to_key(weapon_type),
-		weapon_type,
-	)
-	if weapon == null:
+	var definition: WeaponDefinition = catalog.weapon(weapon_id)
+	if definition == null or definition.is_evolved:
 		return false
-	state.inventory[0] = state.equipped[GameTypes.EquipmentSlot.WEAPON_1]
-	state.equipped[GameTypes.EquipmentSlot.WEAPON_1] = weapon
+	state.weapons.clear()
+	var runtime := RunWeapon.create(
+		definition.weapon_id,
+		definition.lineage_id,
+		false,
+		state.rng_streams.create_weapon_rng(definition.lineage_id, 0),
+	)
+	runtime.level = definition.max_level
+	runtime.ready_on_resume = true
+	state.weapons.append(runtime)
 	return true
 
 
-static func _prepare_weapon_stagger_state(
-	state: RunState,
-	catalog: DefinitionCatalog,
-) -> bool:
-	state.inventory[0] = state.equipped[GameTypes.EquipmentSlot.WEAPON_1]
-	for index: int in range(3):
-		var weapon: ItemInstance = QaItemBuilder.weapon(
-			catalog,
-			"qa-stagger-bow-%d" % index,
-			GameTypes.WeaponType.BOW,
-		)
-		if weapon == null:
-			return false
-		state.equipped[GameTypes.weapon_slots()[index]] = weapon
-	return true
-
-
-static func _prepare_weapon_combat(
-	scenario_id: String,
-	simulation: CombatSimulation,
-) -> void:
-	simulation.freeze_normal_spawn = true
-	simulation.freeze_enemy_ai = true
-	simulation.freeze_enemy_timers = true
-	simulation.freeze_countdown = true
-	simulation.weapon_damage_override = 5000.0
-	var distance: float = 1.2
-	if scenario_id in ["weapon_bow", "weapon_staff"]:
-		distance = 8.0
+static func _prepare_weapon_combat(simulation: CombatSimulation) -> void:
+	var runtime: RunWeapon = simulation.state.weapons[0]
+	var definition: WeaponDefinition = simulation.catalog.weapon(runtime.weapon_id)
+	var target_distance: float = 2.0
+	if definition.behavior in [
+		GameTypes.WeaponBehavior.HOMING_PROJECTILE,
+		GameTypes.WeaponBehavior.DIRECTIONAL_PROJECTILE,
+		GameTypes.WeaponBehavior.ARC_PROJECTILE,
+		GameTypes.WeaponBehavior.MASS_PROJECTILE,
+	]:
+		target_distance = 8.0
 	simulation.spawn_fixture_enemy(
-		GameTypes.EnemyType.TRACKER,
-		Vector2(distance, 0.0),
+		GameTypes.EnemyType.BULWARK,
+		Vector2(target_distance, 0.0),
 	)
 
 
-static func _prepare_weapon_stagger(simulation: CombatSimulation) -> void:
-	simulation.enemy_system.enemy_store.clear()
-	simulation.enemy_system.uniform_grid.clear()
-	simulation.freeze_normal_spawn = true
-	simulation.freeze_enemy_ai = true
-	simulation.freeze_enemy_timers = true
-	simulation.freeze_countdown = true
-	simulation.weapon_damage_override = 0.0
-	simulation.spawn_fixture_enemy(
-		GameTypes.EnemyType.TRACKER,
+static func _prepare_level_up_state(
+	state: RunState,
+	catalog: DefinitionCatalog,
+) -> bool:
+	state.pending_level_ups = 1
+	var offer: LevelOffer = ProgressionService.create_offer(state, catalog)
+	if offer == null or offer.options.size() != catalog.manifest().level_offer_count:
+		return false
+	state.phase = GameTypes.RunPhase.LEVEL_UP
+	return true
+
+
+static func _prepare_chest_state(
+	state: RunState,
+	catalog: DefinitionCatalog,
+) -> bool:
+	var starter: RunWeapon = state.weapon_for_lineage(&"homing_core")
+	if starter == null:
+		return false
+	starter.level = catalog.weapon(starter.weapon_id).max_level
+	if not bool(ProgressionService.apply_direct_upgrade(
+		state,
+		catalog,
+		GameTypes.UpgradeKind.PASSIVE,
+		&"cycle_crystal",
+	).get(&"success", false)):
+		return false
+	state.pending_chest_sources.append(-1)
+	var outcome: ChestOutcome = ChestRewardService.create_outcome(state, catalog)
+	if outcome == null or outcome.kind != GameTypes.ChestOutcomeKind.EVOLUTION:
+		return false
+	state.phase = GameTypes.RunPhase.CHEST_REWARD
+	return true
+
+
+static func _prepare_boss_phase_three(
+	state: RunState,
+	simulation: CombatSimulation,
+) -> bool:
+	state.combat_tick = state.BOSS_START_TICK + 1800 * 3
+	var boss: EnemyEntity = simulation.spawn_fixture_enemy(
+		GameTypes.EnemyType.BOSS,
 		Vector2(8.0, 0.0),
-	)
-
-
-static func _prepare_quota_resolution(
-	simulation: CombatSimulation,
-	quota_reached: bool,
-	player_dead: bool,
-) -> void:
-	simulation.freeze_normal_spawn = true
-	simulation.freeze_enemy_ai = true
-	simulation.freeze_enemy_timers = true
-	if quota_reached:
-		simulation.state.wave_kills = simulation.wave.kill_quota
-	if player_dead:
-		simulation.state.current_hp = 0.0
-	else:
-		simulation.state.time_remaining = 1.0 / 60.0
-
-
-static func _prepare_rewards(state: RunState, catalog: DefinitionCatalog) -> bool:
-	state.unopened_rewards.clear()
-	var fixtures: Array[Dictionary] = [
-		{"type": GameTypes.WeaponType.BOW, "rarity": GameTypes.Rarity.COMMON},
-		{"type": GameTypes.WeaponType.STAFF, "rarity": GameTypes.Rarity.RARE},
-		{"type": GameTypes.WeaponType.SWORD, "rarity": GameTypes.Rarity.EPIC},
-		{"type": GameTypes.WeaponType.BOW, "rarity": GameTypes.Rarity.LEGENDARY},
-	]
-	for index: int in range(fixtures.size()):
-		var fixture: Dictionary = fixtures[index]
-		var item: ItemInstance = QaItemBuilder.weapon(
-			catalog,
-			"qa-reward-item-%d" % index,
-			fixture["type"] as GameTypes.WeaponType,
-			fixture["rarity"] as GameTypes.Rarity,
-		)
-		if item == null:
-			return false
-		state.unopened_rewards.append(_reward_for(item, index))
-	state.wave_chests = state.unopened_rewards.size()
-	state.total_chests = state.wave_chests
-	return true
-
-
-static func _prepare_inventory(state: RunState, catalog: DefinitionCatalog) -> bool:
-	var ids: Array[StringName] = catalog.affix_ids()
-	for index: int in range(3):
-		var charm: ItemInstance = QaItemBuilder.charm(
-			catalog,
-			"qa-common-charm-%d" % index,
-			GameTypes.Rarity.COMMON,
-			[ids[index]],
-		)
-		if charm == null:
-			return false
-		state.inventory[index] = charm
-	var bow: ItemInstance = QaItemBuilder.weapon(
-		catalog,
-		"qa-inventory-bow",
-		GameTypes.WeaponType.BOW,
-		GameTypes.Rarity.RARE,
-	)
-	var staff: ItemInstance = QaItemBuilder.weapon(
-		catalog,
-		"qa-inventory-staff",
-		GameTypes.WeaponType.STAFF,
-		GameTypes.Rarity.EPIC,
-	)
-	if bow == null or staff == null:
-		return false
-	state.inventory[3] = bow
-	state.inventory[4] = staff
-	var locked: ItemInstance = QaItemBuilder.weapon(
-		catalog,
-		"qa-locked-sword",
-		GameTypes.WeaponType.SWORD,
-		GameTypes.Rarity.RARE,
-	)
-	if locked == null:
-		return false
-	locked.locked = true
-	state.inventory[5] = locked
-	state.overflow.append(QaItemBuilder.weapon(
-		catalog,
-		"qa-overflow-bow",
-		GameTypes.WeaponType.BOW,
-		GameTypes.Rarity.COMMON,
-	))
-	return state.overflow[0] != null
-
-
-static func _prepare_result(state: RunState, catalog: DefinitionCatalog) -> bool:
-	state.wave_number = 8
-	state.cleared_waves = 8
-	state.normal_kills = 500
-	state.elite_kills = 8
-	state.boss_kills = 1
-	state.total_kills = 509
-	state.total_chests = 24
-	state.fusion_count = 3
-	var weapons: Array[GameTypes.WeaponType] = [
-		GameTypes.WeaponType.BOW,
-		GameTypes.WeaponType.STAFF,
-		GameTypes.WeaponType.SWORD,
-	]
-	for index: int in range(3):
-		var weapon: ItemInstance = QaItemBuilder.weapon(
-			catalog,
-			"qa-result-weapon-%d" % index,
-			weapons[index],
-			GameTypes.Rarity.LEGENDARY,
-		)
-		if weapon == null:
-			return false
-		state.equipped[GameTypes.weapon_slots()[index]] = weapon
-	var ids: Array[StringName] = catalog.affix_ids()
-	for index: int in range(3):
-		var charm: ItemInstance = QaItemBuilder.charm(
-			catalog,
-			"qa-result-charm-%d" % index,
-			GameTypes.Rarity.EPIC,
-			[ids[index], ids[index + 1], ids[index + 2]],
-		)
-		if charm == null:
-			return false
-		state.equipped[GameTypes.charm_slots()[index]] = charm
-	state.score_breakdown = ScoreService.calculate(
-		state.normal_kills,
-		state.elite_kills,
-		state.boss_kills,
-		state.post_quota_kills,
-		state.cleared_waves,
+		state.combat_tick - 1,
 		true,
-		InventoryService.equipped_items(state),
-		catalog.score_definition(),
 	)
+	if boss == null:
+		return false
+	boss.hp = boss.max_hp * 0.3
+	boss.boss_phase = 3
+	state.boss_spawned = true
+	state.boss_phase = 3
+	state.boss_enrage_stacks = 3
+	state.boss_hp = boss.hp
+	state.boss_max_hp = boss.max_hp
 	return true
 
 
-static func _reward_for(item: ItemInstance, index: int) -> RewardRoll:
-	var reward := RewardRoll.new()
-	reward.reward_id = "qa-reward-%d" % index
-	reward.wave_number = 1
-	reward.acquired_tick = index
-	reward.source = GameTypes.RewardSource.NORMAL
-	reward.item = item
-	reward.rarity_for_presentation = item.rarity
-	return reward
+static func _prepare_result_state(
+	state: RunState,
+	catalog: DefinitionCatalog,
+) -> void:
+	state.combat_tick = state.BOSS_START_TICK + 733
+	state.level = 42
+	state.total_kills = 912
+	state.normal_kills = 907
+	state.elite_kills = 4
+	state.boss_kills = 1
+	state.boss_spawned = true
+	state.boss_defeated = true
+	state.evolution_count = 2
+	state.weapon_damage_by_lineage[&"resonance_wave"] = 12345.0
+	state.weapon_damage_by_lineage[&"homing_core"] = 9876.0
+	var starter: RunWeapon = state.weapon_for_lineage(&"homing_core")
+	if starter != null:
+		starter.weapon_id = catalog.evolution_for_weapon(&"homing_core").evolved_weapon_id
+		starter.level = 1
+		starter.evolved = true
+	state.phase = GameTypes.RunPhase.RESULT
 
 
-static func _rng_snapshot(state: RunState) -> Dictionary:
-	return {
-		"combat": state.rng_streams.combat_rng.state,
-		"loot": state.rng_streams.loot_rng.state,
-		"fusion": state.rng_streams.fusion_rng.state,
-	}
+static func _restore_rng_states(
+	streams: RunRngStreams,
+	digest: Dictionary,
+) -> void:
+	streams.spawn_rng.state = int(digest[&"spawn"])
+	streams.upgrade_rng.state = int(digest[&"upgrade"])
+	streams.chest_rng.state = int(digest[&"chest"])
+	streams.powerup_rng.state = int(digest[&"powerup"])

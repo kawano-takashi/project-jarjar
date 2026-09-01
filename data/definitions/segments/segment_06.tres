@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="EnemySegmentDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/enemy_segment_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+segment_index = 5
+start_tick = 18000
+end_tick = 21600
+target_active = 36
+hp_multiplier = 0.6
+damage_multiplier = 0.532
+spawn_weights = PackedFloat32Array(0.3, 0.3, 0.23, 0.17, 0, 0)

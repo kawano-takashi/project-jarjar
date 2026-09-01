@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="WeaponDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/weapon_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+weapon_id = &"collapse_projectile"
+display_name = "崩壊弾"
+description = "敵群を貫きながら膨張する超高質量弾。"
+lineage_id = &"mass_projectile"
+behavior = 6
+is_evolved = true
+max_level = 1
+paired_passive_id = &"amplifier_core"
+damage_by_level = PackedFloat32Array(503.7)
+cooldown_ticks_by_level = PackedInt32Array(72)
+amount_by_level = PackedInt32Array(3)
+projectile_speed_by_level = PackedFloat32Array(9)
+area_by_level = PackedFloat32Array(2.2)
+duration_ticks_by_level = PackedInt32Array(240)
+pierce_by_level = PackedInt32Array(999)

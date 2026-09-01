@@ -2,124 +2,96 @@ class_name TutorialController
 extends RefCounted
 
 
+signal revision_completed(revision: int)
+
+const REVISION: int = 4
 const MOVE_REQUIRED_SECONDS: float = 1.0
-const PICKUP_MESSAGE_SECONDS: float = 2.0
-const MOVE_MESSAGE: String = "WASD / 矢印 / 左スティックで移動"
-const PICKUP_MESSAGE: String = "宝箱は自動回収されます"
-const REWARD_MESSAGE: String = "報酬は獲得時に確定しています"
-const INVENTORY_MESSAGE: String = (
-	"1. 3本の武器は、それぞれ独立してすべて自動攻撃\n"
-	+ "2. 3個のお守りは、武器とプレイヤー全体を強化\n"
-	+ "3. 同じレアリティのアイテム3個で、上位1個へ合成"
-)
+const CONTEXT_MESSAGE_SECONDS: float = 4.5
+const MOVE_MESSAGE: String = "WASD / 矢印 / 左スティックで移動。攻撃は自動です"
+const MESSAGE_BY_CONTEXT: Dictionary[StringName, String] = {
+	&"xp_pickup": "小さな図形はXPです。近づくと吸い寄せられます",
+	&"level_up": "レベルアップは3択。武器5枠・パッシブ5枠を組み立てます",
+	&"chest_pickup": "2・4・6・8分のエリートは宝箱を落とします",
+	&"evolution": "武器Lv8と対応パッシブが揃うと、宝箱で進化します",
+	&"stop_pickup": "停止場は通常敵とエリートを5秒停止し、ボスを減速します",
+	&"boss_spawn": "10:00。最後のボスを倒せばクリアです",
+}
 
 var enabled: bool = false
 var move_elapsed: float = 0.0
 var move_completed: bool = false
-var pickup_shown: bool = false
-var pickup_remaining: float = 0.0
-var reward_shown: bool = false
-var inventory_shown: bool = false
-var noncombat_message: String = ""
+var message_remaining: float = 0.0
+var active_message: String = ""
+var revision_marked: bool = false
+
+var _shown_contexts: Dictionary[StringName, bool] = {}
 
 
-func begin_run(tutorial_seen: bool) -> void:
-	enabled = not tutorial_seen
+func begin_run(stored_revision: int) -> void:
+	enabled = stored_revision < REVISION
 	move_elapsed = 0.0
 	move_completed = not enabled
-	pickup_shown = false
-	pickup_remaining = 0.0
-	reward_shown = false
-	inventory_shown = false
-	noncombat_message = ""
+	message_remaining = 0.0
+	active_message = MOVE_MESSAGE if enabled else ""
+	revision_marked = not enabled
+	_shown_contexts.clear()
 
 
-func should_gate_combat(wave_number: int) -> bool:
-	return enabled and wave_number == 1 and not move_completed
-
-
-func advance_move(actual_movement: Vector2, delta: float) -> bool:
-	if move_completed or not enabled or delta <= 0.0:
+func advance_movement(actual_movement: Vector2, delta: float) -> bool:
+	if not enabled or move_completed or delta <= 0.0:
 		return false
-	if actual_movement.length_squared() <= 0.000000000001:
+	if actual_movement.length_squared() <= 0.000001:
 		return false
-	move_elapsed = TimerMath.advance_clamped(
-		move_elapsed,
-		MOVE_REQUIRED_SECONDS,
-		delta,
-	)
-	if not TimerMath.is_ready(move_elapsed, MOVE_REQUIRED_SECONDS):
+	move_elapsed = minf(MOVE_REQUIRED_SECONDS, move_elapsed + delta)
+	if move_elapsed < MOVE_REQUIRED_SECONDS:
 		return false
 	move_completed = true
+	active_message = ""
+	message_remaining = 0.0
+	if not revision_marked:
+		revision_marked = true
+		revision_completed.emit(REVISION)
 	return true
 
 
-func advance_combat(delta: float) -> void:
-	if pickup_remaining <= 0.0:
+func advance(delta: float) -> void:
+	if not enabled or not move_completed or message_remaining <= 0.0 or delta <= 0.0:
 		return
-	pickup_remaining = TimerMath.countdown(pickup_remaining, maxf(0.0, delta))
+	message_remaining = maxf(0.0, message_remaining - delta)
+	if message_remaining <= 0.0:
+		active_message = ""
 
 
-func notify_first_pickup() -> bool:
-	if not enabled or pickup_shown:
+func notify_context(context_id: StringName) -> bool:
+	if (
+		not enabled
+		or not move_completed
+		or _shown_contexts.has(context_id)
+		or not MESSAGE_BY_CONTEXT.has(context_id)
+	):
 		return false
-	pickup_shown = true
-	pickup_remaining = PICKUP_MESSAGE_SECONDS
+	_shown_contexts[context_id] = true
+	active_message = MESSAGE_BY_CONTEXT[context_id]
+	message_remaining = CONTEXT_MESSAGE_SECONDS
 	return true
 
 
-func enter_reward(wave_number: int) -> bool:
-	if not enabled or wave_number != 1 or reward_shown:
-		noncombat_message = ""
-		return false
-	reward_shown = true
-	noncombat_message = REWARD_MESSAGE
-	return true
-
-
-func enter_inventory(wave_number: int) -> bool:
-	if not enabled or wave_number != 1 or inventory_shown:
-		noncombat_message = ""
-		return false
-	inventory_shown = true
-	noncombat_message = INVENTORY_MESSAGE
-	return true
-
-
-func dismiss_noncombat() -> bool:
-	if noncombat_message.is_empty():
-		return false
-	noncombat_message = ""
-	return true
-
-
-func leave_w1_inventory(wave_number: int) -> bool:
-	if not enabled or wave_number != 1:
-		return false
-	enabled = false
-	noncombat_message = ""
-	pickup_remaining = 0.0
-	return true
-
-
-func current_message(in_combat: bool, wave_number: int = 0) -> String:
-	if in_combat:
-		if should_gate_combat(wave_number):
-			return MOVE_MESSAGE
-		if pickup_remaining > 0.0:
-			return PICKUP_MESSAGE
-		return ""
-	return noncombat_message
+func current_message() -> String:
+	return active_message if enabled else ""
 
 
 func debug_state() -> Dictionary:
+	var shown: Array[StringName] = []
+	for context_id: StringName in _shown_contexts:
+		shown.append(context_id)
+	shown.sort()
 	return {
+		"revision": REVISION,
 		"enabled": enabled,
 		"move_elapsed": move_elapsed,
 		"move_completed": move_completed,
-		"pickup_shown": pickup_shown,
-		"pickup_remaining": pickup_remaining,
-		"reward_shown": reward_shown,
-		"inventory_shown": inventory_shown,
-		"noncombat_message": noncombat_message,
+		"message": current_message(),
+		"message_remaining": message_remaining,
+		"revision_marked": revision_marked,
+		"shown_contexts": shown,
 	}

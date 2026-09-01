@@ -493,25 +493,36 @@ function Invoke-PackAudit {
     if (-not (Test-Path -LiteralPath $packManifestPath -PathType Leaf)) {
         throw "Pack audit did not create its manifest."
     }
-    $auditLines = @($result.Lines | Where-Object { $_ -cmatch '^PACK_AUDIT_OK paths=([0-9]+) required=2 forbidden=0 balance_revision=([0-9]+)$' })
+    $auditLines = @($result.Lines | Where-Object { $_ -cmatch '^PACK_AUDIT_OK paths=([0-9]+) required=3 forbidden=0 balance_revision=([0-9]+)$' })
     if ($auditLines.Count -ne 1) {
         throw "Pack audit success marker count was $($auditLines.Count)."
     }
     $match = [System.Text.RegularExpressions.Regex]::Match(
         $auditLines[0],
-        '^PACK_AUDIT_OK paths=([0-9]+) required=2 forbidden=0 balance_revision=([0-9]+)$'
+        '^PACK_AUDIT_OK paths=([0-9]+) required=3 forbidden=0 balance_revision=([0-9]+)$'
     )
     $manifestLines = @([System.IO.File]::ReadAllLines($packManifestPath) | Where-Object { -not [string]::IsNullOrEmpty($_) })
     if ($manifestLines.Count -ne [int]$match.Groups[1].Value) {
         throw "Pack manifest path count does not match the audit marker."
     }
-    foreach ($requiredPath in @("res://scenes/main.tscn", "res://data/balance/balance_manifest.tres")) {
+    foreach ($requiredPath in @("res://scenes/main.tscn", "res://data/balance/balance_manifest.tres", "res://data/balance/survival_content_manifest.tres")) {
         if ($manifestLines -cnotcontains $requiredPath) {
             throw "Pack manifest is missing $requiredPath"
         }
     }
     foreach ($path in $manifestLines) {
-        foreach ($prefix in @("res://tests/", "res://src/debug/", "res://scenes/debug/", "res://outputs/", "res://docs/")) {
+        foreach ($prefix in @(
+            "res://tests/",
+            "res://src/debug/",
+            "res://scenes/debug/",
+            "res://outputs/",
+            "res://docs/",
+            "res://tools/",
+            "res://build/",
+            "res://artifacts/",
+            "res://work/",
+            "res://.codex/"
+        )) {
             if ($path.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
                 throw "Pack manifest contains forbidden path: $path"
             }
@@ -524,7 +535,7 @@ function Invoke-PackAudit {
 function Assert-RepresentativeReleaseArgumentRejections {
     param([Parameter(Mandatory = $true)][string]$LogPath)
 
-    [void](Invoke-LoggedProcess -LogPath $LogPath -Label "reject_debug_only" -Executable $consoleExecutable -Arguments @("--headless", "--", "--qa-scenario=weapon_bow") -ExpectedExitCodes @(2) -RequiredMarkers @("RELEASE_ARGUMENT_REJECTED name=--qa-scenario"))
+    [void](Invoke-LoggedProcess -LogPath $LogPath -Label "reject_debug_only" -Executable $consoleExecutable -Arguments @("--headless", "--", "--qa-scenario=weapon_resonance_wave") -ExpectedExitCodes @(2) -RequiredMarkers @("RELEASE_ARGUMENT_REJECTED name=--qa-scenario"))
     [void](Invoke-LoggedProcess -LogPath $LogPath -Label "reject_unknown" -Executable $consoleExecutable -Arguments @("--headless", "--", "--unknown-release-option") -ExpectedExitCodes @(2) -RequiredMarkers @("RELEASE_ARGUMENT_REJECTED name=--unknown-release-option"))
     [void](Invoke-LoggedProcess -LogPath $LogPath -Label "reject_duplicate" -Executable $consoleExecutable -Arguments @("--headless", "--", "--smoke-run", "--smoke-run") -ExpectedExitCodes @(2) -RequiredMarkers @("RELEASE_ARGUMENT_REJECTED name=--smoke-run"))
     [void](Invoke-LoggedProcess -LogPath $LogPath -Label "reject_invalid_combination" -Executable $consoleExecutable -Arguments @("--headless", "--", "--smoke-run", "--release-pack-audit=$packManifestPath") -ExpectedExitCodes @(2) -RequiredMarkers @("RELEASE_ARGUMENT_REJECTED name=--smoke-run"))

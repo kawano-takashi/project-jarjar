@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="WeaponDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/weapon_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+weapon_id = &"critical_ring"
+display_name = "臨界環"
+description = "高倍率会心を起こす大型の反転環。"
+lineage_id = &"returning_ring"
+behavior = 4
+is_evolved = true
+max_level = 1
+paired_passive_id = &"probability_core"
+damage_by_level = PackedFloat32Array(72.35)
+cooldown_ticks_by_level = PackedInt32Array(48)
+amount_by_level = PackedInt32Array(4)
+projectile_speed_by_level = PackedFloat32Array(16)
+area_by_level = PackedFloat32Array(0.7)
+duration_ticks_by_level = PackedInt32Array(150)
+pierce_by_level = PackedInt32Array(8)
+critical_chance = 0.35
+critical_multiplier = 4.0

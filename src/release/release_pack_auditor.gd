@@ -5,12 +5,43 @@ extends RefCounted
 const MANIFEST_RELATIVE_PATH: String = "artifacts/release-tests/pack-manifest.txt"
 const REQUIRED_MAIN_SCENE_PATH: String = "res://scenes/main.tscn"
 const REQUIRED_BALANCE_PATH: String = "res://data/balance/balance_manifest.tres"
+const REQUIRED_SURVIVAL_MANIFEST_PATH: String = "res://data/balance/survival_content_manifest.tres"
 const FORBIDDEN_PREFIXES: Array[String] = [
 	"res://tests/",
 	"res://src/debug/",
 	"res://scenes/debug/",
 	"res://outputs/",
 	"res://docs/",
+	"res://tools/",
+	"res://build/",
+	"res://artifacts/",
+	"res://work/",
+	"res://.codex/",
+	"res://assets/ui/inventory_icons/",
+	"res://data/definitions/affixes/",
+	"res://data/definitions/rarities/",
+	"res://data/definitions/waves/",
+	"res://data/definitions/score.",
+	"res://src/inventory/",
+	"res://src/loot/",
+	"res://src/core/models/item_instance.",
+	"res://src/core/models/reward_roll.",
+	"res://src/core/models/affix_roll.",
+	"res://src/core/score_service.",
+	"res://src/definitions/rarity_definition.",
+	"res://src/definitions/affix_definition.",
+	"res://src/definitions/wave_definition.",
+	"res://src/definitions/score_definition.",
+	"res://data/definitions/weapons/wood_stick.tres",
+	"res://data/definitions/weapons/bow.tres",
+	"res://data/definitions/weapons/staff.tres",
+	"res://data/definitions/weapons/sword.tres",
+	"res://src/ui/inventory_",
+	"res://src/ui/fusion_",
+	"res://src/ui/reward_reveal_",
+	"res://scenes/ui/inventory_",
+	"res://scenes/ui/fusion_",
+	"res://scenes/ui/reward_reveal_",
 ]
 
 
@@ -74,14 +105,30 @@ static func audit(manifest_path: String) -> Dictionary:
 		if ResourceLoader.exists(REQUIRED_BALANCE_PATH)
 		else null
 	)
+	var survival_resource: Resource = (
+		ResourceLoader.load(REQUIRED_SURVIVAL_MANIFEST_PATH)
+		if ResourceLoader.exists(REQUIRED_SURVIVAL_MANIFEST_PATH)
+		else null
+	)
 	var main_scene_valid: bool = main_resource is PackedScene
 	var balance_manifest_valid: bool = balance_resource is BalanceManifest
+	var survival_manifest_valid: bool = survival_resource is SurvivalContentManifest
 	var balance_revision: int = (
 		(balance_resource as BalanceManifest).balance_revision
 		if balance_manifest_valid
 		else -1
 	)
-	var required_count: int = int(main_scene_valid) + int(balance_manifest_valid)
+	if survival_manifest_valid:
+		var survival_manifest := survival_resource as SurvivalContentManifest
+		survival_manifest_valid = (
+			survival_manifest.balance != null
+			and survival_manifest.balance.balance_revision == balance_revision
+		)
+	var required_count: int = (
+		int(main_scene_valid)
+		+ int(balance_manifest_valid)
+		+ int(survival_manifest_valid)
+	)
 
 	var details := {
 		"manifest_path": normalized_manifest_path,
@@ -91,6 +138,7 @@ static func audit(manifest_path: String) -> Dictionary:
 		"required_count": required_count,
 		"main_scene_valid": main_scene_valid,
 		"balance_manifest_valid": balance_manifest_valid,
+		"survival_manifest_valid": survival_manifest_valid,
 		"balance_revision": balance_revision,
 	}
 	if resource_paths.is_empty():
@@ -101,12 +149,14 @@ static func audit(manifest_path: String) -> Dictionary:
 		return _failure(3, &"main_scene_invalid", details)
 	if not balance_manifest_valid:
 		return _failure(3, &"balance_manifest_invalid", details)
+	if not survival_manifest_valid:
+		return _failure(3, &"survival_manifest_invalid", details)
 
 	details["success"] = true
 	details["exit_code"] = 0
 	details["reason"] = &""
 	details["message"] = (
-		"PACK_AUDIT_OK paths=%d required=2 forbidden=0 balance_revision=%d"
+		"PACK_AUDIT_OK paths=%d required=3 forbidden=0 balance_revision=%d"
 		% [resource_paths.size(), balance_revision]
 	)
 	return details

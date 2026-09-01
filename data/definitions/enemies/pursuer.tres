@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="EnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+enemy_id = &"pursuer"
+display_name = "追跡多面体"
+enemy_type = 0
+base_hp = 20.0
+move_speed = 2.4
+body_radius = 0.38
+contact_interval_ticks = 45
+contact_damage = 8.0
+xp_value = 1

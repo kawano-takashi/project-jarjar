@@ -13,6 +13,8 @@ const TARGET_WINDOW_SIZE: Vector2i = Vector2i(1920, 1080)
 const TARGET_ENEMY_COUNT: int = 500
 const TARGET_PROJECTILE_COUNT: int = 1_200
 const TARGET_VFX_COUNT: int = 800
+const TARGET_XP_COUNT: int = 1_024
+const TARGET_WEAPON_COUNT: int = 5
 const WARMUP_USEC: int = 30_000_000
 const RUN_DURATION_USEC: int = 120_000_000
 const EARLY_MEMORY_FIRST_SECOND: int = 30
@@ -23,7 +25,8 @@ const CSV_FILENAME: String = "performance.csv"
 const SUMMARY_FILENAME: String = "performance-summary.txt"
 const CSV_HEADER: String = (
 	"frame_index,elapsed_usec,frame_time_usec,active_enemy,active_projectile,"
-	+ "active_vfx,projectile_pool_used,vfx_pool_used,static_memory_bytes"
+	+ "active_vfx,active_xp,active_weapon,projectile_pool_used,vfx_pool_used,"
+	+ "xp_pool_used,static_memory_bytes"
 )
 
 var exit_code: int = -1
@@ -55,6 +58,7 @@ var _pool_overflow_violation_frames: int = 0
 var _orphan_node_violation_frames: int = 0
 var _maximum_orphan_node_count: int = 0
 var _first_count_violation: String = ""
+var _final_workload_metrics: Dictionary = {}
 
 
 func initialize(simulation: CombatSimulation, output_directory: String) -> Error:
@@ -82,9 +86,6 @@ func initialize(simulation: CombatSimulation, output_directory: String) -> Error
 	if _simulation.state.phase != GameTypes.RunPhase.COMBAT:
 		last_error_message = "performance_requires_combat_phase"
 		_simulation = null
-		return ERR_INVALID_DATA
-	if not _equip_three_weapon_fixture():
-		last_error_message = "performance_three_weapon_fixture_failed"
 		return ERR_INVALID_DATA
 	var fixture_result := _prepare_or_validate_full_load()
 	if not bool(fixture_result.get("valid", false)):
@@ -250,39 +251,14 @@ func _finish_without_capture() -> void:
 	completed.emit(exit_code, summary)
 
 
-func _equip_three_weapon_fixture() -> bool:
-	var weapon_types: Array[GameTypes.WeaponType] = [
-		GameTypes.WeaponType.BOW,
-		GameTypes.WeaponType.STAFF,
-		GameTypes.WeaponType.SWORD,
-	]
-	var slots: Array[GameTypes.EquipmentSlot] = GameTypes.weapon_slots()
-	for index: int in range(slots.size()):
-		var item: ItemInstance = ItemFactory.create_weapon(
-			_simulation.state.run_seed,
-			"performance-weapon-%d" % index,
-			weapon_types[index],
-			GameTypes.Rarity.LEGENDARY,
-			_simulation.catalog,
-		)
-		if item == null:
-			return false
-		_simulation.state.equipped[slots[index]] = item
-	_simulation.weapon_system.initialize(
-		_simulation.state,
-		_simulation.catalog,
-		_simulation.projectile_pool,
-		_simulation.event_router,
-	)
-	return InventoryService.equipped_weapon_count(_simulation.state) == 3
-
-
 func _prepare_or_validate_full_load() -> Dictionary:
 	var initial_counts := _active_counts()
 	if (
 		int(initial_counts["active_enemy"]) == TARGET_ENEMY_COUNT
 		and int(initial_counts["active_projectile"]) == TARGET_PROJECTILE_COUNT
 		and int(initial_counts["active_vfx"]) == TARGET_VFX_COUNT
+		and int(initial_counts["active_xp"]) == TARGET_XP_COUNT
+		and int(initial_counts["active_weapon"]) == TARGET_WEAPON_COUNT
 	):
 		_configure_simulation_freeze()
 		return {"valid": true, "reason": ""}
@@ -290,6 +266,7 @@ func _prepare_or_validate_full_load() -> Dictionary:
 		int(initial_counts["active_enemy"]) != 0
 		or int(initial_counts["active_projectile"]) != 0
 		or int(initial_counts["active_vfx"]) != 0
+		or int(initial_counts["active_xp"]) != 0
 	):
 		return {"valid": false, "reason": "full_load_fixture_requires_empty_or_exact_simulation"}
 
@@ -301,6 +278,7 @@ func _prepare_or_validate_full_load() -> Dictionary:
 			TARGET_ENEMY_COUNT,
 			TARGET_PROJECTILE_COUNT,
 			TARGET_VFX_COUNT,
+			TARGET_XP_COUNT,
 		)
 	):
 		return {"valid": false, "reason": "performance_fixture_prepare_failed"}
@@ -311,19 +289,15 @@ func _prepare_or_validate_full_load() -> Dictionary:
 		int(final_counts["active_enemy"]) != TARGET_ENEMY_COUNT
 		or int(final_counts["active_projectile"]) != TARGET_PROJECTILE_COUNT
 		or int(final_counts["active_vfx"]) != TARGET_VFX_COUNT
+		or int(final_counts["active_xp"]) != TARGET_XP_COUNT
+		or int(final_counts["active_weapon"]) != TARGET_WEAPON_COUNT
 	):
 		return {"valid": false, "reason": "full_load_fixture_count_mismatch"}
 	return {"valid": true, "reason": ""}
 
 
 func _configure_simulation_freeze() -> void:
-	_simulation.freeze_enemy_ai = true
-	_simulation.freeze_enemy_timers = true
-	_simulation.freeze_normal_spawn = true
-	_simulation.freeze_countdown = true
 	_simulation.freeze_all_updates = true
-	_simulation.allow_contact_timers_only = false
-	_simulation.weapon_damage_override = 0.0
 	_simulation.state.current_hp = _simulation.state.max_hp
 
 
@@ -332,12 +306,13 @@ func _simulation_is_usable(simulation: CombatSimulation) -> bool:
 		simulation != null
 		and simulation.state != null
 		and simulation.catalog != null
-		and simulation.wave != null
 		and simulation.enemy_system != null
 		and simulation.enemy_system.enemy_store != null
 		and simulation.projectile_pool != null
 		and simulation.vfx_pool != null
-		and simulation.chest_visual_pool != null
+		and simulation.xp_pickup_pool != null
+		and simulation.arena_object_system != null
+		and simulation.weapon_system != null
 		and simulation.event_router != null
 	)
 
@@ -347,6 +322,8 @@ func _active_counts() -> Dictionary:
 		"active_enemy": _simulation.enemy_system.enemy_store.active_count(),
 		"active_projectile": _simulation.projectile_pool.active_count(),
 		"active_vfx": _simulation.vfx_pool.active_count(),
+		"active_xp": _simulation.xp_pickup_pool.active_count(),
+		"active_weapon": _simulation.state.weapons.size(),
 	}
 
 
@@ -354,12 +331,12 @@ func _runtime_frame_values() -> Dictionary:
 	var counts := _active_counts()
 	counts["projectile_pool_used"] = counts["active_projectile"]
 	counts["vfx_pool_used"] = counts["active_vfx"]
+	counts["xp_pool_used"] = counts["active_xp"]
 	counts["static_memory_bytes"] = OS.get_static_memory_usage()
 	counts["enemy_pool_overflow"] = _simulation.enemy_system.enemy_store.overflow_count
 	counts["projectile_pool_overflow"] = _simulation.projectile_pool.overflow_count
 	counts["vfx_pool_overflow"] = _simulation.vfx_pool.overflow_count
-	counts["chest_pool_forced_absorb"] = _simulation.chest_visual_pool.forced_absorb_count
-	counts["equipped_weapon_count"] = InventoryService.equipped_weapon_count(_simulation.state)
+	counts["xp_pool_overflow_merges"] = _simulation.xp_pickup_pool.overflow_merge_count
 	counts["orphan_node_count"] = int(
 		Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)
 	)
@@ -372,15 +349,21 @@ func _record_csv_frame(frame_time_usec: int, values: Dictionary) -> void:
 	var active_enemy: int = int(values["active_enemy"])
 	var active_projectile: int = int(values["active_projectile"])
 	var active_vfx: int = int(values["active_vfx"])
+	var active_xp: int = int(values["active_xp"])
+	var active_weapon: int = int(values["active_weapon"])
 	if (
 		active_enemy != TARGET_ENEMY_COUNT
 		or active_projectile != TARGET_PROJECTILE_COUNT
 		or active_vfx != TARGET_VFX_COUNT
+		or active_xp != TARGET_XP_COUNT
+		or active_weapon != TARGET_WEAPON_COUNT
 	):
 		_csv_count_overrides[_frame_index] = PackedInt64Array([
 			active_enemy,
 			active_projectile,
 			active_vfx,
+			active_xp,
+			active_weapon,
 		])
 
 
@@ -398,15 +381,19 @@ func _write_buffered_csv_rows() -> bool:
 		var active_enemy: int = TARGET_ENEMY_COUNT
 		var active_projectile: int = TARGET_PROJECTILE_COUNT
 		var active_vfx: int = TARGET_VFX_COUNT
+		var active_xp: int = TARGET_XP_COUNT
+		var active_weapon: int = TARGET_WEAPON_COUNT
 		if _csv_count_overrides.has(index):
 			var counts: PackedInt64Array = _csv_count_overrides[index]
-			if counts.size() != 3:
+			if counts.size() != 5:
 				return false
 			active_enemy = counts[0]
 			active_projectile = counts[1]
 			active_vfx = counts[2]
+			active_xp = counts[3]
+			active_weapon = counts[4]
 		_csv_file.store_string(
-			"%d,%d,%d,%d,%d,%d,%d,%d,%d\n"
+			"%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n"
 			% [
 				index,
 				elapsed_usec,
@@ -414,8 +401,11 @@ func _write_buffered_csv_rows() -> bool:
 				active_enemy,
 				active_projectile,
 				active_vfx,
+				active_xp,
+				active_weapon,
 				active_projectile,
 				active_vfx,
+				active_xp,
 				_csv_static_memory_bytes[index],
 			]
 		)
@@ -432,17 +422,23 @@ func _validate_frame_values(values: Dictionary) -> void:
 	var active_enemy: int = int(values["active_enemy"])
 	var active_projectile: int = int(values["active_projectile"])
 	var active_vfx: int = int(values["active_vfx"])
+	var active_xp: int = int(values["active_xp"])
+	var active_weapon: int = int(values["active_weapon"])
 	if (
 		active_enemy != TARGET_ENEMY_COUNT
 		or active_projectile != TARGET_PROJECTILE_COUNT
 		or active_vfx != TARGET_VFX_COUNT
+		or active_xp != TARGET_XP_COUNT
+		or active_weapon != TARGET_WEAPON_COUNT
 	):
 		_count_violation_frames += 1
 		if _first_count_violation.is_empty():
-			_first_count_violation = "%d/%d/%d" % [
+			_first_count_violation = "%d/%d/%d/%d/%d" % [
 				active_enemy,
 				active_projectile,
 				active_vfx,
+				active_xp,
+				active_weapon,
 			]
 
 	if int(values["static_memory_bytes"]) <= 0:
@@ -451,12 +447,10 @@ func _validate_frame_values(values: Dictionary) -> void:
 		int(values["enemy_pool_overflow"])
 		+ int(values["projectile_pool_overflow"])
 		+ int(values["vfx_pool_overflow"])
-		+ int(values["chest_pool_forced_absorb"])
+		+ int(values["xp_pool_overflow_merges"])
 	)
 	if pool_overflow_total != 0:
 		_pool_overflow_violation_frames += 1
-	if int(values["equipped_weapon_count"]) != 3:
-		_count_violation_frames += 1
 	var orphan_node_count: int = int(values["orphan_node_count"])
 	_maximum_orphan_node_count = maxi(_maximum_orphan_node_count, orphan_node_count)
 	if orphan_node_count != 0:
@@ -487,6 +481,51 @@ func _append_runtime_counter_failures() -> void:
 		_append_failure_once("pool_overflow_nonzero")
 	if _orphan_node_violation_frames != 0:
 		_append_failure_once("orphan_node_nonzero")
+	_capture_and_validate_workload_metrics()
+
+
+func _capture_and_validate_workload_metrics() -> void:
+	_final_workload_metrics.clear()
+	if (
+		not _simulation_is_usable(_simulation)
+		or not _simulation.has_method(&"performance_fixture_metrics")
+	):
+		_append_failure_once("performance_workload_metrics_missing")
+		return
+	_final_workload_metrics = _simulation.performance_fixture_metrics()
+	if str(_final_workload_metrics.get("profile_name", "")) != PROFILE_NAME:
+		_append_failure_once("performance_profile_contract_mismatch")
+	if not bool(_final_workload_metrics.get("active_workload", false)):
+		_append_failure_once("performance_workload_inactive")
+	if not bool(_final_workload_metrics.get("exact_counts", false)):
+		_append_failure_once("performance_fixture_count_lock_failed")
+	var workload_ticks: int = int(_final_workload_metrics.get("workload_ticks", 0))
+	if workload_ticks <= 0:
+		_append_failure_once("performance_workload_ticks_zero")
+	if int(_final_workload_metrics.get("grid_updates", 0)) < workload_ticks:
+		_append_failure_once("performance_grid_updates_missing")
+	if int(_final_workload_metrics.get("projectile_collision_resolutions", 0)) <= 0:
+		_append_failure_once("performance_projectile_collision_workload_missing")
+	if int(_final_workload_metrics.get("weapon_attacks", 0)) <= 0:
+		_append_failure_once("performance_weapon_attack_workload_missing")
+	if int(_final_workload_metrics.get("enemy_pool_reuse", 0)) <= 0:
+		_append_failure_once("performance_enemy_pool_reuse_zero")
+	if int(_final_workload_metrics.get("projectile_pool_reuse", 0)) <= 0:
+		_append_failure_once("performance_projectile_pool_reuse_zero")
+	if int(_final_workload_metrics.get("vfx_pool_reuse", 0)) <= 0:
+		_append_failure_once("performance_vfx_pool_reuse_zero")
+	if int(_final_workload_metrics.get("xp_pool_reuse", 0)) <= 0:
+		_append_failure_once("performance_xp_pool_reuse_zero")
+	if int(_final_workload_metrics.get("pool_orphan_count", -1)) != 0:
+		_append_failure_once("performance_pool_orphan_nonzero")
+	var final_overflow_total: int = (
+		int(_final_workload_metrics.get("enemy_pool_overflow", -1))
+		+ int(_final_workload_metrics.get("projectile_pool_overflow", -1))
+		+ int(_final_workload_metrics.get("vfx_pool_overflow", -1))
+		+ int(_final_workload_metrics.get("xp_pool_overflow_merges", -1))
+	)
+	if final_overflow_total != 0:
+		_append_failure_once("performance_final_pool_overflow_nonzero")
 
 
 func _capture_host_info() -> Dictionary:
@@ -579,11 +618,23 @@ func _build_summary(metrics: Dictionary) -> Dictionary:
 		"active_enemy_final": int(frame_values.get("active_enemy", -1)),
 		"active_projectile_final": int(frame_values.get("active_projectile", -1)),
 		"active_vfx_final": int(frame_values.get("active_vfx", -1)),
+		"active_xp_final": int(frame_values.get("active_xp", -1)),
+		"active_weapon_final": int(frame_values.get("active_weapon", -1)),
 		"enemy_pool_overflow": int(frame_values.get("enemy_pool_overflow", -1)),
 		"projectile_pool_overflow": int(frame_values.get("projectile_pool_overflow", -1)),
 		"vfx_pool_overflow": int(frame_values.get("vfx_pool_overflow", -1)),
-		"chest_pool_forced_absorb": int(frame_values.get("chest_pool_forced_absorb", -1)),
-		"equipped_weapon_count": int(frame_values.get("equipped_weapon_count", -1)),
+		"xp_pool_overflow_merges": int(frame_values.get("xp_pool_overflow_merges", -1)),
+		"active_workload": bool(_final_workload_metrics.get("active_workload", false)),
+		"exact_counts": bool(_final_workload_metrics.get("exact_counts", false)),
+		"workload_ticks": int(_final_workload_metrics.get("workload_ticks", 0)),
+		"grid_updates": int(_final_workload_metrics.get("grid_updates", 0)),
+		"projectile_collision_resolutions": int(_final_workload_metrics.get("projectile_collision_resolutions", 0)),
+		"weapon_attacks": int(_final_workload_metrics.get("weapon_attacks", 0)),
+		"enemy_pool_reuse": int(_final_workload_metrics.get("enemy_pool_reuse", 0)),
+		"projectile_pool_reuse": int(_final_workload_metrics.get("projectile_pool_reuse", 0)),
+		"vfx_pool_reuse": int(_final_workload_metrics.get("vfx_pool_reuse", 0)),
+		"xp_pool_reuse": int(_final_workload_metrics.get("xp_pool_reuse", 0)),
+		"pool_orphan_count": int(_final_workload_metrics.get("pool_orphan_count", -1)),
 		"failure_reasons": ";".join(_failure_reasons),
 		"host": _host_info.duplicate(true),
 	}
@@ -626,14 +677,26 @@ func _write_summary(summary: Dictionary) -> bool:
 		"active_enemy_final=%d" % int(summary["active_enemy_final"]),
 		"active_projectile_final=%d" % int(summary["active_projectile_final"]),
 		"active_vfx_final=%d" % int(summary["active_vfx_final"]),
+		"active_xp_final=%d" % int(summary["active_xp_final"]),
+		"active_weapon_final=%d" % int(summary["active_weapon_final"]),
 		"active_count_violation_frames=%d" % int(summary["active_count_violation_frames"]),
 		"first_count_violation=%s" % str(summary["first_count_violation"]),
 		"enemy_pool_overflow=%d" % int(summary["enemy_pool_overflow"]),
 		"projectile_pool_overflow=%d" % int(summary["projectile_pool_overflow"]),
 		"vfx_pool_overflow=%d" % int(summary["vfx_pool_overflow"]),
-		"chest_pool_forced_absorb=%d" % int(summary["chest_pool_forced_absorb"]),
+		"xp_pool_overflow_merges=%d" % int(summary["xp_pool_overflow_merges"]),
+		"active_workload=%s" % str(bool(summary["active_workload"])).to_lower(),
+		"exact_counts=%s" % str(bool(summary["exact_counts"])).to_lower(),
+		"workload_ticks=%d" % int(summary["workload_ticks"]),
+		"grid_updates=%d" % int(summary["grid_updates"]),
+		"projectile_collision_resolutions=%d" % int(summary["projectile_collision_resolutions"]),
+		"weapon_attacks=%d" % int(summary["weapon_attacks"]),
+		"enemy_pool_reuse=%d" % int(summary["enemy_pool_reuse"]),
+		"projectile_pool_reuse=%d" % int(summary["projectile_pool_reuse"]),
+		"vfx_pool_reuse=%d" % int(summary["vfx_pool_reuse"]),
+		"xp_pool_reuse=%d" % int(summary["xp_pool_reuse"]),
+		"pool_orphan_count=%d" % int(summary["pool_orphan_count"]),
 		"pool_overflow_violation_frames=%d" % int(summary["pool_overflow_violation_frames"]),
-		"equipped_weapon_count=%d" % int(summary["equipped_weapon_count"]),
 		"maximum_orphan_node_count=%d" % int(summary["maximum_orphan_node_count"]),
 		"orphan_node_violation_frames=%d" % int(summary["orphan_node_violation_frames"]),
 		"static_memory_invalid_frames=%d" % int(summary["static_memory_invalid_frames"]),

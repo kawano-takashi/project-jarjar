@@ -7,27 +7,32 @@ const RunStateFactoryScript = preload("res://src/core/run_state_factory.gd")
 const SeedServiceScript = preload("res://src/core/seed_service.gd")
 const TutorialControllerScript = preload("res://src/tutorial/tutorial_controller.gd")
 const TutorialOverlayScript = preload("res://src/tutorial/tutorial_overlay.gd")
-const AudioFactoryScript = preload("res://src/audio/audio_factory.gd")
 const AudioVoicePoolScript = preload("res://src/audio/audio_voice_pool.gd")
+const SurvivalFeedbackScript = preload("res://src/audio/survival_feedback.gd")
 const ReleasePackAuditorScript = preload("res://src/release/release_pack_auditor.gd")
 const ReleaseSmokeValidatorScript = preload("res://src/release/release_smoke_validator.gd")
+
 const TITLE_SCENE: PackedScene = preload("res://scenes/ui/title_screen.tscn")
 const ARENA_SCENE: PackedScene = preload("res://scenes/gameplay/arena_combat.tscn")
-const REWARD_REVEAL_SCENE: PackedScene = preload("res://scenes/ui/reward_reveal_screen.tscn")
-const INVENTORY_SCENE_PATH: String = "res://scenes/ui/inventory_screen.tscn"
+const SURVIVAL_OVERLAY_SCENE: PackedScene = preload("res://scenes/ui/survival_overlay.tscn")
 const RESULT_SCENE_PATH: String = "res://scenes/ui/result_screen.tscn"
 const FAILED_SCENE_PATH: String = "res://scenes/ui/failed_screen.tscn"
+const FIXED_TICK_SECONDS: float = 1.0 / 60.0
 
 var _launch_valid: bool = false
 var _launch: Dictionary = {}
 var _definition_catalog: DefinitionCatalog = null
 var _active_screen: Node = null
+var _arena: ArenaPresenter = null
+var _survival_overlay: SurvivalOverlay = null
 var _smoke_frames_remaining: int = 0
 var _logical_phase: GameTypes.RunPhase = GameTypes.RunPhase.BOOT
-var _tutorial_controller: RefCounted = TutorialControllerScript.new()
-var _tutorial_overlay: CanvasLayer = null
-var _audio_pool: Node = null
-var _audio_streams: Dictionary[StringName, AudioStream] = {}
+var _manual_paused: bool = false
+var _automatic_modal_chain_active: bool = false
+var _tutorial_controller: TutorialController = TutorialControllerScript.new()
+var _tutorial_overlay: TutorialOverlay = null
+var _audio_pool: AudioVoicePool = null
+var _feedback: SurvivalFeedback = null
 var _release_smoke_validator: RefCounted = null
 
 var run_state: RunState = null
@@ -40,11 +45,11 @@ func _enter_tree() -> void:
 		if OS.is_debug_build()
 		else LaunchArgumentsScript.parse_release(OS.get_cmdline_user_args())
 	)
-	if not _launch["valid"]:
-		_reject_arguments(_launch["rejected_name"])
+	if not bool(_launch.get("valid", false)):
+		_reject_arguments(str(_launch.get("rejected_name", "missing")))
 		return
 
-	var settings_store: Variant = get_node_or_null("/root/SettingsStore")
+	var settings_store: Variant = _settings_store()
 	if settings_store == null:
 		print("SETTINGS_INITIALIZATION_FAILED code=%d" % ERR_DOES_NOT_EXIST)
 		_quit_deferred(1)
@@ -68,7 +73,6 @@ func _enter_tree() -> void:
 		)
 		_quit_deferred(2)
 		return
-
 	_launch_valid = true
 
 
@@ -82,36 +86,34 @@ func _initialize_settings_for_launch(settings_store: Variant) -> Error:
 			LaunchArgumentsScript.MODE_QA_SCENARIO,
 			LaunchArgumentsScript.MODE_PERFORMANCE,
 		]
-		else settings_store.initialize_for_game(_launch["settings_path"])
+		else settings_store.initialize_for_game(str(_launch.get("settings_path", "")))
 	)
 	if initialize_error == OK and mode in [
 		LaunchArgumentsScript.MODE_QA_SCENARIO,
 		LaunchArgumentsScript.MODE_PERFORMANCE,
 	]:
-		settings_store.tutorial_seen = true
+		settings_store.tutorial_revision = TutorialController.REVISION
 	return initialize_error
 
 
 func _ready() -> void:
-	if not _launch_valid or _launch["mode"] == LaunchArgumentsScript.MODE_RELEASE_PACK_AUDIT:
+	if (
+		not _launch_valid
+		or _launch.get("mode", LaunchArgumentsScript.MODE_NORMAL)
+		== LaunchArgumentsScript.MODE_RELEASE_PACK_AUDIT
+	):
 		return
+	_tutorial_controller.revision_completed.connect(_on_tutorial_revision_completed)
 	_tutorial_overlay = TutorialOverlayScript.new()
 	add_child(_tutorial_overlay)
-	_tutorial_overlay.cancel_input_observed.connect(_on_tutorial_cancel_input_observed)
 	_audio_pool = AudioVoicePoolScript.new()
 	add_child(_audio_pool)
-	_audio_streams = {
-		&"pickup": AudioFactoryScript.pickup(),
-		&"normal_open": AudioFactoryScript.normal_open(),
-		&"rare_open": AudioFactoryScript.rare_open(),
-		&"epic_prealert": AudioFactoryScript.epic_prealert(),
-		&"legendary_prealert": AudioFactoryScript.legendary_prealert(),
-		&"wave_clear": AudioFactoryScript.wave_clear(),
-		&"fusion": AudioFactoryScript.fusion(),
-	}
+	_feedback = SurvivalFeedbackScript.new()
+	_feedback.initialize(_audio_pool, _settings_store())
+
 	match _launch.get("mode", LaunchArgumentsScript.MODE_NORMAL):
 		LaunchArgumentsScript.MODE_QA_SCENARIO:
-			_start_qa_mode(_launch["qa_scenario"])
+			_start_qa_mode(str(_launch.get("qa_scenario", "")))
 		LaunchArgumentsScript.MODE_RELEASE_SMOKE:
 			_show_title()
 			_start_release_smoke()
@@ -121,43 +123,74 @@ func _ready() -> void:
 			_show_title()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	_advance_release_smoke()
+	if (
+		run_state != null
+		and run_state.phase == GameTypes.RunPhase.COMBAT
+		and not _manual_paused
+	):
+		_tutorial_controller.advance(maxf(0.0, delta))
 	_refresh_tutorial_overlay()
 
 
 func _physics_process(_delta: float) -> void:
-	if _smoke_frames_remaining <= 0:
+	_advance_smoke_quit()
+	if run_state == null or combat_simulation == null:
 		return
-	_smoke_frames_remaining -= 1
-	if _smoke_frames_remaining == 0:
-		get_tree().quit(0)
+	_resolve_terminal_state()
+	if run_state.phase != GameTypes.RunPhase.COMBAT or _manual_paused:
+		_sync_run_phase()
+		return
+
+	var player_position_before: Vector2 = combat_simulation.player_position
+	var screen_input := Input.get_vector(
+		&"move_left",
+		&"move_right",
+		&"move_up",
+		&"move_down",
+	)
+	var move_input: Vector2 = screen_input
+	if _arena != null and _arena.has_method(&"camera_relative_move_input"):
+		var camera_input: Variant = _arena.call(&"camera_relative_move_input", screen_input)
+		if camera_input is Vector2:
+			move_input = camera_input
+	var snapshot: CombatSnapshot = combat_simulation.step(move_input)
+	var actual_movement: Vector2 = combat_simulation.player_position - player_position_before
+	_tutorial_controller.advance_movement(actual_movement, FIXED_TICK_SECONDS)
+	_present_snapshot(snapshot, FIXED_TICK_SECONDS)
+	_consume_snapshot_events(snapshot)
+	_resolve_terminal_state()
+	_sync_run_phase()
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if (
+		run_state == null
+		or run_state.phase != GameTypes.RunPhase.COMBAT
+		or _survival_overlay == null
+		or _survival_overlay.automatic_modal_visible()
+		or not event.is_action_pressed(&"ui_cancel")
+		or event.is_echo()
+	):
+		return
+	if _manual_paused:
+		_on_pause_resume_requested()
+	elif _survival_overlay.open_pause():
+		_manual_paused = true
+	get_viewport().set_input_as_handled()
 
 
 func current_run_phase() -> GameTypes.RunPhase:
 	return run_state.phase if run_state != null else _logical_phase
 
 
-func _show_title() -> void:
-	_clear_active_screen()
-	run_state = null
-	combat_simulation = null
-	_logical_phase = GameTypes.RunPhase.TITLE
-	_tutorial_controller.dismiss_noncombat()
-	var title_screen := TITLE_SCENE.instantiate() as Control
-	_active_screen = title_screen
-	title_screen.connect("start_requested", _start_new_run)
-	title_screen.connect("exit_requested", _exit_game)
-	add_child(title_screen)
-	_raise_tutorial_overlay()
-
-	match _launch.get("mode", LaunchArgumentsScript.MODE_NORMAL):
-		LaunchArgumentsScript.MODE_SMOKE_QUIT:
-			_smoke_frames_remaining = _launch["smoke_frames"]
+func is_manual_paused() -> bool:
+	return _manual_paused
 
 
-func _start_new_run() -> void:
-	start_new_run_with_seed(SeedServiceScript.generate_run_seed())
+func automatic_modal_chain_active() -> bool:
+	return _automatic_modal_chain_active
 
 
 func start_new_run_with_seed(run_seed: int) -> bool:
@@ -165,185 +198,201 @@ func start_new_run_with_seed(run_seed: int) -> bool:
 		_definition_catalog = DefinitionCatalogScript.new()
 		if not _definition_catalog.load_and_validate():
 			return false
-	var first_wave: WaveDefinition = _definition_catalog.wave(1)
-	if first_wave == null:
+	run_state = RunStateFactoryScript.create(run_seed, _definition_catalog)
+	if run_state == null or run_state.weapons.is_empty():
 		return false
-	run_state = RunStateFactoryScript.create(run_seed, first_wave)
-	var settings_store: Variant = (
-		get_node_or_null("/root/SettingsStore") if is_inside_tree() else null
-	)
+	var settings_store: Variant = _settings_store()
 	_tutorial_controller.begin_run(
-		bool(settings_store.tutorial_seen) if settings_store != null else false
+		int(settings_store.tutorial_revision) if settings_store != null else 0
 	)
 	combat_simulation = CombatSimulation.new()
 	combat_simulation.initialize(run_state, _definition_catalog)
-	_show_combat_arena(false)
-	return true
+	_manual_paused = false
+	_automatic_modal_chain_active = false
+	return _show_combat_arena()
 
 
-func _show_combat_arena(paused: bool) -> bool:
+func _start_new_run() -> void:
+	start_new_run_with_seed(SeedServiceScript.generate_run_seed())
+
+
+func _show_title() -> void:
+	_clear_survival_overlay()
+	_clear_active_screen()
+	run_state = null
+	combat_simulation = null
+	_manual_paused = false
+	_automatic_modal_chain_active = false
+	_logical_phase = GameTypes.RunPhase.TITLE
+	var title_screen := TITLE_SCENE.instantiate() as Control
+	_active_screen = title_screen
+	title_screen.connect("start_requested", _start_new_run)
+	title_screen.connect("exit_requested", _exit_game)
+	add_child(title_screen)
+	_refresh_tutorial_overlay()
+	_raise_persistent_overlays()
+	if _launch.get("mode", LaunchArgumentsScript.MODE_NORMAL) == LaunchArgumentsScript.MODE_SMOKE_QUIT:
+		_smoke_frames_remaining = int(_launch.get("smoke_frames", 0))
+
+
+func _show_combat_arena() -> bool:
 	if run_state == null or combat_simulation == null:
 		return false
+	_clear_survival_overlay()
 	_clear_active_screen()
 	var arena_node: Node = ARENA_SCENE.instantiate()
 	if not arena_node is ArenaPresenter:
 		arena_node.free()
 		push_error("Arena scene root must be ArenaPresenter")
 		return false
-	var arena := arena_node as ArenaPresenter
-	_active_screen = arena
-	add_child(arena)
-	arena.phase_changed.connect(_on_combat_phase_changed)
-	arena.audio_event_requested.connect(_play_audio_event)
-	arena.initialize(combat_simulation, _tutorial_controller)
-	arena.set_simulation_paused(paused)
-	_logical_phase = GameTypes.RunPhase.COMBAT
-	_raise_tutorial_overlay()
+	_arena = arena_node as ArenaPresenter
+	_active_screen = _arena
+	add_child(_arena)
+	_arena.initialize(combat_simulation)
+
+	var overlay_node: Node = SURVIVAL_OVERLAY_SCENE.instantiate()
+	if not overlay_node is SurvivalOverlay:
+		overlay_node.free()
+		push_error("Survival overlay scene root must be SurvivalOverlay")
+		return false
+	_survival_overlay = overlay_node as SurvivalOverlay
+	_survival_overlay.initialize(_definition_catalog)
+	_survival_overlay.level_choice_requested.connect(_on_level_choice_requested)
+	_survival_overlay.chest_continue_requested.connect(_on_chest_continue_requested)
+	_survival_overlay.pause_resume_requested.connect(_on_pause_resume_requested)
+	_survival_overlay.title_requested.connect(_show_title)
+	_survival_overlay.settings_changed.connect(_on_settings_changed)
+	add_child(_survival_overlay)
+	_logical_phase = run_state.phase
+	_present_snapshot(combat_simulation.build_snapshot(), 0.0)
+	_sync_run_phase()
+	_raise_persistent_overlays()
 	return true
 
 
-func _show_reward_reveal() -> void:
-	if run_state == null or run_state.phase != GameTypes.RunPhase.REWARD_REVEAL:
+func _sync_run_phase() -> void:
+	if run_state == null:
 		return
-	_clear_active_screen()
-	var reward_screen := REWARD_REVEAL_SCENE.instantiate() as RewardRevealScreen
-	_active_screen = reward_screen
-	reward_screen.reveal_completed.connect(_on_reward_reveal_completed)
-	reward_screen.audio_event_requested.connect(_play_audio_event)
-	reward_screen.initialize(run_state, _definition_catalog)
-	add_child(reward_screen)
-	_logical_phase = GameTypes.RunPhase.REWARD_REVEAL
-	_tutorial_controller.enter_reward(run_state.wave_number)
-	_raise_tutorial_overlay()
+	_logical_phase = run_state.phase
+	match run_state.phase:
+		GameTypes.RunPhase.LEVEL_UP:
+			_present_level_offer()
+		GameTypes.RunPhase.CHEST_REWARD:
+			_present_chest_outcome()
+		GameTypes.RunPhase.RESULT:
+			if not _active_screen is ResultScreen:
+				_show_result.call_deferred()
+		GameTypes.RunPhase.FAILED:
+			if not _active_screen is FailedScreen:
+				_show_failed.call_deferred()
+		GameTypes.RunPhase.COMBAT:
+			if _survival_overlay != null and _survival_overlay.automatic_modal_visible():
+				_survival_overlay.hide_automatic_modal()
+			_automatic_modal_chain_active = false
 
 
-func _on_combat_phase_changed(phase: GameTypes.RunPhase) -> void:
-	if phase == GameTypes.RunPhase.REWARD_REVEAL:
-		run_state.cleared_waves = maxi(run_state.cleared_waves, run_state.wave_number)
-		_show_reward_reveal.call_deferred()
-	elif phase == GameTypes.RunPhase.FAILED:
-		_refresh_score(false)
-		_show_failed.call_deferred()
-
-
-func _on_reward_reveal_completed() -> void:
-	if run_state == null or run_state.phase != GameTypes.RunPhase.REWARD_REVEAL:
+func _present_level_offer() -> void:
+	if _survival_overlay == null or run_state.active_level_offer == null:
 		return
-	var application: Dictionary = RewardApplicationService.apply_revealed(run_state)
-	if not bool(application.get("success", false)):
-		push_error("Reward application failed: %s" % application.get("error", &"unknown"))
+	var serial: int = run_state.active_level_offer.serial
+	if (
+		_survival_overlay.automatic_modal_visible()
+		and _survival_overlay.active_offer_serial() == serial
+	):
 		return
-	if not RunStateMachine.can_transition_state(run_state, GameTypes.RunPhase.INVENTORY):
-		push_error("Reward reveal could not enter inventory")
+	_survival_overlay.show_level_offer(run_state.active_level_offer)
+	_feedback.play(&"level_up")
+	_tutorial_controller.notify_context(&"level_up")
+	_automatic_modal_chain_active = true
+
+
+func _present_chest_outcome() -> void:
+	if _survival_overlay == null or run_state.active_chest_outcome == null:
 		return
-	RunStateMachine.transition(run_state, GameTypes.RunPhase.INVENTORY)
-	_show_inventory()
-
-
-func _show_inventory() -> bool:
-	if run_state == null or run_state.phase != GameTypes.RunPhase.INVENTORY:
-		return false
-	var screen: Control = _instantiate_control_scene(INVENTORY_SCENE_PATH)
-	if screen == null:
-		return false
-	_clear_active_screen()
-	_active_screen = screen
-	screen.connect("item_move_requested", _on_inventory_item_move_requested)
-	screen.connect("item_lock_requested", _on_inventory_item_lock_requested)
-	screen.connect("sort_requested", _on_inventory_sort_requested)
-	screen.connect("discard_requested", _on_inventory_discard_requested)
-	screen.connect("fusion_requested", _on_inventory_fusion_requested)
-	screen.connect("continue_requested", _on_inventory_continue_requested)
-	screen.call("initialize", run_state, _definition_catalog)
-	add_child(screen)
-	_logical_phase = GameTypes.RunPhase.INVENTORY
-	_tutorial_controller.enter_inventory(run_state.wave_number)
-	_raise_tutorial_overlay()
-	return true
-
-
-func _on_inventory_item_move_requested(source: Dictionary, target: Dictionary) -> void:
-	var result: Dictionary = InventoryService.apply_move(
-		run_state,
-		StringName(source.get("kind", &"")),
-		int(source.get("index", -1)),
-		StringName(target.get("kind", &"")),
-		int(target.get("index", -1)),
-	)
-	_apply_inventory_command_result(&"item_move", result)
-
-
-func _on_inventory_item_lock_requested(item_id: String) -> void:
-	_apply_inventory_command_result(
-		&"item_lock",
-		InventoryService.toggle_lock(run_state, item_id),
-	)
-
-
-func _on_inventory_sort_requested() -> void:
-	_apply_inventory_command_result(
-		&"sort",
-		InventoryService.sort_inventory_by_rarity(run_state),
-	)
-
-
-func _on_inventory_discard_requested(item_ids: PackedStringArray) -> void:
-	_apply_inventory_command_result(
-		&"discard",
-		InventoryService.discard(run_state, item_ids),
-	)
-
-
-func _on_inventory_fusion_requested(material_ids: PackedStringArray) -> void:
-	_apply_inventory_command_result(
-		&"fusion",
-		FusionCommitService.commit(
-			run_state,
-			material_ids,
-			_definition_catalog,
-		),
-	)
-
-
-func _apply_inventory_command_result(
-	command_kind: StringName,
-	result: Dictionary,
-) -> void:
-	if _active_screen != null and _active_screen.has_method("apply_command_result"):
-		_active_screen.call("apply_command_result", command_kind, result)
-	if command_kind == &"fusion" and bool(result.get("success", false)):
-		_play_audio_event(&"fusion")
-
-
-func _on_inventory_continue_requested() -> void:
-	if run_state == null or run_state.phase != GameTypes.RunPhase.INVENTORY:
+	var serial: int = run_state.active_chest_outcome.serial
+	if (
+		_survival_overlay.automatic_modal_visible()
+		and _survival_overlay.active_chest_serial() == serial
+	):
 		return
-	if run_state.wave_number == 8:
-		if not RunStateMachine.can_transition_state(run_state, GameTypes.RunPhase.RESULT):
-			_apply_inventory_command_result(
-				&"continue",
-				{"success": false, "error": &"inventory_gate", "message": _inventory_gate_message()},
-			)
-			return
-		_refresh_score(true)
-		RunStateMachine.transition(run_state, GameTypes.RunPhase.RESULT)
-		_show_result()
+	_survival_overlay.show_chest_outcome(run_state.active_chest_outcome)
+	_feedback.play(&"chest_open")
+	if run_state.active_chest_outcome.kind == GameTypes.ChestOutcomeKind.EVOLUTION:
+		_feedback.play(&"evolution")
+		_tutorial_controller.notify_context(&"evolution")
+	_automatic_modal_chain_active = true
+
+
+func _on_level_choice_requested(choice_index: int) -> void:
+	if (
+		run_state == null
+		or run_state.phase != GameTypes.RunPhase.LEVEL_UP
+		or run_state.active_level_offer == null
+	):
 		return
-	if not RunStateMachine.can_transition_state(run_state, GameTypes.RunPhase.COMBAT):
-		_apply_inventory_command_result(
-			&"continue",
-			{"success": false, "error": &"inventory_gate", "message": _inventory_gate_message()},
-		)
+	if not combat_simulation.apply_upgrade_choice(choice_index):
+		push_error("Level-up choice failed")
+		_survival_overlay.hide_automatic_modal()
+		_present_level_offer()
 		return
-	var next_wave_number: int = run_state.wave_number + 1
-	if _definition_catalog.wave(next_wave_number) == null:
+	_survival_overlay.hide_automatic_modal()
+	_sync_run_phase()
+
+
+func _on_chest_continue_requested() -> void:
+	if (
+		run_state == null
+		or run_state.phase != GameTypes.RunPhase.CHEST_REWARD
+		or run_state.active_chest_outcome == null
+	):
 		return
-	_complete_w1_tutorial_if_needed()
-	RunStateMachine.transition(run_state, GameTypes.RunPhase.COMBAT)
-	if not combat_simulation.begin_wave(next_wave_number):
-		push_error("Failed to begin wave %d" % next_wave_number)
+	if not combat_simulation.skip_chest_animation():
+		push_error("Chest outcome failed")
+		_survival_overlay.hide_automatic_modal()
+		_present_chest_outcome()
 		return
-	_show_combat_arena(false)
+	_survival_overlay.hide_automatic_modal()
+	_sync_run_phase()
+
+
+func _on_pause_resume_requested() -> void:
+	if not _manual_paused:
+		return
+	_manual_paused = false
+	if _survival_overlay != null and _survival_overlay.pause_visible():
+		_survival_overlay.close_pause()
+
+
+func _on_settings_changed(_values: Dictionary) -> void:
+	if _arena != null:
+		_arena.refresh_accessibility()
+
+
+func _resolve_terminal_state() -> void:
+	if run_state == null or run_state.phase != GameTypes.RunPhase.COMBAT:
+		return
+	if run_state.boss_defeated:
+		RunStateMachine.resolve_terminal(run_state, false, true)
+	elif run_state.current_hp <= 0.0:
+		RunStateMachine.resolve_terminal(run_state, true, false)
+
+
+func _present_snapshot(snapshot: CombatSnapshot, delta: float) -> void:
+	if _arena != null and snapshot != null:
+		_arena.present_snapshot(snapshot, delta)
+
+
+func _consume_snapshot_events(snapshot: CombatSnapshot) -> void:
+	if snapshot == null:
+		return
+	var events_value: Variant = snapshot.hud_values.get("events", [])
+	if not events_value is Array:
+		return
+	for raw_event: Variant in events_value as Array:
+		var event_id := StringName(str(raw_event))
+		if event_id != &"chest_pickup":
+			_feedback.play(event_id)
+		_tutorial_controller.notify_context(event_id)
 
 
 func _show_result() -> bool:
@@ -354,15 +403,13 @@ func _show_failed() -> bool:
 	return _show_run_summary(FAILED_SCENE_PATH, GameTypes.RunPhase.FAILED)
 
 
-func _show_run_summary(
-	scene_path: String,
-	phase: GameTypes.RunPhase,
-) -> bool:
+func _show_run_summary(scene_path: String, phase: GameTypes.RunPhase) -> bool:
 	if run_state == null or run_state.phase != phase:
 		return false
 	var screen: Control = _instantiate_control_scene(scene_path)
 	if screen == null:
 		return false
+	_clear_survival_overlay()
 	_clear_active_screen()
 	_active_screen = screen
 	screen.connect("retry_same_seed_requested", _retry_same_seed)
@@ -372,76 +419,50 @@ func _show_run_summary(
 	screen.call("initialize", run_state, _definition_catalog)
 	add_child(screen)
 	_logical_phase = phase
-	_tutorial_controller.dismiss_noncombat()
-	_raise_tutorial_overlay()
+	_manual_paused = false
+	_refresh_tutorial_overlay()
+	_raise_persistent_overlays()
 	return true
-
-
-func _complete_w1_tutorial_if_needed() -> void:
-	if run_state == null or not _tutorial_controller.leave_w1_inventory(run_state.wave_number):
-		return
-	var settings_store: Variant = get_node_or_null("/root/SettingsStore")
-	if settings_store == null:
-		return
-	settings_store.tutorial_seen = true
-	if not str(settings_store.active_settings_path).is_empty():
-		var save_error: Error = settings_store.save_settings()
-		if save_error != OK:
-			push_error("Tutorial setting save failed: %d" % save_error)
 
 
 func _refresh_tutorial_overlay() -> void:
 	if _tutorial_overlay == null or not is_instance_valid(_tutorial_overlay):
 		return
-	var phase: GameTypes.RunPhase = current_run_phase()
-	var wave_number: int = run_state.wave_number if run_state != null else 0
-	var message: String = _tutorial_controller.current_message(
-		phase == GameTypes.RunPhase.COMBAT,
-		wave_number,
-	)
+	if run_state == null or run_state.phase != GameTypes.RunPhase.COMBAT:
+		_tutorial_overlay.hide_message()
+		return
+	var message: String = _tutorial_controller.current_message()
 	if message.is_empty():
 		_tutorial_overlay.hide_message()
 	else:
 		_tutorial_overlay.show_message(message)
 
 
-func _on_tutorial_cancel_input_observed() -> void:
-	_dismiss_noncombat_tutorial()
+func _on_tutorial_revision_completed(revision: int) -> void:
+	var settings_store: Variant = _settings_store()
+	if settings_store == null:
+		return
+	settings_store.tutorial_revision = maxi(int(settings_store.tutorial_revision), revision)
+	if str(settings_store.active_settings_path).is_empty():
+		return
+	var save_error: Error = settings_store.save_settings()
+	if save_error != OK:
+		push_error("Tutorial setting save failed: %d" % save_error)
 
 
-func _dismiss_noncombat_tutorial() -> void:
-	if (
-		current_run_phase() != GameTypes.RunPhase.COMBAT
-		and _tutorial_controller.dismiss_noncombat()
-	):
-		_refresh_tutorial_overlay()
-
-
-func _raise_tutorial_overlay() -> void:
+func _raise_persistent_overlays() -> void:
 	if (
 		_tutorial_overlay != null
 		and is_instance_valid(_tutorial_overlay)
 		and _tutorial_overlay.get_parent() == self
 	):
 		move_child(_tutorial_overlay, get_child_count() - 1)
-
-
-func _play_audio_event(event_id: StringName) -> void:
-	if _audio_pool == null or not _audio_streams.has(event_id):
-		return
-	var settings_store: Variant = get_node_or_null("/root/SettingsStore")
-	var master_volume: float = (
-		float(settings_store.master_volume) if settings_store != null else 1.0
-	)
-	var sfx_volume: float = (
-		float(settings_store.sfx_volume) if settings_store != null else 0.9
-	)
-	_audio_pool.call(
-		"play_stream",
-		_audio_streams[event_id],
-		master_volume,
-		sfx_volume,
-	)
+	if (
+		_survival_overlay != null
+		and is_instance_valid(_survival_overlay)
+		and _survival_overlay.get_parent() == self
+	):
+		move_child(_survival_overlay, get_child_count() - 1)
 
 
 func _run_release_pack_audit() -> void:
@@ -459,7 +480,7 @@ func _run_release_pack_audit() -> void:
 
 
 func _start_release_smoke() -> void:
-	var settings_store: Variant = get_node_or_null("/root/SettingsStore")
+	var settings_store: Variant = _settings_store()
 	_release_smoke_validator = ReleaseSmokeValidatorScript.new()
 	var result: Dictionary = _release_smoke_validator.call("begin", self, settings_store)
 	if not _release_smoke_step_succeeded(result):
@@ -547,10 +568,7 @@ func _start_performance_mode() -> void:
 		output_directory,
 	)
 	if initialize_error != OK:
-		print(
-			"PERFORMANCE_FAILED reasons=%s"
-			% str(runner.get("last_error_message"))
-		)
+		print("PERFORMANCE_FAILED reasons=%s" % str(runner.get("last_error_message")))
 		get_tree().quit(1)
 
 
@@ -558,39 +576,42 @@ func _on_performance_completed(exit_code: int, _summary: Dictionary) -> void:
 	get_tree().quit(exit_code)
 
 
-func _retry_same_seed() -> void:
-	if run_state == null:
+func _start_qa_mode(scenario_id: String) -> void:
+	var factory_script: Variant = load("res://src/debug/qa_scenario_factory.gd")
+	if factory_script == null:
+		print("QA_SCENARIO_FAILED reason=factory")
+		get_tree().quit(1)
 		return
-	start_new_run_with_seed(run_state.run_seed)
+	var result: Dictionary = factory_script.build(scenario_id, _definition_catalog)
+	if not bool(result.get("valid", false)):
+		print("QA_SCENARIO_REJECTED name=--qa-scenario")
+		get_tree().quit(2)
+		return
+	run_state = result.get("state") as RunState
+	combat_simulation = result.get("simulation") as CombatSimulation
+	if run_state == null:
+		print("QA_SCENARIO_FAILED reason=state")
+		get_tree().quit(1)
+		return
+	_tutorial_controller.begin_run(TutorialController.REVISION)
+	match run_state.phase:
+		GameTypes.RunPhase.RESULT:
+			_show_result()
+		GameTypes.RunPhase.FAILED:
+			_show_failed()
+		_:
+			if combat_simulation == null or not _show_combat_arena():
+				print("QA_SCENARIO_FAILED reason=combat")
+				get_tree().quit(1)
+
+
+func _retry_same_seed() -> void:
+	if run_state != null:
+		start_new_run_with_seed(run_state.run_seed)
 
 
 func _retry_new_seed() -> void:
 	start_new_run_with_seed(SeedServiceScript.generate_run_seed())
-
-
-func _refresh_score(run_cleared: bool) -> void:
-	if run_state == null or _definition_catalog == null:
-		return
-	run_state.score_breakdown = ScoreService.calculate(
-		run_state.normal_kills,
-		run_state.elite_kills,
-		run_state.boss_kills,
-		run_state.post_quota_kills,
-		run_state.cleared_waves,
-		run_cleared,
-		InventoryService.equipped_items(run_state),
-		_definition_catalog.score_definition(),
-	)
-
-
-func _inventory_gate_message() -> String:
-	if run_state == null:
-		return "ラン状態がありません"
-	if not run_state.overflow.is_empty():
-		return "一時受取欄の残り %d 件を整理してください" % run_state.overflow.size()
-	if InventoryService.equipped_weapon_count(run_state) <= 0:
-		return "武器を最低1本装備してください"
-	return "現在の状態では進めません"
 
 
 func _instantiate_control_scene(scene_path: String) -> Control:
@@ -606,38 +627,38 @@ func _instantiate_control_scene(scene_path: String) -> Control:
 	return node as Control
 
 
-func _start_qa_mode(scenario_id: String) -> void:
-	var factory_script: Variant = load("res://src/debug/qa_scenario_factory.gd")
-	if factory_script == null:
-		print("QA_SCENARIO_FAILED reason=factory")
-		get_tree().quit(1)
+func _clear_survival_overlay() -> void:
+	if _survival_overlay == null:
 		return
-	var result: Dictionary = factory_script.build(scenario_id, _definition_catalog)
-	if not result.get("valid", false):
-		print("QA_SCENARIO_REJECTED name=--qa-scenario")
-		get_tree().quit(2)
-		return
-	run_state = result["state"] as RunState
-	combat_simulation = result["simulation"] as CombatSimulation
-	match run_state.phase:
-		GameTypes.RunPhase.REWARD_REVEAL:
-			_show_reward_reveal()
-		GameTypes.RunPhase.INVENTORY:
-			_show_inventory()
-		GameTypes.RunPhase.RESULT:
-			_show_result()
-		GameTypes.RunPhase.FAILED:
-			_show_failed()
-		_:
-			_show_combat_arena(false)
+	var previous_overlay: SurvivalOverlay = _survival_overlay
+	_survival_overlay = null
+	if previous_overlay.get_parent() == self:
+		remove_child(previous_overlay)
+	previous_overlay.queue_free()
 
 
 func _clear_active_screen() -> void:
-	if _active_screen != null:
-		var previous_screen: Node = _active_screen
-		_active_screen = null
+	if _active_screen == null:
+		return
+	var previous_screen: Node = _active_screen
+	_active_screen = null
+	if previous_screen == _arena:
+		_arena = null
+	if previous_screen.get_parent() == self:
 		remove_child(previous_screen)
-		previous_screen.call_deferred("free")
+	previous_screen.queue_free()
+
+
+func _advance_smoke_quit() -> void:
+	if _smoke_frames_remaining <= 0:
+		return
+	_smoke_frames_remaining -= 1
+	if _smoke_frames_remaining == 0:
+		get_tree().quit(0)
+
+
+func _settings_store() -> Variant:
+	return get_node_or_null("/root/SettingsStore") if is_inside_tree() else null
 
 
 func _reject_arguments(argument_name: String) -> void:

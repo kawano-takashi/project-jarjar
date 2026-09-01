@@ -6,7 +6,6 @@ signal closed
 signal settings_changed(values: Dictionary)
 
 @onready var _master: HSlider = %SettingsMaster
-@onready var _music: HSlider = %SettingsMusic
 @onready var _sfx: HSlider = %SettingsSfx
 @onready var _reduce_motion: CheckButton = %SettingsReduceMotion
 @onready var _reduce_flashes: CheckButton = %SettingsReduceFlashes
@@ -14,7 +13,6 @@ signal settings_changed(values: Dictionary)
 @onready var _tutorial_again: Button = %SettingsTutorialAgain
 @onready var _close: Button = %SettingsClose
 @onready var _master_value: Label = %MasterValue
-@onready var _music_value: Label = %MusicValue
 @onready var _sfx_value: Label = %SfxValue
 
 var _settings_store: Variant = null
@@ -26,7 +24,6 @@ func _ready() -> void:
 	_settings_store = get_node_or_null("/root/SettingsStore")
 	_configure_focus()
 	_master.value_changed.connect(_on_volume_changed)
-	_music.value_changed.connect(_on_volume_changed)
 	_sfx.value_changed.connect(_on_volume_changed)
 	_reduce_motion.toggled.connect(_on_toggle_changed)
 	_reduce_flashes.toggled.connect(_on_toggle_changed)
@@ -60,7 +57,6 @@ func close_overlay() -> void:
 func focus_order() -> PackedStringArray:
 	return PackedStringArray([
 		"settings_master",
-		"settings_music",
 		"settings_sfx",
 		"settings_reduce_motion",
 		"settings_reduce_flashes",
@@ -92,7 +88,6 @@ func test_focus(focus_id: String) -> bool:
 func settings_values() -> Dictionary:
 	return {
 		"master_volume": _master.value / 100.0,
-		"music_volume": _music.value / 100.0,
 		"sfx_volume": _sfx.value / 100.0,
 		"reduce_motion": _reduce_motion.button_pressed,
 		"reduce_flashes": _reduce_flashes.button_pressed,
@@ -119,7 +114,6 @@ func _input(event: InputEvent) -> void:
 func _configure_focus() -> void:
 	var controls: Array = [
 		_master,
-		_music,
 		_sfx,
 		_reduce_motion,
 		_reduce_flashes,
@@ -147,14 +141,12 @@ func _sync_from_store() -> void:
 	_synchronizing = true
 	if _settings_store != null:
 		_master.value = roundf(float(_settings_store.master_volume) * 100.0)
-		_music.value = roundf(float(_settings_store.music_volume) * 100.0)
 		_sfx.value = roundf(float(_settings_store.sfx_volume) * 100.0)
 		_reduce_motion.button_pressed = bool(_settings_store.reduce_motion)
 		_reduce_flashes.button_pressed = bool(_settings_store.reduce_flashes)
 		_vibration.button_pressed = bool(_settings_store.controller_vibration)
 	else:
 		_master.value = 100.0
-		_music.value = 80.0
 		_sfx.value = 90.0
 		_reduce_motion.button_pressed = false
 		_reduce_flashes.button_pressed = false
@@ -168,7 +160,6 @@ func _apply_to_store() -> void:
 		return
 	var values: Dictionary = settings_values()
 	_settings_store.master_volume = values["master_volume"]
-	_settings_store.music_volume = values["music_volume"]
 	_settings_store.sfx_volume = values["sfx_volume"]
 	_settings_store.reduce_motion = values["reduce_motion"]
 	_settings_store.reduce_flashes = values["reduce_flashes"]
@@ -190,7 +181,7 @@ func _on_toggle_changed(_pressed: bool) -> void:
 
 func _on_tutorial_again_pressed() -> void:
 	if _settings_store != null:
-		_settings_store.tutorial_seen = false
+		_settings_store.tutorial_revision = 0
 	_apply_and_emit()
 
 
@@ -201,5 +192,4 @@ func _apply_and_emit() -> void:
 
 func _update_value_labels() -> void:
 	_master_value.text = "%d" % int(roundf(_master.value))
-	_music_value.text = "%d" % int(roundf(_music.value))
 	_sfx_value.text = "%d" % int(roundf(_sfx.value))

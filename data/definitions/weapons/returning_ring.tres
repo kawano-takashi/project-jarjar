@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="WeaponDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/weapon_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+weapon_id = &"returning_ring"
+display_name = "反転環"
+description = "標的を貫いてから反転して戻る環。"
+lineage_id = &"returning_ring"
+behavior = 4
+max_level = 8
+selection_weight = 80.0
+paired_passive_id = &"probability_core"
+damage_by_level = PackedFloat32Array(12.75, 14.5, 16.5, 20, 24, 29, 35, 41.7)
+cooldown_ticks_by_level = PackedInt32Array(90, 90, 84, 84, 78, 78, 72, 66)
+amount_by_level = PackedInt32Array(1, 1, 1, 2, 2, 2, 3, 3)
+projectile_speed_by_level = PackedFloat32Array(10, 10, 11, 11, 12, 12, 13, 14)
+area_by_level = PackedFloat32Array(0.35, 0.35, 0.38, 0.38, 0.42, 0.42, 0.46, 0.5)
+duration_ticks_by_level = PackedInt32Array(108, 108, 108, 114, 114, 120, 126, 138)
+pierce_by_level = PackedInt32Array(2, 2, 3, 3, 4, 4, 5, 6)

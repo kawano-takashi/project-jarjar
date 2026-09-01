@@ -7,29 +7,11 @@ signal retry_new_seed_requested
 signal title_requested
 signal exit_requested
 
-const SCORE_ROWS: Array[Dictionary] = [
-	{"key": &"normal_kills", "label": "通常撃破"},
-	{"key": &"post_quota_bonus", "label": "ノルマ後撃破"},
-	{"key": &"elite_kills", "label": "エリート撃破"},
-	{"key": &"boss_kills", "label": "ボス撃破"},
-	{"key": &"wave_clears", "label": "ウェーブクリア"},
-	{"key": &"run_clear", "label": "ラン完走"},
-	{"key": &"equipment", "label": "装備中6枠"},
-]
-const SLOT_LABELS: Array[String] = [
-	"武器1",
-	"武器2",
-	"武器3",
-	"お守り1",
-	"お守り2",
-	"お守り3",
-]
-
 @onready var _heading: Label = %SummaryHeading
 @onready var _outcome: Label = %SummaryOutcome
 @onready var _run_text: Label = %SummaryRunText
 @onready var _build_text: Label = %SummaryBuildText
-@onready var _score_text: Label = %SummaryScoreText
+@onready var _damage_text: Label = %SummaryDamageText
 @onready var _retry_same: Button = %RetrySameSeed
 @onready var _retry_new: Button = %RetryNewSeed
 @onready var _title_button: Button = %SummaryTitleButton
@@ -41,6 +23,7 @@ const SLOT_LABELS: Array[String] = [
 var _focus_controller := FocusController.new()
 var _modal_focus := ModalFocusCoordinator.new()
 var _pending_state: RunState = null
+var _catalog: DefinitionCatalog = null
 
 
 func _ready() -> void:
@@ -56,8 +39,9 @@ func _ready() -> void:
 	_focus_controller.focus_initial_deferred()
 
 
-func initialize(state: RunState, _catalog: DefinitionCatalog = null) -> void:
+func initialize(state: RunState, catalog: DefinitionCatalog = null) -> void:
 	_pending_state = state
+	_catalog = catalog
 	if is_node_ready():
 		_render()
 		_configure_focus()
@@ -91,7 +75,6 @@ func neighbor_specification(focus_id: String) -> Dictionary:
 
 
 func debug_state() -> Dictionary:
-	var score: Dictionary = _pending_state.score_breakdown if _pending_state != null else {}
 	return {
 		"screen": _screen_prefix(),
 		"focus_id": _focus_controller.current_focus_id(get_viewport()),
@@ -99,12 +82,10 @@ func debug_state() -> Dictionary:
 		"settings_open": _settings_overlay.visible,
 		"modal_stack_size": _modal_focus.stack_size(),
 		"run_seed": _pending_state.run_seed if _pending_state != null else 0,
-		"combat_score": int(score.get(&"combat_score", 0)),
-		"final_build_score": int(score.get(&"final_build_score", 0)),
-		"total": int(score.get(&"total", 0)),
+		"outcome": _outcome.text,
 		"run_text": _run_text.text,
 		"build_text": _build_text.text,
-		"score_text": _score_text.text,
+		"damage_text": _damage_text.text,
 	}
 
 
@@ -185,77 +166,137 @@ func _render() -> void:
 	if not is_node_ready():
 		return
 	_heading.text = "RUN FAILED" if _is_failed_screen() else "RUN COMPLETE"
-	_outcome.text = (
-		"WAVE %d で敗北" % (_pending_state.wave_number if _pending_state != null else 0)
-		if _is_failed_screen()
-		else "8 WAVE COMPLETE"
-	)
 	if _pending_state == null:
+		_outcome.text = "集計中"
 		_run_text.text = "ラン情報を読み込み中"
-		_build_text.text = "装備情報を読み込み中"
-		_score_text.text = "スコアを読み込み中"
+		_build_text.text = "ビルド情報を読み込み中"
+		_damage_text.text = "ダメージ情報を読み込み中"
 		return
-	_run_text.text = _run_summary_text(_pending_state)
+	var elapsed_seconds: int = maxi(
+		0,
+		floori(float(_pending_state.combat_tick) / 60.0),
+	)
+	_outcome.text = "BOSS RESULT: %s" % _boss_result_text(_pending_state)
+	_run_text.text = _run_summary_text(_pending_state, elapsed_seconds)
 	_build_text.text = _build_summary_text(_pending_state)
-	_score_text.text = _score_summary_text(_pending_state.score_breakdown)
+	_damage_text.text = _damage_summary_text(_pending_state)
 
 
-func _run_summary_text(state: RunState) -> String:
-	var lines := PackedStringArray([
+func _run_summary_text(state: RunState, elapsed_seconds: int) -> String:
+	return "\n".join(PackedStringArray([
 		"SEED  %d" % state.run_seed,
-		"クリアウェーブ  %d" % state.cleared_waves,
-	])
-	if _is_failed_screen():
-		lines.append("失敗ウェーブ  %d" % state.wave_number)
-	lines.append("総撃破数  %d" % state.total_kills)
-	lines.append("ノルマ後撃破数  %d" % state.post_quota_kills)
-	lines.append("獲得箱数  %d" % state.total_chests)
-	lines.append("合成回数  %d" % state.fusion_count)
-	lines.append("最高 DPS  %.1f" % state.peak_dps)
-	return "\n".join(lines)
+		"生存時間  %s" % _format_time(elapsed_seconds),
+		"最終LEVEL  %d" % state.level,
+		"総撃破数  %d" % state.total_kills,
+		"エリート撃破  %d / 4" % state.elite_kills,
+		"進化数  %d / 4" % state.evolution_count,
+		"ボス結果  %s" % _boss_result_text(state),
+	]))
+
+
+func _boss_result_text(state: RunState) -> String:
+	if state.boss_defeated:
+		return "DEFEATED"
+	if state.boss_spawned:
+		return "PLAYER DEFEATED"
+	return "NOT REACHED"
 
 
 func _build_summary_text(state: RunState) -> String:
-	var lines := PackedStringArray(["最終装備"])
-	for slot_index: int in range(GameTypes.EquipmentSlot.size()):
-		var item: ItemInstance = state.equipped.get(slot_index) as ItemInstance
-		lines.append("%s: %s" % [
-			SLOT_LABELS[slot_index],
-			_item_label(item),
-		])
-	return "\n".join(lines)
-
-
-func _score_summary_text(score: Dictionary) -> String:
-	var lines := PackedStringArray(["スコア内訳"])
-	for row: Dictionary in SCORE_ROWS:
-		lines.append("%-14s %6d" % [row["label"], int(score.get(row["key"], 0))])
-	var combat_score: int = int(score.get(&"combat_score", 0))
-	var final_build_score: int = int(score.get(&"final_build_score", 0))
-	var displayed_total: int = int(score.get(&"total", combat_score + final_build_score))
+	var lines := PackedStringArray(["最終ビルド", "", "WEAPONS"])
+	_append_build_entries(lines, state.weapons, 5, true)
 	lines.append("")
-	lines.append("戦闘由来小計  %d" % combat_score)
-	lines.append("最終ビルド小計  %d" % final_build_score)
-	lines.append("合計  %d" % displayed_total)
-	lines.append("照合  %d + %d = %d" % [combat_score, final_build_score, displayed_total])
+	lines.append("PASSIVES")
+	_append_build_entries(lines, state.passives, 5, false)
 	return "\n".join(lines)
 
 
-func _item_label(item: ItemInstance) -> String:
-	if item == null:
-		return "— 空き —"
-	return "%s  %s" % [_rarity_label(item.rarity), item.display_name]
+func _append_build_entries(
+	lines: PackedStringArray,
+	entries: Array,
+	capacity: int,
+	is_weapon: bool,
+) -> void:
+	for index: int in range(capacity):
+		if index >= entries.size():
+			lines.append("%d. —" % (index + 1))
+			continue
+		var entry: Variant = entries[index]
+		var content_id := StringName(str(_read_property(
+			entry,
+			&"weapon_id" if is_weapon else &"passive_id",
+			&"unknown",
+		)))
+		var display_name: String = _content_display_name(content_id, is_weapon)
+		var level: int = int(_read_property(entry, &"level", 1))
+		var evolved: bool = bool(_read_property(entry, &"evolved", false))
+		lines.append("%d. %s  %s" % [
+			index + 1,
+			display_name,
+			"EVOLVED" if evolved else "Lv %d" % level,
+		])
 
 
-func _rarity_label(rarity: GameTypes.Rarity) -> String:
-	match rarity:
-		GameTypes.Rarity.RARE:
-			return "RARE"
-		GameTypes.Rarity.EPIC:
-			return "EPIC"
-		GameTypes.Rarity.LEGENDARY:
-			return "LEGENDARY"
-	return "COMMON"
+func _damage_summary_text(state: RunState) -> String:
+	var damage_by_lineage: Dictionary = state.weapon_damage_by_lineage
+	var lineage_ids := PackedStringArray()
+	for lineage_id: Variant in damage_by_lineage:
+		lineage_ids.append(str(lineage_id))
+	lineage_ids.sort()
+	var total_damage: float = 0.0
+	var lines := PackedStringArray(["DAMAGE BY LINEAGE", "進化前後は同系統へ合算", ""])
+	for lineage_id: String in lineage_ids:
+		var damage: float = float(damage_by_lineage.get(StringName(lineage_id), damage_by_lineage.get(lineage_id, 0.0)))
+		total_damage += damage
+		lines.append("%-20s %10d" % [
+			_lineage_display_name(state, StringName(lineage_id)),
+			roundi(damage),
+		])
+	lines.append("")
+	lines.append("TOTAL  %d" % roundi(total_damage))
+	return "\n".join(lines)
+
+
+func _content_display_name(content_id: StringName, is_weapon: bool) -> String:
+	if _catalog == null:
+		return String(content_id)
+	if is_weapon:
+		var weapon_definition: WeaponDefinition = _catalog.weapon(content_id)
+		return (
+			weapon_definition.display_name
+			if weapon_definition != null
+			else String(content_id)
+		)
+	var passive_definition: PassiveDefinition = _catalog.passive(content_id)
+	return (
+		passive_definition.display_name
+		if passive_definition != null
+		else String(content_id)
+	)
+
+
+func _lineage_display_name(state: RunState, lineage_id: StringName) -> String:
+	var final_weapon_id: StringName = lineage_id
+	var runtime: RunWeapon = state.weapon_for_lineage(lineage_id)
+	if runtime != null:
+		final_weapon_id = runtime.weapon_id
+	return _content_display_name(final_weapon_id, true)
+
+
+func _format_time(total_seconds: int) -> String:
+	var minutes: int = floori(float(total_seconds) / 60.0)
+	return "%02d:%02d" % [minutes, total_seconds % 60]
+
+
+func _read_property(value: Variant, property_name: StringName, fallback: Variant) -> Variant:
+	if value is Dictionary:
+		return (value as Dictionary).get(property_name, fallback)
+	if value is Object:
+		var object := value as Object
+		for property: Dictionary in object.get_property_list():
+			if StringName(property.get("name", "")) == property_name:
+				return object.get(property_name)
+	return fallback
 
 
 func _open_settings() -> void:
