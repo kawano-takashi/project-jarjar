@@ -341,9 +341,8 @@ func _test_outside_entry_and_far_despawn(assertions: Variant) -> void:
 		1.0,
 		69,
 	)
-	contact_enemy.contact_elapsed_ticks = float(contact_enemy.definition.contact_interval_ticks)
 	var outside_player := Vector2(CombatEnvelope.PLAYER_CENTER_LIMIT, 0.0)
-	var contact_records: Array[Dictionary] = entry_system.resolve_ready_enemy_damage_actions(
+	var contact_records: Array[Dictionary] = entry_system.resolve_contact_damage_candidates(
 		[contact_enemy.entity_id],
 		outside_player,
 		70,
@@ -651,5 +650,5 @@ func _spawn_side_index(screen_coordinates: Vector2) -> int:
 
 func _catalog(assertions: Variant) -> DefinitionCatalog:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "revision twelve content catalog validates")
+	assertions.expect_true(catalog.load_and_validate(), "revision thirteen content catalog validates")
 	return catalog if catalog.is_valid else null

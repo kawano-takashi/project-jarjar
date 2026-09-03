@@ -264,13 +264,13 @@ func advance_tick(move_input: Vector2) -> bool:
 		_damage_nodes_from_attack(attack, current_tick)
 		_apply_resolution_hits(attack)
 
-	# 4. Enemy damage and special actions. Lethal allied hits remain pending so an
-	# action that was already ready this tick still resolves before the death stage.
-	_apply_player_damage_records(enemy_system.resolve_ready_enemy_damage_actions(
+	# 4. Enemy damage and special actions. Lethal allied hits remain pending so their
+	# current contact still participates before the death stage.
+	var player_damage_candidates: Array[Dictionary] = enemy_system.resolve_contact_damage_candidates(
 		enemy_snapshot,
 		player_position,
 		current_tick,
-	))
+	)
 	for projectile_entry: Vector2i in projectile_snapshot:
 		var enemy_projectile_hit: Dictionary = weapon_system.resolve_enemy_projectile(
 			projectile_entry,
@@ -278,7 +278,8 @@ func advance_tick(move_input: Vector2) -> bool:
 			current_tick,
 		)
 		if not enemy_projectile_hit.is_empty():
-			_apply_raw_player_damage(float(enemy_projectile_hit.get("damage", 0.0)))
+			player_damage_candidates.append(enemy_projectile_hit)
+	_apply_player_damage_candidates(player_damage_candidates)
 	var boss_before_special: EnemyEntity = enemy_system.boss_entity()
 	var boss_was_charging: bool = (
 		boss_before_special != null and boss_before_special.boss_charge_active
@@ -1057,12 +1058,42 @@ func _process_pending_deaths(current_tick: int) -> void:
 	_pending_death_ids.clear()
 
 
-func _apply_player_damage_records(records: Array[Dictionary]) -> void:
-	for record: Dictionary in records:
-		var source_entity_id: int = int(record.get("source_entity_id", -1))
-		if source_entity_id >= 0 and not enemy_system.enemy_store.has_entity(source_entity_id):
+func _apply_player_damage_candidates(candidates: Array[Dictionary]) -> void:
+	var selected: Dictionary = _select_player_damage_candidate(candidates)
+	if not selected.is_empty():
+		_apply_raw_player_damage(float(selected.get("raw_damage", 0.0)))
+
+
+func _select_player_damage_candidate(candidates: Array[Dictionary]) -> Dictionary:
+	var selected: Dictionary = {}
+	for candidate: Dictionary in candidates:
+		if float(candidate.get("raw_damage", 0.0)) <= 0.0:
 			continue
-		_apply_raw_player_damage(float(record.get("raw_damage", 0.0)))
+		if selected.is_empty() or _player_damage_candidate_is_preferred(candidate, selected):
+			selected = candidate
+	return selected
+
+
+func _player_damage_candidate_is_preferred(candidate: Dictionary, selected: Dictionary) -> bool:
+	var candidate_damage: float = float(candidate.get("raw_damage", 0.0))
+	var selected_damage: float = float(selected.get("raw_damage", 0.0))
+	if candidate_damage != selected_damage:
+		return candidate_damage > selected_damage
+	var candidate_source: String = str(candidate.get("source_effect_id", &""))
+	var selected_source: String = str(selected.get("source_effect_id", &""))
+	if candidate_source != selected_source:
+		return candidate_source < selected_source
+	var candidate_entity: int = int(candidate.get("source_entity_id", -1))
+	var selected_entity: int = int(selected.get("source_entity_id", -1))
+	if candidate_entity != selected_entity:
+		return candidate_entity < selected_entity
+	var candidate_pool: int = int(candidate.get("source_pool_index", -1))
+	var selected_pool: int = int(selected.get("source_pool_index", -1))
+	if candidate_pool != selected_pool:
+		return candidate_pool < selected_pool
+	return int(candidate.get("source_generation", -1)) < int(
+		selected.get("source_generation", -1)
+	)
 
 
 func _apply_raw_player_damage(raw_damage: float) -> void:

@@ -278,7 +278,6 @@ func _test_enemy_attack_before_death(assertions: Variant) -> void:
 		-1,
 	)
 	enemy.hp = 1.0
-	enemy.contact_elapsed_ticks = float(enemy.definition.contact_interval_ticks)
 	var hp_before: float = simulation.state.current_hp
 	var expected_damage: float = enemy.definition.contact_damage * enemy.damage_multiplier
 	simulation.projectile_pool.acquire(
@@ -856,7 +855,6 @@ func _enemy_system_entries(simulation: CombatSimulation) -> Array:
 			enemy.born_tick,
 			enemy.spawn_tick,
 			enemy.activation_tick,
-			enemy.contact_elapsed_ticks,
 			enemy.special_elapsed_ticks,
 			enemy.telegraph_elapsed_ticks,
 			enemy.telegraph_active,

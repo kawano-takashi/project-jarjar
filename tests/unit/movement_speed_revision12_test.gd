@@ -60,7 +60,7 @@ func _test_speed_values_and_ratios(assertions: Variant) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
-	assertions.expect_equal(12, catalog.balance_manifest().balance_revision, "movement tuning ships as balance revision twelve")
+	assertions.expect_equal(13, catalog.balance_manifest().balance_revision, "revision thirteen preserves the revision twelve movement tuning")
 	var current_speeds: Array[float] = [CombatSimulation.PLAYER_SPEED]
 	for enemy_id: StringName in ENEMY_IDS:
 		current_speeds.append(catalog.enemy(enemy_id).move_speed)
@@ -197,7 +197,6 @@ func _test_level_one_weapon_contact_fixture(assertions: Variant) -> void:
 	assertions.expect_float(1.935, effective_hp, "fixture swarmer has the actual 1:00-2:00 HP")
 	assertions.expect_float(5.184, swarmer_definition.move_speed, "fixture swarmer uses revision twelve speed")
 	assertions.expect_float(0.26, swarmer_definition.body_radius, "fixture preserves the normal swarmer body radius")
-	assertions.expect_equal(45, swarmer_definition.contact_interval_ticks, "fixture preserves normal contact timing")
 	assertions.expect_float(4.0, swarmer_definition.contact_damage, "fixture preserves normal contact damage")
 	assertions.expect_float(10.0, CombatEnvelope.SPAWN_INNER_HALF_EXTENT, "fixture starts at the minimum spawn distance")
 	assertions.expect_equal(21, CombatEnvelope.NORMAL_ENTRY_TICKS, "fixture uses the standard normal-enemy entry wait")

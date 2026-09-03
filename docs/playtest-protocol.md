@@ -1,6 +1,6 @@
 # Project JARJAR 人間プレイテスト手順
 
-**状態: 使用禁止（balance revision 12は人間の体感確認待ち・正式候補未固定）**
+**状態: 使用禁止（balance revision 13は人間の体感確認待ち・正式候補未固定）**
 
 現在フェーズは `docs/project-status.md` を正とする。正式プレイテスト対象はまだ固定していないため、
 現時点では候補者を採用せず、資格確認も結果収集も行わない。
@@ -15,12 +15,12 @@
 candidate_head=<40hex>
 exe_sha256=<64hex>
 pck_sha256=<64hex>
-balance_revision=12
+balance_revision=13
 ```
 
 `docs/project-status.md`が「正式playtest対象固定済み」へ更新され、同じ4値が一致するまで下記手順を開始しない。
 EXE/PCK、balance revision、候補HEADのいずれかが変わった場合、以前の対象やデータを流用しない。
-revision 11以前のsource gate、回帰、QA、build identity、playtest記録は履歴専用であり、revision 12候補の証拠として無効である。
+revision 12以前のsource gate、回帰、QA、build identity、playtest記録は履歴専用であり、revision 13候補の証拠として無効である。
 
 ## 専用12run調整ゲート
 
@@ -39,8 +39,8 @@ revision 11以前のsource gate、回帰、QA、build identity、playtest記録�
 - wave pair 2–3、4–5、6–7、8–9の各組でpressure reductionが0.25〜0.35、kill gainが0.15〜0.30、
   XP gainとkill gainの差が0.05以下。
 
-revision 12の正式12run source gateは未実施であり、自動難易度は未評価である。ソース検証と全8基本武器の
-接触前撃破fixtureはPASSしているが、正式candidate固定や人間playtest開始の根拠にはしない。
+revision 13の正式12run source gateは未実施であり、自動難易度は未評価である。継続接触のソース検証、全回帰、
+全8基本武器の接触前撃破fixtureはPASSしているが、正式candidate固定や人間playtest開始の根拠にはしない。
 
 revision 11 source gateは2026-09-03に一度だけ実施し、12/12完走したが`passed=false`となった。
 2:00以前死亡0/12、ボス到達12/12（必要9〜11）、撃破5/12、3:00まで進化0/12、normal方針は
@@ -51,7 +51,8 @@ wave pair 2–3、4–5、6–7、8–9はすべて不合格である。実測�
 
 追尾核を逐次連射・発射後直進へ変更し、通常敵と50体群れの生成枠をプレイヤー追従化したrevision 10に加え、
 revision 11でプレイヤーと通常敵の移動速度を10%下げ、高速群れを2.59m/sへ変更し、revision 12で通常移動速度だけを
-さらに10%下げた。下記の旧結果は履歴としてのみ保持し、revision 12の正式対象固定には使わない。
+さらに10%下げた。revision 13では数値を維持したまま継続接触とソフト接触を導入した。下記の旧結果は履歴としてのみ保持し、
+revision 13の正式対象固定には使わない。
 
 revision 5 source gateはseed `17`、`29`、`43`、`61`を`cautious`、`normal`、`evolution`の各方針で実行する
 12runでPASSした。実測は2:00以前死亡0/12、最終ボス到達11/12、撃破6/12、3:00まで進化0/12、
@@ -62,7 +63,7 @@ normal方針は5:00まで2/4・7:00まで4/4・初回進化平均321.641667秒�
 VFX admitted / suppressed / important dropは90,151 / 0 / 0、audio admitted / suppressedは53,321 / 181,691、
 pool overflowは0run、orphanは0run、必須metric取得は12/12である。
 実測CSVとsummaryは`artifacts/balance/revision-5/`に保存している。
-同じrevision 5作業ツリーで全GDScript回帰112/112もPASSしたが、revision 12の証拠としては無効である。
+同じrevision 5作業ツリーで全GDScript回帰112/112もPASSしたが、revision 13の証拠としては無効である。
 
 この自動調整の最終値は`xp_yield_percent=90`、通常敵damage scale `0.55`、bossのHP `0.5625`、
 damage `0.57`、action rate `1.0`である。segment値は次のとおりである。
@@ -91,7 +92,7 @@ damage `0.57`、action rate `1.0`である。segment値は次のとおりであ�
 
 | balance_revision | 全testerの初見資格確認済み | 確認日 (YYYY-MM-DD) |
 |---:|---|---|
-| 12 | 未確認 |  |
+| 13 | 未確認 |  |
 
 実際に全員の条件を確認するまでは、上表を`yes`へ変更しない。
 

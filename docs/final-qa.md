@@ -1,24 +1,49 @@
 # Project JARJAR 最終QA記録
 
-**状態: balance revision 12ソース検証済み・人間QA未実施・正式候補未固定**
+**状態: balance revision 13ソース検証済み・人間QA未実施・正式候補未固定**
 
 この文書は候補固定前の自動調整記録、対象identityに対する自動検証結果、および人間が実機で確認した事実を記録する。
 過去のrevision、別のEXE/PCK、別の候補HEADの結果は転記しない。`ManualQa`の終了コード0だけでは合格にしない。
 ユーザーが最終調整完了を明示するまで正式candidateを固定せず、対象identityも記入しない。
-revision 11以前のsource gate、回帰、QA、build identity、playtest記録は履歴専用であり、revision 12候補の証拠として無効である。
+revision 12以前のsource gate、回帰、QA、build identity、playtest記録は履歴専用であり、revision 13候補の証拠として無効である。
 
 ## 対象identity
 
 - candidate_head:
 - exe_sha256:
 - pck_sha256:
-- balance_revision: `12`
+- balance_revision: `13`
 - 実施日:
 - 判定: 未実施
 
 4値のいずれかが変わったら、この記録を無効として新しい対象で全項目を再実施する。
 
-## revision 12ソース検証
+## revision 13ソース検証
+
+2026-09-04にGodot 4.7.2-stableで継続接触ダメージを検証した。通常追尾敵、エリート、ボスはプレイヤーとの
+合成半径で停止し、プレイヤーは4.05m/sを維持したまま食い込んだ敵を必要最小距離だけ押し分ける。
+完全同位置はentity ID由来の決定方向、壁際は敵境界へのclampと一時重なりを使用する。固定方向の高速群れは
+ソフト接触から除外し、プレイヤーを通過して既存の隊列、押し出し、総走行距離、575 tick退出を維持する。
+
+出現完了した行動可能な全敵は重なった各tickに接触候補を生成し、初回は即時、その後は全攻撃源共通の
+30 combat tick保護が終わった次のtickから再被弾する。同tickの全接触候補と衝突敵弾は既存倍率適用後の最大威力1件だけを採用し、
+同値はsource/entity/pool/generation順で安定決定する。不採用または無敵中に衝突した敵弾も消費する。
+敵別接触周期フィールドとtimer stateは破壊的に削除し、カタログはrevision 13、接触威力、半径を固定検証する。
+生HP、接触威力、速度、倍率、スポーン、確率、進化時刻、受入閾値は変更していない。
+
+- 全GDScript回帰: PASS（138/138）
+- 全リソース事前ロード: PASS（172件）
+- GDScript guard: PASS（103ファイル）
+- 変更GDScript check-only: PASS（14/14）
+- 差分整合性検査: PASS
+- revision 13正式12run source gate: **未実施**
+- 自動難易度評価: 未実施
+
+既存回帰でSTOP、45 tickモーダル復帰、同tick撃破敵との相打ち、ボス勝利優先、決定的replayも再確認した。
+この状態は正式candidateの固定や人間の体感確認を代替しない。数値調整、正式12run source gate、性能試験、Release export、
+Verify、ManualQa、人間playtestは実行していない。
+
+## revision 12ソース検証（履歴）
 
 2026-09-04にGodot 4.7.2-stableで、revision 12速度値、60 tick移動距離、全方向・斜め入力、
 revision 11との相対速度比、高速群れ2.59m/s・575 tick退出・速度由来押し出し上限・STOP停止を検証した。
@@ -29,11 +54,11 @@ revision 11との相対速度比、高速群れ2.59m/s・575 tick退出・速度
 - GDScript guard: PASS（102ファイル）
 - 変更GDScript check-only: PASS（12/12）
 - 差分整合性検査: PASS
-- revision 12正式12run source gate: **未実施**
+- revision 12正式12run source gate: 未実施
 - 自動難易度評価: 未実施
 
-この状態は正式candidateの固定や人間の体感確認を代替しない。正式12run source gate、性能試験、Release export、
-Verify、ManualQa、人間playtestは実行していない。
+この結果はrevision 12の履歴であり、接触挙動を変更したrevision 13候補には流用しない。revision 12では
+正式12run source gate、性能試験、Release export、Verify、ManualQa、人間playtestを実行していない。
 
 ## revision 11 source gate（履歴）
 
@@ -55,9 +80,9 @@ Verify、ManualQa、人間playtestは実行していない。
 - audio admitted / suppressed: 58,885 / 181,677
 
 実測は`artifacts/balance/revision-11/formal/`に保存した。source gateが不合格だったためrevision 11の正式candidate identityは固定せず、
-性能試験、Release検証、ManualQa、人間playtestへ進まなかった。この結果はrevision 12へ流用しない。
+性能試験、Release検証、ManualQa、人間playtestへ進まなかった。この結果はrevision 13へ流用しない。
 
-## revision 5自動調整済みsource gate（履歴・revision 12へ流用禁止）
+## revision 5自動調整済みsource gate（履歴・revision 13へ流用禁止）
 
 seed `17`、`29`、`43`、`61`を`cautious`、`normal`、`evolution`の各方針で実行する専用12run source gateがPASSした。
 実測は次のとおりである。
@@ -88,22 +113,25 @@ damage `0.57`、action rate `1.0`である。segment値は次のとおりであ�
 | damage_multiplier | 0.18 | 0.20 | 0.22 | 0.25 | 0.29 | 0.36 | 0.45 | 0.56 | 0.72 | 0.95 |
 
 実測CSVとsummaryは`artifacts/balance/revision-5/`に保存している。このPASSはrevision 5の自動調整完了記録であり、
-空欄のrevision 12正式candidate identityに対する性能試験、Release検証、ManualQa、
+空欄のrevision 13正式candidate identityに対する性能試験、Release検証、ManualQa、
 人間playtestの完了を意味しない。
 上記の調整値、segment、候補抽選、進化条件、出現・攻撃・10:00遷移のいずれかを変更した場合、このsource gate結果を無効として
 専用12runを全件再実行する。
 
 ## 自動検証記録
 
-- 全GDScript回帰: PASS（2026-09-04、revision 12実装後130/130）
-- GDScript guard: PASS（102ファイル）
-- 変更GDScript check-only: PASS（12/12）
+- 全GDScript回帰: PASS（2026-09-04、revision 13実装後138/138）
+- 全リソース事前ロード: PASS（172件）
+- GDScript guard: PASS（103ファイル）
+- 変更GDScript check-only: PASS（14/14）
+- revision 13継続接触専用テスト: PASS（8/8）
 - 全8基本武器Lv1接触前撃破fixture: PASS（8/8、接触0、被ダメージ0）
-- revision 12専用12run source gate: 未実施
-- revision 11専用12run source gate: 履歴上FAIL（12/12完走、正式実行は1回のみ、revision 12へ流用禁止）
-- revision 10以前のsource gate: 履歴専用、revision 12へ流用禁止
+- revision 13専用12run source gate: 未実施
+- revision 12ソース検証: 履歴上PASS（130/130、revision 13へ流用禁止）
+- revision 11専用12run source gate: 履歴上FAIL（12/12完走、正式実行は1回のみ、revision 13へ流用禁止）
+- revision 10以前のsource gate: 履歴専用、revision 13へ流用禁止
 - Full HD性能試験（`--performance=full_hd_500_2000`）: 未実施
-- pool overflow / orphan: revision 12では未評価、正式候補の性能試験は未実施
+- pool overflow / orphan: revision 13では未評価、正式候補の性能試験は未実施
 - Release export: 未実施
 - Verify（pack audit、Release smoke、引数拒否、build鮮度、identity）: 未実施
 - ManualQa: 未実施
@@ -123,11 +151,17 @@ damage `0.57`、action rate `1.0`である。segment値は次のとおりであ�
 - QA項目`weapon_homing_core`でLv8追尾核の5発が初弾から0.10秒刻みで明確に視認できる。発射後は直進し、
   軌道上の最初の有効敵へ1回だけ命中して消え、再追尾も跳弾もしない。連射中の標的が消えた場合は未発射弾だけが再照準される。
 - 通常敵とエリートは接触追跡だけを行い、遠距離攻撃をしない。最終ボスだけが例外として、予告付きの放射弾を撃つ。
+- 通常追尾敵、エリート、ボスがプレイヤーとの合成半径で停止し、自律移動ではプレイヤーを通過しない。
+  プレイヤーは4.05m/sの全速を保って接触敵を押し分け、完全同位置でも決定的に分離し、壁際で分離不能なら敵が境界に留まる。
+- 出現完了した敵との初回接触で即時被弾し、接触を続けると全攻撃源共通の30保護tickごとに再被弾する。
+  離脱中は接触ダメージが止まり、再接触は残りの無敵時間に従う。点滅や新しいHUD HIT表示は追加されていない。
+- 複数敵との接触、および接触とボス弾が同tickに重なった場合、倍率適用後の最大威力1件だけが入り同時多段にならない。
+  衝突したボス弾は、不採用または無敵中でも消える。
 - プレイヤー4.05m/s、通常敵1.944 / 5.184 / 2.43 / 1.0935m/s、エリート1.62m/s、ボス1.296m/sで移動し、
   斜め入力でも世界空間の速度が増えない。通常`swarmer`はプレイヤーより速い5.184m/sで常時追尾する。
 - 定時抽選された別枠の群れは四辺10〜12m帯に橙25体・赤25体の10×5千鳥配置で即時出現し、
   発生時に決めた画面方向へ2.59m/sで`2d+2.8m`直進する。
-  移動中のプレイヤーを再追尾せず、全生存個体が対辺まで横断して同時に無報酬退出する。
+  移動中のプレイヤーを再追尾せず、ソフト接触で停止せずにプレイヤーを通過し、全生存個体が対辺まで横断して同時に無報酬退出する。
 - 群れが通常敵・エリート・ボスを進行方向へ押し、1tickの上限が群れ定義速度`2.59/60m`から算出され、対象はアリーナ外へ出ない。プレイヤー、群れ同士、XP、宝箱、
   arena objectは押されず、50体が重なっても1回の被弾後30 combat tickの無敵時間が維持される。
 - 敵の経験値結晶を取得すると戦闘が停止し、重複しない最大3候補を選べる。各候補は名前、レベル、

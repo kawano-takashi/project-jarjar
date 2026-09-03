@@ -23,6 +23,13 @@ const BOSS_PHASE_INTERVAL_MULTIPLIER: float = 0.75
 const BOSS_MIN_INTERVAL_MULTIPLIER: float = 0.20
 const SCREEN_RIGHT_WORLD: Vector2 = Vector2(0.70710678, -0.70710678)
 const SCREEN_DOWN_WORLD: Vector2 = Vector2(0.70710678, 0.70710678)
+const CONTACT_SEPARATION_DIRECTIONS: Array[Vector2] = [
+	Vector2.RIGHT,
+	Vector2.DOWN,
+	Vector2.LEFT,
+	Vector2.UP,
+]
+const CONTACT_DISTANCE_EPSILON: float = 0.000001
 const SPAWN_OUTWARD_DIRECTIONS: Array[Vector2] = [
 	-SCREEN_DOWN_WORLD,
 	SCREEN_DOWN_WORLD,
@@ -30,7 +37,7 @@ const SPAWN_OUTWARD_DIRECTIONS: Array[Vector2] = [
 	SCREEN_RIGHT_WORLD,
 ]
 
-const ACTION_PLAYER_DAMAGE: StringName = &"player_damage"
+const CANDIDATE_PLAYER_DAMAGE: StringName = &"player_damage"
 const DAMAGE_SOURCE_CONTACT: StringName = &"enemy_contact"
 
 var enemy_store: EnemyStore = EnemyStore.new()
@@ -89,7 +96,7 @@ func advance_snapshot(
 			swarm_sweeps.append(sweep)
 			if enemy.remaining_travel_distance <= 0.0:
 				exited_swarm_ids.append(enemy.entity_id)
-		_advance_enemy_timers(enemy, time_scale)
+		_advance_enemy_action_timers(enemy, time_scale)
 		_update_boss_state(enemy)
 	_apply_swarm_pushes(ids, swarm_sweeps)
 	for entity_id: int in exited_swarm_ids:
@@ -208,30 +215,27 @@ func resolve_swarm_event_spawns(
 		))
 	return spawned
 
-func resolve_ready_enemy_damage_actions(
+func resolve_contact_damage_candidates(
 	ids: Array[int],
 	player_position: Vector2,
 	current_tick: int,
 ) -> Array[Dictionary]:
-	var records: Array[Dictionary] = []
+	var candidates: Array[Dictionary] = []
 	for entity_id: int in ids:
 		var enemy: EnemyEntity = enemy_store.get_by_id(entity_id)
 		if not _can_resolve_actions(enemy, current_tick):
 			continue
 		var contact_radius: float = CombatEnvelope.PLAYER_BODY_RADIUS + enemy.definition.body_radius
-		if (
-			enemy.contact_elapsed_ticks >= float(enemy.definition.contact_interval_ticks)
-			and enemy.position.distance_squared_to(player_position)
-			<= contact_radius * contact_radius
+		if enemy.position.distance_squared_to(player_position) <= (
+			contact_radius * contact_radius + CONTACT_DISTANCE_EPSILON
 		):
-			records.append(_damage_record(
+			candidates.append(_damage_candidate(
 				enemy,
 				DAMAGE_SOURCE_CONTACT,
 				enemy.definition.contact_damage * _effective_damage_multiplier(enemy),
 				enemy.position,
 			))
-			enemy.contact_elapsed_ticks = 0.0
-	return records
+	return candidates
 
 
 func resolve_ready_enemy_special_actions(
@@ -286,18 +290,38 @@ func _move_enemy(
 			"group_id": enemy.swarm_group_id,
 			"displacement": enemy.fixed_direction * travel_step,
 		}
-	var offset: Vector2 = player_position - enemy.position
-	var direction: Vector2 = Vector2.ZERO
-	if offset != Vector2.ZERO:
-		direction = offset.normalized()
-	var next_position: Vector2 = (
-		enemy.position
-		+ direction * enemy.definition.move_speed * time_scale / float(RunState.TICKS_PER_SECOND)
+	var from_player: Vector2 = enemy.position - player_position
+	var distance_to_player: float = from_player.length()
+	var separation_direction: Vector2 = (
+		from_player / distance_to_player
+		if distance_to_player > 0.0
+		else _deterministic_contact_direction(enemy.entity_id)
 	)
+	var contact_radius: float = CombatEnvelope.PLAYER_BODY_RADIUS + enemy.body_radius()
+	var next_position: Vector2 = enemy.position
+	if distance_to_player < contact_radius:
+		# Player motion is authoritative. Resolve only the current penetration and
+		# let arena clamping retain an unavoidable overlap at a wall.
+		next_position = player_position + separation_direction * contact_radius
+	elif distance_to_player > contact_radius:
+		var maximum_step: float = (
+			enemy.definition.move_speed
+			* time_scale
+			/ float(RunState.TICKS_PER_SECOND)
+		)
+		var travel_step: float = minf(maximum_step, distance_to_player - contact_radius)
+		next_position -= separation_direction * travel_step
 	if _is_enemy_center_inside_arena(enemy.position, enemy.body_radius()):
 		next_position = _clamp_enemy_center(next_position, enemy.body_radius())
 	enemy.position = next_position
 	return {}
+
+
+func _deterministic_contact_direction(entity_id: int) -> Vector2:
+	var direction_index: int = entity_id % CONTACT_SEPARATION_DIRECTIONS.size()
+	if direction_index < 0:
+		direction_index += CONTACT_SEPARATION_DIRECTIONS.size()
+	return CONTACT_SEPARATION_DIRECTIONS[direction_index]
 
 
 func _apply_swarm_pushes(ids: Array[int], swarm_sweeps: Array[Dictionary]) -> void:
@@ -361,11 +385,7 @@ func _segment_intersects_circle(
 	return closest.distance_squared_to(circle_center) <= circle_radius * circle_radius
 
 
-func _advance_enemy_timers(enemy: EnemyEntity, time_scale: float) -> void:
-	enemy.contact_elapsed_ticks = minf(
-		float(enemy.definition.contact_interval_ticks),
-		enemy.contact_elapsed_ticks + time_scale,
-	)
+func _advance_enemy_action_timers(enemy: EnemyEntity, time_scale: float) -> void:
 	if enemy.definition.special_interval_ticks > 0:
 		enemy.special_elapsed_ticks += time_scale
 	if enemy.boss_charge_active:
@@ -632,9 +652,6 @@ func _spawn_swarm_group(
 				travel_distance,
 				(lateral_index + depth_index) % 2 == 1,
 			)
-			enemy.contact_elapsed_ticks = float(
-				event_definition.unit_definition.contact_interval_ticks
-			)
 			spawned.append(enemy)
 	_state.swarm_event_group_count += 1
 	_state.swarm_event_generated_count += spawned.size()
@@ -750,15 +767,17 @@ func _can_resolve_actions(enemy: EnemyEntity, current_tick: int) -> bool:
 	)
 
 
-func _damage_record(
+func _damage_candidate(
 	enemy: EnemyEntity,
 	source_effect_id: StringName,
 	raw_damage: float,
 	position: Vector2,
 ) -> Dictionary:
 	return {
-		"type": ACTION_PLAYER_DAMAGE,
+		"type": CANDIDATE_PLAYER_DAMAGE,
 		"source_entity_id": enemy.entity_id,
+		"source_pool_index": enemy.pool_index,
+		"source_generation": enemy.generation,
 		"source_effect_id": source_effect_id,
 		"raw_damage": raw_damage,
 		"position": position,

@@ -1,11 +1,11 @@
 # Project JARJAR 現在の状態
 
 - 更新日: 2026-09-04 (JST)
-- 状態: **revision 12 実装・ソース検証済み・自動難易度未評価・人間の体感確認待ち**
-- playable baseline: 未固定（revision 12 作業ツリー）
-- balance revision: `12`（revision 11から通常移動速度10%減、高速群れ2.59m/s維持）
+- 状態: **revision 13 実装・ソース検証済み・自動難易度未評価・人間の体感確認待ち**
+- playable baseline: 未固定（revision 13 作業ツリー）
+- balance revision: `13`（継続接触ダメージ、revision 12の速度・全balance値を維持）
 - 正式playtest target: 未固定
-- 現revisionの自動調整記録: revision 12正式12run source gateは未実施
+- 現revisionの自動調整記録: revision 13正式12run source gateは未実施
 
 ## 現在地
 
@@ -32,7 +32,37 @@ HUDと3択の装備種別および内部データでは従来どおりパッシ�
 被弾後は30 combat tick（0.5秒）の連続被弾防止とする。これとは別に、レベルアップや宝箱の自動モーダル列がすべて
 終了した後だけ45 combat tick（0.75秒）の復帰保護を与える。列の中間や手動ポーズ復帰ではこの45 tickを付与しない。
 
-## revision 12 移動速度再調整契約
+## revision 13 継続接触ダメージ契約
+
+[Vampire Survivorsの物理システム解析](https://github.com/lukeod/vampiresurvivors-modding/blob/main/physics-system.md)、
+[ダメージシステム解析](https://github.com/lukeod/vampiresurvivors-modding/blob/main/damage-system.md)、
+[Enemies](https://vampire-survivors.fandom.com/wiki/Enemies)、[Bat Swarm](https://vampire-survivors.fandom.com/wiki/Bat_Swarm)を参考に、
+プレイヤーと敵の円形重なり、敵ごとの接触威力、固定方向に横断する群れを既存の決定的tick simulationへ組み込んだ。
+公開資料から標準無敵時間の厳密値は確定できないため、0.5秒は本作の既存30 combat tickを正本とする。
+
+通常追尾敵、エリート、ボスはプレイヤーとの合成半径より内側へ自律移動せず、接触位置で停止する。
+プレイヤーは4.05m/sの全速移動を維持し、移動で追尾敵へ食い込んだ場合はプレイヤー位置を優先して敵を必要最小距離だけ外へ出す。
+完全同位置ではentity ID由来の決定的な4方向を使う。既にアリーナ内へ入った敵は境界内へ留め、壁で完全分離できない場合だけ
+一時的な重なりを許容する。敵同士の分離は追加しない。固定方向の高速群れはソフト接触から除外し、隊列、敵押し出し、
+総走行距離、575 tick退出を維持してプレイヤーを通過する。
+
+出現待機を終えた行動可能な敵は、円が重なる全tickで接触ダメージ候補を生成する。初回接触は即時候補となり、離れれば候補は消える。
+同tickに重なった全敵の候補と衝突した全敵弾を集約し、既存倍率適用後の威力が最大の1件だけを採用する。同値は
+`source_effect_id`、source entity ID、pool index、generationの順で安定決定する。衝突した敵弾は、無敵中または不採用でも消費する。
+実ダメージ後は次の30 combat tickを保護し、その次のtickから同じ接触でも再被弾できる。45 tickのモーダル復帰保護、
+STOP中の通常敵・群れ停止とボス半速、同tick撃破敵との相打ち、ボス勝利優先、既存のHP・音・振動表示は維持する。
+
+敵別の接触周期は廃止し、`EnemyDefinition.contact_interval_ticks`と`EnemyEntity.contact_elapsed_ticks`をデータ、初期化、
+pool reset、群れ特例、決定性ダイジェストから削除した。カタログはrevision 13と全敵のHP、速度、半径、接触威力、XP、
+群れ定義を固定検証する。生HP、接触威力、速度、倍率、スポーン、確率、進化時刻、受入閾値は変更していない。
+
+2026-09-04にGodot 4.7.2-stableで全GDScript回帰138/138、全リソース172件の事前ロード、GDScript guard 103ファイル、
+変更GDScriptのcheck-only 14/14、差分整合性検査がPASSした。専用テストは接触位置停止、初回即時と30保護tick後の再被弾、
+全敵種、出現待機、STOP、プレイヤー押し分け、壁、完全同位置、高速群れ通過、接触＋敵弾の最大威力裁定、敵弾消費を検証する。
+既存回帰で45 tickモーダル復帰、同tick相打ち、ボス勝利優先、決定的replay、575 tick退出も再確認した。
+数値調整、revision 13正式12run source gate、Full HD性能試験、Release export、Verify、ManualQa、playtest固定は実施していない。
+
+## revision 12 移動速度再調整契約（revision 13で維持）
 
 通常ユニットの座標移動速度だけをrevision 11から厳密にさらに10%下げ、相対速度比を維持する。隠れた共通倍率は置かず、
 プレイヤー定数と各敵リソースの定義値を正本とする。弾速、XP吸引、攻撃間隔、スポーン時刻、カメラ投影・追従値は変更しない。
@@ -74,11 +104,11 @@ Bat Swarmの画面上の速度だけを比較対象にした。[Bat Swarm](https
 通常敵・エリート・ボスへの同一tick押し出し上限は固定値を廃止し、そのtickの群れ定義速度から
 `move_speed / 60`として算出する（現値は約0.0431667m/tick）。STOP中は移動、押し出し、残走行距離の減算を行わない。
 
-未使用だったプレイヤー速度の重複定数は削除済みである。カタログはrevision 12と全7通常速度、群れ速度を検証する。
+未使用だったプレイヤー速度の重複定数は削除済みである。revision 13のカタログも全7通常速度と群れ速度を検証する。
 回帰は60tickの設定距離、revision 11との全相対速度比、斜め入力正規化、世界4方向と斜めの等速性、
 群れの設定速度・tick距離・総走行距離・575tick退出・速度由来押し出し上限・STOP停止を固定する。
 
-### revision 12 接触前撃破fixtureとソース検証
+### revision 12 接触前撃破fixtureとソース検証（履歴）
 
 基本武器8種をLv1・パッシブなし・武器別固定seedで単独装備し、1:00〜2:00区間の通常Swarmer
 （実HP `9×0.215=1.935`、速度5.184m/s、既存半径・接触性能）をプレイヤーから10mに1体だけ生成する。
@@ -87,7 +117,8 @@ Bat Swarmの画面上の速度だけを比較対象にした。[Bat Swarm](https
 
 2026-09-04に全8武器が600 tick以内に武器撃破し、撃破前の幾何学的接触0、プレイヤーダメージ0でPASSした。
 Godot 4.7.2-stableで全GDScript回帰130/130、GDScript guard 102ファイル、変更したGDScriptのcheck-only 12/12、
-差分整合性検査がPASSした。revision 12正式12run source gateは明示的に未実施で、自動難易度は未評価である。
+差分整合性検査がPASSした。これはrevision 12の履歴であり、revision 13候補の証拠には流用しない。
+revision 12正式12run source gateは明示的に未実施で、自動難易度は未評価である。
 Full HD性能試験、Release export、Verify、ManualQa、人間playtestも実施していない。
 
 ### revision 11 正式12run source gate結果（履歴）
@@ -108,7 +139,7 @@ Full HD性能試験、Release export、Verify、ManualQa、人間playtestも実�
 - audio cue: admitted 58,885、suppressed 181,677
 
 実測CSVとsummaryは`artifacts/balance/revision-11/formal/`へ出力した。このディレクトリは正式candidateの固定物ではなく、
-調整判断用のローカル成果物である。この不合格結果はrevision 11の履歴として保持し、revision 12の判定には流用しない。
+調整判断用のローカル成果物である。この不合格結果はrevision 11の履歴として保持し、revision 13の判定には流用しない。
 
 ## revision 10 追尾核逐次連射契約
 
@@ -146,7 +177,8 @@ Full HD性能試験、Release export、Verify、ManualQa、人間playtestも実�
 2:05〜9:45の固定21試行から確率抽選された50体の群れを生成する。群れ専用乱数は通常spawn、upgrade、chest、
 powerupの乱数列から分離し、各attemptの専用RNGで四辺と10〜12mの生成距離を抽選する。
 
-群れ個体はHP 1、接触威力1、XP 1、半径0.26m、速度2.59m/s、接触間隔1 tickである。HPと威力には発生時の
+群れ個体はHP 1、接触威力1、XP 1、半径0.26m、速度2.59m/sである。revision 13では他の敵と同様、
+重なった各tickに接触候補を生成する。HPと威力には発生時の
 segment倍率だけを適用し、`normal_enemy_damage_scale`は適用しない。選んだ辺のプレイヤー正面、横ずれ0をアンカーに、
 横10体×奥行5列、横ピッチ2/3m、奥行ピッチ0.7mの千鳥配置を即時生成する。後列は生成帯から最大2.8m外へ伸びる。
 橙25体・赤25体が同じ小型meshを共有する。全員が生成時のプレイヤーへ向く固定方向へ
@@ -174,7 +206,7 @@ revision 10では既存の敵数、HP、攻撃力、速度、確率、全体bala
 `xp_yield_percent=90`、`normal_enemy_damage_scale=0.4`、bossはHP `1.6875`、damage `0.114`、action rate `1.1`である。
 通常active目標は`[16, 46, 32, 68, 49, 140, 92, 132, 97, 176]`で、segment HP・damage・weightもrevision 7から
 据え置いた。revision 12では全GDScript回帰130/130、GDScript guard 102ファイル、変更したGDScriptのcheck-only 12/12がPASSした。
-revision 12正式12run source gate、性能試験、export、Release QAは実施していない。
+これは履歴であり、revision 12正式12run source gate、性能試験、export、Release QAは実施していない。
 
 ## revision 6から継続する単一強化項目契約
 
@@ -199,10 +231,10 @@ revision 12正式12run source gate、性能試験、export、Release QAは実施
 未所持候補は従来どおり概要説明を表示する。カタログ読込時と回帰テストで、各基本武器の各レベルについて
 変更項目数がちょうど1であること、および個数増加が`+1`であることを検証する。
 
-この武器成長表はrevision 6で導入され、revision 12でも維持する。revision 11以前の回帰、QA、build identityは履歴であり、
-移動速度を変更したrevision 12候補の証拠には使用しない。
+この武器成長表はrevision 6で導入され、revision 13でも維持する。revision 12以前の回帰、QA、build identityは履歴であり、
+接触挙動を変更したrevision 13候補の証拠には使用しない。
 
-## revision 5実装と最終調整値（履歴・revision 12へ流用禁止）
+## revision 5実装と最終調整値（履歴・revision 13へ流用禁止）
 
 revision 5の画面内戦闘契約は次のとおりである。
 
@@ -228,7 +260,7 @@ revision 5の画面内戦闘契約は次のとおりである。
 | hp_multiplier | 0.15 | 0.17 | 0.20 | 0.24 | 0.30 | 0.45 | 0.65 | 0.90 | 1.25 | 1.75 |
 | damage_multiplier | 0.18 | 0.20 | 0.22 | 0.25 | 0.29 | 0.36 | 0.45 | 0.56 | 0.72 | 0.95 |
 
-## revision 5 source gate結果（履歴・revision 12へ流用禁止）
+## revision 5 source gate結果（履歴・revision 13へ流用禁止）
 
 2026-09-02にseed `17`、`29`、`43`、`61`をcautious、normal、evolutionの各方針で実行する、
 専用の決定的12run source gateを完走し、`passed=true`でPASSした。
@@ -256,7 +288,7 @@ GDScript guard 97ファイル、今回変更したGDScript 2/2のcheck-only、`g
 このsource gateは自動調整完了の証拠であり、人間playtestの参加・回答・計測値や
 正式candidateのidentity、正式性能試験、Release検証を代替しない。
 
-revision 12への変更により、revision 11以前のcandidate、調整成果物、回帰、QA、build identityは現候補の証拠として無効であり、
+revision 13への変更により、revision 12以前のcandidate、調整成果物、回帰、QA、build identityは現候補の証拠として無効であり、
 履歴としてのみ保持する。現時点で正式candidateは未固定である。Full HD性能試験、Release export、Verify、ManualQa、
 人間playtestはすべて未実施であり、ユーザーが最終調整完了を明示するまで実行してはならない。
 
@@ -300,8 +332,9 @@ revision 4の専用12run PASSも正式candidateのidentityや正式検証結果�
 
 ## 次の作業
 
-1. revision 12の速度を人間が実機で体感確認し、結果を記録する。エージェントは人間の観察事実を生成しない。
-2. 体感確認で未達の場合は測定結果を報告し、承認済み速度や武器値、fixture条件を自動調整しない。
+1. revision 13の継続接触、押し分け、壁際、高速群れ通過、同時被弾を人間が実機で体感確認し、結果を記録する。
+   エージェントは人間の観察事実を生成しない。
+2. 体感確認で未達の場合は測定結果を報告し、承認済み速度、威力、倍率、スポーン、受入閾値を自動調整しない。
 3. ユーザーが最終調整完了を明示した後だけ、全回帰、GDScript検査、Full HD性能試験、
    Release export、pack audit、smoke、Verify、ManualQaを実施する。
 4. 新identity用の `docs/final-qa.md` に手動QAと自動検証結果を人間が記録する。
@@ -313,5 +346,5 @@ revision 4の専用12run PASSも正式candidateのidentityや正式検証結果�
 
 ## 正式受入後の棚卸し
 
-5人以上×3run完了までは、revision 12の回帰テスト、Debug QA、性能試験、Release検証、
+5人以上×3run完了までは、revision 13の回帰テスト、Debug QA、性能試験、Release検証、
 GDScript guard、比較用buildを保持する。正式受入後に再棚卸しし、配布・保守に不要な資材を削除する。

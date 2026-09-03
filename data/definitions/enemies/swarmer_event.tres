@@ -10,6 +10,5 @@ enemy_type = 1
 base_hp = 1.0
 move_speed = 2.59
 body_radius = 0.26
-contact_interval_ticks = 1
 contact_damage = 1.0
 xp_value = 1

@@ -10,7 +10,6 @@ enemy_type = 3
 base_hp = 34.0
 move_speed = 2.43
 body_radius = 0.4
-contact_interval_ticks = 42
 contact_damage = 11.0
 preferred_distance_min = 0.0
 preferred_distance_max = 0.0

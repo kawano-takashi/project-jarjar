@@ -325,7 +325,10 @@ func resolve_enemy_projectile(
 	)
 	if hit_t >= 0.0:
 		var record: Dictionary = {
-			"damage": projectile.damage,
+			"raw_damage": projectile.damage,
+			"source_entity_id": projectile.source_entity_id,
+			"source_pool_index": projectile.pool_index,
+			"source_generation": projectile.generation,
 			"source_effect_id": projectile.source_effect_id,
 		}
 		_projectile_pool.release(projectile.pool_index, projectile.generation)

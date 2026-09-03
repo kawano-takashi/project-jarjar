@@ -3,7 +3,7 @@ extends RefCounted
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"revision_twelve_swarm_definition_and_drift_rejection",
+		"revision_thirteen_swarm_definition_and_drift_rejection",
 		"normal_swarmer_outpaces_the_player",
 		"swarm_scheduler_is_isolated_repeatable_and_atomic",
 		"swarm_formation_crosses_player_relative_frame_and_uses_two_visuals",
@@ -15,7 +15,7 @@ func test_names() -> PackedStringArray:
 
 func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
 	match test_name:
-		"revision_twelve_swarm_definition_and_drift_rejection":
+		"revision_thirteen_swarm_definition_and_drift_rejection":
 			_test_definition_and_drift(assertions)
 		"normal_swarmer_outpaces_the_player":
 			_test_normal_swarmer_speed(assertions)
@@ -30,7 +30,7 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 		"boss_transition_absorbs_swarm_without_rewards":
 			_test_boss_transition_absorption(assertions)
 		_:
-			assertions.expect_true(false, "registered revision twelve swarm test")
+			assertions.expect_true(false, "registered revision thirteen swarm test")
 
 
 func _test_definition_and_drift(assertions: Variant) -> void:
@@ -40,7 +40,7 @@ func _test_definition_and_drift(assertions: Variant) -> void:
 	var manifest: SurvivalContentManifest = catalog.manifest()
 	var event_definition: SwarmEventDefinition = manifest.swarm_event
 	var unit: EnemyDefinition = event_definition.unit_definition
-	assertions.expect_equal(12, manifest.balance.balance_revision, "swarm ships as balance revision twelve")
+	assertions.expect_equal(13, manifest.balance.balance_revision, "swarm ships as balance revision thirteen")
 	assertions.expect_equal(6, GameTypes.EnemyType.size(), "swarm adds no seventh EnemyType")
 	assertions.expect_equal(6, catalog.enemies.size(), "event unit stays outside the normal enemy catalog")
 	assertions.expect_float(5.184, catalog.enemy(&"swarmer").move_speed, "normal swarmer is faster than the player")
@@ -53,7 +53,6 @@ func _test_definition_and_drift(assertions: Variant) -> void:
 	assertions.expect_equal(1, unit.xp_value, "event member raw XP")
 	assertions.expect_float(0.26, unit.body_radius, "event member radius")
 	assertions.expect_float(2.59, unit.move_speed, "event member crossing speed")
-	assertions.expect_equal(1, unit.contact_interval_ticks, "event member can contact every tick")
 	assertions.expect_equal(50, event_definition.member_count, "event creates fifty members")
 	assertions.expect_equal(10, event_definition.lateral_count, "formation has ten lateral columns")
 	assertions.expect_equal(5, event_definition.depth_count, "formation has five depth rows")
@@ -370,7 +369,7 @@ func _test_formation_motion_and_visuals(assertions: Variant) -> void:
 	var travel_distance: float = 2.0 * 11.0 + 4.0 * 0.7
 	assertions.expect_float(travel_distance - event_step, first_after.remaining_travel_distance, "travel derives from spawn depth and formation depth")
 	var travel_ticks: int = ceili(travel_distance / event_step)
-	assertions.expect_equal(575, travel_ticks, "revision twelve preserves the 575-tick full crossing")
+	assertions.expect_equal(575, travel_ticks, "revision thirteen preserves the 575-tick full crossing")
 	for movement_index: int in range(1, travel_ticks):
 		var movement_tick: int = 7501 + movement_index
 		state.combat_tick = movement_tick
@@ -407,17 +406,16 @@ func _test_contact_and_death_accounting(assertions: Variant) -> void:
 	assertions.expect_float(0.22, group[0].damage_multiplier, "event damage uses only the current segment multiplier")
 	assertions.expect_float(0.22, group[0].definition.contact_damage * group[0].damage_multiplier, "normal global damage scale is not applied")
 	assertions.expect_true(group[0].is_targetable(7500), "event member has no materialization delay")
-	assertions.expect_equal(1, int(group[0].contact_elapsed_ticks), "event member is immediately contact-ready")
 	var ids: Array[int] = simulation.enemy_system.snapshot_ids()
-	var records: Array[Dictionary] = simulation.enemy_system.resolve_ready_enemy_damage_actions(
+	var records: Array[Dictionary] = simulation.enemy_system.resolve_contact_damage_candidates(
 		ids,
 		Vector2.ZERO,
 		7500,
 	)
 	assertions.expect_equal(50, records.size(), "all overlapping members report contact independently")
-	simulation._apply_player_damage_records(records)
+	simulation._apply_player_damage_candidates(records)
 	assertions.expect_float(99.78, state.current_hp, "thirty-tick invulnerability admits only one simultaneous hit")
-	simulation._apply_player_damage_records(records)
+	simulation._apply_player_damage_candidates(records)
 	assertions.expect_float(99.78, state.current_hp, "same-tick records cannot stack damage")
 	state.combat_tick = 7530
 	simulation._apply_raw_player_damage(0.22)
@@ -484,11 +482,15 @@ func _test_push_and_pause(assertions: Variant) -> void:
 			1.0,
 			0,
 		)
-		target.contact_elapsed_ticks = float(target.definition.contact_interval_ticks)
 		targets.append(target)
 	var target_start := Vector2(0.3, 0.0)
 	state.combat_tick = 1
-	system.advance_snapshot(system.snapshot_ids(), target_start, 1)
+	var swarm_sweeps: Array[Dictionary] = [
+		system._move_enemy(event_a, target_start, 1.0),
+		system._move_enemy(event_b, target_start, 1.0),
+		system._move_enemy(event_c, target_start, 1.0),
+	]
+	system._apply_swarm_pushes(system.snapshot_ids(), swarm_sweeps)
 	for target: EnemyEntity in targets:
 		assertions.expect_float(
 			event_step,
@@ -498,7 +500,7 @@ func _test_push_and_pause(assertions: Variant) -> void:
 	assertions.expect_float(event_step, event_a.position.x, "first event member advances normally")
 	assertions.expect_float(event_step, event_b.position.x, "overlapping same-group member advances normally")
 	assertions.expect_float(event_step, event_c.position.x, "overlapping second-group member advances normally")
-	var pushed_damage: Array[Dictionary] = system.resolve_ready_enemy_damage_actions(
+	var pushed_damage: Array[Dictionary] = system.resolve_contact_damage_candidates(
 		system.snapshot_ids(),
 		targets[0].position,
 		1,
@@ -519,7 +521,7 @@ func _test_push_and_pause(assertions: Variant) -> void:
 		1.0,
 		0,
 	)
-	_spawn_swarm_member(
+	var boundary_event: EnemyEntity = _spawn_swarm_member(
 		boundary_system,
 		boundary_state,
 		catalog,
@@ -528,10 +530,12 @@ func _test_push_and_pause(assertions: Variant) -> void:
 		1,
 	)
 	boundary_state.combat_tick = 1
-	boundary_system.advance_snapshot(
+	var boundary_sweeps: Array[Dictionary] = [
+		boundary_system._move_enemy(boundary_event, boundary_target.position, 1.0),
+	]
+	boundary_system._apply_swarm_pushes(
 		boundary_system.snapshot_ids(),
-		boundary_target.position,
-		1,
+		boundary_sweeps,
 	)
 	assertions.expect_float(center_limit, boundary_target.position.x, "pushed enemy remains inside its arena radius")
 
@@ -614,7 +618,6 @@ func _spawn_swarm_member(
 		0,
 	)
 	enemy.configure_swarm_event(group_id, direction, 10.0, false)
-	enemy.contact_elapsed_ticks = float(unit.contact_interval_ticks)
 	return enemy
 
 
@@ -628,5 +631,5 @@ func _active_swarm_count(system: EnemySystem) -> int:
 
 func _catalog(assertions: Variant) -> DefinitionCatalog:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "revision twelve catalog validates: %s" % catalog.error_text)
+	assertions.expect_true(catalog.load_and_validate(), "revision thirteen catalog validates: %s" % catalog.error_text)
 	return catalog if catalog.is_valid else null

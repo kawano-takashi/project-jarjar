@@ -20,7 +20,6 @@ var damage_multiplier: float = 1.0
 var born_tick: int = 0
 var spawn_tick: int = 0
 var activation_tick: int = 0
-var contact_elapsed_ticks: float = 0.0
 var special_elapsed_ticks: float = 0.0
 var telegraph_elapsed_ticks: float = 0.0
 var telegraph_active: bool = false
@@ -106,7 +105,6 @@ func activate(
 	born_tick = p_spawn_tick
 	spawn_tick = p_spawn_tick
 	activation_tick = p_spawn_tick + maxi(0, p_entry_ticks)
-	contact_elapsed_ticks = 0.0
 	special_elapsed_ticks = 0.0
 	telegraph_elapsed_ticks = 0.0
 	telegraph_active = false
@@ -156,7 +154,6 @@ func deactivate() -> void:
 	born_tick = 0
 	spawn_tick = 0
 	activation_tick = 0
-	contact_elapsed_ticks = 0.0
 	special_elapsed_ticks = 0.0
 	telegraph_elapsed_ticks = 0.0
 	telegraph_active = false

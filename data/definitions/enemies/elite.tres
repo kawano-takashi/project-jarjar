@@ -10,7 +10,6 @@ enemy_type = 4
 base_hp = 650.0
 move_speed = 1.62
 body_radius = 0.82
-contact_interval_ticks = 45
 contact_damage = 18.0
 special_interval_ticks = 0
 telegraph_ticks = 0

@@ -8,7 +8,6 @@ extends Resource
 @export var base_hp: float = 0.0
 @export var move_speed: float = 0.0
 @export var body_radius: float = 0.0
-@export var contact_interval_ticks: int = 0
 @export var contact_damage: float = 0.0
 @export var preferred_distance_min: float = 0.0
 @export var preferred_distance_max: float = 0.0

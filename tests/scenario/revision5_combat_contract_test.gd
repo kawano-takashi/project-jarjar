@@ -117,7 +117,6 @@ func _test_boss_transition_absorption(assertions: Variant) -> void:
 	var contact_enemy_id: int = contact_enemy.entity_id
 	var shooter_id: int = shooter.entity_id
 	var elite_id: int = elite.entity_id
-	contact_enemy.contact_elapsed_ticks = float(contact_enemy.definition.contact_interval_ticks)
 	shooter.special_elapsed_ticks = float(shooter.definition.special_interval_ticks)
 	_spawn_hostile_projectile(simulation, contact_enemy_id, &"enemy_projectile")
 	_spawn_hostile_projectile(simulation, -1, &"boss_projectile")
@@ -384,8 +383,7 @@ func _test_shooter_contact_contract(assertions: Variant) -> void:
 		"SHOOTER remains in the revision twelve wave table from segment four onward",
 	)
 	assertions.expect_true(
-		shooter_definition.contact_interval_ticks > 0
-		and shooter_definition.contact_damage > 0.0,
+		shooter_definition.contact_damage > 0.0,
 		"SHOOTER is a contact-damage enemy",
 	)
 	assertions.expect_float(0.0, shooter_definition.preferred_distance_min, "SHOOTER no longer keeps a ranged minimum distance")
@@ -462,9 +460,8 @@ func _test_shooter_contact_contract(assertions: Variant) -> void:
 			"production ELITE action path creates zero projectiles",
 		)
 	shooter.position = simulation.player_position
-	shooter.contact_elapsed_ticks = float(shooter.definition.contact_interval_ticks)
 	var contact_records: Array[Dictionary] = (
-		simulation.enemy_system.resolve_ready_enemy_damage_actions(
+		simulation.enemy_system.resolve_contact_damage_candidates(
 			shooter_ids,
 			simulation.player_position,
 			simulation.state.combat_tick,
