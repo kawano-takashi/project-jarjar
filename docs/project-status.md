@@ -1,11 +1,11 @@
 # Project JARJAR 現在の状態
 
 - 更新日: 2026-09-02 (JST)
-- 状態: **Survivors型全面再設計 revision 5 source gate PASS・報酬種別表示反映・正式candidate未固定**
-- playable baseline: 未固定（revision 5 作業ツリー）
-- balance revision: `5`（source調整完了）
+- 状態: **revision 6 単一強化項目化を実装・source再調整待ち・正式candidate未固定**
+- playable baseline: 未固定（revision 6 作業ツリー）
+- balance revision: `6`（基本武器の成長表を変更、source gate未実施）
 - 正式playtest target: 未固定
-- 自動調整記録: `artifacts/balance/revision-5/`（2026-09-02、専用12run source gate PASS）
+- 現revisionの自動調整記録: なし（revision 5の記録は履歴専用）
 
 ## 現在地
 
@@ -15,7 +15,7 @@
 着脱装備、倉庫、合成、装備スコアは互換層を設けず削除済みである。
 
 新しいランでは追尾核Lv1から開始し、敵の経験値結晶でレベルアップする。戦闘を停止した3択から
-武器5枠・パッシブ5枠を育てる。各候補は名前、レベル、`種別：武器`または`種別：パッシブ`、説明、
+武器5枠・パッシブ5枠を育てる。未所持候補は名前、レベル、`種別：武器`または`種別：パッシブ`、概要説明、
 進化情報の順に表示する。所持枠が埋まる前は通常weight抽選より先に所持品優先抽選を2回試行する。
 各試行の成功確率は `p = clamp(1 + 0.3 × x - 1 / totalLuck, 0, 1)`、`x`はoffer発生時のlevelが偶数なら2、奇数なら1とし、
 成功時は未最大の所持品から一様抽選する。2回目が1回目と重複した場合は代替を再抽選せず、その枠を
@@ -28,7 +28,34 @@
 被弾後は30 combat tick（0.5秒）の連続被弾防止とする。これとは別に、レベルアップや宝箱の自動モーダル列がすべて
 終了した後だけ45 combat tick（0.75秒）の復帰保護を与える。列の中間や手動ポーズ復帰ではこの45 tickを付与しない。
 
-## revision 5実装と最終調整値
+## revision 6 単一強化項目契約
+
+基本武器はLv2〜Lv8の各レベルで、定義上の直接プロパティを必ず1項目だけ変更する。弾数や軌道体数などの個数増加は
+常に`+1`であり、`+2`以上の増加を設けない。変更した1項目からDPS、外縁、稼働率などが派生して変わることは許容する。
+進化武器は最大Lv1のまま対象外とし、パッシブの既存量・上限は変更しない。
+
+各セルはそのレベル到達後の基礎値である。クールダウンと持続は秒、距離と半径はmで表示する。
+
+| weapon | Lv2 | Lv3 | Lv4 | Lv5 | Lv6 | Lv7 | Lv8 |
+|---|---|---|---|---|---|---|---|
+| `resonance_wave` | 波数3 | 威力18 | 薙ぎ範囲3.4m | 波数4 | 威力27 | 発動間隔1.03秒 | 波数5 |
+| `homing_core` | 弾数2 | 威力26.5 | 弾数3 | 発動間隔0.8秒 | 弾数4 | 威力34.65 | 弾数5 |
+| `directional_needle` | 弾数2 | 発動間隔0.5秒 | 弾数3 | 貫通数11 | 弾数4 | 発動間隔0.4秒 | 弾数5 |
+| `arc_crystal` | 威力23 | 爆発半径2m | 結晶数2 | 発動間隔1.42秒 | 威力32 | 結晶数3 | 爆発半径2.5m |
+| `returning_ring` | 威力27 | 貫通数4 | 環数2 | 発動間隔1.1秒 | 威力41.7 | 環数3 | 貫通数6 |
+| `orbital_array` | 軌道体数2 | 威力25.5 | 軌道体数3 | 周回半径2.5m | 軌道体数4 | 再展開間隔1.67秒 | 軌道体数5 |
+| `mass_projectile` | 威力95 | 弾サイズ1.4m | 貫通数3 | 威力150 | 弾数2 | 発動間隔2秒 | 弾数3 |
+| `zero_field` | 威力10 | 効果半径2.5m | 発動間隔0.37秒 | 威力16.5 | 効果半径2.9m | 威力23 | 効果半径3.4m |
+
+所持済み候補と通常強化の宝箱結果には、パッシブ補正前の基礎値を使った当該レベルの差分だけを表示する。
+未所持候補は従来どおり概要説明を表示する。カタログ読込時と回帰テストで、各基本武器の各レベルについて
+変更項目数がちょうど1であること、および個数増加が`+1`であることを検証する。
+
+この武器成長表の変更により、revision 5の専用12run source gate、回帰、QA、build identityはrevision 6の証拠として無効である。
+敵、XP、segment、boss、候補抽選、進化条件の値はrevision 5から変更していないが、武器性能が変わったため、再調整は別作業で行う。
+実装後の全GDScript回帰は114/114 PASS、GDScript guardは98ファイルPASS、変更GDScriptのcheck-onlyは15/15 PASSである。
+
+## revision 5実装と最終調整値（履歴・revision 6へ流用禁止）
 
 revision 5の画面内戦闘契約は次のとおりである。
 
@@ -54,7 +81,7 @@ revision 5の画面内戦闘契約は次のとおりである。
 | hp_multiplier | 0.15 | 0.17 | 0.20 | 0.24 | 0.30 | 0.45 | 0.65 | 0.90 | 1.25 | 1.75 |
 | damage_multiplier | 0.18 | 0.20 | 0.22 | 0.25 | 0.29 | 0.36 | 0.45 | 0.56 | 0.72 | 0.95 |
 
-## revision 5 source gate結果
+## revision 5 source gate結果（履歴・revision 6へ流用禁止）
 
 2026-09-02にseed `17`、`29`、`43`、`61`をcautious、normal、evolutionの各方針で実行する、
 専用の決定的12run source gateを完走し、`passed=true`でPASSした。
@@ -82,7 +109,7 @@ GDScript guard 97ファイル、今回変更したGDScript 2/2のcheck-only、`g
 このsource gateは自動調整完了の証拠であり、人間playtestの参加・回答・計測値や
 正式candidateのidentity、正式性能試験、Release検証を代替しない。
 
-revision 5への変更により、revision 4のcandidate、調整成果物、回帰、QA、build identityは現候補の証拠として無効であり、
+revision 6への変更により、revision 5以前のcandidate、調整成果物、回帰、QA、build identityは現候補の証拠として無効であり、
 履歴としてのみ保持する。現時点で正式candidateは未固定である。Full HD性能試験、Release export、Verify、ManualQa、
 人間playtestはすべて未実施であり、ユーザーが最終調整完了を明示するまで実行してはならない。
 
@@ -126,17 +153,18 @@ revision 4の専用12run PASSも正式candidateのidentityや正式検証結果�
 
 ## 次の作業
 
-1. revision 5のsource調整済み作業ツリーを保持し、ユーザーによる武器演出、敵圧、XPペース、文言その他の最終確認を待つ。
-2. ユーザーが最終調整完了を明示した後だけ、全回帰、GDScript検査、Full HD性能試験、
+1. 別作業でrevision 6の武器性能に合わせたsource再調整と専用12run source gateを実施する。
+2. source gate通過後、ユーザーによる武器演出、敵圧、XPペース、文言その他の最終確認を待つ。
+3. ユーザーが最終調整完了を明示した後だけ、全回帰、GDScript検査、Full HD性能試験、
    Release export、pack audit、smoke、Verify、ManualQaを実施する。
-3. 新identity用の `docs/final-qa.md` に手動QAと自動検証結果を人間が記録する。
-4. 手動QA合格後、新しい候補HEAD、EXE/PCK SHA-256、balance revisionを `artifacts/playtest/target.txt` へ手動で固定する。
-5. その後だけ `docs/playtest-protocol.md` を有効化し、未経験者5人以上が各3runを実施する。
+4. 新identity用の `docs/final-qa.md` に手動QAと自動検証結果を人間が記録する。
+5. 手動QA合格後、新しい候補HEAD、EXE/PCK SHA-256、balance revisionを `artifacts/playtest/target.txt` へ手動で固定する。
+6. その後だけ `docs/playtest-protocol.md` を有効化し、未経験者5人以上が各3runを実施する。
 
 候補HEAD、EXE、PCK、balance revisionのいずれかが変わった場合、旧対象、旧QA、旧playtestデータを流用しない。
 人間の参加、回答、計測値をエージェントが生成または補完してはならない。
 
 ## 正式受入後の棚卸し
 
-5人以上×3run完了までは、revision 5の回帰テスト、Debug QA、性能試験、Release検証、
+5人以上×3run完了までは、revision 6の回帰テスト、Debug QA、性能試験、Release検証、
 GDScript guard、比較用buildを保持する。正式受入後に再棚卸しし、配布・保守に不要な資材を削除する。

@@ -1,10 +1,17 @@
 extends RefCounted
 
 
+const UPGRADE_DESCRIPTION_FORMATTER: Script = preload(
+	"res://src/progression/upgrade_description_formatter.gd"
+)
+
+
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
 		"survival_all_content_fixed_contract",
-		"survival_close_range_outer_edges_are_linear",
+		"survival_weapon_level_deltas_are_single_and_fixed",
+		"survival_close_range_outer_edges_match_endpoints",
+		"survival_validator_rejects_weapon_level_delta_drift",
 		"survival_xp_formula_growth_and_queue",
 		"survival_capacity_level_sixty_five_and_growth_application",
 		"survival_growth_boundaries_apply_per_level_segment",
@@ -35,8 +42,12 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 	match test_name:
 		"survival_all_content_fixed_contract":
 			_test_all_content_fixed_contract(assertions)
-		"survival_close_range_outer_edges_are_linear":
+		"survival_weapon_level_deltas_are_single_and_fixed":
+			_test_weapon_level_deltas(assertions)
+		"survival_close_range_outer_edges_match_endpoints":
 			_test_close_range_outer_edges(assertions)
+		"survival_validator_rejects_weapon_level_delta_drift":
+			_test_validator_rejects_weapon_level_delta_drift(assertions)
 		"survival_xp_formula_growth_and_queue":
 			_test_xp(assertions)
 		"survival_capacity_level_sixty_five_and_growth_application":
@@ -127,7 +138,7 @@ func _test_all_content_fixed_contract(assertions: Variant) -> void:
 	assertions.expect_float(0.3, catalog.manifest().owned_offer_luck_coefficient, "owned offer luck coefficient")
 	assertions.expect_equal(90, catalog.manifest().xp_yield_percent, "revision five tuned XP yield supports the denser arena")
 	assertions.expect_float(
-		0.55,
+		0.40,
 		catalog.manifest().normal_enemy_damage_scale,
 		"revision five keeps dense contact pressure survivable",
 	)
@@ -136,12 +147,17 @@ func _test_all_content_fixed_contract(assertions: Variant) -> void:
 		catalog.enemy_for_type(GameTypes.EnemyType.ELITE).xp_value,
 		"calibrated elite XP supports the intended evolution pacing",
 	)
-	var expected_segment_targets: Array[int] = [16, 24, 36, 52, 72, 96, 120, 144, 168, 192]
+	assertions.expect_float(
+		650.0,
+		catalog.enemy_for_type(GameTypes.EnemyType.ELITE).base_hp,
+		"revision seven locks the calibrated elite HP",
+	)
+	var expected_segment_targets: Array[int] = [16, 46, 32, 68, 49, 140, 92, 132, 97, 176]
 	var expected_segment_hp: Array[float] = [
-		0.15, 0.17, 0.20, 0.24, 0.30, 0.45, 0.65, 0.90, 1.25, 1.75,
+		0.15, 0.215, 1.325, 0.24, 0.74, 0.35, 1.85, 0.78, 1.75, 1.40,
 	]
 	var expected_segment_damage: Array[float] = [
-		0.18, 0.20, 0.22, 0.25, 0.29, 0.36, 0.45, 0.56, 0.72, 0.95,
+		0.18, 0.20, 0.22, 0.25, 0.29, 0.34, 0.42, 0.50, 0.64, 1.50,
 	]
 	for segment_index: int in range(10):
 		var segment: EnemySegmentDefinition = catalog.segment(segment_index)
@@ -161,19 +177,19 @@ func _test_all_content_fixed_contract(assertions: Variant) -> void:
 			"segment %d calibrated contact pressure" % (segment_index + 1),
 		)
 	var expected_weapon_ranges: Dictionary = {
-		&"resonance_wave": PackedFloat32Array([2.2, 2.3714286, 2.5428571, 2.7142857, 2.8857143, 3.0571429, 3.2285714, 3.4]),
+		&"resonance_wave": PackedFloat32Array([2.2, 2.2, 2.2, 3.4, 3.4, 3.4, 3.4, 3.4]),
 		&"vital_resonance": PackedFloat32Array([4.4]),
-		&"homing_core": PackedFloat32Array([5.5, 5.5, 6.0, 6.0, 6.5, 6.5, 7.0, 7.5]),
+		&"homing_core": PackedFloat32Array([5.5, 5.5, 5.5, 5.5, 5.5, 5.5, 5.5, 5.5]),
 		&"infinite_homing": PackedFloat32Array([8.0]),
-		&"directional_needle": PackedFloat32Array([6.0, 6.0, 6.5, 6.5, 7.0, 7.0, 7.5, 8.0]),
+		&"directional_needle": PackedFloat32Array([6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0]),
 		&"infinite_needles": PackedFloat32Array([8.0]),
-		&"arc_crystal": PackedFloat32Array([4.5, 4.5, 4.75, 4.75, 5.0, 5.0, 5.25, 5.25]),
+		&"arc_crystal": PackedFloat32Array([4.5, 4.5, 4.5, 4.5, 4.5, 4.5, 4.5, 4.5]),
 		&"spiral_crystal": PackedFloat32Array([8.0]),
-		&"returning_ring": PackedFloat32Array([5.5, 5.5, 6.0, 6.0, 6.5, 6.5, 7.0, 7.5]),
+		&"returning_ring": PackedFloat32Array([5.5, 5.5, 5.5, 5.5, 5.5, 5.5, 5.5, 5.5]),
 		&"critical_ring": PackedFloat32Array([8.0]),
-		&"orbital_array": PackedFloat32Array([1.5, 1.6428571, 1.7857143, 1.9285714, 2.0714286, 2.2142857, 2.3571429, 2.5]),
+		&"orbital_array": PackedFloat32Array([1.5, 1.5, 1.5, 1.5, 2.5, 2.5, 2.5, 2.5]),
 		&"eternal_orbit": PackedFloat32Array([3.3]),
-		&"mass_projectile": PackedFloat32Array([5.0, 5.0, 5.5, 5.5, 6.0, 6.0, 6.5, 6.75]),
+		&"mass_projectile": PackedFloat32Array([5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0]),
 		&"collapse_projectile": PackedFloat32Array([5.5]),
 		&"zero_field": PackedFloat32Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
 		&"absorption_field": PackedFloat32Array([0.0]),
@@ -182,15 +198,15 @@ func _test_all_content_fixed_contract(assertions: Variant) -> void:
 		assertions.expect_equal(
 			expected_weapon_ranges[weapon_id],
 			catalog.weapon(weapon_id).range_by_level,
-			"%s revision five range table" % weapon_id,
+			"%s revision six single-stat range table" % weapon_id,
 		)
 	assertions.expect_equal(
-		PackedFloat32Array([0.22, 0.22, 0.24, 0.24, 0.26, 0.26, 0.28, 0.3]),
+		PackedFloat32Array([0.22, 0.22, 0.22, 0.22, 0.22, 0.22, 0.22, 0.22]),
 		catalog.weapon(&"arc_crystal").projectile_radius_by_level,
 		"base arc uses a compact physical projectile radius",
 	)
 	assertions.expect_equal(
-		PackedFloat32Array([1.5, 1.7, 1.7, 1.9, 1.9, 2.1, 2.3, 2.5]),
+		PackedFloat32Array([1.5, 1.5, 2.0, 2.0, 2.0, 2.0, 2.0, 2.5]),
 		catalog.weapon(&"arc_crystal").effect_radius_by_level,
 		"base arc stores its explosion radius explicitly",
 	)
@@ -242,50 +258,231 @@ func _test_all_content_fixed_contract(assertions: Variant) -> void:
 		assertions.expect_equal(evolved_id, evolution.evolved_weapon_id, "%s evolution target" % base_id)
 
 
+func _test_weapon_level_deltas(assertions: Variant) -> void:
+	var catalog: DefinitionCatalog = _catalog(assertions)
+	var expected_details: Dictionary = {
+		&"resonance_wave": PackedStringArray([
+			"波数 2 → 3",
+			"威力 9 → 18",
+			"薙ぎ範囲 2.2m → 3.4m",
+			"波数 3 → 4",
+			"威力 18 → 27",
+			"発動間隔 1.3秒 → 1.03秒",
+			"波数 4 → 5",
+		]),
+		&"homing_core": PackedStringArray([
+			"弾数 1 → 2",
+			"威力 18.5 → 26.5",
+			"弾数 2 → 3",
+			"発動間隔 1.2秒 → 0.8秒",
+			"弾数 3 → 4",
+			"威力 26.5 → 34.65",
+			"弾数 4 → 5",
+		]),
+		&"directional_needle": PackedStringArray([
+			"弾数 1 → 2",
+			"発動間隔 0.6秒 → 0.5秒",
+			"弾数 2 → 3",
+			"貫通数 7 → 11",
+			"弾数 3 → 4",
+			"発動間隔 0.5秒 → 0.4秒",
+			"弾数 4 → 5",
+		]),
+		&"arc_crystal": PackedStringArray([
+			"威力 14 → 23",
+			"爆発半径 1.5m → 2m",
+			"結晶数 1 → 2",
+			"発動間隔 1.83秒 → 1.42秒",
+			"威力 23 → 32",
+			"結晶数 2 → 3",
+			"爆発半径 2m → 2.5m",
+		]),
+		&"returning_ring": PackedStringArray([
+			"威力 12.75 → 27",
+			"貫通数 2 → 4",
+			"環数 1 → 2",
+			"発動間隔 1.5秒 → 1.1秒",
+			"威力 27 → 41.7",
+			"環数 2 → 3",
+			"貫通数 4 → 6",
+		]),
+		&"orbital_array": PackedStringArray([
+			"軌道体数 1 → 2",
+			"威力 16.9 → 25.5",
+			"軌道体数 2 → 3",
+			"周回半径 1.5m → 2.5m",
+			"軌道体数 3 → 4",
+			"再展開間隔 4秒 → 1.67秒",
+			"軌道体数 4 → 5",
+		]),
+		&"mass_projectile": PackedStringArray([
+			"威力 41.25 → 95",
+			"弾サイズ 0.8m → 1.4m",
+			"貫通数 0 → 3",
+			"威力 95 → 150",
+			"弾数 1 → 2",
+			"発動間隔 3秒 → 2秒",
+			"弾数 2 → 3",
+		]),
+		&"zero_field": PackedStringArray([
+			"威力 3.2 → 10",
+			"効果半径 2m → 2.5m",
+			"発動間隔 0.5秒 → 0.37秒",
+			"威力 10 → 16.5",
+			"効果半径 2.5m → 2.9m",
+			"威力 16.5 → 23",
+			"効果半径 2.9m → 3.4m",
+		]),
+	}
+	for weapon_id: StringName in expected_details:
+		var definition: WeaponDefinition = catalog.weapon(weapon_id)
+		var expected: PackedStringArray = expected_details[weapon_id]
+		for next_level: int in range(2, definition.max_level + 1):
+			var deltas: Array[WeaponDefinition.WeaponLevelDelta] = definition.level_deltas(next_level)
+			assertions.expect_equal(
+				1,
+				deltas.size(),
+				"%s Lv%d changes exactly one direct stat" % [weapon_id, next_level],
+			)
+			if deltas.size() != 1:
+				continue
+			var delta: WeaponDefinition.WeaponLevelDelta = deltas[0]
+			if delta.stat_id == WeaponDefinition.STAT_AMOUNT:
+				assertions.expect_float(
+					1.0,
+					delta.new_value - delta.previous_value,
+					"%s Lv%d amount increases by one" % [weapon_id, next_level],
+				)
+			assertions.expect_equal(
+				expected[next_level - 2],
+				UPGRADE_DESCRIPTION_FORMATTER.weapon_detail(definition, next_level),
+				"%s Lv%d exposes the approved base-value delta" % [weapon_id, next_level],
+			)
+	var expected_passive_details: Dictionary = {
+		&"life_lattice": "最大HP +20% → +40%",
+		&"cycle_crystal": "クールダウン -8% → -16%",
+		&"speed_gate": "弾速 +10% → +20%",
+		&"scale_lens": "攻撃範囲 +10% → +20%",
+		&"probability_core": "Luck +10% → +20%",
+		&"duration_ring": "持続時間 +10% → +20%",
+		&"amplifier_core": "威力 +10% → +20%",
+		&"repair_core": "HP回復 +0.2/秒 → +0.4/秒",
+	}
+	for passive_id: StringName in expected_passive_details:
+		assertions.expect_equal(
+			expected_passive_details[passive_id],
+			UPGRADE_DESCRIPTION_FORMATTER.passive_detail(
+				catalog.passive(passive_id),
+				1,
+				2,
+			),
+			"%s exposes one cumulative passive-stat delta" % passive_id,
+		)
+
+
 func _test_close_range_outer_edges(assertions: Variant) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
-	var lineages: Array[StringName] = [
-		&"resonance_wave",
-		&"orbital_array",
-		&"zero_field",
-	]
-	for lineage_id: StringName in lineages:
+	var expected_edges: Dictionary = {
+		&"resonance_wave": Vector2(2.2, 3.4),
+		&"orbital_array": Vector2(2.07, 3.07),
+		&"zero_field": Vector2(2.0, 3.4),
+	}
+	for lineage_id: StringName in expected_edges:
 		var definition: WeaponDefinition = catalog.weapon(lineage_id)
 		var evolution: EvolutionDefinition = catalog.evolution_for_weapon(lineage_id)
 		var evolved: WeaponDefinition = catalog.weapon(evolution.evolved_weapon_id)
 		var level_one_edge: float = _effective_outer_edge(definition, 1)
 		var level_eight_edge: float = _effective_outer_edge(definition, 8)
 		var evolved_edge: float = _effective_outer_edge(evolved, 1)
-		assertions.expect_true(
-			level_one_edge >= 1.8 and level_one_edge <= 2.4,
-			"%s Lv1 outer edge is 1.8..2.4m" % lineage_id,
+		var endpoints: Vector2 = expected_edges[lineage_id]
+		assertions.expect_float(
+			endpoints.x,
+			level_one_edge,
+			"%s Lv1 outer edge remains approved" % lineage_id,
 		)
-		assertions.expect_true(
-			level_eight_edge >= 3.2 and level_eight_edge <= 3.8,
-			"%s Lv8 outer edge is 3.2..3.8m" % lineage_id,
+		assertions.expect_float(
+			endpoints.y,
+			level_eight_edge,
+			"%s Lv8 outer edge matches the single-stat table" % lineage_id,
 		)
 		assertions.expect_true(
 			evolved_edge >= 4.2 and evolved_edge <= 4.8,
 			"%s evolved outer edge is 4.2..4.8m" % lineage_id,
 		)
-		var previous_edge: float = level_one_edge
-		for level: int in range(2, 9):
-			var actual_edge: float = _effective_outer_edge(definition, level)
-			var expected_edge: float = lerpf(
-				level_one_edge,
-				level_eight_edge,
-				float(level - 1) / 7.0,
-			)
-			assertions.expect_true(
-				actual_edge > previous_edge,
-				"%s effective edge grows at level %d" % [lineage_id, level],
-			)
-			assertions.expect_float(
-				expected_edge,
-				actual_edge,
-				"%s effective edge linearly interpolates at level %d" % [lineage_id, level],
-			)
-			previous_edge = actual_edge
+
+
+func _test_validator_rejects_weapon_level_delta_drift(assertions: Variant) -> void:
+	var loaded: Resource = ResourceLoader.load(DefinitionCatalog.MANIFEST_PATH)
+	var manifest: SurvivalContentManifest = loaded.duplicate(true) as SurvivalContentManifest
+	var weapon_definitions: Array[WeaponDefinition] = []
+	weapon_definitions.assign(manifest.weapons)
+	var resonance_index: int = -1
+	for index: int in range(weapon_definitions.size()):
+		if weapon_definitions[index].weapon_id == &"resonance_wave":
+			resonance_index = index
+			break
+	assertions.expect_true(resonance_index >= 0, "validator fixture finds resonance wave")
+	if resonance_index < 0:
+		return
+
+	var zero_delta_manifest: SurvivalContentManifest = manifest.duplicate(true) as SurvivalContentManifest
+	var zero_delta_weapons: Array[WeaponDefinition] = []
+	zero_delta_weapons.assign(zero_delta_manifest.weapons)
+	var zero_delta_weapon: WeaponDefinition = zero_delta_weapons[resonance_index].duplicate(true) as WeaponDefinition
+	var zero_delta_amounts: PackedInt32Array = zero_delta_weapon.amount_by_level.duplicate()
+	zero_delta_amounts[1] = zero_delta_amounts[0]
+	zero_delta_weapon.amount_by_level = zero_delta_amounts
+	zero_delta_weapons[resonance_index] = zero_delta_weapon
+	zero_delta_manifest.weapons = zero_delta_weapons
+	var zero_delta_catalog := DefinitionCatalog.new()
+	assertions.expect_false(
+		zero_delta_catalog.validate_manifest(zero_delta_manifest),
+		"validator rejects a base weapon level with no changed stat",
+	)
+	assertions.expect_true(
+		zero_delta_catalog.error_text.contains("resonance_wave level 2 changed 0"),
+		"zero-delta rejection identifies the weapon and level",
+	)
+
+	var multi_delta_manifest: SurvivalContentManifest = manifest.duplicate(true) as SurvivalContentManifest
+	var multi_delta_weapons: Array[WeaponDefinition] = []
+	multi_delta_weapons.assign(multi_delta_manifest.weapons)
+	var multi_delta_weapon: WeaponDefinition = multi_delta_weapons[resonance_index].duplicate(true) as WeaponDefinition
+	var multi_delta_damage: PackedFloat32Array = multi_delta_weapon.damage_by_level.duplicate()
+	multi_delta_damage[1] = multi_delta_damage[0] + 1.0
+	multi_delta_weapon.damage_by_level = multi_delta_damage
+	multi_delta_weapons[resonance_index] = multi_delta_weapon
+	multi_delta_manifest.weapons = multi_delta_weapons
+	var multi_delta_catalog := DefinitionCatalog.new()
+	assertions.expect_false(
+		multi_delta_catalog.validate_manifest(multi_delta_manifest),
+		"validator rejects a base weapon level with multiple changed stats",
+	)
+	assertions.expect_true(
+		multi_delta_catalog.error_text.contains("resonance_wave level 2 changed 2"),
+		"multi-delta rejection identifies the weapon and level",
+	)
+
+	var plus_two_manifest: SurvivalContentManifest = manifest.duplicate(true) as SurvivalContentManifest
+	var plus_two_weapons: Array[WeaponDefinition] = []
+	plus_two_weapons.assign(plus_two_manifest.weapons)
+	var plus_two_weapon: WeaponDefinition = plus_two_weapons[resonance_index].duplicate(true) as WeaponDefinition
+	var plus_two_amounts: PackedInt32Array = plus_two_weapon.amount_by_level.duplicate()
+	plus_two_amounts[1] = plus_two_amounts[0] + 2
+	plus_two_weapon.amount_by_level = plus_two_amounts
+	plus_two_weapons[resonance_index] = plus_two_weapon
+	plus_two_manifest.weapons = plus_two_weapons
+	var plus_two_catalog := DefinitionCatalog.new()
+	assertions.expect_false(
+		plus_two_catalog.validate_manifest(plus_two_manifest),
+		"validator rejects a base weapon amount increase greater than one",
+	)
+	assertions.expect_true(
+		plus_two_catalog.error_text.contains(
+			"base weapon amount level delta must be +1: resonance_wave level 2 changed 2 to 4"
+		),
+		"amount-delta rejection identifies the weapon, level, and values",
+	)
 
 
 func _effective_outer_edge(definition: WeaponDefinition, level: int) -> float:
@@ -519,11 +716,11 @@ func _test_xp_yield_fraction_and_growth_order(assertions: Variant) -> void:
 func _test_boss_enrage_validation(assertions: Variant) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	var canonical: SurvivalContentManifest = catalog.manifest()
-	assertions.expect_float(0.5625, canonical.boss_hp_multiplier, "calibrated boss HP matches the twelve-run gate")
-	assertions.expect_float(0.57, canonical.boss_damage_multiplier, "calibrated boss damage matches the twelve-run gate")
-	assertions.expect_float(1.0, canonical.boss_action_rate_multiplier, "canonical boss action rate starts neutral")
+	assertions.expect_float(1.6875, canonical.boss_hp_multiplier, "revision seven boss HP matches the source gate")
+	assertions.expect_float(0.114, canonical.boss_damage_multiplier, "calibrated boss damage matches the twelve-run gate")
+	assertions.expect_float(1.1, canonical.boss_action_rate_multiplier, "canonical boss action rate sustains the intended fight length")
 	assertions.expect_float(
-		0.55,
+		0.40,
 		canonical.normal_enemy_damage_scale,
 		"canonical contact-only enemies use the common damage lever",
 	)
@@ -541,10 +738,10 @@ func _test_boss_enrage_validation(assertions: Variant) -> void:
 	)
 	var lower_bound: SurvivalContentManifest = canonical.duplicate(true) as SurvivalContentManifest
 	lower_bound.boss_hp_multiplier = SurvivalContentManifest.DEFAULT_BOSS_HP_MULTIPLIER * 0.25
-	lower_bound.boss_damage_multiplier = SurvivalContentManifest.DEFAULT_BOSS_DAMAGE_MULTIPLIER * 0.25
-	lower_bound.boss_action_rate_multiplier = SurvivalContentManifest.DEFAULT_BOSS_ACTION_RATE_MULTIPLIER * 0.25
+	lower_bound.boss_damage_multiplier = SurvivalContentManifest.DEFAULT_BOSS_DAMAGE_MULTIPLIER * 0.20
+	lower_bound.boss_action_rate_multiplier = SurvivalContentManifest.DEFAULT_BOSS_ACTION_RATE_MULTIPLIER * 0.20
 	var lower_bound_catalog := DefinitionCatalog.new()
-	assertions.expect_true(lower_bound_catalog.validate_manifest(lower_bound), "validator accepts the extended boss -75 percent bound")
+	assertions.expect_true(lower_bound_catalog.validate_manifest(lower_bound), "validator accepts the extended boss -80 percent bound")
 	var hp_lower_bound: SurvivalContentManifest = canonical.duplicate(true) as SurvivalContentManifest
 	hp_lower_bound.boss_hp_multiplier = (
 		SurvivalContentManifest.DEFAULT_BOSS_HP_MULTIPLIER * 0.15
@@ -648,79 +845,29 @@ func _test_nonboss_ranged_validation(assertions: Variant) -> void:
 func _test_segment_tuning_contract(assertions: Variant) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	var canonical: SurvivalContentManifest = catalog.manifest()
-	var relaxed: SurvivalContentManifest = canonical.duplicate(true) as SurvivalContentManifest
-	var relaxed_segments: Array[EnemySegmentDefinition] = []
-	relaxed_segments.assign(canonical.segments)
-	var relaxed_first: EnemySegmentDefinition = canonical.segments[0].duplicate(true) as EnemySegmentDefinition
-	relaxed_first.damage_multiplier = DefinitionCatalog.BASELINE_DAMAGE_MULTIPLIERS[0] * 0.15
-	relaxed_first.hp_multiplier = DefinitionCatalog.BASELINE_HP_MULTIPLIERS[0] * 0.10
-	relaxed_first.target_active = roundi(float(DefinitionCatalog.EXPECTED_TARGETS[0]) * 0.10)
-	relaxed_segments[0] = relaxed_first
-	relaxed.segments = relaxed_segments
-	var relaxed_catalog := DefinitionCatalog.new()
-	assertions.expect_true(relaxed_catalog.validate_manifest(relaxed), "road pressure accepts the extended -90-percent bound")
-
-	var late_boost: SurvivalContentManifest = canonical.duplicate(true) as SurvivalContentManifest
-	var boosted_segments: Array[EnemySegmentDefinition] = []
-	boosted_segments.assign(canonical.segments)
-	var boosted_seventh: EnemySegmentDefinition = canonical.segments[6].duplicate(true) as EnemySegmentDefinition
-	boosted_seventh.damage_multiplier = DefinitionCatalog.BASELINE_DAMAGE_MULTIPLIERS[6] * 1.10
-	boosted_seventh.hp_multiplier = DefinitionCatalog.BASELINE_HP_MULTIPLIERS[6] * 1.05
-	boosted_seventh.target_active = roundi(float(DefinitionCatalog.EXPECTED_TARGETS[6]) * 1.10)
-	boosted_segments[6] = boosted_seventh
-	late_boost.segments = boosted_segments
-	var late_boost_catalog := DefinitionCatalog.new()
-	assertions.expect_true(late_boost_catalog.validate_manifest(late_boost), "segments seven through ten accept authorized strengthening")
-
-	var early_boost: SurvivalContentManifest = canonical.duplicate(true) as SurvivalContentManifest
-	var early_segments: Array[EnemySegmentDefinition] = []
-	early_segments.assign(canonical.segments)
-	var boosted_first: EnemySegmentDefinition = canonical.segments[0].duplicate(true) as EnemySegmentDefinition
-	boosted_first.damage_multiplier = DefinitionCatalog.BASELINE_DAMAGE_MULTIPLIERS[0] * 1.05
-	early_segments[0] = boosted_first
-	early_boost.segments = early_segments
-	var early_boost_catalog := DefinitionCatalog.new()
-	assertions.expect_false(early_boost_catalog.validate_manifest(early_boost), "segments one through six reject strengthening")
-
-	var off_step: SurvivalContentManifest = canonical.duplicate(true) as SurvivalContentManifest
-	var off_step_segments: Array[EnemySegmentDefinition] = []
-	off_step_segments.assign(canonical.segments)
-	var off_step_seventh: EnemySegmentDefinition = canonical.segments[6].duplicate(true) as EnemySegmentDefinition
-	off_step_seventh.hp_multiplier = DefinitionCatalog.BASELINE_HP_MULTIPLIERS[6] * 0.97
-	off_step_segments[6] = off_step_seventh
-	off_step.segments = off_step_segments
-	var off_step_catalog := DefinitionCatalog.new()
-	assertions.expect_false(off_step_catalog.validate_manifest(off_step), "segment pressure rejects non-five-percent drift")
-
-	var below_target_segment: EnemySegmentDefinition = canonical.segments[0].duplicate(true) as EnemySegmentDefinition
-	below_target_segment.target_active = 1
+	var target_drift: EnemySegmentDefinition = canonical.segments[1].duplicate(true) as EnemySegmentDefinition
+	target_drift.target_active += 1
 	assertions.expect_false(
-		DefinitionCatalog.new().validate_manifest(_with_segment(canonical, 0, below_target_segment)),
-		"segment target rejects values below the ten-percent lower bound",
+		DefinitionCatalog.new().validate_manifest(_with_segment(canonical, 1, target_drift)),
+		"revision seven rejects target drift",
 	)
-	var above_target_segment: EnemySegmentDefinition = canonical.segments[0].duplicate(true) as EnemySegmentDefinition
-	above_target_segment.target_active = 42
+	var hp_drift: EnemySegmentDefinition = canonical.segments[5].duplicate(true) as EnemySegmentDefinition
+	hp_drift.hp_multiplier += 0.01
 	assertions.expect_false(
-		DefinitionCatalog.new().validate_manifest(_with_segment(canonical, 0, above_target_segment)),
-		"early segment target rejects values above baseline",
+		DefinitionCatalog.new().validate_manifest(_with_segment(canonical, 5, hp_drift)),
+		"revision seven rejects HP drift",
 	)
-	var below_hp_segment: EnemySegmentDefinition = canonical.segments[0].duplicate(true) as EnemySegmentDefinition
-	below_hp_segment.hp_multiplier = DefinitionCatalog.BASELINE_HP_MULTIPLIERS[0] * 0.05
+	var damage_drift: EnemySegmentDefinition = canonical.segments[7].duplicate(true) as EnemySegmentDefinition
+	damage_drift.damage_multiplier += 0.01
 	assertions.expect_false(
-		DefinitionCatalog.new().validate_manifest(_with_segment(canonical, 0, below_hp_segment)),
-		"segment HP rejects values below the ten-percent lower bound",
+		DefinitionCatalog.new().validate_manifest(_with_segment(canonical, 7, damage_drift)),
+		"revision seven rejects damage drift",
 	)
-	var below_damage_segment: EnemySegmentDefinition = canonical.segments[0].duplicate(true) as EnemySegmentDefinition
-	below_damage_segment.damage_multiplier = DefinitionCatalog.BASELINE_DAMAGE_MULTIPLIERS[0] * 0.10
+	var weight_drift: EnemySegmentDefinition = canonical.segments[9].duplicate(true) as EnemySegmentDefinition
+	weight_drift.spawn_weights = PackedFloat32Array([0.30, 0.20, 0.25, 0.25, 0.0, 0.0])
 	assertions.expect_false(
-		DefinitionCatalog.new().validate_manifest(_with_segment(canonical, 0, below_damage_segment)),
-		"segment damage rejects values below the fifteen-percent lower bound",
-	)
-	var non_finite_segment: EnemySegmentDefinition = canonical.segments[0].duplicate(true) as EnemySegmentDefinition
-	non_finite_segment.hp_multiplier = INF
-	assertions.expect_false(
-		DefinitionCatalog.new().validate_manifest(_with_segment(canonical, 0, non_finite_segment)),
-		"segment tuning rejects a non-finite multiplier",
+		DefinitionCatalog.new().validate_manifest(_with_segment(canonical, 9, weight_drift)),
+		"revision seven rejects spawn-weight drift even when weights sum to one",
 	)
 
 
@@ -1016,6 +1163,15 @@ func _test_full_inventory_skips_owned_offer_attempts(assertions: Variant) -> voi
 func _test_new_weapon_atomic(assertions: Variant) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	var state: RunState = RunStateFactory.create(3333, catalog)
+	var unowned_option: UpgradeOption = _find_option(
+		ProgressionService._eligible_options(state, catalog),
+		GameTypes.UpgradeKind.WEAPON,
+		&"resonance_wave",
+	)
+	assertions.expect_true(unowned_option != null, "unowned resonance wave enters offers")
+	if unowned_option != null:
+		assertions.expect_equal("左右を薙ぐ貫通波動。", unowned_option.description, "new weapon retains its overview")
+		assertions.expect_equal("", unowned_option.upgrade_detail, "new weapon has no previous-level delta")
 	var result: Dictionary = ProgressionService.apply_direct_upgrade(
 		state,
 		catalog,
@@ -1027,6 +1183,14 @@ func _test_new_weapon_atomic(assertions: Variant) -> void:
 	assertions.expect_equal(0, state.passives.size(), "weapon acquisition never falls into passive mutation")
 	assertions.expect_equal(1, state.weapon(&"resonance_wave").level, "new weapon starts at level one")
 	assertions.expect_true(state.weapon(&"resonance_wave").ready_on_resume, "new weapon fires on resume")
+	var owned_option: UpgradeOption = _find_option(
+		ProgressionService._eligible_options(state, catalog),
+		GameTypes.UpgradeKind.WEAPON,
+		&"resonance_wave",
+	)
+	assertions.expect_true(owned_option != null, "owned resonance wave remains eligible")
+	if owned_option != null:
+		assertions.expect_equal("波数 2 → 3", owned_option.upgrade_detail, "owned weapon exposes its next delta")
 
 
 func _test_slot_and_max_rejections(assertions: Variant) -> void:
@@ -1164,6 +1328,12 @@ func _test_chest_owned_upgrade_contract(assertions: Variant) -> void:
 	assertions.expect_true(state.weapon(outcome.content_id) != null, "upgrade targets owned content only")
 	assertions.expect_equal(1, outcome.previous_level, "upgrade records previous level")
 	assertions.expect_equal(2, outcome.new_level, "upgrade records exactly one new level")
+	var expected_detail: String = (
+		"弾数 1 → 2"
+		if outcome.content_id == &"homing_core"
+		else "波数 2 → 3"
+	)
+	assertions.expect_equal(expected_detail, outcome.upgrade_detail, "chest stores the selected content delta")
 	assertions.expect_not_equal(before_chest_rng, state.rng_streams.chest_rng.state, "first outcome creation consumes chest RNG")
 	var stable_chest_rng: int = state.rng_streams.chest_rng.state
 	var rebuilt: ChestOutcome = ChestRewardService.create_outcome(state, catalog)
@@ -1667,3 +1837,14 @@ func _catalog(assertions: Variant) -> DefinitionCatalog:
 	var catalog := DefinitionCatalog.new()
 	assertions.expect_true(catalog.load_and_validate(), "survival catalog valid: %s" % catalog.error_text)
 	return catalog
+
+
+func _find_option(
+	options: Array[UpgradeOption],
+	kind: GameTypes.UpgradeKind,
+	content_id: StringName,
+) -> UpgradeOption:
+	for option: UpgradeOption in options:
+		if option.kind == kind and option.content_id == content_id:
+			return option
+	return null

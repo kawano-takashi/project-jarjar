@@ -6,6 +6,7 @@ var kind: GameTypes.UpgradeKind = GameTypes.UpgradeKind.WEAPON
 var content_id: StringName = &""
 var display_name: String = ""
 var description: String = ""
+var upgrade_detail: String = ""
 var pairing_hint: String = ""
 var current_level: int = 0
 var next_level: int = 1

@@ -27,6 +27,7 @@ New-Item -ItemType Directory -Force -Path .\build\windows | Out-Null
 ## Workflow
 
 - 作業前に `docs/project-status.md` を読む。そこだけを現在フェーズの正とする。
+- バランス調整は、人間によるテストへ渡す直前に一度だけ実施する。仕様策定中は数値調整や自動calibrationを行わず、仕様と受入基準の確定に留める。その一度の調整で受入基準に届かない場合も反復調整せず、測定結果を報告して次の判断を待つ。
 - `tests/test_runner.gd` は `tests/**/*_test.gd` を再帰検出する。`unit/`、`scenario/`、`simulation/` は整理用であり、登録簿も実行順契約もない。
 - PowerShellテストは既存のWindows Release buildだけを検証する。コード変更だけならGDScriptテストを使い、buildまで検証するときだけ性能試験・export・`tests/release.ps1` を使う。
 - `Verify` はpack audit、Release smoke、代表的なRelease引数拒否、build鮮度、identityを検証する。buildやsource testは実行しない。

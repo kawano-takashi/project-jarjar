@@ -590,6 +590,8 @@ func prepare_performance_fixture(
 	state.boss_enrage_stacks = 0
 	state.boss_hp = 0.0
 	state.boss_max_hp = 0.0
+	state.boss_spawn_tick = -1
+	state.boss_defeat_tick = -1
 	state.stop_until_tick = 0
 	state.damage_invulnerable_until_tick = PERFORMANCE_INVULNERABLE_UNTIL_TICK
 	state.modal_invulnerable_until_tick = PERFORMANCE_INVULNERABLE_UNTIL_TICK
@@ -617,6 +619,14 @@ func prepare_performance_fixture(
 	state.peak_materializing_enemy_count = 0
 	state.feedback_event_emitted_count = 0
 	state.feedback_event_suppressed_count = 0
+	state.normal_kills_by_type.fill(0)
+	state.normal_kills_by_segment.fill(0)
+	state.normal_xp_by_segment.fill(0)
+	state.normal_active_samples_by_segment.fill(0)
+	state.normal_active_total_by_segment.fill(0)
+	state.normal_engaged_total_by_segment.fill(0)
+	state.elite_spawn_ticks.fill(-1)
+	state.elite_kill_ticks.fill(-1)
 	_audio_cue_admission.reset()
 	state.weapon_damage_by_lineage.clear()
 	state.recent_damage_samples.clear()
@@ -764,6 +774,8 @@ func _record_visible_enemy_sample(current_tick: int) -> void:
 	var visible_count: int = 0
 	var engaged_count: int = 0
 	var materializing_count: int = 0
+	var active_normal_count: int = 0
+	var engaged_normal_count: int = 0
 	for enemy: EnemyEntity in enemy_system.enemy_store.entities:
 		if enemy.is_materializing(current_tick):
 			materializing_count += 1
@@ -775,7 +787,21 @@ func _record_visible_enemy_sample(current_tick: int) -> void:
 			<= CombatEnvelope.TARGET_CENTER_RADIUS * CombatEnvelope.TARGET_CENTER_RADIUS
 		):
 			engaged_count += 1
+		if enemy.enemy_type in EnemySystem.NORMAL_ENEMY_TYPES:
+			active_normal_count += 1
+			if enemy.is_targetable(current_tick):
+				engaged_normal_count += 1
 	state.record_visible_enemy_sample(visible_count, engaged_count, materializing_count)
+	if current_tick < RunState.BOSS_START_TICK:
+		state.record_enemy_segment_sample(
+			clampi(
+				floori(float(current_tick) / 3600.0),
+				0,
+				RunState.ENEMY_SEGMENT_COUNT - 1,
+			),
+			active_normal_count,
+			engaged_normal_count,
+		)
 
 
 func _combat_position_is_visible(position: Vector2) -> bool:
@@ -943,9 +969,13 @@ func _process_pending_deaths(current_tick: int) -> void:
 		match enemy_type:
 			GameTypes.EnemyType.ELITE:
 				state.elite_kills += 1
+				var elite_serial: int = int(death["elite_serial"])
+				if elite_serial >= 0 and elite_serial < state.elite_kill_ticks.size():
+					state.elite_kill_ticks[elite_serial] = current_tick
 			GameTypes.EnemyType.BOSS:
 				state.boss_kills += 1
 				state.boss_defeated = true
+				state.boss_defeat_tick = current_tick
 				state.boss_hp = 0.0
 				_queue_presentation_event(_make_presentation_event(
 					CombatPresentationEvent.Kind.BOSS_DEFEATED,
@@ -958,6 +988,16 @@ func _process_pending_deaths(current_tick: int) -> void:
 				))
 			_:
 				state.normal_kills += 1
+				var normal_type_index: int = int(enemy_type)
+				if normal_type_index >= 0 and normal_type_index < state.normal_kills_by_type.size():
+					state.normal_kills_by_type[normal_type_index] += 1
+				var segment_index: int = clampi(
+					floori(float(current_tick) / 3600.0),
+					0,
+					RunState.ENEMY_SEGMENT_COUNT - 1,
+				)
+				state.normal_kills_by_segment[segment_index] += 1
+				state.normal_xp_by_segment[segment_index] += maxi(1, int(death["xp_value"]))
 		_accumulate_kill_feedback(
 			death.get("source_effect_id", &""),
 			position,

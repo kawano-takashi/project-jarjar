@@ -3,6 +3,9 @@ extends RefCounted
 
 
 const MAX_EVOLUTIONS_PER_RUN: int = 4
+const UPGRADE_DESCRIPTION_FORMATTER: Script = preload(
+	"res://src/progression/upgrade_description_formatter.gd"
+)
 
 
 static func create_outcome(
@@ -46,6 +49,7 @@ static func create_outcome(
 		outcome.upgrade_kind = selected.kind
 		outcome.content_id = selected.content_id
 		outcome.display_name = selected.display_name
+		outcome.upgrade_detail = selected.upgrade_detail
 		outcome.previous_level = selected.current_level
 		outcome.new_level = selected.next_level
 		state.active_chest_outcome = outcome
@@ -144,6 +148,10 @@ static func _eligible_owned_upgrades(
 		option.display_name = definition.display_name
 		option.current_level = runtime.level
 		option.next_level = runtime.level + 1
+		option.upgrade_detail = UPGRADE_DESCRIPTION_FORMATTER.weapon_detail(
+			definition,
+			option.next_level,
+		)
 		option.max_level = definition.max_level
 		result.append(option)
 	for runtime: RunPassive in state.passives:
@@ -156,6 +164,11 @@ static func _eligible_owned_upgrades(
 		option.display_name = definition.display_name
 		option.current_level = runtime.level
 		option.next_level = runtime.level + 1
+		option.upgrade_detail = UPGRADE_DESCRIPTION_FORMATTER.passive_detail(
+			definition,
+			option.current_level,
+			option.next_level,
+		)
 		option.max_level = definition.max_level
 		result.append(option)
 	result.sort_custom(_upgrade_option_less)

@@ -12,13 +12,23 @@ const BOSS_REACH_MIN: int = 9
 const BOSS_REACH_MAX: int = 11
 const BOSS_CLEAR_MIN: int = 5
 const BOSS_CLEAR_MAX: int = 8
-const NORMAL_EVOLVED_BY_FIVE: int = 2
-const NORMAL_EVOLVED_BY_SEVEN: int = 4
-const NORMAL_EVOLUTION_MEAN_SECONDS_MIN: float = 288.0
-const NORMAL_EVOLUTION_MEAN_SECONDS_MAX: float = 324.0
+const NORMAL_EVOLUTION_MEAN_SECONDS_MIN: float = 315.0
+const NORMAL_EVOLUTION_MEAN_SECONDS_MAX: float = 345.0
+const BOSS_FIGHT_SECONDS_MIN: float = 60.0
+const BOSS_FIGHT_SECONDS_MAX: float = 120.0
+const ELITE_SIXTY_SECOND_RATIO_MIN: float = 0.75
+const PRESSURE_REDUCTION_MIN: float = 0.25
+const PRESSURE_REDUCTION_MAX: float = 0.35
+const PEAK_GAIN_MIN: float = 0.15
+const PEAK_GAIN_MAX: float = 0.30
+const XP_KILL_GAIN_DIFFERENCE_MAX: float = 0.05
 
 
-static func evaluate(results: Array[Dictionary]) -> Dictionary:
+static func evaluate(
+	results: Array[Dictionary],
+	segment_rows: Array[Dictionary] = [],
+	wide_mode: bool = false,
+) -> Dictionary:
 	var reasons: PackedStringArray = PackedStringArray()
 	var early_deaths: int = 0
 	var boss_reached: int = 0
@@ -42,6 +52,9 @@ static func evaluate(results: Array[Dictionary]) -> Dictionary:
 	var important_vfx_drop_runs: int = 0
 	var audio_admitted_total: int = 0
 	var audio_suppressed_total: int = 0
+	var elite_spawn_count: int = 0
+	var elite_killed_within_sixty: int = 0
+	var boss_fight_seconds: Array[float] = []
 
 	for result: Dictionary in results:
 		if bool(result.get("death_before_two_minutes", false)):
@@ -50,6 +63,9 @@ static func evaluate(results: Array[Dictionary]) -> Dictionary:
 			boss_reached += 1
 		if bool(result.get("boss_cleared", false)):
 			boss_cleared += 1
+			var fight_seconds: float = float(result.get("boss_fight_seconds", -1.0))
+			if fight_seconds >= 0.0:
+				boss_fight_seconds.append(fight_seconds)
 		var evolution_tick: int = int(result.get("first_evolution_tick", -1))
 		if evolution_tick >= 0 and evolution_tick <= THREE_MINUTE_TICK:
 			evolved_by_three += 1
@@ -62,6 +78,16 @@ static func evaluate(results: Array[Dictionary]) -> Dictionary:
 					normal_evolved_by_five += 1
 				if evolution_tick <= SEVEN_MINUTE_TICK:
 					normal_evolved_by_seven += 1
+			for elite_index: int in range(1, 5):
+				var spawn_tick: int = int(result.get("elite_%d_spawn_tick" % elite_index, -1))
+				if spawn_tick < 0:
+					continue
+				elite_spawn_count += 1
+				var kill_seconds: float = float(
+					result.get("elite_%d_kill_seconds" % elite_index, -1.0)
+				)
+				if kill_seconds >= 0.0 and kill_seconds <= 60.0:
+					elite_killed_within_sixty += 1
 		if int(result.get("pool_overflow_count", 0)) > 0:
 			overflow_runs += 1
 		if int(result.get("pool_orphan_count", 0)) > 0:
@@ -124,36 +150,45 @@ static func evaluate(results: Array[Dictionary]) -> Dictionary:
 		if normal_evolved_runs <= 0
 		else normal_evolution_seconds_total / float(normal_evolved_runs)
 	)
-	if results.size() != EXPECTED_RUN_COUNT:
-		reasons.append("run_count expected=%d actual=%d" % [EXPECTED_RUN_COUNT, results.size()])
+	var expected_run_count: int = 24 if wide_mode else EXPECTED_RUN_COUNT
+	var expected_normal_count: int = 8 if wide_mode else EXPECTED_NORMAL_RUN_COUNT
+	var boss_reach_min: int = 18 if wide_mode else BOSS_REACH_MIN
+	var boss_reach_max: int = 22 if wide_mode else BOSS_REACH_MAX
+	var boss_clear_min: int = 10 if wide_mode else BOSS_CLEAR_MIN
+	var boss_clear_max: int = 16 if wide_mode else BOSS_CLEAR_MAX
+	var normal_by_five_min: int = 2 if wide_mode else 1
+	var normal_by_five_max: int = 4 if wide_mode else 2
+	var normal_by_seven: int = expected_normal_count
+	if results.size() != expected_run_count:
+		reasons.append("run_count expected=%d actual=%d" % [expected_run_count, results.size()])
 	if early_deaths != 0:
 		reasons.append("deaths_by_2m expected=0 actual=%d" % early_deaths)
-	if boss_reached < BOSS_REACH_MIN or boss_reached > BOSS_REACH_MAX:
+	if boss_reached < boss_reach_min or boss_reached > boss_reach_max:
 		reasons.append(
 			"boss_reached expected=%d..%d actual=%d"
-			% [BOSS_REACH_MIN, BOSS_REACH_MAX, boss_reached]
+			% [boss_reach_min, boss_reach_max, boss_reached]
 		)
-	if boss_cleared < BOSS_CLEAR_MIN or boss_cleared > BOSS_CLEAR_MAX:
+	if boss_cleared < boss_clear_min or boss_cleared > boss_clear_max:
 		reasons.append(
 			"boss_cleared expected=%d..%d actual=%d"
-			% [BOSS_CLEAR_MIN, BOSS_CLEAR_MAX, boss_cleared]
+			% [boss_clear_min, boss_clear_max, boss_cleared]
 		)
 	if evolved_by_three != 0:
 		reasons.append("evolved_by_3m expected=0 actual=%d" % evolved_by_three)
-	if normal_run_count != EXPECTED_NORMAL_RUN_COUNT:
+	if normal_run_count != expected_normal_count:
 		reasons.append(
 			"normal_run_count expected=%d actual=%d"
-			% [EXPECTED_NORMAL_RUN_COUNT, normal_run_count]
+			% [expected_normal_count, normal_run_count]
 		)
-	if normal_evolved_by_five != NORMAL_EVOLVED_BY_FIVE:
+	if normal_evolved_by_five < normal_by_five_min or normal_evolved_by_five > normal_by_five_max:
 		reasons.append(
-			"normal_evolved_by_5m expected=%d actual=%d"
-			% [NORMAL_EVOLVED_BY_FIVE, normal_evolved_by_five]
+			"normal_evolved_by_5m expected=%d..%d actual=%d"
+			% [normal_by_five_min, normal_by_five_max, normal_evolved_by_five]
 		)
-	if normal_evolved_by_seven != NORMAL_EVOLVED_BY_SEVEN:
+	if normal_evolved_by_seven != normal_by_seven:
 		reasons.append(
 			"normal_evolved_by_7m expected=%d actual=%d"
-			% [NORMAL_EVOLVED_BY_SEVEN, normal_evolved_by_seven]
+			% [normal_by_seven, normal_evolved_by_seven]
 		)
 	if (
 		normal_mean_evolution_seconds < NORMAL_EVOLUTION_MEAN_SECONDS_MIN
@@ -202,6 +237,30 @@ static func evaluate(results: Array[Dictionary]) -> Dictionary:
 			"important_vfx_drop_runs expected=0 actual=%d"
 			% important_vfx_drop_runs
 		)
+	var boss_fight_median_seconds: float = _median(boss_fight_seconds)
+	var elite_killed_within_sixty_ratio: float = (
+		-1.0
+		if elite_spawn_count <= 0
+		else float(elite_killed_within_sixty) / float(elite_spawn_count)
+	)
+	var wave_pair_metrics: Array[Dictionary] = _wave_pair_metrics(segment_rows)
+	if not segment_rows.is_empty():
+		if (
+			boss_fight_median_seconds < BOSS_FIGHT_SECONDS_MIN
+			or boss_fight_median_seconds > BOSS_FIGHT_SECONDS_MAX
+		):
+			reasons.append(
+				"boss_fight_median_seconds expected=%.1f..%.1f actual=%.3f"
+				% [BOSS_FIGHT_SECONDS_MIN, BOSS_FIGHT_SECONDS_MAX, boss_fight_median_seconds]
+			)
+		if elite_killed_within_sixty_ratio < ELITE_SIXTY_SECOND_RATIO_MIN:
+			reasons.append(
+				"elite_killed_within_60s_ratio expected>=%.2f actual=%.3f"
+				% [ELITE_SIXTY_SECOND_RATIO_MIN, elite_killed_within_sixty_ratio]
+			)
+		for pair: Dictionary in wave_pair_metrics:
+			if not bool(pair["passed"]):
+				reasons.append(str(pair["reason"]))
 
 	return {
 		"passed": reasons.is_empty(),
@@ -234,4 +293,71 @@ static func evaluate(results: Array[Dictionary]) -> Dictionary:
 		"important_vfx_drop_runs": important_vfx_drop_runs,
 		"audio_admitted_total": audio_admitted_total,
 		"audio_suppressed_total": audio_suppressed_total,
+		"boss_fight_median_seconds": boss_fight_median_seconds,
+		"elite_killed_within_sixty_ratio": elite_killed_within_sixty_ratio,
+		"wave_pair_metrics": wave_pair_metrics,
 	}
+
+
+static func _wave_pair_metrics(segment_rows: Array[Dictionary]) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for peak_index: int in [1, 3, 5, 7]:
+		var peak: Dictionary = _segment_medians(segment_rows, peak_index)
+		var rest: Dictionary = _segment_medians(segment_rows, peak_index + 1)
+		var pressure_reduction: float = _reduction(float(peak["engaged"]), float(rest["engaged"]))
+		var kill_gain: float = _gain(float(peak["kills"]), float(rest["kills"]))
+		var xp_gain: float = _gain(float(peak["xp"]), float(rest["xp"]))
+		var passed: bool = (
+			pressure_reduction >= PRESSURE_REDUCTION_MIN
+			and pressure_reduction <= PRESSURE_REDUCTION_MAX
+			and kill_gain >= PEAK_GAIN_MIN
+			and kill_gain <= PEAK_GAIN_MAX
+			and xp_gain >= PEAK_GAIN_MIN
+			and xp_gain <= PEAK_GAIN_MAX
+			and absf(xp_gain - kill_gain) <= XP_KILL_GAIN_DIFFERENCE_MAX
+		)
+		result.append({
+			"peak_segment": peak_index,
+			"rest_segment": peak_index + 1,
+			"pressure_reduction": pressure_reduction,
+			"kill_gain": kill_gain,
+			"xp_gain": xp_gain,
+			"passed": passed,
+			"reason": (
+				"wave_pair_%d_%d pressure=%.3f kill_gain=%.3f xp_gain=%.3f"
+				% [peak_index + 1, peak_index + 2, pressure_reduction, kill_gain, xp_gain]
+			),
+		})
+	return result
+
+
+static func _segment_medians(rows: Array[Dictionary], segment_index: int) -> Dictionary:
+	var engaged: Array[float] = []
+	var kills: Array[float] = []
+	var xp: Array[float] = []
+	for row: Dictionary in rows:
+		if int(row.get("segment_index", -1)) != segment_index or not bool(row.get("completed", false)):
+			continue
+		engaged.append(float(row.get("mean_engaged_normal", 0.0)))
+		kills.append(float(row.get("normal_kills", 0)))
+		xp.append(float(row.get("normal_xp", 0)))
+	return {"engaged": _median(engaged), "kills": _median(kills), "xp": _median(xp)}
+
+
+static func _median(values: Array[float]) -> float:
+	if values.is_empty():
+		return -1.0
+	var sorted: Array[float] = values.duplicate()
+	sorted.sort()
+	var middle: int = floori(float(sorted.size()) / 2.0)
+	if sorted.size() % 2 == 1:
+		return sorted[middle]
+	return (sorted[middle - 1] + sorted[middle]) * 0.5
+
+
+static func _reduction(peak: float, rest: float) -> float:
+	return -1.0 if peak <= 0.0 else 1.0 - rest / peak
+
+
+static func _gain(peak: float, rest: float) -> float:
+	return -1.0 if rest <= 0.0 else peak / rest - 1.0

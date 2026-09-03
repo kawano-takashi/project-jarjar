@@ -236,25 +236,29 @@ func _test_boss_charge(assertions: Variant) -> void:
 	var boss: EnemyEntity = spawned[0]
 	var boss_ids: Array[int] = [boss.entity_id]
 	var projectile_pool := ProjectilePool.new()
-	assertions.expect_equal(120, system._boss_action_interval_ticks(120, 1), "phase one volley period is one hundred twenty action ticks")
-	assertions.expect_equal(90, system._boss_action_interval_ticks(120, 2), "phase two volley period is ninety action ticks")
-	assertions.expect_equal(68, system._boss_action_interval_ticks(120, 3), "phase three volley period rounds up to sixty-eight action ticks")
+	var phase_one_interval: int = system._boss_action_interval_ticks(120, 1)
+	var phase_two_interval: int = system._boss_action_interval_ticks(120, 2)
+	var phase_three_interval: int = system._boss_action_interval_ticks(120, 3)
+	assertions.expect_equal(110, phase_one_interval, "revision seven phase-one action rate rounds up to 110 ticks")
+	assertions.expect_equal(82, phase_two_interval, "revision seven phase-two action rate rounds up to 82 ticks")
+	assertions.expect_equal(62, phase_three_interval, "revision seven phase-three action rate rounds up to 62 ticks")
 
 	state.combat_tick = boss.activation_tick - 1
 	system.advance_snapshot(boss_ids, Vector2(6.0, 0.0), state.combat_tick)
 	system.resolve_ready_enemy_special_actions(boss_ids, Vector2.ZERO, state.combat_tick, projectile_pool)
 	assertions.expect_equal(Vector2.ZERO, boss.position, "boss stays centered through the final inactive tick")
 	assertions.expect_float(0.0, boss.special_elapsed_ticks, "boss action clock is frozen during entry")
-	for action_index: int in range(120):
+	var phase_one_idle_ticks: int = phase_one_interval - CombatEnvelope.BOSS_CHARGE_TICKS
+	for action_index: int in range(phase_one_interval):
 		var current_tick: int = boss.activation_tick + action_index
 		state.combat_tick = current_tick
 		system.advance_snapshot(boss_ids, Vector2(6.0, 0.0), current_tick)
 		system.resolve_ready_enemy_special_actions(boss_ids, Vector2.ZERO, current_tick, projectile_pool)
-		if action_index == 88:
-			assertions.expect_false(boss.boss_charge_active, "phase one keeps ninety full idle action ticks")
-		elif action_index == 89:
-			assertions.expect_true(boss.boss_charge_active, "phase one charge begins after ninety idle ticks")
-			assertions.expect_equal(120, boss.boss_charge_interval_ticks, "charge latches the current interval")
+		if action_index == phase_one_idle_ticks - 2:
+			assertions.expect_false(boss.boss_charge_active, "phase one stays idle until its calibrated charge boundary")
+		elif action_index == phase_one_idle_ticks - 1:
+			assertions.expect_true(boss.boss_charge_active, "phase one charge begins at its calibrated boundary")
+			assertions.expect_equal(phase_one_interval, boss.boss_charge_interval_ticks, "charge latches the current interval")
 			assertions.expect_equal(8, boss.boss_charge_spoke_count, "phase one charge latches eight spokes")
 			assertions.expect_false(boss.boss_charge_half_step, "first volley latches the unshifted pattern")
 	assertions.expect_equal(8, projectile_pool.active_count(), "thirty action ticks of charge emit eight projectiles")
@@ -264,17 +268,21 @@ func _test_boss_charge(assertions: Variant) -> void:
 		assertions.expect_equal(boss.position, projectile.position, "volley projectile originates at the moving boss fire position")
 
 	boss.hp = boss.max_hp * 0.5
-	for action_index: int in range(60):
-		var phase_two_tick: int = boss.activation_tick + 120 + action_index
+	var phase_two_idle_ticks: int = phase_two_interval - CombatEnvelope.BOSS_CHARGE_TICKS
+	for action_index: int in range(phase_two_idle_ticks):
+		var phase_two_tick: int = boss.activation_tick + phase_one_interval + action_index
 		state.combat_tick = phase_two_tick
 		system.advance_snapshot(boss_ids, Vector2(6.0, 0.0), phase_two_tick)
 		system.resolve_ready_enemy_special_actions(boss_ids, Vector2.ZERO, phase_two_tick, projectile_pool)
-	assertions.expect_true(boss.boss_charge_active, "phase two begins its charge after sixty idle ticks")
+	assertions.expect_true(boss.boss_charge_active, "phase two begins its charge at the calibrated idle boundary")
 	assertions.expect_equal(12, boss.boss_charge_spoke_count, "phase two charge latches twelve spokes")
 	assertions.expect_true(boss.boss_charge_half_step, "second volley latches the half-step offset")
 	boss.hp = boss.max_hp * 0.2
-	for charge_index: int in range(30):
-		var phase_change_tick: int = boss.activation_tick + 180 + charge_index
+	var phase_two_charge_tick: int = (
+		boss.activation_tick + phase_one_interval + phase_two_idle_ticks
+	)
+	for charge_index: int in range(CombatEnvelope.BOSS_CHARGE_TICKS):
+		var phase_change_tick: int = phase_two_charge_tick + charge_index
 		state.combat_tick = phase_change_tick
 		system.advance_snapshot(boss_ids, Vector2(6.0, 0.0), phase_change_tick)
 		system.resolve_ready_enemy_special_actions(boss_ids, Vector2.ZERO, phase_change_tick, projectile_pool)
@@ -291,7 +299,7 @@ func _test_boss_charge(assertions: Variant) -> void:
 	boss.boss_action_age_ticks = float(
 		catalog.manifest().boss_enrage_interval_ticks - 2
 	)
-	state.combat_tick = boss.activation_tick + 210
+	state.combat_tick = phase_two_charge_tick + CombatEnvelope.BOSS_CHARGE_TICKS
 	system.advance_snapshot(boss_ids, Vector2(6.0, 0.0), state.combat_tick)
 	assertions.expect_equal(0, state.boss_enrage_stacks, "boss enrage remains zero at 1799 accumulated action ticks")
 	state.combat_tick += 1

@@ -22,13 +22,13 @@ const GROUP_ROLE_IDS: Array[StringName] = [
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"survival_weapon_dps_matrix_revision_five_contract",
+		"survival_weapon_dps_matrix_revision_six_contract",
 	])
 
 
 func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
 	match test_name:
-		"survival_weapon_dps_matrix_revision_five_contract":
+		"survival_weapon_dps_matrix_revision_six_contract":
 			_test_role_normalization(assertions)
 		_:
 			assertions.expect_true(false, "registered survival weapon DPS test")

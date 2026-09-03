@@ -364,8 +364,8 @@ func _test_shooter_contact_contract(assertions: Variant) -> void:
 		"SHOOTER remains in the normal-enemy type set",
 	)
 	assertions.expect_true(
-		simulation.catalog.segment(2).weight_for(GameTypes.EnemyType.SHOOTER) > 0.0,
-		"SHOOTER retains its wave weight from segment three onward",
+		simulation.catalog.segment(3).weight_for(GameTypes.EnemyType.SHOOTER) > 0.0,
+		"SHOOTER enters the revision seven wave table from segment four onward",
 	)
 	assertions.expect_true(
 		shooter_definition.contact_interval_ticks > 0

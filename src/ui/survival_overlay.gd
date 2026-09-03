@@ -105,6 +105,7 @@ func show_chest_outcome(outcome: Variant) -> void:
 	_hide_primary_modals()
 	_active_chest_serial = int(_read_property(outcome, &"serial", -1))
 	var display_name: String = str(_read_property(outcome, &"display_name", ""))
+	var upgrade_detail: String = str(_read_property(outcome, &"upgrade_detail", ""))
 	var source_weapon_id: String = str(_read_property(outcome, &"source_weapon_id", ""))
 	var previous_level: int = int(_read_property(outcome, &"previous_level", 0))
 	var new_level: int = int(_read_property(outcome, &"new_level", previous_level))
@@ -114,6 +115,8 @@ func show_chest_outcome(outcome: Variant) -> void:
 	elif not display_name.is_empty() and new_level > previous_level:
 		_chest_heading.text = "宝箱強化"
 		_chest_result.text = "%s\nLv %d → %d" % [display_name, previous_level, new_level]
+		if not upgrade_detail.is_empty():
+			_chest_result.text += "\n%s" % upgrade_detail
 	else:
 		_chest_heading.text = "宝箱"
 		_chest_result.text = "HPを全回復しました"
@@ -298,6 +301,7 @@ func _hide_primary_modals() -> void:
 func _option_text(option: Variant) -> String:
 	var display_name: String = str(_read_property(option, &"display_name", "選択肢"))
 	var description: String = str(_read_property(option, &"description", ""))
+	var upgrade_detail: String = str(_read_property(option, &"upgrade_detail", ""))
 	var pairing_hint: String = str(_read_property(option, &"pairing_hint", ""))
 	var current_level: int = int(_read_property(option, &"current_level", 0))
 	var next_level: int = int(_read_property(option, &"next_level", current_level + 1))
@@ -308,9 +312,10 @@ func _option_text(option: Variant) -> String:
 		level_text,
 		"種別：%s" % _upgrade_kind_label(kind),
 	])
-	if not description.is_empty():
+	var body_text: String = description if current_level <= 0 else upgrade_detail
+	if not body_text.is_empty():
 		lines.append("")
-		lines.append(description)
+		lines.append(body_text)
 	if not pairing_hint.is_empty():
 		lines.append("")
 		lines.append(pairing_hint)

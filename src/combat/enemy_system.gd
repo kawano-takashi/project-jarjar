@@ -101,6 +101,7 @@ func resolve_scheduled_spawns(_player_position: Vector2, current_tick: int) -> A
 			if elite != null:
 				_elite_spawned[elite_index] = 1
 				elite.elite_serial = elite_index
+				_state.elite_spawn_ticks[elite_index] = current_tick
 				spawned.append(elite)
 	if not _state.boss_spawned and current_tick >= _manifest.boss_start_tick:
 		var boss: EnemyEntity = _spawn_enemy(
@@ -110,6 +111,7 @@ func resolve_scheduled_spawns(_player_position: Vector2, current_tick: int) -> A
 		)
 		if boss != null:
 			_state.boss_spawned = true
+			_state.boss_spawn_tick = current_tick
 			_state.boss_phase = 1
 			_state.boss_hp = boss.hp
 			_state.boss_max_hp = boss.max_hp

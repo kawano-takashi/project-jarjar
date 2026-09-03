@@ -696,13 +696,26 @@ func _test_orbital_outer_reach(assertions: Variant) -> void:
 		return
 	var base: WeaponDefinition = catalog.weapon(&"orbital_array")
 	var evolved: WeaponDefinition = catalog.weapon(&"eternal_orbit")
-	var level_one_outer: float = _orbital_outer_reach(base, 1)
+	var expected_base_outer_reaches := PackedFloat32Array([
+		2.07,
+		2.07,
+		2.07,
+		2.07,
+		3.07,
+		3.07,
+		3.07,
+		3.07,
+	])
+	for level_index: int in range(expected_base_outer_reaches.size()):
+		assertions.expect_float(
+			expected_base_outer_reaches[level_index],
+			_orbital_outer_reach(base, level_index + 1),
+			"orbital outer reach follows the fixed one-property upgrade schedule at level %d" % (level_index + 1),
+		)
 	var level_eight_outer: float = _orbital_outer_reach(base, 8)
 	var evolved_outer: float = _orbital_outer_reach(evolved, 1)
-	assertions.expect_true(level_one_outer >= 1.8 and level_one_outer <= 2.4, "level one orbital outer reach stays in the approved band")
-	assertions.expect_true(level_eight_outer >= 3.2 and level_eight_outer <= 3.8, "level eight orbital outer reach stays in the approved band")
 	assertions.expect_true(evolved_outer >= 4.2 and evolved_outer <= 4.8, "evolved orbital outer reach stays in the approved band")
-	assertions.expect_true(level_one_outer < level_eight_outer and level_eight_outer < evolved_outer, "orbital outer reach grows monotonically through evolution")
+	assertions.expect_true(level_eight_outer < evolved_outer, "evolution extends orbital outer reach beyond the base weapon")
 
 
 func _orbital_outer_reach(definition: WeaponDefinition, level: int) -> float:

@@ -2,6 +2,11 @@ class_name ProgressionService
 extends RefCounted
 
 
+const UPGRADE_DESCRIPTION_FORMATTER: Script = preload(
+	"res://src/progression/upgrade_description_formatter.gd"
+)
+
+
 static func xp_required_for_level(current_level: int) -> int:
 	return SurvivalContentManifest.default_required_xp_for_level(current_level)
 
@@ -317,6 +322,11 @@ static func _weapon_option(
 	option.description = definition.description
 	option.current_level = 0 if runtime == null else runtime.level
 	option.next_level = option.current_level + 1
+	if runtime != null:
+		option.upgrade_detail = UPGRADE_DESCRIPTION_FORMATTER.weapon_detail(
+			definition,
+			option.next_level,
+		)
 	option.max_level = definition.max_level
 	option.weight = definition.selection_weight
 	option.pairing_hint = _pairing_hint(catalog, definition.weapon_id)
@@ -336,6 +346,12 @@ static func _passive_option(
 	option.description = definition.description
 	option.current_level = 0 if runtime == null else runtime.level
 	option.next_level = option.current_level + 1
+	if runtime != null:
+		option.upgrade_detail = UPGRADE_DESCRIPTION_FORMATTER.passive_detail(
+			definition,
+			option.current_level,
+			option.next_level,
+		)
 	option.max_level = definition.max_level
 	option.weight = definition.selection_weight
 	option.pairing_hint = _pairing_hint(catalog, definition.paired_weapon_id)

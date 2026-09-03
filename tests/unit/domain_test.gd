@@ -26,7 +26,7 @@ func _test_manifest_globals(assertions: Variant) -> void:
 	if not catalog.is_valid:
 		return
 	var manifest: SurvivalContentManifest = catalog.manifest()
-	assertions.expect_equal(5, manifest.balance.balance_revision, "balance revision five")
+	assertions.expect_equal(7, manifest.balance.balance_revision, "balance revision seven")
 	assertions.expect_equal(Vector2(30.0, 30.0), manifest.arena_size, "finite 30x30 arena")
 	assertions.expect_equal(60, manifest.ticks_per_second, "fixed 60Hz domain clock")
 	assertions.expect_equal(36000, manifest.boss_start_tick, "boss starts at ten minutes")
@@ -84,9 +84,9 @@ func _test_content_identity(assertions: Variant) -> void:
 	for index: int in range(10):
 		targets.append(catalog.segment(index).target_active)
 	assertions.expect_equal(
-		PackedInt32Array([16, 24, 36, 52, 72, 96, 120, 144, 168, 192]),
+		PackedInt32Array([16, 46, 32, 68, 49, 140, 92, 132, 97, 176]),
 		targets,
-		"calibrated active-enemy targets preserve durable crowd pressure",
+		"revision seven active-enemy targets alternate peaks and rests",
 	)
 
 

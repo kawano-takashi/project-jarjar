@@ -15,7 +15,7 @@ func test_names() -> PackedStringArray:
 		"normal_damage_invulnerability_is_thirty_ticks",
 		"advance_tick_matches_step_gameplay_state",
 		"fixed_seed_replay_ignores_reduce_motion",
-		"focused_build_progression_matches_revision5_xp_tuning",
+		"focused_build_progression_matches_revision7_enemy_pacing",
 		"performance_fixture_has_all_survival_loads",
 	])
 
@@ -46,7 +46,7 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 			_test_advance_tick_equivalence(assertions)
 		"fixed_seed_replay_ignores_reduce_motion":
 			_test_deterministic_replay(assertions)
-		"focused_build_progression_matches_revision5_xp_tuning":
+		"focused_build_progression_matches_revision7_enemy_pacing":
 			_test_focused_build_pacing(assertions)
 		"performance_fixture_has_all_survival_loads":
 			_test_performance_fixture(assertions)
@@ -180,7 +180,7 @@ func _test_boss_phases(assertions: Variant) -> void:
 	)
 	assertions.expect_equal(1, simulation.state.boss_enrage_stacks, "boss gains one pressure stack after thirty seconds")
 	simulation.state.boss_enrage_stacks = 2
-	assertions.expect_float(80.0, simulation.enemy_system._boss_action_interval(100, 1), "two enrage stacks linearly reduce action interval by twenty percent")
+	assertions.expect_float(73.0, simulation.enemy_system._boss_action_interval(100, 1), "two enrage stacks and the revision seven action rate produce a 73-tick interval")
 
 
 func _test_scheduled_boss_multiplier_separation(assertions: Variant) -> void:
@@ -450,7 +450,7 @@ func _test_focused_build_pacing(assertions: Variant) -> void:
 	var expected_kinds: Array[GameTypes.ChestOutcomeKind] = [
 		GameTypes.ChestOutcomeKind.UPGRADE,
 		GameTypes.ChestOutcomeKind.EVOLUTION,
-		GameTypes.ChestOutcomeKind.UPGRADE,
+		GameTypes.ChestOutcomeKind.EVOLUTION,
 	]
 	var check_index: int = 0
 	while simulation.state.combat_tick < check_ticks[check_ticks.size() - 1]:
@@ -479,7 +479,7 @@ func _test_focused_build_pacing(assertions: Variant) -> void:
 				assertions.expect_true(cycle_crystal != null, "focused build owns the paired passive by four minutes")
 			else:
 				assertions.expect_true(homing.evolved, "focused lineage remains evolved at six minutes")
-				assertions.expect_equal(1, simulation.state.evolution_count, "focused pacing creates only one evolution before six minutes")
+				assertions.expect_equal(1, simulation.state.evolution_count, "focused pacing creates one evolution before the six-minute chest")
 			var cycle_level_before: int = 0 if cycle_crystal == null else cycle_crystal.level
 			simulation.state.pending_chest_sources.append(check_index)
 			var outcome: ChestOutcome = ChestRewardService.create_outcome(
@@ -501,8 +501,8 @@ func _test_focused_build_pacing(assertions: Variant) -> void:
 				)
 			check_index += 1
 	var evolved: RunWeapon = simulation.state.weapon_for_lineage(&"homing_core")
-	assertions.expect_equal(3, simulation.state.opened_chests, "two upgrades and the four-minute evolution consume their chest")
-	assertions.expect_equal(1, simulation.state.evolution_count, "four-minute chest is the only focused evolution by six minutes")
+	assertions.expect_equal(3, simulation.state.opened_chests, "one upgrade and two evolutions consume the scheduled chests")
+	assertions.expect_equal(2, simulation.state.evolution_count, "the six-minute chest completes a second focused evolution")
 	assertions.expect_true(evolved.evolved and evolved.weapon_id == &"infinite_homing", "focused lineage remains evolved after six minutes")
 
 

@@ -4,8 +4,9 @@ extends SceneTree
 const BotScript = preload("res://tests/balance/difficulty_calibration_bot.gd")
 const AcceptanceScript = preload("res://tests/balance/difficulty_acceptance.gd")
 
-const BALANCE_REVISION: int = 5
-const RUN_SEEDS: Array[int] = [17, 29, 43, 61]
+const BALANCE_REVISION: int = 7
+const FORMAL_RUN_SEEDS: Array[int] = [17, 29, 43, 61]
+const WIDE_RUN_SEEDS: Array[int] = [7, 13, 31, 47, 73, 101, 137, 179]
 const POLICIES: Array[int] = [0, 1, 2]
 const CHECKPOINT_TICKS: Array[int] = [
 	7_200,
@@ -20,9 +21,10 @@ const CHECKPOINT_TICKS: Array[int] = [
 const MAX_COMBAT_TICK: int = 54_000
 const MAX_MODAL_CHAIN: int = 128
 const RUNNER_TIMEOUT_MS: int = 1_200_000
-const OUTPUT_ROOT: String = "res://artifacts/balance/revision-5"
+const OUTPUT_ROOT: String = "res://artifacts/balance/revision-7"
 const RUNS_FILENAME: String = "difficulty-runs.csv"
 const CHECKPOINTS_FILENAME: String = "difficulty-checkpoints.csv"
+const SEGMENTS_FILENAME: String = "difficulty-segments.csv"
 const SUMMARY_FILENAME: String = "difficulty-summary.txt"
 const RUN_COLUMNS: Array[String] = [
 	"balance_revision",
@@ -42,6 +44,10 @@ const RUN_COLUMNS: Array[String] = [
 	"final_level",
 	"final_xp",
 	"total_kills",
+	"pursuer_kills",
+	"swarmer_kills",
+	"bulwark_kills",
+	"shooter_kills",
 	"elite_kills",
 	"opened_chests",
 	"evolution_count",
@@ -49,6 +55,21 @@ const RUN_COLUMNS: Array[String] = [
 	"net_damage_taken",
 	"boss_hp",
 	"boss_max_hp",
+	"boss_spawn_tick",
+	"boss_defeat_tick",
+	"boss_fight_seconds",
+	"elite_1_spawn_tick",
+	"elite_1_kill_tick",
+	"elite_1_kill_seconds",
+	"elite_2_spawn_tick",
+	"elite_2_kill_tick",
+	"elite_2_kill_seconds",
+	"elite_3_spawn_tick",
+	"elite_3_kill_tick",
+	"elite_3_kill_seconds",
+	"elite_4_spawn_tick",
+	"elite_4_kill_tick",
+	"elite_4_kill_seconds",
 	"weapon_hits",
 	"weapon_kills",
 	"visible_weapon_hits",
@@ -130,8 +151,21 @@ const CHECKPOINT_COLUMNS: Array[String] = [
 	"boss_hp",
 	"boss_max_hp",
 ]
+const SEGMENT_COLUMNS: Array[String] = [
+	"balance_revision",
+	"policy",
+	"seed",
+	"segment_index",
+	"completed",
+	"sample_count",
+	"mean_active_normal",
+	"mean_engaged_normal",
+	"normal_kills",
+	"normal_xp",
+]
 
 var _runner_started_ms: int = 0
+var _wide_mode: bool = false
 
 
 func _initialize() -> void:
@@ -140,10 +174,12 @@ func _initialize() -> void:
 
 
 func _run() -> void:
-	if not OS.get_cmdline_user_args().is_empty():
+	var user_args: PackedStringArray = OS.get_cmdline_user_args()
+	if user_args.size() > 1 or (user_args.size() == 1 and user_args[0] != "--wide"):
 		print("DIFFICULTY_CALIBRATION_ERROR reason=arguments_not_allowed")
 		quit(2)
 		return
+	_wide_mode = user_args == PackedStringArray(["--wide"])
 	var setup: Dictionary = _load_catalog()
 	if not bool(setup.get("valid", false)):
 		print("DIFFICULTY_CALIBRATION_ERROR reason=%s" % str(setup.get("reason", "catalog")))
@@ -152,9 +188,11 @@ func _run() -> void:
 	var catalog: DefinitionCatalog = setup.get("catalog") as DefinitionCatalog
 	var run_rows: Array[Dictionary] = []
 	var checkpoint_rows: Array[Dictionary] = []
+	var segment_rows: Array[Dictionary] = []
 	var infrastructure_error: String = ""
+	var run_seeds: Array[int] = WIDE_RUN_SEEDS if _wide_mode else FORMAL_RUN_SEEDS
 	for policy_value: int in POLICIES:
-		for run_seed: int in RUN_SEEDS:
+		for run_seed: int in run_seeds:
 			var run_result: Dictionary = _run_one(
 				catalog,
 				policy_value,
@@ -166,6 +204,7 @@ func _run() -> void:
 				break
 			run_result.erase("infrastructure_error")
 			run_rows.append(run_result)
+			_append_segment_rows(run_result, segment_rows)
 			print(
 				"DIFFICULTY_RUN policy=%s seed=%d outcome=%s tick=%d level=%d kills=%d evolution_tick=%d"
 				% [
@@ -181,10 +220,11 @@ func _run() -> void:
 		if not infrastructure_error.is_empty():
 			break
 
-	var acceptance: Dictionary = AcceptanceScript.evaluate(run_rows)
+	var acceptance: Dictionary = AcceptanceScript.evaluate(run_rows, segment_rows, _wide_mode)
 	var write_error: String = _write_artifacts(
 		run_rows,
 		checkpoint_rows,
+		segment_rows,
 		acceptance,
 		infrastructure_error,
 	)
@@ -401,6 +441,10 @@ func _run_row(
 		"final_level": state.level,
 		"final_xp": state.xp,
 		"total_kills": state.total_kills,
+		"pursuer_kills": state.normal_kills_by_type[GameTypes.EnemyType.PURSUER],
+		"swarmer_kills": state.normal_kills_by_type[GameTypes.EnemyType.SWARMER],
+		"bulwark_kills": state.normal_kills_by_type[GameTypes.EnemyType.BULWARK],
+		"shooter_kills": state.normal_kills_by_type[GameTypes.EnemyType.SHOOTER],
 		"elite_kills": state.elite_kills,
 		"opened_chests": state.opened_chests,
 		"evolution_count": state.evolution_count,
@@ -408,6 +452,26 @@ func _run_row(
 		"net_damage_taken": float(runtime["net_damage_taken"]),
 		"boss_hp": state.boss_hp,
 		"boss_max_hp": state.boss_max_hp,
+		"boss_spawn_tick": state.boss_spawn_tick,
+		"boss_defeat_tick": state.boss_defeat_tick,
+		"boss_fight_seconds": _elapsed_seconds(state.boss_spawn_tick, state.boss_defeat_tick),
+		"elite_1_spawn_tick": state.elite_spawn_ticks[0],
+		"elite_1_kill_tick": state.elite_kill_ticks[0],
+		"elite_1_kill_seconds": _elapsed_seconds(state.elite_spawn_ticks[0], state.elite_kill_ticks[0]),
+		"elite_2_spawn_tick": state.elite_spawn_ticks[1],
+		"elite_2_kill_tick": state.elite_kill_ticks[1],
+		"elite_2_kill_seconds": _elapsed_seconds(state.elite_spawn_ticks[1], state.elite_kill_ticks[1]),
+		"elite_3_spawn_tick": state.elite_spawn_ticks[2],
+		"elite_3_kill_tick": state.elite_kill_ticks[2],
+		"elite_3_kill_seconds": _elapsed_seconds(state.elite_spawn_ticks[2], state.elite_kill_ticks[2]),
+		"elite_4_spawn_tick": state.elite_spawn_ticks[3],
+		"elite_4_kill_tick": state.elite_kill_ticks[3],
+		"elite_4_kill_seconds": _elapsed_seconds(state.elite_spawn_ticks[3], state.elite_kill_ticks[3]),
+		"segment_samples": state.normal_active_samples_by_segment.duplicate(),
+		"segment_active_totals": state.normal_active_total_by_segment.duplicate(),
+		"segment_engaged_totals": state.normal_engaged_total_by_segment.duplicate(),
+		"segment_normal_kills": state.normal_kills_by_segment.duplicate(),
+		"segment_normal_xp": state.normal_xp_by_segment.duplicate(),
 		"enemy_pool_overflow": enemy_overflow,
 		"projectile_pool_overflow": projectile_overflow,
 		"vfx_pool_overflow": vfx_overflow,
@@ -424,6 +488,36 @@ func _run_row(
 	for metric_key: String in VISIBLE_METRIC_KEYS:
 		row[metric_key] = visible_metrics[metric_key]
 	return row
+
+
+func _elapsed_seconds(start_tick: int, end_tick: int) -> float:
+	return -1.0 if start_tick < 0 or end_tick < start_tick else float(end_tick - start_tick) / 60.0
+
+
+func _append_segment_rows(run_row: Dictionary, segment_rows: Array[Dictionary]) -> void:
+	var samples: PackedInt32Array = run_row["segment_samples"]
+	var active_totals: PackedInt64Array = run_row["segment_active_totals"]
+	var engaged_totals: PackedInt64Array = run_row["segment_engaged_totals"]
+	var normal_kills: PackedInt32Array = run_row["segment_normal_kills"]
+	var normal_xp: PackedInt32Array = run_row["segment_normal_xp"]
+	for segment_index: int in range(RunState.ENEMY_SEGMENT_COUNT):
+		var sample_count: int = samples[segment_index]
+		segment_rows.append({
+			"balance_revision": BALANCE_REVISION,
+			"policy": run_row["policy"],
+			"seed": run_row["seed"],
+			"segment_index": segment_index,
+			"completed": sample_count >= 3_590,
+			"sample_count": sample_count,
+			"mean_active_normal": (
+				0.0 if sample_count <= 0 else float(active_totals[segment_index]) / float(sample_count)
+			),
+			"mean_engaged_normal": (
+				0.0 if sample_count <= 0 else float(engaged_totals[segment_index]) / float(sample_count)
+			),
+			"normal_kills": normal_kills[segment_index],
+			"normal_xp": normal_xp[segment_index],
+		})
 
 
 func _checkpoint_row(
@@ -549,10 +643,14 @@ func _digest(simulation: CombatSimulation, runtime: Dictionary) -> String:
 func _write_artifacts(
 	run_rows: Array[Dictionary],
 	checkpoint_rows: Array[Dictionary],
+	segment_rows: Array[Dictionary],
 	acceptance: Dictionary,
 	infrastructure_error: String,
 ) -> String:
-	var output_directory: String = ProjectSettings.globalize_path(OUTPUT_ROOT).replace("\\", "/").simplify_path()
+	var gate_directory: String = "wide" if _wide_mode else "formal"
+	var output_directory: String = ProjectSettings.globalize_path(
+		OUTPUT_ROOT.path_join(gate_directory)
+	).replace("\\", "/").simplify_path()
 	var directory_error: Error = DirAccess.make_dir_recursive_absolute(output_directory)
 	if directory_error != OK:
 		return "artifact_directory code=%d" % directory_error
@@ -570,6 +668,13 @@ func _write_artifacts(
 	)
 	if not checkpoints_error.is_empty():
 		return checkpoints_error
+	var segments_error: String = _write_csv(
+		output_directory.path_join(SEGMENTS_FILENAME),
+		SEGMENT_COLUMNS,
+		segment_rows,
+	)
+	if not segments_error.is_empty():
+		return segments_error
 	return _write_summary(
 		output_directory.path_join(SUMMARY_FILENAME),
 		acceptance,
@@ -605,6 +710,7 @@ func _write_summary(
 	var reasons: PackedStringArray = acceptance.get("reasons", PackedStringArray())
 	var lines: PackedStringArray = PackedStringArray([
 		"balance_revision=%d" % BALANCE_REVISION,
+		"gate=%s" % ("wide" if _wide_mode else "formal"),
 		"run_count=%d" % int(acceptance.get("run_count", 0)),
 		"early_deaths=%d" % int(acceptance.get("early_deaths", 0)),
 		"boss_reached=%d" % int(acceptance.get("boss_reached", 0)),
@@ -615,6 +721,9 @@ func _write_summary(
 		"normal_evolved_by_7m=%d" % int(acceptance.get("normal_evolved_by_seven", 0)),
 		"normal_first_evolution_mean_seconds=%.6f" % float(acceptance.get("normal_mean_evolution_seconds", -1.0)),
 		"normal_first_evolution_mean_minutes=%.6f" % float(acceptance.get("normal_mean_evolution_minutes", -1.0)),
+		"boss_fight_median_seconds=%.6f" % float(acceptance.get("boss_fight_median_seconds", -1.0)),
+		"elite_killed_within_sixty_ratio=%.6f" % float(acceptance.get("elite_killed_within_sixty_ratio", -1.0)),
+		"wave_pair_metrics=%s" % str(acceptance.get("wave_pair_metrics", [])),
 		"pool_overflow_runs=%d" % int(acceptance.get("overflow_runs", 0)),
 		"pool_orphan_runs=%d" % int(acceptance.get("orphan_runs", 0)),
 		"missing_visible_metric_runs=%d" % int(acceptance.get("missing_visible_metric_runs", 0)),

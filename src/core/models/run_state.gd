@@ -5,6 +5,9 @@ extends RefCounted
 const TICKS_PER_SECOND: int = 60
 const BOSS_START_TICK: int = 36000
 const KILL_CHAIN_WINDOW_TICKS: int = 90
+const ENEMY_SEGMENT_COUNT: int = 10
+const NORMAL_ENEMY_TYPE_COUNT: int = 4
+const ELITE_COUNT: int = 4
 
 var run_seed: int = 0
 var rng_streams: RunRngStreams = null
@@ -47,6 +50,16 @@ var total_kills: int = 0
 var normal_kills: int = 0
 var elite_kills: int = 0
 var boss_kills: int = 0
+var normal_kills_by_type: PackedInt32Array = PackedInt32Array([0, 0, 0, 0])
+var normal_kills_by_segment: PackedInt32Array = PackedInt32Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+var normal_xp_by_segment: PackedInt32Array = PackedInt32Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+var normal_active_samples_by_segment: PackedInt32Array = PackedInt32Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+var normal_active_total_by_segment: PackedInt64Array = PackedInt64Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+var normal_engaged_total_by_segment: PackedInt64Array = PackedInt64Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+var elite_spawn_ticks: PackedInt32Array = PackedInt32Array([-1, -1, -1, -1])
+var elite_kill_ticks: PackedInt32Array = PackedInt32Array([-1, -1, -1, -1])
+var boss_spawn_tick: int = -1
+var boss_defeat_tick: int = -1
 var absorbed_normal_count: int = 0
 var absorbed_enemy_projectile_count: int = 0
 var kill_chain_count: int = 0
@@ -142,6 +155,18 @@ func record_visible_enemy_sample(visible_count: int, engaged_count: int, materia
 	peak_visible_enemy_count = maxi(peak_visible_enemy_count, visible_count)
 	peak_engaged_enemy_count = maxi(peak_engaged_enemy_count, engaged_count)
 	peak_materializing_enemy_count = maxi(peak_materializing_enemy_count, materializing_count)
+
+
+func record_enemy_segment_sample(
+	segment_index: int,
+	active_normal_count: int,
+	engaged_normal_count: int,
+) -> void:
+	if segment_index < 0 or segment_index >= ENEMY_SEGMENT_COUNT:
+		return
+	normal_active_samples_by_segment[segment_index] += 1
+	normal_active_total_by_segment[segment_index] += maxi(0, active_normal_count)
+	normal_engaged_total_by_segment[segment_index] += maxi(0, engaged_normal_count)
 
 
 func _kill_chain_milestone(count: int) -> int:

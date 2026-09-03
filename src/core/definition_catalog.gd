@@ -4,13 +4,25 @@ extends RefCounted
 
 const MANIFEST_PATH: String = "res://data/balance/survival_content_manifest.tres"
 const EXPECTED_TARGETS: Array[int] = [
-	16, 24, 36, 52, 72, 96, 120, 144, 168, 192,
+	16, 46, 32, 68, 49, 140, 92, 132, 97, 176,
 ]
 const BASELINE_HP_MULTIPLIERS: Array[float] = [
-	0.15, 0.17, 0.20, 0.24, 0.30, 0.45, 0.65, 0.90, 1.25, 1.75,
+	0.15, 0.215, 1.325, 0.24, 0.74, 0.35, 1.85, 0.78, 1.75, 1.40,
 ]
 const BASELINE_DAMAGE_MULTIPLIERS: Array[float] = [
-	0.18, 0.20, 0.22, 0.25, 0.29, 0.36, 0.45, 0.56, 0.72, 0.95,
+	0.18, 0.20, 0.22, 0.25, 0.29, 0.34, 0.42, 0.50, 0.64, 1.50,
+]
+const EXPECTED_SEGMENT_WEIGHTS: Array = [
+	[0.70, 0.30, 0.0, 0.0, 0.0, 0.0],
+	[0.25, 0.75, 0.0, 0.0, 0.0, 0.0],
+	[1.00, 0.00, 0.0, 0.0, 0.0, 0.0],
+	[0.40, 0.225, 0.225, 0.15, 0.0, 0.0],
+	[0.45, 0.25, 0.25, 0.05, 0.0, 0.0],
+	[0.16, 0.165, 0.15, 0.525, 0.0, 0.0],
+	[0.20, 0.15, 0.65, 0.00, 0.0, 0.0],
+	[0.15, 0.15, 0.50, 0.20, 0.0, 0.0],
+	[0.15, 0.15, 0.45, 0.25, 0.0, 0.0],
+	[0.25, 0.25, 0.25, 0.25, 0.0, 0.0],
 ]
 const MAX_APPROVED_AREA_MULTIPLIER: float = 1.5
 const EXPECTED_ELITE_TICKS: Array[int] = [
@@ -19,8 +31,9 @@ const EXPECTED_ELITE_TICKS: Array[int] = [
 const WEIGHT_TOLERANCE: float = 0.0001
 const MIN_SEGMENT_TARGET_HP_RATIO: float = 0.10
 const MIN_SEGMENT_DAMAGE_RATIO: float = 0.15
-const MIN_BOSS_TUNING_RATIO: float = 0.25
+const MIN_BOSS_TUNING_RATIO: float = 0.20
 const MIN_BOSS_HP_TUNING_RATIO: float = 0.15
+const MIN_BOSS_DAMAGE_ACTION_TUNING_RATIO: float = 0.05
 
 var weapons: Dictionary[StringName, WeaponDefinition] = {}
 var passives: Dictionary[StringName, PassiveDefinition] = {}
@@ -200,8 +213,8 @@ func _index_content() -> void:
 
 
 func _validate_globals() -> void:
-	if _manifest.balance == null or _manifest.balance.balance_revision != 5:
-		_add_error("balance revision must be 5")
+	if _manifest.balance == null or _manifest.balance.balance_revision != 7:
+		_add_error("balance revision must be 7")
 	if _manifest.ticks_per_second != 60:
 		_add_error("ticks_per_second must be 60")
 	if not _manifest.arena_size.is_equal_approx(Vector2(30.0, 30.0)):
@@ -251,11 +264,13 @@ func _validate_globals() -> void:
 		_manifest.boss_damage_multiplier,
 		SurvivalContentManifest.DEFAULT_BOSS_DAMAGE_MULTIPLIER,
 		"boss damage multiplier",
+		MIN_BOSS_DAMAGE_ACTION_TUNING_RATIO,
 	)
 	_validate_tunable_multiplier(
 		_manifest.boss_action_rate_multiplier,
 		SurvivalContentManifest.DEFAULT_BOSS_ACTION_RATE_MULTIPLIER,
 		"boss action rate multiplier",
+		MIN_BOSS_DAMAGE_ACTION_TUNING_RATIO,
 	)
 	if _manifest.boss_enrage_interval_ticks != 1800:
 		_add_error("boss enrage interval must be 1800 ticks")
@@ -370,6 +385,7 @@ func _validate_weapons() -> void:
 				_add_error("evolved weapon must not enter offers: %s" % definition.weapon_id)
 		else:
 			basic_count += 1
+			_validate_single_weapon_level_deltas(definition)
 			if definition.selection_weight <= 0.0:
 				_add_error("base weapon must have positive weight: %s" % definition.weapon_id)
 			if not is_equal_approx(
@@ -420,6 +436,31 @@ func _validate_weapon_arrays(definition: WeaponDefinition) -> void:
 		if not is_finite(value) or value < 0.0:
 			_add_error("weapon effect radius must be finite and non-negative: %s" % definition.weapon_id)
 	_validate_weapon_envelope(definition)
+
+
+func _validate_single_weapon_level_deltas(definition: WeaponDefinition) -> void:
+	for next_level: int in range(2, definition.max_level + 1):
+		var deltas: Array[WeaponDefinition.WeaponLevelDelta] = definition.level_deltas(next_level)
+		if deltas.size() != 1:
+			_add_error(
+				"base weapon level must change exactly one stat: %s level %d changed %d"
+				% [definition.weapon_id, next_level, deltas.size()]
+			)
+			continue
+		var delta: WeaponDefinition.WeaponLevelDelta = deltas[0]
+		if (
+			delta.stat_id == WeaponDefinition.STAT_AMOUNT
+			and not is_equal_approx(delta.new_value - delta.previous_value, 1.0)
+		):
+			_add_error(
+				"base weapon amount level delta must be +1: %s level %d changed %d to %d"
+				% [
+					definition.weapon_id,
+					next_level,
+					roundi(delta.previous_value),
+					roundi(delta.new_value),
+				]
+			)
 
 
 func _validate_weapon_envelope(definition: WeaponDefinition) -> void:
@@ -534,8 +575,33 @@ func _validate_enemies() -> void:
 	var boss: EnemyDefinition = enemy_for_type(GameTypes.EnemyType.BOSS)
 	if elite == null or not elite.drops_chest:
 		_add_error("elite must drop a chest")
+	elif not is_equal_approx(elite.base_hp, 650.0):
+		_add_error("revision 7 elite HP must be 650")
 	if boss == null or not boss.is_boss:
 		_add_error("boss definition must be marked as boss")
+	_validate_revision_seven_enemy_roles()
+
+
+func _validate_revision_seven_enemy_roles() -> void:
+	var expected_specs: Dictionary[StringName, Array] = {
+		&"pursuer": [20.0, 2.4, 45, 8.0, 1],
+		&"swarmer": [9.0, 4.2, 45, 4.0, 1],
+		&"bulwark": [80.0, 1.35, 60, 14.0, 2],
+		&"shooter": [34.0, 3.0, 42, 11.0, 2],
+	}
+	for enemy_id: StringName in expected_specs:
+		var definition: EnemyDefinition = enemy(enemy_id)
+		var expected: Array = expected_specs[enemy_id]
+		if definition == null:
+			continue
+		if (
+			not is_equal_approx(definition.base_hp, float(expected[0]))
+			or not is_equal_approx(definition.move_speed, float(expected[1]))
+			or definition.contact_interval_ticks != int(expected[2])
+			or not is_equal_approx(definition.contact_damage, float(expected[3]))
+			or definition.xp_value != int(expected[4])
+		):
+			_add_error("revision 7 enemy role differs from approved values: %s" % enemy_id)
 
 
 func _validate_segments() -> void:
@@ -548,22 +614,18 @@ func _validate_segments() -> void:
 			continue
 		if definition.start_tick != index * 3600 or definition.end_tick != (index + 1) * 3600:
 			_add_error("segment tick bounds mismatch: %d" % index)
-		_validate_segment_target_tuning(definition, index)
-		_validate_segment_multiplier_tuning(
-			definition.hp_multiplier,
-			BASELINE_HP_MULTIPLIERS[index],
-			index,
-			"HP",
-			MIN_SEGMENT_TARGET_HP_RATIO,
-		)
-		_validate_segment_multiplier_tuning(
+		if definition.target_active != EXPECTED_TARGETS[index]:
+			_add_error("segment target differs from revision 7 value: %d" % index)
+		if not is_equal_approx(definition.hp_multiplier, BASELINE_HP_MULTIPLIERS[index]):
+			_add_error("segment HP differs from revision 7 value: %d" % index)
+		if not is_equal_approx(
 			definition.damage_multiplier,
 			BASELINE_DAMAGE_MULTIPLIERS[index],
-			index,
-			"damage",
-			MIN_SEGMENT_DAMAGE_RATIO,
-		)
+		):
+			_add_error("segment damage differs from revision 7 value: %d" % index)
 		_validate_probability_weights(definition.spawn_weights, "segment_%02d weights" % (index + 1))
+		if not _float_arrays_equal(definition.spawn_weights, EXPECTED_SEGMENT_WEIGHTS[index]):
+			_add_error("segment weights differ from revision 7 value: %d" % index)
 		if definition.spawn_weights.size() != GameTypes.EnemyType.size():
 			_add_error(
 				"segment spawn weights must contain exactly one entry per EnemyType: %d"
@@ -640,7 +702,7 @@ func _validate_segment_multiplier_tuning(
 		)
 
 
-func _float_arrays_equal(left: PackedFloat32Array, right: PackedFloat32Array) -> bool:
+func _float_arrays_equal(left: PackedFloat32Array, right: Array) -> bool:
 	if left.size() != right.size():
 		return false
 	for index: int in range(left.size()):

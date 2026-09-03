@@ -55,9 +55,9 @@ func _test_survival_modals(assertions: Variant, tree: SceneTree) -> void:
 	overlay.show_level_offer({
 		"serial": 71,
 		"options": [
-			_option(GameTypes.UpgradeKind.WEAPON, "共鳴波", 1, 2, "進化: 生命格子", 100.0),
+			_option(GameTypes.UpgradeKind.WEAPON, "共鳴波", 1, 2, "進化: 生命格子", 100.0, "波数 2 → 3"),
 			_option(GameTypes.UpgradeKind.PASSIVE, "周期結晶", 0, 1, "進化: 追尾核", 90.0),
-			_option(-1, "分類なし", 4, 5, "進化: 不明", 80.0),
+			_option(-1, "分類なし", 4, 5, "進化: 不明", 80.0, "効果 4 → 5"),
 		],
 	})
 	var level_state: Dictionary = overlay.debug_state()
@@ -67,15 +67,16 @@ func _test_survival_modals(assertions: Variant, tree: SceneTree) -> void:
 	var passive_option_text: String = str(level_state["option_texts"][1])
 	var unknown_option_text: String = str(level_state["option_texts"][2])
 	assertions.expect_true(
-		weapon_option_text.contains("Lv 1 → 2\n種別：武器\n\n説明"),
-		"weapon kind follows the level and precedes the description",
+		weapon_option_text.contains("Lv 1 → 2\n種別：武器\n\n波数 2 → 3"),
+		"owned weapon shows only its next base-value delta",
 	)
+	assertions.expect_false(weapon_option_text.contains("説明"), "owned weapon hides its static overview")
 	assertions.expect_true(
 		passive_option_text.contains("新規 Lv 1\n種別：パッシブ\n\n説明"),
 		"passive kind follows the level and precedes the description",
 	)
 	assertions.expect_true(
-		unknown_option_text.contains("Lv 4 → 5\n種別：不明\n\n説明"),
+		unknown_option_text.contains("Lv 4 → 5\n種別：不明\n\n効果 4 → 5"),
 		"unknown kind is not misclassified",
 	)
 	assertions.expect_false(weapon_option_text.contains("weight"), "internal offer weight is hidden")
@@ -317,11 +318,13 @@ func _option(
 	next_level: int,
 	pairing_hint: String,
 	weight: float,
+	upgrade_detail: String = "",
 ) -> Dictionary:
 	return {
 		"kind": kind,
 		"display_name": display_name,
 		"description": "説明",
+		"upgrade_detail": upgrade_detail,
 		"pairing_hint": pairing_hint,
 		"current_level": current_level,
 		"next_level": next_level,
@@ -353,7 +356,12 @@ func _exercise_chest_input(
 		"display_name": "共鳴波",
 		"previous_level": 1,
 		"new_level": 2,
+		"upgrade_detail": "波数 2 → 3",
 	})
+	assertions.expect_true(
+		str(overlay.debug_state()["chest_result"]).contains("Lv 1 → 2\n波数 2 → 3"),
+		"normal chest upgrade exposes the same base-value delta",
+	)
 	action.call("test_handle_input", event)
 	assertions.expect_equal(
 		expected_count,

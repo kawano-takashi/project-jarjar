@@ -47,7 +47,7 @@ const DEFAULT_BOSS_ACTION_RATE_MULTIPLIER: float = 1.0
 @export var xp_pickup_collect_radius: float = DEFAULT_XP_PICKUP_COLLECT_RADIUS
 @export var xp_pickup_speed: float = DEFAULT_XP_PICKUP_SPEED
 @export_range(50, 200, 5) var xp_yield_percent: int = DEFAULT_XP_YIELD_PERCENT
-@export_range(0.25, 1.10, 0.05) var normal_enemy_damage_scale: float = (
+@export_range(0.20, 1.10, 0.05) var normal_enemy_damage_scale: float = (
 	DEFAULT_NORMAL_ENEMY_DAMAGE_SCALE
 )
 @export var weapon_slot_count: int = 5

@@ -2,6 +2,34 @@ class_name WeaponDefinition
 extends Resource
 
 
+const STAT_DAMAGE: StringName = &"damage"
+const STAT_COOLDOWN_TICKS: StringName = &"cooldown_ticks"
+const STAT_AMOUNT: StringName = &"amount"
+const STAT_PROJECTILE_SPEED: StringName = &"projectile_speed"
+const STAT_RANGE: StringName = &"range"
+const STAT_PROJECTILE_RADIUS: StringName = &"projectile_radius"
+const STAT_EFFECT_RADIUS: StringName = &"effect_radius"
+const STAT_DURATION_TICKS: StringName = &"duration_ticks"
+const STAT_PIERCE: StringName = &"pierce"
+
+
+class WeaponLevelDelta:
+	extends RefCounted
+
+	var stat_id: StringName = &""
+	var previous_value: float = 0.0
+	var new_value: float = 0.0
+
+	func _init(
+		p_stat_id: StringName,
+		p_previous_value: float,
+		p_new_value: float,
+	) -> void:
+		stat_id = p_stat_id
+		previous_value = p_previous_value
+		new_value = p_new_value
+
+
 @export var weapon_id: StringName = &""
 @export var display_name: String = ""
 @export_multiline var description: String = ""
@@ -80,6 +108,88 @@ func duration_ticks_at(level: int) -> int:
 
 func pierce_at(level: int) -> int:
 	return _int_at(pierce_by_level, level)
+
+
+func level_deltas(next_level: int) -> Array[WeaponLevelDelta]:
+	var result: Array[WeaponLevelDelta] = []
+	if next_level < 2 or next_level > max_level:
+		return result
+	var previous_level: int = next_level - 1
+	_append_float_delta(
+		result,
+		STAT_DAMAGE,
+		damage_at(previous_level),
+		damage_at(next_level),
+	)
+	_append_int_delta(
+		result,
+		STAT_COOLDOWN_TICKS,
+		cooldown_ticks_at(previous_level),
+		cooldown_ticks_at(next_level),
+	)
+	_append_int_delta(
+		result,
+		STAT_AMOUNT,
+		amount_at(previous_level),
+		amount_at(next_level),
+	)
+	_append_float_delta(
+		result,
+		STAT_PROJECTILE_SPEED,
+		projectile_speed_at(previous_level),
+		projectile_speed_at(next_level),
+	)
+	_append_float_delta(
+		result,
+		STAT_RANGE,
+		range_at(previous_level),
+		range_at(next_level),
+	)
+	_append_float_delta(
+		result,
+		STAT_PROJECTILE_RADIUS,
+		projectile_radius_at(previous_level),
+		projectile_radius_at(next_level),
+	)
+	_append_float_delta(
+		result,
+		STAT_EFFECT_RADIUS,
+		effect_radius_at(previous_level),
+		effect_radius_at(next_level),
+	)
+	_append_int_delta(
+		result,
+		STAT_DURATION_TICKS,
+		duration_ticks_at(previous_level),
+		duration_ticks_at(next_level),
+	)
+	_append_int_delta(
+		result,
+		STAT_PIERCE,
+		pierce_at(previous_level),
+		pierce_at(next_level),
+	)
+	return result
+
+
+func _append_float_delta(
+	result: Array[WeaponLevelDelta],
+	stat_id: StringName,
+	previous_value: float,
+	new_value: float,
+) -> void:
+	if not is_equal_approx(previous_value, new_value):
+		result.append(WeaponLevelDelta.new(stat_id, previous_value, new_value))
+
+
+func _append_int_delta(
+	result: Array[WeaponLevelDelta],
+	stat_id: StringName,
+	previous_value: int,
+	new_value: int,
+) -> void:
+	if previous_value != new_value:
+		result.append(WeaponLevelDelta.new(stat_id, previous_value, new_value))
 
 
 func _float_at(values: PackedFloat32Array, level: int) -> float:

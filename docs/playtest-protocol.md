@@ -1,6 +1,6 @@
 # Project JARJAR 人間プレイテスト手順
 
-**状態: 使用禁止（balance revision 5 source gate PASS・正式候補未固定）**
+**状態: 使用禁止（balance revision 6 source gate未実施・正式候補未固定）**
 
 現在フェーズは `docs/project-status.md` を正とする。正式プレイテスト対象はまだ固定していないため、
 現時点では候補者を採用せず、資格確認も結果収集も行わない。
@@ -15,12 +15,12 @@
 candidate_head=<40hex>
 exe_sha256=<64hex>
 pck_sha256=<64hex>
-balance_revision=5
+balance_revision=6
 ```
 
 `docs/project-status.md`が「正式playtest対象固定済み」へ更新され、同じ4値が一致するまで下記手順を開始しない。
 EXE/PCK、balance revision、候補HEADのいずれかが変わった場合、以前の対象やデータを流用しない。
-revision 4以前のsource gate、回帰、QA、build identity、playtest記録は履歴専用であり、revision 5候補の証拠として無効である。
+revision 5以前のsource gate、回帰、QA、build identity、playtest記録は履歴専用であり、revision 6候補の証拠として無効である。
 
 ## 専用12run調整ゲート
 
@@ -36,6 +36,9 @@ revision 4以前のsource gate、回帰、QA、build identity、playtest記録�
 - 画面外weapon hitとkillが0で、hit/kill中心距離とeffect外縁距離が各combat envelope内に収まる。
 - important VFX dropが0。
 
+revision 6 source gateは未実施である。基本武器の成長表を変更したため、下記revision 5結果は履歴としてのみ保持し、
+revision 6の正式対象固定には使わない。
+
 revision 5 source gateはseed `17`、`29`、`43`、`61`を`cautious`、`normal`、`evolution`の各方針で実行する
 12runでPASSした。実測は2:00以前死亡0/12、最終ボス到達11/12、撃破6/12、3:00まで進化0/12、
 normal方針は5:00まで2/4・7:00まで4/4・初回進化平均321.641667秒である。
@@ -45,7 +48,7 @@ normal方針は5:00まで2/4・7:00まで4/4・初回進化平均321.641667秒�
 VFX admitted / suppressed / important dropは90,151 / 0 / 0、audio admitted / suppressedは53,321 / 181,691、
 pool overflowは0run、orphanは0run、必須metric取得は12/12である。
 実測CSVとsummaryは`artifacts/balance/revision-5/`に保存している。
-同じrevision 5作業ツリーで全GDScript回帰112/112もPASSしているが、正式candidate identityは未固定である。
+同じrevision 5作業ツリーで全GDScript回帰112/112もPASSしたが、revision 6の証拠としては無効である。
 
 この自動調整の最終値は`xp_yield_percent=90`、通常敵damage scale `0.55`、bossのHP `0.5625`、
 damage `0.57`、action rate `1.0`である。segment値は次のとおりである。
@@ -74,7 +77,7 @@ damage `0.57`、action rate `1.0`である。segment値は次のとおりであ�
 
 | balance_revision | 全testerの初見資格確認済み | 確認日 (YYYY-MM-DD) |
 |---:|---|---|
-| 5 | 未確認 |  |
+| 6 | 未確認 |  |
 
 実際に全員の条件を確認するまでは、上表を`yes`へ変更しない。
 

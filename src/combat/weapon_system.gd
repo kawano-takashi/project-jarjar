@@ -1126,7 +1126,7 @@ func _targets_by_distance(
 	targets.sort_custom(func(left: EnemyEntity, right: EnemyEntity) -> bool:
 		var left_distance: float = left.position.distance_squared_to(sort_origin)
 		var right_distance: float = right.position.distance_squared_to(sort_origin)
-		if not is_equal_approx(left_distance, right_distance):
+		if left_distance != right_distance:
 			return left_distance < right_distance
 		return left.entity_id < right.entity_id
 	)

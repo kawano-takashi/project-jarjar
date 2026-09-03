@@ -4,4 +4,4 @@
 
 [resource]
 script = ExtResource("1_manifest")
-balance_revision = 5
+balance_revision = 7
