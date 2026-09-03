@@ -1,30 +1,46 @@
 # Project JARJAR 最終QA記録
 
-**状態: 人間QA未実施（balance revision 10 source gate未実施、正式候補未固定）**
+**状態: 人間QA未実施（balance revision 11 source gate不合格、正式候補未固定）**
 
 この文書は候補固定前の自動調整記録、対象identityに対する自動検証結果、および人間が実機で確認した事実を記録する。
 過去のrevision、別のEXE/PCK、別の候補HEADの結果は転記しない。`ManualQa`の終了コード0だけでは合格にしない。
 ユーザーが最終調整完了を明示するまで正式candidateを固定せず、対象identityも記入しない。
-revision 9以前のsource gate、回帰、QA、build identity、playtest記録は履歴専用であり、revision 10候補の証拠として無効である。
+revision 10以前のsource gate、回帰、QA、build identity、playtest記録は履歴専用であり、revision 11候補の証拠として無効である。
 
 ## 対象identity
 
 - candidate_head:
 - exe_sha256:
 - pck_sha256:
-- balance_revision: `10`
+- balance_revision: `11`
 - 実施日:
 - 判定: 未実施
 
 4値のいずれかが変わったら、この記録を無効として新しい対象で全項目を再実施する。
 
-## revision 10 source gate
+## revision 11 source gate
 
-未実施。追尾核を6 tick間隔の逐次連射と発射後直進へ変更した。通常敵と50体高速群れの生成枠も
-プレイヤー中心・画面軸基準の10〜12m帯で、通常敵に18m遠方破棄があるため、revision 9以前の自動調整結果は流用しない。
-既存の全体balance値、受入閾値、bot方針は変更せず、新しい追尾核とスポーン挙動を含む再調整を別作業で一度だけ行う。
+2026-09-03にseed `17`、`29`、`43`、`61`を`cautious`、`normal`、`evolution`の各方針で実行する
+正式12run source gateを一度だけ実施し、`passed=false`となった。停止条件に従い、同じ作業内で速度や他balance値を
+再調整せず、source gateも再実行していない。
 
-## revision 5自動調整済みsource gate（履歴・revision 10へ流用禁止）
+- 2:00以前の死亡: 0/12
+- 最終ボス到達: 12/12（必要9〜11/12、不合格）
+- 最終ボス撃破: 5/12（必要5〜8/12）
+- 3:00までの初回進化: 0/12
+- normal方針の5:00までの初回進化: 2/4
+- normal方針の7:00までの初回進化: 3/4（必要4/4、不合格）
+- normal方針の初回進化時刻平均: 343.75秒（現行source gateの範囲315〜345秒）
+- ボス戦中央値: 71.95秒、60秒以内のエリート撃破率: 0.75
+- wave pair 2–3 / 4–5 / 6–7 / 8–9: すべて不合格。`pressure / kill gain / XP gain`は順に
+  `0.291 / 0.027 / 0.027`、`0.267 / 0.002 / -0.074`、`0.321 / 0.383 / 0.430`、`0.270 / 0.033 / 0.027`
+- pool overflow / orphan、必須metric欠落、画面外weapon hit / kill、envelope超過: すべて0run
+- audio admitted / suppressed: 58,885 / 181,677
+
+実測は`artifacts/balance/revision-11/formal/`に保存した。source gateが不合格のため、正式candidate identityを固定せず、
+性能試験、Release検証、ManualQa、人間playtestへ進まない。
+
+## revision 5自動調整済みsource gate（履歴・revision 11へ流用禁止）
 
 seed `17`、`29`、`43`、`61`を`cautious`、`normal`、`evolution`の各方針で実行する専用12run source gateがPASSした。
 実測は次のとおりである。
@@ -55,20 +71,20 @@ damage `0.57`、action rate `1.0`である。segment値は次のとおりであ�
 | damage_multiplier | 0.18 | 0.20 | 0.22 | 0.25 | 0.29 | 0.36 | 0.45 | 0.56 | 0.72 | 0.95 |
 
 実測CSVとsummaryは`artifacts/balance/revision-5/`に保存している。このPASSはrevision 5の自動調整完了記録であり、
-空欄のrevision 10正式candidate identityに対する性能試験、Release検証、ManualQa、
+空欄のrevision 11正式candidate identityに対する性能試験、Release検証、ManualQa、
 人間playtestの完了を意味しない。
 上記の調整値、segment、候補抽選、進化条件、出現・攻撃・10:00遷移のいずれかを変更した場合、このsource gate結果を無効として
 専用12runを全件再実行する。
 
 ## 自動検証記録
 
-- 全GDScript回帰: PASS（2026-09-03、触媒表記明確化後126/126）
-- GDScript guard: PASS（101ファイル）
-- 変更GDScript check-only: PASS（触媒表記変更6/6、revision 10実装時11/11）
-- revision 10専用12run source gate: 未実施
-- revision 9以前のsource gate: 履歴専用、revision 10へ流用禁止
+- 全GDScript回帰: PASS（2026-09-03、revision 11実装後129/129）
+- GDScript guard: PASS（102ファイル）
+- 変更GDScript check-only: PASS（14/14）
+- revision 11専用12run source gate: FAIL（12/12完走、正式実行は1回のみ）
+- revision 10以前のsource gate: 履歴専用、revision 11へ流用禁止
 - Full HD性能試験（`--performance=full_hd_500_2000`）: 未実施
-- pool overflow / orphan: revision 5専用12runでは0run / 0run、正式候補の性能試験は未実施
+- pool overflow / orphan: revision 11専用12runでは0run / 0run、正式候補の性能試験は未実施
 - Release export: 未実施
 - Verify（pack audit、Release smoke、引数拒否、build鮮度、identity）: 未実施
 - ManualQa: 未実施
@@ -88,10 +104,12 @@ damage `0.57`、action rate `1.0`である。segment値は次のとおりであ�
 - QA項目`weapon_homing_core`でLv8追尾核の5発が初弾から0.10秒刻みで明確に視認できる。発射後は直進し、
   軌道上の最初の有効敵へ1回だけ命中して消え、再追尾も跳弾もしない。連射中の標的が消えた場合は未発射弾だけが再照準される。
 - 通常敵とエリートは接触追跡だけを行い、遠距離攻撃をしない。最終ボスだけが例外として、予告付きの放射弾を撃つ。
-- 通常`swarmer`がプレイヤーより速い6.4m/sで常時追尾する。定時抽選された別枠の群れは四辺10〜12m帯に
-  橙25体・赤25体の10×5千鳥配置で即時出現し、発生時に決めた画面方向へ32m/sで`2d+2.8m`直進する。
+- プレイヤー4.5m/s、通常敵2.16 / 5.76 / 2.7 / 1.215m/s、エリート1.8m/s、ボス1.44m/sで移動し、
+  斜め入力でも世界空間の速度が増えない。通常`swarmer`はプレイヤーより速い5.76m/sで常時追尾する。
+- 定時抽選された別枠の群れは四辺10〜12m帯に橙25体・赤25体の10×5千鳥配置で即時出現し、
+  発生時に決めた画面方向へ2.59m/sで`2d+2.8m`直進する。
   移動中のプレイヤーを再追尾せず、全生存個体が対辺まで横断して同時に無報酬退出する。
-- 群れが通常敵・エリート・ボスを進行方向へ押し、対象はアリーナ外へ出ない。プレイヤー、群れ同士、XP、宝箱、
+- 群れが通常敵・エリート・ボスを進行方向へ押し、1tickの上限が群れ定義速度`2.59/60m`から算出され、対象はアリーナ外へ出ない。プレイヤー、群れ同士、XP、宝箱、
   arena objectは押されず、50体が重なっても1回の被弾後30 combat tickの無敵時間が維持される。
 - 敵の経験値結晶を取得すると戦闘が停止し、重複しない最大3候補を選べる。各候補は名前、レベル、
   `種別：武器`または`種別：パッシブ`、未所持なら概要・所持済みなら今回の強化差分、進化情報の順に表示される。

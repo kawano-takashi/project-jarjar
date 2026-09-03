@@ -21,7 +21,6 @@ const BOSS_VOLLEY_BASE_COUNT: int = 8
 const BOSS_VOLLEY_PHASE_BONUS: int = 4
 const BOSS_PHASE_INTERVAL_MULTIPLIER: float = 0.75
 const BOSS_MIN_INTERVAL_MULTIPLIER: float = 0.20
-const SWARM_PUSH_DISTANCE_PER_TICK: float = 32.0 / float(RunState.TICKS_PER_SECOND)
 const SCREEN_RIGHT_WORLD: Vector2 = Vector2(0.70710678, -0.70710678)
 const SCREEN_DOWN_WORLD: Vector2 = Vector2(0.70710678, 0.70710678)
 const SPAWN_OUTWARD_DIRECTIONS: Array[Vector2] = [
@@ -304,6 +303,9 @@ func _move_enemy(
 func _apply_swarm_pushes(ids: Array[int], swarm_sweeps: Array[Dictionary]) -> void:
 	if swarm_sweeps.is_empty():
 		return
+	var push_distance_per_tick: float = _swarm_push_distance_per_tick()
+	if push_distance_per_tick <= 0.0:
+		return
 	for entity_id: int in ids:
 		var target: EnemyEntity = enemy_store.get_by_id(entity_id)
 		if target == null or target.is_swarm_event or not target.alive:
@@ -322,13 +324,22 @@ func _apply_swarm_pushes(ids: Array[int], swarm_sweeps: Array[Dictionary]) -> vo
 		if total_displacement == Vector2.ZERO:
 			continue
 		if total_displacement.length_squared() > (
-			SWARM_PUSH_DISTANCE_PER_TICK * SWARM_PUSH_DISTANCE_PER_TICK
+			push_distance_per_tick * push_distance_per_tick
 		):
-			total_displacement = total_displacement.normalized() * SWARM_PUSH_DISTANCE_PER_TICK
+			total_displacement = total_displacement.normalized() * push_distance_per_tick
 		var pushed_position: Vector2 = target.position + total_displacement
 		if _is_enemy_center_inside_arena(target.position, target.body_radius()):
 			pushed_position = _clamp_enemy_center(pushed_position, target.body_radius())
 		target.position = pushed_position
+
+
+func _swarm_push_distance_per_tick() -> float:
+	if _manifest == null or _manifest.swarm_event == null:
+		return 0.0
+	var unit: EnemyDefinition = _manifest.swarm_event.unit_definition
+	if unit == null:
+		return 0.0
+	return maxf(0.0, unit.move_speed) / float(RunState.TICKS_PER_SECOND)
 
 
 func _segment_intersects_circle(

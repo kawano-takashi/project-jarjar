@@ -15,7 +15,7 @@ func test_names() -> PackedStringArray:
 		"normal_damage_invulnerability_is_thirty_ticks",
 		"advance_tick_matches_step_gameplay_state",
 		"fixed_seed_replay_ignores_reduce_motion",
-		"focused_build_progression_matches_revision10_enemy_pacing",
+		"focused_build_progression_matches_revision11_enemy_pacing",
 	])
 
 
@@ -45,7 +45,7 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 			_test_advance_tick_equivalence(assertions)
 		"fixed_seed_replay_ignores_reduce_motion":
 			_test_deterministic_replay(assertions)
-		"focused_build_progression_matches_revision10_enemy_pacing":
+		"focused_build_progression_matches_revision11_enemy_pacing":
 			_test_focused_build_pacing(assertions)
 		_:
 			assertions.expect_true(false, "registered survival combat scenario test")
@@ -177,7 +177,7 @@ func _test_boss_phases(assertions: Variant) -> void:
 	)
 	assertions.expect_equal(1, simulation.state.boss_enrage_stacks, "boss gains one pressure stack after thirty seconds")
 	simulation.state.boss_enrage_stacks = 2
-	assertions.expect_float(73.0, simulation.enemy_system._boss_action_interval(100, 1), "two enrage stacks and the revision ten action rate produce a 73-tick interval")
+	assertions.expect_float(73.0, simulation.enemy_system._boss_action_interval(100, 1), "two enrage stacks and the revision eleven action rate produce a 73-tick interval")
 
 
 func _test_scheduled_boss_multiplier_separation(assertions: Variant) -> void:
@@ -499,7 +499,7 @@ func _test_focused_build_pacing(assertions: Variant) -> void:
 			check_index += 1
 	var evolved: RunWeapon = simulation.state.weapon_for_lineage(&"homing_core")
 	assertions.expect_equal(3, simulation.state.opened_chests, "all three scheduled chest outcomes are consumed")
-	assertions.expect_equal(1, simulation.state.evolution_count, "revision ten fixture retains its first focused evolution through six minutes")
+	assertions.expect_equal(1, simulation.state.evolution_count, "revision eleven fixture retains its first focused evolution through six minutes")
 	assertions.expect_true(evolved.evolved and evolved.weapon_id == &"infinite_homing", "focused lineage remains evolved after six minutes")
 func _prepare_replay(simulation: CombatSimulation, reduce_motion: bool) -> Dictionary:
 	simulation.configure_accessibility(reduce_motion, false)

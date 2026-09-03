@@ -340,7 +340,7 @@ func _test_camera_hard_contract(assertions: Variant, tree: SceneTree) -> void:
 			)
 		assertions.expect_true(
 			maximum_reversal_lag <= CAMERA_LAG_LIMIT_M + 0.0001,
-			"rapid five-meter-per-second reversal keeps follow lag at or below 0.60 meters (%.4f)" % maximum_reversal_lag,
+			"rapid 4.5-meter-per-second reversal keeps follow lag at or below 0.60 meters (%.4f)" % maximum_reversal_lag,
 		)
 	viewport.remove_child(arena)
 	arena.free()

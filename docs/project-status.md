@@ -1,11 +1,11 @@
 # Project JARJAR 現在の状態
 
 - 更新日: 2026-09-03 (JST)
-- 状態: **revision 10 追尾核逐次連射を実装・source再調整待ち・正式candidate未固定**
-- playable baseline: 未固定（revision 10 作業ツリー）
-- balance revision: `10`（追尾核を6 tick間隔の逐次連射へ変更、source gate未実施）
+- 状態: **revision 11 移動速度調整を実装・専用12run source gate不合格・判断待ち**
+- playable baseline: 未固定（revision 11 作業ツリー）
+- balance revision: `11`（通常移動速度10%減、高速群れ2.59m/s）
 - 正式playtest target: 未固定
-- 現revisionの自動調整記録: なし（revision 9以前の記録は履歴専用）
+- 現revisionの自動調整記録: 2026-09-03の正式12runを一度だけ実施し`passed=false`（再調整未実施）
 
 ## 現在地
 
@@ -31,6 +31,66 @@ HUDと3択の装備種別および内部データでは従来どおりパッシ�
 
 被弾後は30 combat tick（0.5秒）の連続被弾防止とする。これとは別に、レベルアップや宝箱の自動モーダル列がすべて
 終了した後だけ45 combat tick（0.75秒）の復帰保護を与える。列の中間や手動ポーズ復帰ではこの45 tickを付与しない。
+
+## revision 11 移動速度調整契約
+
+通常ユニットの座標移動速度だけをrevision 10から一律10%下げ、相対速度比を維持する。隠れた共通倍率は置かず、
+プレイヤー定数と各敵リソースの定義値を正本とする。弾速、XP吸引、攻撃間隔、スポーン時刻、カメラ投影・追従値は変更しない。
+
+| 対象 | revision 10 | revision 11 |
+|---|---:|---:|
+| Player | 5.0m/s | 4.5m/s |
+| Pursuer | 2.4m/s | 2.16m/s |
+| Swarmer | 6.4m/s | 5.76m/s |
+| Shooter | 3.0m/s | 2.7m/s |
+| Bulwark | 1.35m/s | 1.215m/s |
+| Elite | 2.0m/s | 1.8m/s |
+| Boss | 1.6m/s | 1.44m/s |
+
+高速群れは一律10%減の例外である。[Move Speed](https://vampire-survivors.fandom.com/wiki/Move_Speed)と
+[Stages](https://vampire-survivors.fandom.com/wiki/Stages)を参照し、ステージ時計の倍率は持ち込まず、Hyper Mad Forestの
+Bat Swarmの画面上の速度だけを比較対象にした。[Bat Swarm](https://vampire-survivors.fandom.com/wiki/Bat_Swarm)の50体構成に対し、
+次の公開映像を等速、1280×720、30fpsで測定した。
+
+| 公開映像 | 公開日 | 測定区間 | 有効標本 | 映像別中央値 |
+|---|---|---|---:|---:|
+| [Vampire Survivors MAD FOREST Full Run on HYPER](https://www.youtube.com/watch?v=ZDMHwi_ewaw) | 2022-02-26 | ゲーム時計3:00付近、0.5秒 | 4 | 0.12674895画面高/秒 |
+| [MAD FOREST RECORD Tied - Level 193 - Hyper Mad Forest - Vampire Survivors](https://www.youtube.com/watch?v=nnnsUJpYtaY) | 2022-02-15 | ゲーム時計2:01付近、0.5秒 | 4 | 0.13393137画面高/秒 |
+
+どちらもHyperのみ、Curse 0%、敵速度補正なしであることを画面と公開時期から確認し、固定背景の動きを差し引いた
+非衝突個体を4体ずつ採用した。映像別中央値の差は5.51%で10%以内、全8標本中央値は
+`r_vs=0.1307825102`画面高/秒である。正射影サイズ18m、俯角55度の上下左右中央2値平均へ
+`36 × r_vs ÷ (1 + sin(55°))`で換算すると2.5881126m/sとなるため、小数第2位へ丸めた`2.59m/s`を採用した。
+丸め後の逆算値は0.130877883画面高/秒でVS中央値との差は0.073%、安全上限28.8m/s未満である。
+
+群れのHP、威力、XP、半径、50体構成、生成距離、隊列奥行、総走行距離、発生時刻・確率は維持する。
+11m生成fixtureの総走行距離24.8mは維持され、退出までの移動時間は575 combat tickへ延びる。
+通常敵・エリート・ボスへの同一tick押し出し上限は固定値を廃止し、そのtickの群れ定義速度から
+`move_speed / 60`として算出する（現値は約0.0431667m/tick）。STOP中は移動、押し出し、残走行距離の減算を行わない。
+
+未使用だったプレイヤー速度の重複定数は削除した。カタログはrevision 11と全7通常速度、群れ速度を検証する。
+回帰は60tickの設定距離、revision 10との全相対速度比、斜め入力正規化、世界4方向と斜めの等速性、
+群れの設定速度・tick距離・総走行距離・575tick退出・速度由来押し出し上限・STOP停止を固定する。
+
+### revision 11 正式12run source gate結果
+
+2026-09-03にseed `17`、`29`、`43`、`61`を`cautious`、`normal`、`evolution`の各方針で実行する
+正式12runを計画どおり一度だけ実施し、`passed=false`となった。実装値を同じ作業内で再調整していない。
+
+- 2:00以前の死亡: 0/12
+- 最終ボス到達: 12/12（合格範囲9〜11/12、**不合格**）
+- 最終ボス撃破: 5/12（合格範囲5〜8/12）
+- 3:00までの初回進化: 0/12
+- normal方針の5:00までの初回進化: 2/4
+- normal方針の7:00までの初回進化: 3/4（必要4/4、**不合格**）
+- normal方針の初回進化時刻平均: 343.75秒（現行source gateの合格範囲315〜345秒）
+- wave pair 2–3 / 4–5 / 6–7 / 8–9: すべて不合格。`pressure / kill gain / XP gain`は順に
+  `0.291 / 0.027 / 0.027`、`0.267 / 0.002 / -0.074`、`0.321 / 0.383 / 0.430`、`0.270 / 0.033 / 0.027`
+- offscreen weapon hit / kill、pool overflow / orphan、必須metric欠落: すべて0run
+- audio cue: admitted 58,885、suppressed 181,677
+
+実測CSVとsummaryは`artifacts/balance/revision-11/formal/`へ出力した。このディレクトリは正式candidateの固定物ではなく、
+調整判断用のローカル成果物である。source gate不合格のため正式candidate、Release、Manual QA、playtestへは進めない。
 
 ## revision 10 追尾核逐次連射契約
 
@@ -64,11 +124,11 @@ HUDと3択の装備種別および内部データでは従来どおりパッシ�
 10:00以降は遠方破棄を止めて既存のボス吸収処理を優先する。STOP中も生成管理と遠方破棄は進むが、
 敵移動、接触、群れの残走行距離は停止する。モーダル中はcombat tick自体を停止する。
 
-通常の`swarmer`はHP 9、接触威力4、XP 1、既存の出現比率、6.4m/s、常時追尾を維持する。通常waveと独立して、
+通常の`swarmer`はHP 9、接触威力4、XP 1、既存の出現比率、5.76m/s、常時追尾を維持する。通常waveと独立して、
 2:05〜9:45の固定21試行から確率抽選された50体の群れを生成する。群れ専用乱数は通常spawn、upgrade、chest、
 powerupの乱数列から分離し、各attemptの専用RNGで四辺と10〜12mの生成距離を抽選する。
 
-群れ個体はHP 1、接触威力1、XP 1、半径0.26m、速度32m/s、接触間隔1 tickである。HPと威力には発生時の
+群れ個体はHP 1、接触威力1、XP 1、半径0.26m、速度2.59m/s、接触間隔1 tickである。HPと威力には発生時の
 segment倍率だけを適用し、`normal_enemy_damage_scale`は適用しない。選んだ辺のプレイヤー正面、横ずれ0をアンカーに、
 横10体×奥行5列、横ピッチ2/3m、奥行ピッチ0.7mの千鳥配置を即時生成する。後列は生成帯から最大2.8m外へ伸びる。
 橙25体・赤25体が同じ小型meshを共有する。全員が生成時のプレイヤーへ向く固定方向へ
@@ -86,17 +146,18 @@ segment倍率だけを適用し、`normal_enemy_damage_scale`は適用しない�
 
 成功試行は通常active目標、spawn credit、通常の16体/tick上限を変更せず50体を一括生成する。空きpoolが50未満なら
 部分生成せず、その試行を消費して生成失敗を記録する。群れは通常敵・エリート・ボスを進行方向へ押すが、同一tickの
-対象別総移動は32/60m以下とする。既に内側へ入った敵は押されても境界内に留まり、外側の通常敵は丸めず連続移動する。
+対象別総移動は群れの定義速度を60で割った値以下とする。既に内側へ入った敵は押されても境界内に留まり、外側の通常敵は丸めず連続移動する。
 プレイヤー、他の群れ個体、XP、宝箱、arena objectは押さない。群れの生存退場と10:00吸収は無報酬で、
 撃破時だけ通常のweapon hit/kill、総kill、CHAIN、1 XP結晶を処理する。
 生成、撃破、退場、XP、吸収は通常wave・通常敵種・segment基準統計から分けて計測する。
 
-revision 10では既存の敵数、HP、攻撃力、速度、確率、全体balance値、受入閾値、bot方針を変更していない。実データは
+revision 10では既存の敵数、HP、攻撃力、速度、確率、全体balance値、受入閾値、bot方針を変更していなかった。revision 11では
+座標移動速度だけを上記のとおり変更し、それ以外を維持した。実データは
 `xp_yield_percent=90`、`normal_enemy_damage_scale=0.4`、bossはHP `1.6875`、damage `0.114`、action rate `1.1`である。
 通常active目標は`[16, 46, 32, 68, 49, 140, 92, 132, 97, 176]`で、segment HP・damage・weightもrevision 7から
-据え置いた。追尾核の攻撃タイミングと命中契約を変更したためrevision 9以前の調整結果を含む旧証拠はrevision 10へ流用せず、
-全体再調整は別作業で一度だけ行う。触媒表記明確化後の全GDScript回帰は126/126 PASS、GDScript guardは101ファイルPASS、
-今回変更したGDScriptのcheck-onlyは6/6 PASS、`git diff --check`もPASSしている。性能試験、export、Release QA、source再調整は実施していない。
+据え置いた。revision 11実装後の全GDScript回帰は129/129 PASS、GDScript guardは102ファイルPASS、
+変更したGDScriptのcheck-onlyは14/14 PASSである。正式12run source gateは一度だけ実施して不合格となり、
+再調整していない。性能試験、export、Release QAは実施していない。
 
 ## revision 6から継続する単一強化項目契約
 
@@ -121,10 +182,10 @@ revision 10では既存の敵数、HP、攻撃力、速度、確率、全体bala
 未所持候補は従来どおり概要説明を表示する。カタログ読込時と回帰テストで、各基本武器の各レベルについて
 変更項目数がちょうど1であること、および個数増加が`+1`であることを検証する。
 
-この武器成長表はrevision 6で導入され、revision 10でも維持する。revision 9以前の回帰、QA、build identityは履歴であり、
-追尾核を逐次連射化したrevision 10候補の証拠には使用しない。
+この武器成長表はrevision 6で導入され、revision 11でも維持する。revision 10以前の回帰、QA、build identityは履歴であり、
+移動速度を変更したrevision 11候補の証拠には使用しない。
 
-## revision 5実装と最終調整値（履歴・revision 10へ流用禁止）
+## revision 5実装と最終調整値（履歴・revision 11へ流用禁止）
 
 revision 5の画面内戦闘契約は次のとおりである。
 
@@ -150,7 +211,7 @@ revision 5の画面内戦闘契約は次のとおりである。
 | hp_multiplier | 0.15 | 0.17 | 0.20 | 0.24 | 0.30 | 0.45 | 0.65 | 0.90 | 1.25 | 1.75 |
 | damage_multiplier | 0.18 | 0.20 | 0.22 | 0.25 | 0.29 | 0.36 | 0.45 | 0.56 | 0.72 | 0.95 |
 
-## revision 5 source gate結果（履歴・revision 10へ流用禁止）
+## revision 5 source gate結果（履歴・revision 11へ流用禁止）
 
 2026-09-02にseed `17`、`29`、`43`、`61`をcautious、normal、evolutionの各方針で実行する、
 専用の決定的12run source gateを完走し、`passed=true`でPASSした。
@@ -178,7 +239,7 @@ GDScript guard 97ファイル、今回変更したGDScript 2/2のcheck-only、`g
 このsource gateは自動調整完了の証拠であり、人間playtestの参加・回答・計測値や
 正式candidateのidentity、正式性能試験、Release検証を代替しない。
 
-revision 10への変更により、revision 9以前のcandidate、調整成果物、回帰、QA、build identityは現候補の証拠として無効であり、
+revision 11への変更により、revision 10以前のcandidate、調整成果物、回帰、QA、build identityは現候補の証拠として無効であり、
 履歴としてのみ保持する。現時点で正式candidateは未固定である。Full HD性能試験、Release export、Verify、ManualQa、
 人間playtestはすべて未実施であり、ユーザーが最終調整完了を明示するまで実行してはならない。
 
@@ -222,9 +283,9 @@ revision 4の専用12run PASSも正式candidateのidentityや正式検証結果�
 
 ## 次の作業
 
-1. 別作業でrevision 10の追尾核逐次連射、プレイヤー追従型スポーン、高速群れを含むsource再調整と専用12run source gateを一度だけ実施する。
-2. source gate通過後、ユーザーによる武器演出、敵圧、XPペース、文言その他の最終確認を待つ。
-3. ユーザーが最終調整完了を明示した後だけ、全回帰、GDScript検査、Full HD性能試験、
+1. revision 11正式12runの不合格実測をユーザーへ報告し、速度値・受入閾値・他balance値を今後どう扱うか判断を待つ。同じ作業内で再調整や再実行をしない。
+2. 次の調整方針が明示された場合だけ、その指示に従って新しい変更と検証を行う。
+3. source gateの扱いが決まり、ユーザーが最終調整完了を明示した後だけ、全回帰、GDScript検査、Full HD性能試験、
    Release export、pack audit、smoke、Verify、ManualQaを実施する。
 4. 新identity用の `docs/final-qa.md` に手動QAと自動検証結果を人間が記録する。
 5. 手動QA合格後、新しい候補HEAD、EXE/PCK SHA-256、balance revisionを `artifacts/playtest/target.txt` へ手動で固定する。
@@ -235,5 +296,5 @@ revision 4の専用12run PASSも正式candidateのidentityや正式検証結果�
 
 ## 正式受入後の棚卸し
 
-5人以上×3run完了までは、revision 10の回帰テスト、Debug QA、性能試験、Release検証、
+5人以上×3run完了までは、revision 11の回帰テスト、Debug QA、性能試験、Release検証、
 GDScript guard、比較用buildを保持する。正式受入後に再棚卸しし、配布・保守に不要な資材を削除する。

@@ -1,6 +1,6 @@
 # Project JARJAR 人間プレイテスト手順
 
-**状態: 使用禁止（balance revision 10 source gate未実施・正式候補未固定）**
+**状態: 使用禁止（balance revision 11 source gate不合格・正式候補未固定）**
 
 現在フェーズは `docs/project-status.md` を正とする。正式プレイテスト対象はまだ固定していないため、
 現時点では候補者を採用せず、資格確認も結果収集も行わない。
@@ -15,12 +15,12 @@
 candidate_head=<40hex>
 exe_sha256=<64hex>
 pck_sha256=<64hex>
-balance_revision=10
+balance_revision=11
 ```
 
 `docs/project-status.md`が「正式playtest対象固定済み」へ更新され、同じ4値が一致するまで下記手順を開始しない。
 EXE/PCK、balance revision、候補HEADのいずれかが変わった場合、以前の対象やデータを流用しない。
-revision 9以前のsource gate、回帰、QA、build identity、playtest記録は履歴専用であり、revision 10候補の証拠として無効である。
+revision 10以前のsource gate、回帰、QA、build identity、playtest記録は履歴専用であり、revision 11候補の証拠として無効である。
 
 ## 専用12run調整ゲート
 
@@ -30,14 +30,25 @@ revision 9以前のsource gate、回帰、QA、build identity、playtest記録�
 - 2:00以前の死亡が0/12、最終ボス到達が9〜11/12、撃破が5〜8/12。
 - normal方針4runのうち正確に2runが5:00までに初回進化する。
 - normal方針4runすべてが7:00までに初回進化する。
-- normal方針4runの初回進化時刻の算術平均が288秒以上324秒以下。
+- normal方針4runの初回進化時刻の算術平均が315秒以上345秒以下。
 - 全runでpool overflowとorphanが0。
 - 全runで必須metricが存在し、weapon hitとkillが1件以上ある。
 - 画面外weapon hitとkillが0で、hit/kill中心距離とeffect外縁距離が各combat envelope内に収まる。
 - important VFX dropが0。
+- ボス撃破runの戦闘時間中央値が60〜120秒で、normal方針の定時エリートを60秒以内に倒す比率が0.75以上。
+- wave pair 2–3、4–5、6–7、8–9の各組でpressure reductionが0.25〜0.35、kill gainが0.15〜0.30、
+  XP gainとkill gainの差が0.05以下。
 
-revision 10 source gateは未実施である。追尾核を逐次連射・発射後直進へ変更し、通常敵と50体群れの生成枠も
-プレイヤー追従化されているため、下記の旧結果は履歴としてのみ保持し、revision 10の正式対象固定には使わない。
+revision 11 source gateは2026-09-03に一度だけ実施し、12/12完走したが`passed=false`となった。
+2:00以前死亡0/12、ボス到達12/12（必要9〜11）、撃破5/12、3:00まで進化0/12、normal方針は
+5:00まで2/4・7:00まで3/4（必要4/4）・初回進化平均343.75秒である。ボス戦中央値71.95秒、
+60秒以内のエリート撃破率0.75、pool overflow / orphan、必須metric欠落、画面外weapon hit / kill、envelope超過はすべて0runだった。
+wave pair 2–3、4–5、6–7、8–9はすべて不合格である。実測は`artifacts/balance/revision-11/formal/`に保存した。
+同じ作業内で速度や他balance値を再調整せず、source gateも再実行していない。このためrevision 11の正式対象は固定しない。
+
+追尾核を逐次連射・発射後直進へ変更し、通常敵と50体群れの生成枠をプレイヤー追従化したrevision 10に加え、
+revision 11でプレイヤーと通常敵の移動速度を10%下げ、高速群れを2.59m/sへ変更した。
+下記の旧結果は履歴としてのみ保持し、revision 11の正式対象固定には使わない。
 
 revision 5 source gateはseed `17`、`29`、`43`、`61`を`cautious`、`normal`、`evolution`の各方針で実行する
 12runでPASSした。実測は2:00以前死亡0/12、最終ボス到達11/12、撃破6/12、3:00まで進化0/12、
@@ -48,7 +59,7 @@ normal方針は5:00まで2/4・7:00まで4/4・初回進化平均321.641667秒�
 VFX admitted / suppressed / important dropは90,151 / 0 / 0、audio admitted / suppressedは53,321 / 181,691、
 pool overflowは0run、orphanは0run、必須metric取得は12/12である。
 実測CSVとsummaryは`artifacts/balance/revision-5/`に保存している。
-同じrevision 5作業ツリーで全GDScript回帰112/112もPASSしたが、revision 10の証拠としては無効である。
+同じrevision 5作業ツリーで全GDScript回帰112/112もPASSしたが、revision 11の証拠としては無効である。
 
 この自動調整の最終値は`xp_yield_percent=90`、通常敵damage scale `0.55`、bossのHP `0.5625`、
 damage `0.57`、action rate `1.0`である。segment値は次のとおりである。
@@ -77,7 +88,7 @@ damage `0.57`、action rate `1.0`である。segment値は次のとおりであ�
 
 | balance_revision | 全testerの初見資格確認済み | 確認日 (YYYY-MM-DD) |
 |---:|---|---|
-| 10 | 未確認 |  |
+| 11 | 未確認 |  |
 
 実際に全員の条件を確認するまでは、上表を`yes`へ変更しない。
 

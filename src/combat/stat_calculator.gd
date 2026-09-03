@@ -2,7 +2,6 @@ class_name StatCalculator
 extends RefCounted
 
 
-const BASE_MOVE_SPEED: float = 5.0
 const MIN_COOLDOWN_MULTIPLIER: float = 0.05
 const MIN_DURATION_MULTIPLIER: float = 0.05
 const MIN_PROJECTILE_SPEED_MULTIPLIER: float = 0.05
