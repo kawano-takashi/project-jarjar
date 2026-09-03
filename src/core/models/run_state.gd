@@ -62,6 +62,7 @@ var elite_kill_ticks: PackedInt32Array = PackedInt32Array([-1, -1, -1, -1])
 var boss_spawn_tick: int = -1
 var boss_defeat_tick: int = -1
 var absorbed_normal_count: int = 0
+var normal_far_despawn_count: int = 0
 var absorbed_enemy_projectile_count: int = 0
 var swarm_event_attempt_count: int = 0
 var swarm_event_roll_success_count: int = 0

@@ -3,10 +3,10 @@ extends RefCounted
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"revision_eight_swarm_definition_and_drift_rejection",
+		"revision_nine_swarm_definition_and_drift_rejection",
 		"normal_swarmer_outpaces_the_player",
 		"swarm_scheduler_is_isolated_repeatable_and_atomic",
-		"swarm_formation_crosses_fixed_and_uses_two_visuals",
+		"swarm_formation_crosses_player_relative_frame_and_uses_two_visuals",
 		"swarm_contact_kill_and_invulnerability_are_separate",
 		"swarm_push_is_capped_clamped_and_paused",
 		"boss_transition_absorbs_swarm_without_rewards",
@@ -15,13 +15,13 @@ func test_names() -> PackedStringArray:
 
 func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
 	match test_name:
-		"revision_eight_swarm_definition_and_drift_rejection":
+		"revision_nine_swarm_definition_and_drift_rejection":
 			_test_definition_and_drift(assertions)
 		"normal_swarmer_outpaces_the_player":
 			_test_normal_swarmer_speed(assertions)
 		"swarm_scheduler_is_isolated_repeatable_and_atomic":
 			_test_scheduler_and_atomic_spawn(assertions)
-		"swarm_formation_crosses_fixed_and_uses_two_visuals":
+		"swarm_formation_crosses_player_relative_frame_and_uses_two_visuals":
 			_test_formation_motion_and_visuals(assertions)
 		"swarm_contact_kill_and_invulnerability_are_separate":
 			_test_contact_and_death_accounting(assertions)
@@ -30,7 +30,7 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 		"boss_transition_absorbs_swarm_without_rewards":
 			_test_boss_transition_absorption(assertions)
 		_:
-			assertions.expect_true(false, "registered revision eight swarm test")
+			assertions.expect_true(false, "registered revision nine swarm test")
 
 
 func _test_definition_and_drift(assertions: Variant) -> void:
@@ -40,7 +40,7 @@ func _test_definition_and_drift(assertions: Variant) -> void:
 	var manifest: SurvivalContentManifest = catalog.manifest()
 	var event_definition: SwarmEventDefinition = manifest.swarm_event
 	var unit: EnemyDefinition = event_definition.unit_definition
-	assertions.expect_equal(8, manifest.balance.balance_revision, "swarm ships as balance revision eight")
+	assertions.expect_equal(9, manifest.balance.balance_revision, "swarm ships as balance revision nine")
 	assertions.expect_equal(6, GameTypes.EnemyType.size(), "swarm adds no seventh EnemyType")
 	assertions.expect_equal(6, catalog.enemies.size(), "event unit stays outside the normal enemy catalog")
 	assertions.expect_float(6.4, catalog.enemy(&"swarmer").move_speed, "normal swarmer is faster than the player")
@@ -57,10 +57,10 @@ func _test_definition_and_drift(assertions: Variant) -> void:
 	assertions.expect_equal(50, event_definition.member_count, "event creates fifty members")
 	assertions.expect_equal(10, event_definition.lateral_count, "formation has ten lateral columns")
 	assertions.expect_equal(5, event_definition.depth_count, "formation has five depth rows")
-	assertions.expect_float(18.0, event_definition.spawn_distance, "leading row begins eighteen metres away")
+	assertions.expect_float(10.0, CombatEnvelope.SPAWN_INNER_HALF_EXTENT, "shared spawn frame begins ten metres away")
+	assertions.expect_float(12.0, CombatEnvelope.SPAWN_OUTER_HALF_EXTENT, "shared spawn frame ends twelve metres away")
 	assertions.expect_float(2.0 / 3.0, event_definition.lateral_pitch, "formation lateral pitch")
 	assertions.expect_float(0.7, event_definition.depth_pitch, "formation depth pitch")
-	assertions.expect_float(38.8, event_definition.travel_distance, "formation crossing distance")
 	var expected_ticks := PackedInt32Array([
 		7500, 7800, 8100,
 		11100, 11400,
@@ -145,6 +145,7 @@ func _test_scheduler_and_atomic_spawn(assertions: Variant) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
+	var event_definition: SwarmEventDefinition = catalog.manifest().swarm_event
 	var first_state: RunState = RunStateFactory.create(8003, catalog)
 	var second_state: RunState = RunStateFactory.create(8003, catalog)
 	var first_system := EnemySystem.new()
@@ -153,6 +154,8 @@ func _test_scheduler_and_atomic_spawn(assertions: Variant) -> void:
 	second_system.initialize(second_state, catalog)
 	first_state.combat_tick = 7500
 	second_state.combat_tick = 7500
+	first_state.stop_until_tick = 7600
+	second_state.stop_until_tick = 7600
 	first_state.spawn_credit = 7.25
 	var normal_rng_before: int = first_state.rng_streams.spawn_rng.state
 	var swarm_rng_before: int = first_state.rng_streams.swarm_event_rng.state
@@ -164,19 +167,73 @@ func _test_scheduler_and_atomic_spawn(assertions: Variant) -> void:
 		Vector2(2.0, -1.0),
 		7500,
 	)
-	assertions.expect_equal(50, first_group.size(), "first certain attempt bypasses the normal sixteen-spawn cap")
+	assertions.expect_equal(50, first_group.size(), "first certain attempt spawns atomically during STOP")
 	assertions.expect_equal(50, second_group.size(), "same seed repeats the successful attempt")
 	assertions.expect_equal(first_group[0].position, second_group[0].position, "same seed repeats direction and formation")
 	assertions.expect_equal(first_group[0].fixed_direction, second_group[0].fixed_direction, "same seed repeats fixed direction")
 	assertions.expect_equal(normal_rng_before, first_state.rng_streams.spawn_rng.state, "swarm attempt consumes no normal spawn RNG")
 	assertions.expect_not_equal(swarm_rng_before, first_state.rng_streams.swarm_event_rng.state, "swarm attempt advances only its dedicated RNG")
+	var first_direction: Vector2 = first_group[0].fixed_direction
+	var first_spawn_distance: float = -(
+		first_group[0].position - Vector2(2.0, -1.0)
+	).dot(first_direction)
+	assertions.expect_true(
+		first_spawn_distance >= CombatEnvelope.SPAWN_INNER_HALF_EXTENT
+		and first_spawn_distance <= CombatEnvelope.SPAWN_OUTER_HALF_EXTENT,
+		"successful attempt samples the shared ten-to-twelve-metre spawn frame",
+	)
+	var front_row_center := Vector2.ZERO
+	for front_index: int in range(event_definition.lateral_count):
+		front_row_center += first_group[front_index].position
+	front_row_center /= float(event_definition.lateral_count)
+	var lateral_direction := Vector2(-first_direction.y, first_direction.x)
+	var front_stagger: float = -0.25 * event_definition.lateral_pitch
+	var reconstructed_anchor: Vector2 = front_row_center - lateral_direction * front_stagger
+	assertions.expect_true(
+		reconstructed_anchor.is_equal_approx(
+			Vector2(2.0, -1.0) - first_direction * first_spawn_distance
+		),
+		"formation anchor has zero lateral offset on the selected player axis",
+	)
+	assertions.expect_float(
+		2.0 * first_spawn_distance
+		+ float(event_definition.depth_count - 1) * event_definition.depth_pitch,
+		first_group[0].remaining_travel_distance,
+		"attempt derives crossing distance from its sampled frame and formation depth",
+	)
+	var sampling_rng := RandomNumberGenerator.new()
+	sampling_rng.seed = 8003
+	var side_counts := PackedInt32Array([0, 0, 0, 0])
+	var sample_count: int = 4096
+	var all_distances_in_frame: bool = true
+	for _sample_index: int in range(sample_count):
+		var outward_direction: Vector2 = first_system._sample_spawn_outward_direction(
+			sampling_rng
+		)
+		var side_index: int = EnemySystem.SPAWN_OUTWARD_DIRECTIONS.find(outward_direction)
+		side_counts[side_index] += 1
+		var sampled_distance: float = first_system._sample_spawn_distance(sampling_rng)
+		all_distances_in_frame = all_distances_in_frame and (
+			sampled_distance >= CombatEnvelope.SPAWN_INNER_HALF_EXTENT
+			and sampled_distance <= CombatEnvelope.SPAWN_OUTER_HALF_EXTENT
+		)
+	assertions.expect_true(
+		all_distances_in_frame,
+		"swarm distance sampler remains inside the shared frame",
+	)
+	for count: int in side_counts:
+		assertions.expect_true(
+			count >= floori(float(sample_count) * 0.20)
+			and count <= ceili(float(sample_count) * 0.30),
+			"dedicated attempt sampler selects each screen side at twenty-five percent",
+		)
 	assertions.expect_float(7.25, first_state.spawn_credit, "swarm attempt consumes no spawn credit")
 	assertions.expect_equal(0, first_system._normal_enemy_count(), "event members do not count toward the normal target")
 	assertions.expect_equal(0, first_system.resolve_swarm_event_spawns(Vector2.ZERO, 7500).size(), "one attempt cannot execute twice")
 	assertions.expect_equal(1, first_state.swarm_event_attempt_count, "duplicate call does not duplicate attempt telemetry")
 	first_state.spawn_credit = 16.0
 	var normal_spawns: Array[EnemyEntity] = first_system.resolve_normal_spawns(Vector2.ZERO, 7500)
-	assertions.expect_equal(16, normal_spawns.size(), "normal wave continues on the swarm tick")
+	assertions.expect_equal(16, normal_spawns.size(), "normal spawn management also continues during STOP")
 	assertions.expect_equal(66, first_system.enemy_store.active_count(), "normal wave and fifty-member event coexist")
 	assertions.expect_float(0.0, first_state.spawn_credit, "only normal spawns consume credit")
 	assertions.expect_true(176 + 50 + RunState.ELITE_COUNT < EnemyStore.CAPACITY, "approved peak normal target, one swarm, and all elites fit the pool")
@@ -234,13 +291,14 @@ func _test_formation_motion_and_visuals(assertions: Variant) -> void:
 	var simulation := CombatSimulation.new()
 	simulation.initialize(state, catalog)
 	state.combat_tick = 7500
-	var captured_player := Vector2(2.0, -1.0)
+	var captured_player := Vector2(14.0, 14.0)
 	simulation.player_position = captured_player
 	var direction: Vector2 = EnemySystem.SCREEN_RIGHT_WORLD
 	var group: Array[EnemyEntity] = simulation.enemy_system._spawn_swarm_group(
 		captured_player,
 		direction,
 		7500,
+		11.0,
 	)
 	assertions.expect_equal(50, group.size(), "direct fixture creates one complete formation")
 	var red_count: int = 0
@@ -266,8 +324,8 @@ func _test_formation_motion_and_visuals(assertions: Variant) -> void:
 		assertions.expect_equal(1, enemy.swarm_group_id, "all members share one group id")
 		assertions.expect_equal(EnemyEntity.MovementKind.FIXED_DIRECTION, enemy.movement_kind, "every member uses fixed movement")
 	assertions.expect_equal(25, red_count, "checker pattern contains twenty-five red members")
-	assertions.expect_float(18.0, minimum_depth, "leading row starts at eighteen metres")
-	assertions.expect_float(20.8, maximum_depth, "five rows span 2.8 metres in depth")
+	assertions.expect_float(11.0, minimum_depth, "leading row starts on the sampled spawn frame")
+	assertions.expect_float(13.8, maximum_depth, "rear row may extend 2.8 metres beyond the frame")
 	assertions.expect_float(6.3333333, maximum_lateral - minimum_lateral, "staggered band spans about 6.33 metres")
 	assertions.expect_true(has_outside_member, "event formation is not clamped to the arena")
 	var snapshot: CombatSnapshot = simulation.build_snapshot()
@@ -307,14 +365,18 @@ func _test_formation_motion_and_visuals(assertions: Variant) -> void:
 	assertions.expect_float(32.0 / 60.0, first_after.position.distance_to(first_position), "swarm advances at thirty-two metres per second")
 	assertions.expect_true(first_after.fixed_direction.dot(direction) > 0.99999, "moving player does not retarget the swarm")
 	assertions.expect_true((second_after.position - first_after.position).is_equal_approx(relative_before), "formation offsets remain fixed")
-	for movement_tick: int in range(7502, 7574):
+	var travel_distance: float = 2.0 * 11.0 + 4.0 * 0.7
+	assertions.expect_float(travel_distance - 32.0 / 60.0, first_after.remaining_travel_distance, "travel derives from spawn depth and formation depth")
+	var travel_ticks: int = ceili(travel_distance / (32.0 / 60.0))
+	for movement_index: int in range(1, travel_ticks):
+		var movement_tick: int = 7501 + movement_index
 		state.combat_tick = movement_tick
 		simulation.enemy_system.advance_snapshot(
 			simulation.enemy_system.snapshot_ids(),
 			simulation.player_position,
 			movement_tick,
 		)
-	assertions.expect_equal(0, simulation.enemy_system.enemy_store.active_count(), "all members exit after 38.8 metres")
+	assertions.expect_equal(0, simulation.enemy_system.enemy_store.active_count(), "all members exit together after crossing the player-relative frame")
 	assertions.expect_equal(50, state.swarm_event_exit_count, "every survivor is counted as a no-reward exit")
 	assertions.expect_equal(0, state.total_kills, "crossing exit grants no kill")
 	assertions.expect_equal(0, state.kill_chain_count, "crossing exit grants no chain")
@@ -335,6 +397,7 @@ func _test_contact_and_death_accounting(assertions: Variant) -> void:
 		Vector2.ZERO,
 		Vector2.RIGHT,
 		7500,
+		11.0,
 	)
 	for enemy: EnemyEntity in group:
 		enemy.position = Vector2.ZERO
@@ -489,6 +552,7 @@ func _test_push_and_pause(assertions: Variant) -> void:
 		Vector2.ZERO,
 		Vector2.RIGHT,
 		0,
+		11.0,
 	)
 	var modal_position: Vector2 = modal_group[0].position
 	modal_state.phase = GameTypes.RunPhase.LEVEL_UP
@@ -509,6 +573,7 @@ func _test_boss_transition_absorption(assertions: Variant) -> void:
 		Vector2.ZERO,
 		Vector2.RIGHT,
 		state.combat_tick,
+		11.0,
 	)
 	assertions.expect_equal(50, group.size(), "transition fixture starts with one full swarm")
 	var total_kills_before: int = state.total_kills
@@ -556,5 +621,5 @@ func _active_swarm_count(system: EnemySystem) -> int:
 
 func _catalog(assertions: Variant) -> DefinitionCatalog:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "revision eight catalog validates: %s" % catalog.error_text)
+	assertions.expect_true(catalog.load_and_validate(), "revision nine catalog validates: %s" % catalog.error_text)
 	return catalog if catalog.is_valid else null

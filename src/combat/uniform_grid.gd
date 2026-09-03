@@ -48,13 +48,6 @@ func cell_indices_for_position(position: Vector2) -> Vector2i:
 func clamped_cell_range(aabb_min: Vector2, aabb_max: Vector2) -> Rect2i:
 	var normalized_min := Vector2(minf(aabb_min.x, aabb_max.x), minf(aabb_min.y, aabb_max.y))
 	var normalized_max := Vector2(maxf(aabb_min.x, aabb_max.x), maxf(aabb_min.y, aabb_max.y))
-	if (
-		normalized_max.x < ARENA_MIN.x
-		or normalized_max.y < ARENA_MIN.y
-		or normalized_min.x > ARENA_MAX.x
-		or normalized_min.y > ARENA_MAX.y
-	):
-		return Rect2i()
 	var minimum_indices: Vector2i = cell_indices_for_position(normalized_min)
 	var maximum_indices: Vector2i = cell_indices_for_position(normalized_max)
 	return Rect2i(minimum_indices, maximum_indices - minimum_indices + Vector2i.ONE)

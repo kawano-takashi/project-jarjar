@@ -1,30 +1,30 @@
 # Project JARJAR 最終QA記録
 
-**状態: 人間QA未実施（balance revision 8 source gate未実施、正式候補未固定）**
+**状態: 人間QA未実施（balance revision 9 source gate未実施、正式候補未固定）**
 
 この文書は候補固定前の自動調整記録、対象identityに対する自動検証結果、および人間が実機で確認した事実を記録する。
 過去のrevision、別のEXE/PCK、別の候補HEADの結果は転記しない。`ManualQa`の終了コード0だけでは合格にしない。
 ユーザーが最終調整完了を明示するまで正式candidateを固定せず、対象identityも記入しない。
-revision 7以前のsource gate、回帰、QA、build identity、playtest記録は履歴専用であり、revision 8候補の証拠として無効である。
+revision 8以前のsource gate、回帰、QA、build identity、playtest記録は履歴専用であり、revision 9候補の証拠として無効である。
 
 ## 対象identity
 
 - candidate_head:
 - exe_sha256:
 - pck_sha256:
-- balance_revision: `8`
+- balance_revision: `9`
 - 実施日:
 - 判定: 未実施
 
 4値のいずれかが変わったら、この記録を無効として新しい対象で全項目を再実施する。
 
-## revision 8 source gate
+## revision 9 source gate
 
-未実施。通常`swarmer`を6.4m/sへ高速化し、通常waveと独立した50体の高速群れイベントを追加したため、
-revision 7以前の自動調整結果は流用しない。既存の全体balance値、受入閾値、bot方針は変更せず、
-高速群れを含む再調整を別作業で一度だけ行う。
+未実施。通常敵と50体高速群れの生成枠をプレイヤー中心・画面軸基準の10〜12m帯へ変更し、
+通常敵へ18m遠方破棄を追加したため、revision 8以前の自動調整結果は流用しない。
+既存の全体balance値、受入閾値、bot方針は変更せず、新しいスポーン挙動を含む再調整を別作業で一度だけ行う。
 
-## revision 5自動調整済みsource gate（履歴・revision 8へ流用禁止）
+## revision 5自動調整済みsource gate（履歴・revision 9へ流用禁止）
 
 seed `17`、`29`、`43`、`61`を`cautious`、`normal`、`evolution`の各方針で実行する専用12run source gateがPASSした。
 実測は次のとおりである。
@@ -55,18 +55,18 @@ damage `0.57`、action rate `1.0`である。segment値は次のとおりであ�
 | damage_multiplier | 0.18 | 0.20 | 0.22 | 0.25 | 0.29 | 0.36 | 0.45 | 0.56 | 0.72 | 0.95 |
 
 実測CSVとsummaryは`artifacts/balance/revision-5/`に保存している。このPASSはrevision 5の自動調整完了記録であり、
-空欄のrevision 8正式candidate identityに対する性能試験、Release検証、ManualQa、
+空欄のrevision 9正式candidate identityに対する性能試験、Release検証、ManualQa、
 人間playtestの完了を意味しない。
 上記の調整値、segment、候補抽選、進化条件、出現・攻撃・10:00遷移のいずれかを変更した場合、このsource gate結果を無効として
 専用12runを全件再実行する。
 
 ## 自動検証記録
 
-- 全GDScript回帰: PASS（2026-09-03、revision 8高速群れ実装後121/121）
+- 全GDScript回帰: PASS（2026-09-03、revision 9プレイヤー追従型スポーン実装後122/122）
 - GDScript guard: PASS（101ファイル）
-- 変更GDScript check-only: PASS（revision 8の変更19/19）
-- revision 8専用12run source gate: 未実施
-- revision 7以前のsource gate: 履歴専用、revision 8へ流用禁止
+- 変更GDScript check-only: PASS（revision 9の変更15/15）
+- revision 9専用12run source gate: 未実施
+- revision 8以前のsource gate: 履歴専用、revision 9へ流用禁止
 - Full HD性能試験（`--performance=full_hd_500_2000`）: 未実施
 - pool overflow / orphan: revision 5専用12runでは0run / 0run、正式候補の性能試験は未実施
 - Release export: 未実施
@@ -79,11 +79,16 @@ damage `0.57`、action rate `1.0`である。segment値は次のとおりであ�
 次の各項目をキーボード、マウス、ゲームパッドで確認し、合格・不合格と観察事実を記録する。
 
 - TITLEから開始し、追尾核Lv1をstarterとして30×30mアリーナでWASD、矢印、方向パッド、左スティックが画面基準移動になる。
-- 通常敵とエリートがアリーナ外周の固定位置でmaterializeしてから接触追跡を開始する。出現時に画面外であることは必須としない。
+- 通常敵がプレイヤー位置に追従する画面四辺10〜12m帯でmaterializeし、21 combat tick後に外側から連続追跡する。
+  プレイヤーが中央、各辺、各頂点にいても相対分布が変わらず、固定アリーナ頂点が安置にならない。
+- 出現完了した通常敵がアリーナ外でも標的化、weapon damage、接触の対象となり、内側へ入った後は境界内に留まる。
+- 10:00より前に画面軸方向18mを越えた通常敵が無報酬で破棄され、STOP中と出現待機中にも機能する。
+  群れ、エリート、ボスは除外され、10:00ではボス吸収が優先される。
 - プレイヤー攻撃はすべて自動で、手動照準・攻撃入力がない。
 - 通常敵とエリートは接触追跡だけを行い、遠距離攻撃をしない。最終ボスだけが例外として、予告付きの放射弾を撃つ。
-- 通常`swarmer`がプレイヤーより速い6.4m/sで常時追尾する。定時抽選された別枠の群れは橙25体・赤25体の
-  10×5千鳥配置を保ち、発生時に決めた画面方向へ32m/sで直進し、移動中のプレイヤーを再追尾しない。
+- 通常`swarmer`がプレイヤーより速い6.4m/sで常時追尾する。定時抽選された別枠の群れは四辺10〜12m帯に
+  橙25体・赤25体の10×5千鳥配置で即時出現し、発生時に決めた画面方向へ32m/sで`2d+2.8m`直進する。
+  移動中のプレイヤーを再追尾せず、全生存個体が対辺まで横断して同時に無報酬退出する。
 - 群れが通常敵・エリート・ボスを進行方向へ押し、対象はアリーナ外へ出ない。プレイヤー、群れ同士、XP、宝箱、
   arena objectは押されず、50体が重なっても1回の被弾後30 combat tickの無敵時間が維持される。
 - 敵の経験値結晶を取得すると戦闘が停止し、重複しない最大3候補を選べる。各候補は名前、レベル、
@@ -95,6 +100,7 @@ damage `0.57`、action rate `1.0`である。segment値は次のとおりであ�
 - 2:00、4:00、6:00、8:00のエリートが宝箱を1個ずつ落とし、未取得箱は消えない。
 - 宝箱結果は1箱1効果で、通常強化ならレベルアップ候補と同じ強化差分を表示し、約2秒演出をA、Enter、クリックから即時スキップできる。
 - 破壊ノードのHP回復、全XP吸引、5秒停止が機能し、停止中のボスだけが50%速度で動く。
+  STOP中も通常敵と群れの生成管理、通常敵の遠方破棄は進むが、敵移動、接触、群れの残走行距離は停止する。
 - 10:00に通常スポーンが止まり、通常敵、残存する群れ、既存enemy projectileが即座に無害化・吸収される。この吸収ではXP、撃破数、CHAIN、dropを得ず、落下済みXPとarena objectは残る。
 - 最終ボスがアリーナ中央へ60 combat tickかけて登場し、summonを行わない。
 - 最終ボスは30 boss action tickの予告後、phaseごとに8発、12発、16発の放射弾を撃つ。

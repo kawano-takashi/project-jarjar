@@ -1,11 +1,11 @@
 # Project JARJAR 現在の状態
 
 - 更新日: 2026-09-03 (JST)
-- 状態: **revision 8 高速群れイベントを実装・source再調整待ち・正式candidate未固定**
-- playable baseline: 未固定（revision 8 作業ツリー）
-- balance revision: `8`（通常swarmer高速化と別枠の50体群れを追加、source gate未実施）
+- 状態: **revision 9 プレイヤー追従型スポーンを実装・source再調整待ち・正式candidate未固定**
+- playable baseline: 未固定（revision 9 作業ツリー）
+- balance revision: `9`（通常敵と50体群れの生成枠をプレイヤー追従化、source gate未実施）
 - 正式playtest target: 未固定
-- 現revisionの自動調整記録: なし（revision 7以前の記録は履歴専用）
+- 現revisionの自動調整記録: なし（revision 8以前の記録は履歴専用）
 
 ## 現在地
 
@@ -28,16 +28,29 @@
 被弾後は30 combat tick（0.5秒）の連続被弾防止とする。これとは別に、レベルアップや宝箱の自動モーダル列がすべて
 終了した後だけ45 combat tick（0.75秒）の復帰保護を与える。列の中間や手動ポーズ復帰ではこの45 tickを付与しない。
 
-## revision 8 高速群れイベント契約
+## revision 9 プレイヤー追従型スポーン契約
 
-通常の`swarmer`はHP 9、接触威力4、XP 1、既存の出現比率と常時追尾を維持し、移動速度だけを4.2m/sから
-6.4m/sへ変更した。プレイヤー速度5.0m/sを上回る。通常waveと独立して、2:05〜9:45の固定21試行から
-確率抽選された50体の群れを生成する。群れ専用乱数は通常spawn、upgrade、chest、powerupの乱数列から分離する。
+通常敵は固定30×30mアリーナ縁ではなく、現在のプレイヤーを中心とする画面軸基準の正方形帯から生成する。
+画面上下左右を各25%で選び、辺距離`d`を10〜12m、辺方向位置`l`を`-d〜d`から一様抽選し、
+`player + outward*d + tangent*l`を生成位置とする。位置はアリーナ内へ丸めず、RNGがないfixtureでは
+画面上側・11m・辺中央へ固定する。プレイヤーが中央、辺、頂点のどこにいても相対分布は同一である。
+
+通常敵は外側でも21 combat tickの出現待機を行い、完了後は追尾、標的化、weapon damage、接触が有効になる。
+外側から境界をテレポートせずに通過し、一度内側へ入った後だけ既存の境界制限を受ける。10:00より前は、
+現在のプレイヤーから画面軸方向へ18mを越えた通常敵を出現待機中やSTOP中でも即時破棄する。
+この処理は撃破、XP、drop、CHAINを発生させず、`normal_far_despawns`へ記録する。群れ、エリート、ボスは対象外で、
+10:00以降は遠方破棄を止めて既存のボス吸収処理を優先する。STOP中も生成管理と遠方破棄は進むが、
+敵移動、接触、群れの残走行距離は停止する。モーダル中はcombat tick自体を停止する。
+
+通常の`swarmer`はHP 9、接触威力4、XP 1、既存の出現比率、6.4m/s、常時追尾を維持する。通常waveと独立して、
+2:05〜9:45の固定21試行から確率抽選された50体の群れを生成する。群れ専用乱数は通常spawn、upgrade、chest、
+powerupの乱数列から分離し、各attemptの専用RNGで四辺と10〜12mの生成距離を抽選する。
 
 群れ個体はHP 1、接触威力1、XP 1、半径0.26m、速度32m/s、接触間隔1 tickである。HPと威力には発生時の
-segment倍率だけを適用し、`normal_enemy_damage_scale`は適用しない。先頭列を発生時のプレイヤー位置から18m離し、
-横10体×奥行5列、横ピッチ2/3m、奥行ピッチ0.7mの千鳥配置にする。橙25体・赤25体が同じ小型meshを共有する。
-画面上下左右から等確率で選んだ固定方向へ全員が38.8m進み、生成後はプレイヤーを再追尾しない。
+segment倍率だけを適用し、`normal_enemy_damage_scale`は適用しない。選んだ辺のプレイヤー正面、横ずれ0をアンカーに、
+横10体×奥行5列、横ピッチ2/3m、奥行ピッチ0.7mの千鳥配置を即時生成する。後列は生成帯から最大2.8m外へ伸びる。
+橙25体・赤25体が同じ小型meshを共有する。全員が生成時のプレイヤーへ向く固定方向へ
+`2 × d + 2.8m`進み、対辺まで横断して同時に専用退出する。生成後はプレイヤーを再追尾しない。
 
 | 分 | 試行時刻 | 1試行の発生率 |
 |---|---|---:|
@@ -51,16 +64,17 @@ segment倍率だけを適用し、`normal_enemy_damage_scale`は適用しない�
 
 成功試行は通常active目標、spawn credit、通常の16体/tick上限を変更せず50体を一括生成する。空きpoolが50未満なら
 部分生成せず、その試行を消費して生成失敗を記録する。群れは通常敵・エリート・ボスを進行方向へ押すが、同一tickの
-対象別総移動は32/60m以下とし、押された敵はアリーナ内へ制限する。プレイヤー、他の群れ個体、XP、宝箱、arena objectは
-押さない。群れの生存退場と10:00吸収は無報酬で、撃破時だけ通常のweapon hit/kill、総kill、CHAIN、1 XP結晶を処理する。
+対象別総移動は32/60m以下とする。既に内側へ入った敵は押されても境界内に留まり、外側の通常敵は丸めず連続移動する。
+プレイヤー、他の群れ個体、XP、宝箱、arena objectは押さない。群れの生存退場と10:00吸収は無報酬で、
+撃破時だけ通常のweapon hit/kill、総kill、CHAIN、1 XP結晶を処理する。
 生成、撃破、退場、XP、吸収は通常wave・通常敵種・segment基準統計から分けて計測する。
 
-revision 8では既存の全体balance値と受入閾値、bot方針を変更していない。実データは
+revision 9では既存の敵数、HP、攻撃力、速度、確率、全体balance値、受入閾値、bot方針を変更していない。実データは
 `xp_yield_percent=90`、`normal_enemy_damage_scale=0.4`、bossはHP `1.6875`、damage `0.114`、action rate `1.1`である。
 通常active目標は`[16, 46, 32, 68, 49, 140, 92, 132, 97, 176]`で、segment HP・damage・weightもrevision 7から
-据え置いた。この敵仕様変更によりrevision 7の調整結果を含む旧証拠はrevision 8へ流用せず、全体再調整は別作業で一度だけ行う。
-実装後の全GDScript回帰は121/121 PASS、GDScript guardは101ファイルPASS、変更GDScriptのcheck-onlyは
-19/19 PASS、`git diff --check`もPASSしている。
+据え置いた。この敵仕様変更によりrevision 8以前の調整結果を含む旧証拠はrevision 9へ流用せず、全体再調整は別作業で一度だけ行う。
+実装後の全GDScript回帰は122/122 PASS、GDScript guardは101ファイルPASS、変更GDScriptのcheck-onlyは
+15/15 PASS、`git diff --check`もPASSしている。性能試験、export、Release QA、source再調整は実施していない。
 
 ## revision 6から継続する単一強化項目契約
 
@@ -85,10 +99,10 @@ revision 8では既存の全体balance値と受入閾値、bot方針を変更し
 未所持候補は従来どおり概要説明を表示する。カタログ読込時と回帰テストで、各基本武器の各レベルについて
 変更項目数がちょうど1であること、および個数増加が`+1`であることを検証する。
 
-この武器成長表はrevision 6で導入され、revision 8でも維持する。revision 6時点の回帰、QA、build identityは履歴であり、
-高速群れを追加したrevision 8候補の証拠には使用しない。
+この武器成長表はrevision 6で導入され、revision 9でも維持する。revision 8以前の回帰、QA、build identityは履歴であり、
+プレイヤー追従型スポーンを導入したrevision 9候補の証拠には使用しない。
 
-## revision 5実装と最終調整値（履歴・revision 8へ流用禁止）
+## revision 5実装と最終調整値（履歴・revision 9へ流用禁止）
 
 revision 5の画面内戦闘契約は次のとおりである。
 
@@ -114,7 +128,7 @@ revision 5の画面内戦闘契約は次のとおりである。
 | hp_multiplier | 0.15 | 0.17 | 0.20 | 0.24 | 0.30 | 0.45 | 0.65 | 0.90 | 1.25 | 1.75 |
 | damage_multiplier | 0.18 | 0.20 | 0.22 | 0.25 | 0.29 | 0.36 | 0.45 | 0.56 | 0.72 | 0.95 |
 
-## revision 5 source gate結果（履歴・revision 8へ流用禁止）
+## revision 5 source gate結果（履歴・revision 9へ流用禁止）
 
 2026-09-02にseed `17`、`29`、`43`、`61`をcautious、normal、evolutionの各方針で実行する、
 専用の決定的12run source gateを完走し、`passed=true`でPASSした。
@@ -142,7 +156,7 @@ GDScript guard 97ファイル、今回変更したGDScript 2/2のcheck-only、`g
 このsource gateは自動調整完了の証拠であり、人間playtestの参加・回答・計測値や
 正式candidateのidentity、正式性能試験、Release検証を代替しない。
 
-revision 8への変更により、revision 7以前のcandidate、調整成果物、回帰、QA、build identityは現候補の証拠として無効であり、
+revision 9への変更により、revision 8以前のcandidate、調整成果物、回帰、QA、build identityは現候補の証拠として無効であり、
 履歴としてのみ保持する。現時点で正式candidateは未固定である。Full HD性能試験、Release export、Verify、ManualQa、
 人間playtestはすべて未実施であり、ユーザーが最終調整完了を明示するまで実行してはならない。
 
@@ -186,7 +200,7 @@ revision 4の専用12run PASSも正式candidateのidentityや正式検証結果�
 
 ## 次の作業
 
-1. 別作業でrevision 8の高速群れを含むsource再調整と専用12run source gateを一度だけ実施する。
+1. 別作業でrevision 9のプレイヤー追従型スポーンと高速群れを含むsource再調整と専用12run source gateを一度だけ実施する。
 2. source gate通過後、ユーザーによる武器演出、敵圧、XPペース、文言その他の最終確認を待つ。
 3. ユーザーが最終調整完了を明示した後だけ、全回帰、GDScript検査、Full HD性能試験、
    Release export、pack audit、smoke、Verify、ManualQaを実施する。
@@ -199,5 +213,5 @@ revision 4の専用12run PASSも正式candidateのidentityや正式検証結果�
 
 ## 正式受入後の棚卸し
 
-5人以上×3run完了までは、revision 8の回帰テスト、Debug QA、性能試験、Release検証、
+5人以上×3run完了までは、revision 9の回帰テスト、Debug QA、性能試験、Release検証、
 GDScript guard、比較用buildを保持する。正式受入後に再棚卸しし、配布・保守に不要な資材を削除する。

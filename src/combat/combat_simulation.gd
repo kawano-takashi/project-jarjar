@@ -404,6 +404,7 @@ func visible_combat_metrics() -> Dictionary:
 			float(state.materializing_enemy_count_total) / sample_count
 		),
 		"absorbed_normal_count": state.absorbed_normal_count,
+		"normal_far_despawns": state.normal_far_despawn_count,
 		"absorbed_enemy_projectile_count": state.absorbed_enemy_projectile_count,
 		"swarm_event_attempts": state.swarm_event_attempt_count,
 		"swarm_event_roll_successes": state.swarm_event_roll_success_count,
@@ -610,6 +611,7 @@ func prepare_performance_fixture(
 	state.modal_invulnerable_until_tick = PERFORMANCE_INVULNERABLE_UNTIL_TICK
 	state.spawn_credit = 0.0
 	state.absorbed_normal_count = 0
+	state.normal_far_despawn_count = 0
 	state.absorbed_enemy_projectile_count = 0
 	state.swarm_event_attempt_count = 0
 	state.swarm_event_roll_success_count = 0

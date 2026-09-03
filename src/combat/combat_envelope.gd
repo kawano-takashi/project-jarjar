@@ -16,7 +16,9 @@ const TARGET_CENTER_RADIUS: float = 8.0
 const EFFECT_OUTER_RADIUS: float = 9.0
 const DAMAGE_CENTER_RADIUS: float = 10.0
 const BOT_AWARENESS_RADIUS: float = 10.0
-const NORMAL_SPAWN_MIN_DISTANCE: float = 9.0
+const SPAWN_INNER_HALF_EXTENT: float = 10.0
+const SPAWN_OUTER_HALF_EXTENT: float = 12.0
+const NORMAL_DESPAWN_HALF_EXTENT: float = 18.0
 
 const NORMAL_ENTRY_TICKS: int = 21
 const ELITE_ENTRY_TICKS: int = 36

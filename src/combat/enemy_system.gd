@@ -14,7 +14,6 @@ const NORMAL_ENEMY_IDS: Array[StringName] = [
 	&"bulwark",
 	&"shooter",
 ]
-const MAXIMUM_SPAWN_POSITION_TRIALS: int = 16
 const MAXIMUM_SPAWNS_PER_TICK: int = 16
 const SPAWN_TARGET_RAMP_TICKS: float = 180.0
 const BOSS_CHARGE_TICKS: int = CombatEnvelope.BOSS_CHARGE_TICKS
@@ -25,7 +24,7 @@ const BOSS_MIN_INTERVAL_MULTIPLIER: float = 0.20
 const SWARM_PUSH_DISTANCE_PER_TICK: float = 32.0 / float(RunState.TICKS_PER_SECOND)
 const SCREEN_RIGHT_WORLD: Vector2 = Vector2(0.70710678, -0.70710678)
 const SCREEN_DOWN_WORLD: Vector2 = Vector2(0.70710678, 0.70710678)
-const SWARM_DIRECTIONS: Array[Vector2] = [
+const SPAWN_OUTWARD_DIRECTIONS: Array[Vector2] = [
 	-SCREEN_DOWN_WORLD,
 	SCREEN_DOWN_WORLD,
 	-SCREEN_RIGHT_WORLD,
@@ -75,7 +74,13 @@ func advance_snapshot(
 	var exited_swarm_ids: Array[int] = []
 	for entity_id: int in ids:
 		var enemy: EnemyEntity = enemy_store.get_by_id(entity_id)
-		if enemy == null or not enemy.is_targetable(current_tick):
+		if enemy == null:
+			continue
+		if _should_far_despawn_normal(enemy, player_position, current_tick):
+			if enemy_store.remove(entity_id):
+				_state.normal_far_despawn_count += 1
+			continue
+		if not enemy.is_targetable(current_tick):
 			continue
 		var time_scale: float = _time_scale_for(enemy)
 		if time_scale <= 0.0:
@@ -160,7 +165,7 @@ func resolve_normal_spawns(player_position: Vector2, current_tick: int) -> Array
 		var enemy_type: GameTypes.EnemyType = _select_normal_enemy_type(segment)
 		var enemy: EnemyEntity = _spawn_enemy(
 			enemy_type,
-			_choose_normal_spawn_position(player_position, enemy_type),
+			_choose_normal_spawn_position(player_position),
 			current_tick,
 		)
 		if enemy == null:
@@ -194,14 +199,13 @@ func resolve_swarm_event_spawns(
 		if attempt_rng.randf() >= _swarm_attempt_chances[attempt_index]:
 			continue
 		_state.swarm_event_roll_success_count += 1
-		var direction: Vector2 = SWARM_DIRECTIONS[attempt_rng.randi_range(
-			0,
-			SWARM_DIRECTIONS.size() - 1,
-		)]
+		var outward_direction: Vector2 = _sample_spawn_outward_direction(attempt_rng)
+		var spawn_distance: float = _sample_spawn_distance(attempt_rng)
 		spawned.append_array(_spawn_swarm_group(
 			player_position,
-			direction,
+			-outward_direction,
 			current_tick,
+			spawn_distance,
 		))
 	return spawned
 
@@ -287,11 +291,13 @@ func _move_enemy(
 	var direction: Vector2 = Vector2.ZERO
 	if offset != Vector2.ZERO:
 		direction = offset.normalized()
-	enemy.position = _clamp_enemy_center(
+	var next_position: Vector2 = (
 		enemy.position
-		+ direction * enemy.definition.move_speed * time_scale / float(RunState.TICKS_PER_SECOND),
-		enemy.body_radius(),
+		+ direction * enemy.definition.move_speed * time_scale / float(RunState.TICKS_PER_SECOND)
 	)
+	if _is_enemy_center_inside_arena(enemy.position, enemy.body_radius()):
+		next_position = _clamp_enemy_center(next_position, enemy.body_radius())
+	enemy.position = next_position
 	return {}
 
 
@@ -319,10 +325,10 @@ func _apply_swarm_pushes(ids: Array[int], swarm_sweeps: Array[Dictionary]) -> vo
 			SWARM_PUSH_DISTANCE_PER_TICK * SWARM_PUSH_DISTANCE_PER_TICK
 		):
 			total_displacement = total_displacement.normalized() * SWARM_PUSH_DISTANCE_PER_TICK
-		target.position = _clamp_enemy_center(
-			target.position + total_displacement,
-			target.body_radius(),
-		)
+		var pushed_position: Vector2 = target.position + total_displacement
+		if _is_enemy_center_inside_arena(target.position, target.body_radius()):
+			pushed_position = _clamp_enemy_center(pushed_position, target.body_radius())
+		target.position = pushed_position
 
 
 func _segment_intersects_circle(
@@ -538,7 +544,9 @@ func _spawn_enemy(
 		damage_multiplier = _manifest.boss_damage_multiplier
 	elif enemy_type in NORMAL_ENEMY_TYPES:
 		damage_multiplier *= _manifest.normal_enemy_damage_scale
-	var resolved_position: Vector2 = _clamp_enemy_center(position, definition.body_radius)
+	var resolved_position: Vector2 = position
+	if enemy_type not in NORMAL_ENEMY_TYPES:
+		resolved_position = _clamp_enemy_center(position, definition.body_radius)
 	return enemy_store.try_spawn(
 		_state,
 		enemy_type,
@@ -555,6 +563,7 @@ func _spawn_swarm_group(
 	player_position: Vector2,
 	direction: Vector2,
 	current_tick: int,
+	spawn_distance: float,
 ) -> Array[EnemyEntity]:
 	var spawned: Array[EnemyEntity] = []
 	var event_definition: SwarmEventDefinition = _manifest.swarm_event
@@ -570,6 +579,11 @@ func _spawn_swarm_group(
 	var damage_multiplier: float = segment.damage_multiplier if segment != null else 1.0
 	var group_id: int = _state.allocate_swarm_group_id()
 	var lateral_direction := Vector2(-direction.y, direction.x)
+	var formation_depth: float = (
+		float(maxi(0, event_definition.depth_count - 1))
+		* event_definition.depth_pitch
+	)
+	var travel_distance: float = 2.0 * spawn_distance + formation_depth
 	for depth_index: int in range(event_definition.depth_count):
 		var stagger: float = (
 			-0.25 if depth_index % 2 == 0 else 0.25
@@ -582,7 +596,7 @@ func _spawn_swarm_group(
 			var depth_offset: float = float(depth_index) * event_definition.depth_pitch
 			var spawn_position: Vector2 = (
 				player_position
-				- direction * (event_definition.spawn_distance + depth_offset)
+				- direction * (spawn_distance + depth_offset)
 				+ lateral_direction * lateral_offset
 			)
 			var enemy: EnemyEntity = enemy_store.try_spawn(
@@ -604,7 +618,7 @@ func _spawn_swarm_group(
 			enemy.configure_swarm_event(
 				group_id,
 				direction,
-				event_definition.travel_distance,
+				travel_distance,
 				(lateral_index + depth_index) % 2 == 1,
 			)
 			enemy.contact_elapsed_ticks = float(
@@ -646,54 +660,59 @@ func _select_normal_enemy_type(segment: EnemySegmentDefinition) -> GameTypes.Ene
 	return NORMAL_ENEMY_TYPES.back()
 
 
-func _choose_normal_spawn_position(
-	player_position: Vector2,
-	enemy_type: GameTypes.EnemyType,
-) -> Vector2:
-	var definition: EnemyDefinition = _catalog.enemy(GameTypes.enemy_type_to_key(enemy_type))
-	var body_radius: float = definition.body_radius if definition != null else 0.0
-	var center_limit: float = CombatEnvelope.enemy_center_limit(body_radius)
+func _choose_normal_spawn_position(player_position: Vector2) -> Vector2:
 	if _spawn_rng == null:
-		return _farthest_fallback_corner(player_position, body_radius)
-	var minimum_distance_squared: float = (
-		CombatEnvelope.NORMAL_SPAWN_MIN_DISTANCE
-		* CombatEnvelope.NORMAL_SPAWN_MIN_DISTANCE
+		return player_position - SCREEN_DOWN_WORLD * 11.0
+	var outward_direction: Vector2 = _sample_spawn_outward_direction(_spawn_rng)
+	var spawn_distance: float = _sample_spawn_distance(_spawn_rng)
+	var tangent_direction := Vector2(-outward_direction.y, outward_direction.x)
+	var lateral_offset: float = _spawn_rng.randf_range(-spawn_distance, spawn_distance)
+	return (
+		player_position
+		+ outward_direction * spawn_distance
+		+ tangent_direction * lateral_offset
 	)
-	for _trial_index: int in range(MAXIMUM_SPAWN_POSITION_TRIALS):
-		var edge: int = _spawn_rng.randi_range(0, 3)
-		var coordinate: float = _spawn_rng.randf_range(-center_limit, center_limit)
-		var candidate: Vector2
-		match edge:
-			0:
-				candidate = Vector2(-center_limit, coordinate)
-			1:
-				candidate = Vector2(center_limit, coordinate)
-			2:
-				candidate = Vector2(coordinate, -center_limit)
-			_:
-				candidate = Vector2(coordinate, center_limit)
-		if candidate.distance_squared_to(player_position) >= minimum_distance_squared:
-			return candidate
-	return _farthest_fallback_corner(player_position, body_radius)
 
 
-func _farthest_fallback_corner(player_position: Vector2, body_radius: float) -> Vector2:
+func _sample_spawn_outward_direction(rng: RandomNumberGenerator) -> Vector2:
+	if rng == null:
+		return -SCREEN_DOWN_WORLD
+	return SPAWN_OUTWARD_DIRECTIONS[rng.randi_range(0, SPAWN_OUTWARD_DIRECTIONS.size() - 1)]
+
+
+func _sample_spawn_distance(rng: RandomNumberGenerator) -> float:
+	if rng == null:
+		return 11.0
+	return rng.randf_range(
+		CombatEnvelope.SPAWN_INNER_HALF_EXTENT,
+		CombatEnvelope.SPAWN_OUTER_HALF_EXTENT,
+	)
+
+
+func _should_far_despawn_normal(
+	enemy: EnemyEntity,
+	player_position: Vector2,
+	current_tick: int,
+) -> bool:
+	if (
+		current_tick >= _manifest.boss_start_tick
+		or not enemy.alive
+		or enemy.is_swarm_event
+		or enemy.enemy_type not in NORMAL_ENEMY_TYPES
+	):
+		return false
+	var player_offset: Vector2 = enemy.position - player_position
+	return (
+		absf(player_offset.dot(SCREEN_RIGHT_WORLD))
+		> CombatEnvelope.NORMAL_DESPAWN_HALF_EXTENT
+		or absf(player_offset.dot(SCREEN_DOWN_WORLD))
+		> CombatEnvelope.NORMAL_DESPAWN_HALF_EXTENT
+	)
+
+
+func _is_enemy_center_inside_arena(position: Vector2, body_radius: float) -> bool:
 	var center_limit: float = CombatEnvelope.enemy_center_limit(body_radius)
-	var fallback_corners: Array[Vector2] = [
-		Vector2(center_limit, center_limit),
-		Vector2(-center_limit, center_limit),
-		Vector2(-center_limit, -center_limit),
-		Vector2(center_limit, -center_limit),
-	]
-	var farthest: Vector2 = fallback_corners[0]
-	var farthest_distance_squared: float = farthest.distance_squared_to(player_position)
-	for index: int in range(1, fallback_corners.size()):
-		var candidate: Vector2 = fallback_corners[index]
-		var distance_squared: float = candidate.distance_squared_to(player_position)
-		if distance_squared > farthest_distance_squared:
-			farthest = candidate
-			farthest_distance_squared = distance_squared
-	return farthest
+	return absf(position.x) <= center_limit and absf(position.y) <= center_limit
 
 
 func _normal_enemy_count() -> int:

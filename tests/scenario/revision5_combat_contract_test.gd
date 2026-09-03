@@ -18,6 +18,7 @@ const REQUIRED_VISIBLE_METRIC_KEYS: Array[String] = [
 	"peak_materializing_enemies",
 	"mean_materializing_enemies",
 	"absorbed_normal_count",
+	"normal_far_despawns",
 	"absorbed_enemy_projectile_count",
 	"swarm_event_attempts",
 	"swarm_event_roll_successes",
@@ -374,7 +375,7 @@ func _test_shooter_contact_contract(assertions: Variant) -> void:
 	)
 	assertions.expect_true(
 		simulation.catalog.segment(3).weight_for(GameTypes.EnemyType.SHOOTER) > 0.0,
-		"SHOOTER remains in the revision eight wave table from segment four onward",
+		"SHOOTER remains in the revision nine wave table from segment four onward",
 	)
 	assertions.expect_true(
 		shooter_definition.contact_interval_ticks > 0
@@ -555,10 +556,12 @@ func _test_visible_metric_schema(assertions: Variant) -> void:
 	var simulation: CombatSimulation = _simulation(assertions, 8503)
 	if simulation == null:
 		return
+	simulation.state.normal_far_despawn_count = 3
 	var metrics: Dictionary = simulation.visible_combat_metrics()
 	assertions.expect_equal(REQUIRED_VISIBLE_METRIC_KEYS.size(), metrics.size(), "Revision 5 metrics expose every required visibility and VFX value")
 	for key: String in REQUIRED_VISIBLE_METRIC_KEYS:
 		assertions.expect_true(metrics.has(key), "visible combat metrics include %s" % key)
+	assertions.expect_equal(3, metrics["normal_far_despawns"], "normal far despawns propagate to visible metrics")
 
 
 func _test_transient_admission_budgets(assertions: Variant) -> void:
