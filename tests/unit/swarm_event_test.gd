@@ -3,7 +3,7 @@ extends RefCounted
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"revision_eleven_swarm_definition_and_drift_rejection",
+		"revision_twelve_swarm_definition_and_drift_rejection",
 		"normal_swarmer_outpaces_the_player",
 		"swarm_scheduler_is_isolated_repeatable_and_atomic",
 		"swarm_formation_crosses_player_relative_frame_and_uses_two_visuals",
@@ -15,7 +15,7 @@ func test_names() -> PackedStringArray:
 
 func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
 	match test_name:
-		"revision_eleven_swarm_definition_and_drift_rejection":
+		"revision_twelve_swarm_definition_and_drift_rejection":
 			_test_definition_and_drift(assertions)
 		"normal_swarmer_outpaces_the_player":
 			_test_normal_swarmer_speed(assertions)
@@ -30,7 +30,7 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 		"boss_transition_absorbs_swarm_without_rewards":
 			_test_boss_transition_absorption(assertions)
 		_:
-			assertions.expect_true(false, "registered revision eleven swarm test")
+			assertions.expect_true(false, "registered revision twelve swarm test")
 
 
 func _test_definition_and_drift(assertions: Variant) -> void:
@@ -40,10 +40,10 @@ func _test_definition_and_drift(assertions: Variant) -> void:
 	var manifest: SurvivalContentManifest = catalog.manifest()
 	var event_definition: SwarmEventDefinition = manifest.swarm_event
 	var unit: EnemyDefinition = event_definition.unit_definition
-	assertions.expect_equal(11, manifest.balance.balance_revision, "swarm ships as balance revision eleven")
+	assertions.expect_equal(12, manifest.balance.balance_revision, "swarm ships as balance revision twelve")
 	assertions.expect_equal(6, GameTypes.EnemyType.size(), "swarm adds no seventh EnemyType")
 	assertions.expect_equal(6, catalog.enemies.size(), "event unit stays outside the normal enemy catalog")
-	assertions.expect_float(5.76, catalog.enemy(&"swarmer").move_speed, "normal swarmer is faster than the player")
+	assertions.expect_float(5.184, catalog.enemy(&"swarmer").move_speed, "normal swarmer is faster than the player")
 	assertions.expect_float(9.0, catalog.enemy(&"swarmer").base_hp, "normal swarmer HP is unchanged")
 	assertions.expect_float(4.0, catalog.enemy(&"swarmer").contact_damage, "normal swarmer damage is unchanged")
 	assertions.expect_equal(1, catalog.enemy(&"swarmer").xp_value, "normal swarmer XP is unchanged")
@@ -136,8 +136,8 @@ func _test_normal_swarmer_speed(assertions: Variant) -> void:
 		swarmer.position.distance_to(moving_player) < initial_gap,
 		"normal swarmer closes distance on a player moving directly away",
 	)
-	assertions.expect_float(5.76, swarmer.position.x + 5.0, "normal swarmer travels 5.76 metres in one second")
-	assertions.expect_float(4.5, moving_player.x - 5.0, "player travels 4.5 metres in one second")
+	assertions.expect_float(5.184, swarmer.position.x + 5.0, "normal swarmer travels 5.184 metres in one second")
+	assertions.expect_float(4.05, moving_player.x - 5.0, "player travels 4.05 metres in one second")
 	assertions.expect_equal(EnemyEntity.MovementKind.SEEK_PLAYER, swarmer.movement_kind, "normal swarmer keeps direct pursuit")
 
 
@@ -370,7 +370,7 @@ func _test_formation_motion_and_visuals(assertions: Variant) -> void:
 	var travel_distance: float = 2.0 * 11.0 + 4.0 * 0.7
 	assertions.expect_float(travel_distance - event_step, first_after.remaining_travel_distance, "travel derives from spawn depth and formation depth")
 	var travel_ticks: int = ceili(travel_distance / event_step)
-	assertions.expect_equal(575, travel_ticks, "slower revision eleven speed extends the full crossing to 575 ticks")
+	assertions.expect_equal(575, travel_ticks, "revision twelve preserves the 575-tick full crossing")
 	for movement_index: int in range(1, travel_ticks):
 		var movement_tick: int = 7501 + movement_index
 		state.combat_tick = movement_tick
@@ -628,5 +628,5 @@ func _active_swarm_count(system: EnemySystem) -> int:
 
 func _catalog(assertions: Variant) -> DefinitionCatalog:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "revision eleven catalog validates: %s" % catalog.error_text)
+	assertions.expect_true(catalog.load_and_validate(), "revision twelve catalog validates: %s" % catalog.error_text)
 	return catalog if catalog.is_valid else null

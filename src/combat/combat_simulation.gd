@@ -3,7 +3,7 @@ extends RefCounted
 
 
 const FIXED_DELTA_SECONDS: float = 1.0 / 60.0
-const PLAYER_SPEED: float = 4.5
+const PLAYER_SPEED: float = 4.05
 const PLAYER_RADIUS: float = CombatEnvelope.PLAYER_BODY_RADIUS
 const ARENA_MIN: Vector2 = CombatEnvelope.PLAYER_CENTER_MIN
 const ARENA_MAX: Vector2 = CombatEnvelope.PLAYER_CENTER_MAX

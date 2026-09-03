@@ -14,15 +14,20 @@ Lv1以上所持していればよく、触媒は最大Lv不要・進化後も消
 予告付きの放射状投射物を使うのは最終ボスだけです。
 戦闘範囲は標的中心8m・効果外縁9m・damage中心10m、安定化した直交投影カメラはsize `18`・follow tau `0.12`秒です。
 
-## revision 11の現在地
+## revision 12の現在地
 
-プレイヤーと通常敵の座標移動速度をrevision 10から一律10%下げ、Player 4.5、Pursuer 2.16、
-Swarmer 5.76、Shooter 2.7、Bulwark 1.215、Elite 1.8、Boss 1.44m/sとしました。
+revision 11からプレイヤーと通常敵の座標移動速度を厳密にさらに10%下げ、Player 4.05、Pursuer 1.944、
+Swarmer 5.184、Shooter 2.43、Bulwark 1.0935、Elite 1.62、Boss 1.296m/sとしました。
 相対速度比、斜め入力の正規化、世界空間の方向等速性、カメラsize `18`・follow tau `0.12`秒は維持します。
 
-50体群れは一律倍率の例外です。Hyper Mad Forestの公開映像2本から非衝突Bat Swarm個体を4体ずつ測り、
-全8標本中央値`0.1307825102画面高/秒`を正射影18m・俯角55度へ換算した`2.59m/s`を採用しました。
-生成距離、10×5隊列、総走行距離、HP、威力、頻度は変更せず、横断時間だけを延長しています。
+[Vampire SurvivorsのMagic Wand](https://vampire-survivors.fandom.com/wiki/Magic_Wand)は威力10・周期1.2秒で最寄り敵を狙い、
+[Pipeestrello](https://vampire-survivors.fandom.com/wiki/Pipeestrello)はHP 1〜5なので、初期状態では数値上1発で倒せます。
+本作も初期攻撃周期が1.2秒であることから、武器値ではなく1周期中の移動距離を減らしました。
+[Move Speed](https://vampire-survivors.fandom.com/wiki/Move_Speed)の内部値は直接換算せず、攻撃周期との相対関係だけを参考にしています。
+
+50体群れは一律倍率の例外で、revision 11の`2.59m/s`を維持します。Hyper Mad Forestの公開映像2本から
+非衝突Bat Swarm個体を4体ずつ測った全8標本中央値`0.1307825102画面高/秒`を、正射影18m・俯角55度へ
+換算した値です。生成距離、10×5隊列、総走行距離、HP、威力、頻度、575 tickの横断時間は変更していません。
 通常敵・エリート・ボスへの1tick押し出し上限は、群れの定義速度を60で割って毎tick算出します。
 
 revision 10で導入した追尾核は、弾数を同時生成せず、初弾を即時、その後を6 combat tick（0.10秒）間隔で1発ずつ発射します。
@@ -39,15 +44,17 @@ STOP中も生成管理と遠方破棄は進み、敵移動と接触は停止し�
 橙／赤チェック模様を即時生成します。方向は生成時のプレイヤーへ固定し、2.59m/sで`2d+2.8m`進むため、
 全生存個体が対辺まで横断して同時に無報酬退場します。通常敵・エリート・ボスへの押し出しは維持します。
 通常敵の遠方破棄は`normal_far_despawns`、群れの生成・撃破・退場・XPは従来どおり別統計で記録します。
-revision 11実装後の全GDScript回帰129/129、GDScript guard 102ファイル、変更したGDScriptのcheck-only 14/14、
-差分の空白検査がPASSしています。
+revision 12実装後の全GDScript回帰130/130、全8基本武器のLv1接触前撃破fixture 8/8、GDScript guard 102ファイル、
+変更したGDScriptのcheck-only 12/12、差分の空白検査がPASSしています。fixtureは1:00〜2:00の通常Swarmer
+（実HP 1.935、速度5.184m/s）を10mに1体生成し、21 tick待機・基礎クールダウン満杯から600 tick以内の
+武器撃破、幾何学的接触0、被ダメージ0を確認します。
 
 2026-09-03のrevision 11正式12run source gateは一度だけ実施し、ボス到達12/12（必要9〜11）、
-normal方針の7分以内進化3/4（必要4/4）、4組のwave pair判定により`passed=false`となりました。
-計画どおり同じ作業内では再調整も再実行もしていません。正式candidateと正式playtest targetは未固定です。
-Full HD性能試験、Release export、Verify、ManualQa、人間playtestは実施していません。
+normal方針の7分以内進化3/4（必要4/4）、4組のwave pair判定により`passed=false`となった履歴を保持しています。
+revision 12の正式12run source gateは未実施で、自動難易度は未評価です。正式candidateと正式playtest targetは未固定で、
+人間の体感確認待ちです。Full HD性能試験、Release export、Verify、ManualQa、人間playtestも実施していません。
 
-## revision 5自動調整の履歴（revision 11へ流用禁止）
+## revision 5自動調整の履歴（revision 12へ流用禁止）
 
 balance revision 5の自動調整は、2026-09-02の専用12run source gateで`passed=true`となり完了しています。
 seed `17`、`29`、`43`、`61`をcautious、normal、evolutionの各方針で実行した結果は、2:00以前死亡0/12、
@@ -68,7 +75,7 @@ audio cueはadmitted 53,321・suppressed 181,691です。調整成果物は`arti
 | hp_multiplier | 0.15 | 0.17 | 0.20 | 0.24 | 0.30 | 0.45 | 0.65 | 0.90 | 1.25 | 1.75 |
 | damage_multiplier | 0.18 | 0.20 | 0.22 | 0.25 | 0.29 | 0.36 | 0.45 | 0.56 | 0.72 | 0.95 |
 
-これらはrevision 5の履歴値であり、revision 11の実データや現候補の証拠ではありません。
+これらはrevision 5の履歴値であり、revision 12の実データや現候補の証拠ではありません。
 
 ## revision 4の履歴（現候補へ流用禁止）
 

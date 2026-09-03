@@ -223,8 +223,8 @@ func _index_content() -> void:
 
 
 func _validate_globals() -> void:
-	if _manifest.balance == null or _manifest.balance.balance_revision != 11:
-		_add_error("balance revision must be 11")
+	if _manifest.balance == null or _manifest.balance.balance_revision != 12:
+		_add_error("balance revision must be 12")
 	if _manifest.ticks_per_second != 60:
 		_add_error("ticks_per_second must be 60")
 	if not _manifest.arena_size.is_equal_approx(Vector2(30.0, 30.0)):
@@ -586,20 +586,20 @@ func _validate_enemies() -> void:
 	if elite == null or not elite.drops_chest:
 		_add_error("elite must drop a chest")
 	elif not is_equal_approx(elite.base_hp, 650.0):
-		_add_error("revision 11 elite HP must remain 650")
+		_add_error("revision 12 elite HP must remain 650")
 	if boss == null or not boss.is_boss:
 		_add_error("boss definition must be marked as boss")
-	_validate_revision_eleven_enemy_roles()
+	_validate_revision_twelve_enemy_roles()
 
 
-func _validate_revision_eleven_enemy_roles() -> void:
+func _validate_revision_twelve_enemy_roles() -> void:
 	var expected_specs: Dictionary[StringName, Array] = {
-		&"pursuer": [20.0, 2.16, 45, 8.0, 1],
-		&"swarmer": [9.0, 5.76, 45, 4.0, 1],
-		&"bulwark": [80.0, 1.215, 60, 14.0, 2],
-		&"shooter": [34.0, 2.7, 42, 11.0, 2],
-		&"elite": [650.0, 1.8, 45, 18.0, 50],
-		&"boss": [40000.0, 1.44, 40, 24.0, 0],
+		&"pursuer": [20.0, 1.944, 45, 8.0, 1],
+		&"swarmer": [9.0, 5.184, 45, 4.0, 1],
+		&"bulwark": [80.0, 1.0935, 60, 14.0, 2],
+		&"shooter": [34.0, 2.43, 42, 11.0, 2],
+		&"elite": [650.0, 1.62, 45, 18.0, 50],
+		&"boss": [40000.0, 1.296, 40, 24.0, 0],
 	}
 	for enemy_id: StringName in expected_specs:
 		var definition: EnemyDefinition = enemy(enemy_id)
@@ -613,13 +613,13 @@ func _validate_revision_eleven_enemy_roles() -> void:
 			or not is_equal_approx(definition.contact_damage, float(expected[3]))
 			or definition.xp_value != int(expected[4])
 		):
-			_add_error("revision 11 enemy role differs from approved values: %s" % enemy_id)
+			_add_error("revision 12 enemy role differs from approved values: %s" % enemy_id)
 
 
 func _validate_swarm_event() -> void:
 	var event_definition: SwarmEventDefinition = _manifest.swarm_event
 	if event_definition == null:
-		_add_error("revision 11 bat swarm definition is required")
+		_add_error("revision 12 bat swarm definition is required")
 		return
 	if event_definition.event_id != &"bat_swarm":
 		_add_error("swarm event id must be bat_swarm")
@@ -641,7 +641,7 @@ func _validate_swarm_event() -> void:
 			or unit.drops_chest
 			or unit.is_boss
 		):
-			_add_error("revision 11 bat swarm unit differs from approved values")
+			_add_error("revision 12 bat swarm unit differs from approved values")
 		if (
 			not is_zero_approx(unit.preferred_distance_min)
 			or not is_zero_approx(unit.preferred_distance_max)
@@ -665,7 +665,7 @@ func _validate_swarm_event() -> void:
 		or not is_equal_approx(event_definition.lateral_pitch, 2.0 / 3.0)
 		or not is_equal_approx(event_definition.depth_pitch, 0.7)
 	):
-			_add_error("revision 11 bat swarm formation differs from approved values")
+		_add_error("revision 12 bat swarm formation differs from approved values")
 	if event_definition.schedules.size() != EXPECTED_SWARM_SCHEDULES.size():
 		_add_error("bat swarm schedule must contain seven minute groups")
 		return
@@ -706,17 +706,17 @@ func _validate_segments() -> void:
 		if definition.start_tick != index * 3600 or definition.end_tick != (index + 1) * 3600:
 			_add_error("segment tick bounds mismatch: %d" % index)
 		if definition.target_active != EXPECTED_TARGETS[index]:
-			_add_error("segment target differs from revision 11 value: %d" % index)
+			_add_error("segment target differs from revision 12 value: %d" % index)
 		if not is_equal_approx(definition.hp_multiplier, BASELINE_HP_MULTIPLIERS[index]):
-			_add_error("segment HP differs from revision 11 value: %d" % index)
+			_add_error("segment HP differs from revision 12 value: %d" % index)
 		if not is_equal_approx(
 			definition.damage_multiplier,
 			BASELINE_DAMAGE_MULTIPLIERS[index],
 		):
-			_add_error("segment damage differs from revision 11 value: %d" % index)
+			_add_error("segment damage differs from revision 12 value: %d" % index)
 		_validate_probability_weights(definition.spawn_weights, "segment_%02d weights" % (index + 1))
 		if not _float_arrays_equal(definition.spawn_weights, EXPECTED_SEGMENT_WEIGHTS[index]):
-			_add_error("segment weights differ from revision 11 value: %d" % index)
+			_add_error("segment weights differ from revision 12 value: %d" % index)
 		if definition.spawn_weights.size() != GameTypes.EnemyType.size():
 			_add_error(
 				"segment spawn weights must contain exactly one entry per EnemyType: %d"

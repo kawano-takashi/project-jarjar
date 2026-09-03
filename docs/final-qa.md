@@ -1,24 +1,41 @@
 # Project JARJAR 最終QA記録
 
-**状態: 人間QA未実施（balance revision 11 source gate不合格、正式候補未固定）**
+**状態: balance revision 12ソース検証済み・人間QA未実施・正式候補未固定**
 
 この文書は候補固定前の自動調整記録、対象identityに対する自動検証結果、および人間が実機で確認した事実を記録する。
 過去のrevision、別のEXE/PCK、別の候補HEADの結果は転記しない。`ManualQa`の終了コード0だけでは合格にしない。
 ユーザーが最終調整完了を明示するまで正式candidateを固定せず、対象identityも記入しない。
-revision 10以前のsource gate、回帰、QA、build identity、playtest記録は履歴専用であり、revision 11候補の証拠として無効である。
+revision 11以前のsource gate、回帰、QA、build identity、playtest記録は履歴専用であり、revision 12候補の証拠として無効である。
 
 ## 対象identity
 
 - candidate_head:
 - exe_sha256:
 - pck_sha256:
-- balance_revision: `11`
+- balance_revision: `12`
 - 実施日:
 - 判定: 未実施
 
 4値のいずれかが変わったら、この記録を無効として新しい対象で全項目を再実施する。
 
-## revision 11 source gate
+## revision 12ソース検証
+
+2026-09-04にGodot 4.7.2-stableで、revision 12速度値、60 tick移動距離、全方向・斜め入力、
+revision 11との相対速度比、高速群れ2.59m/s・575 tick退出・速度由来押し出し上限・STOP停止を検証した。
+基本武器8種のLv1接触前撃破fixtureも8/8でPASSし、各構成が600 tick以内に通常Swarmerを武器撃破、
+撃破前の幾何学的接触0、プレイヤーダメージ0となった。
+
+- 全GDScript回帰: PASS（130/130）
+- GDScript guard: PASS（102ファイル）
+- 変更GDScript check-only: PASS（12/12）
+- 差分整合性検査: PASS
+- revision 12正式12run source gate: **未実施**
+- 自動難易度評価: 未実施
+
+この状態は正式candidateの固定や人間の体感確認を代替しない。正式12run source gate、性能試験、Release export、
+Verify、ManualQa、人間playtestは実行していない。
+
+## revision 11 source gate（履歴）
 
 2026-09-03にseed `17`、`29`、`43`、`61`を`cautious`、`normal`、`evolution`の各方針で実行する
 正式12run source gateを一度だけ実施し、`passed=false`となった。停止条件に従い、同じ作業内で速度や他balance値を
@@ -37,10 +54,10 @@ revision 10以前のsource gate、回帰、QA、build identity、playtest記録�
 - pool overflow / orphan、必須metric欠落、画面外weapon hit / kill、envelope超過: すべて0run
 - audio admitted / suppressed: 58,885 / 181,677
 
-実測は`artifacts/balance/revision-11/formal/`に保存した。source gateが不合格のため、正式candidate identityを固定せず、
-性能試験、Release検証、ManualQa、人間playtestへ進まない。
+実測は`artifacts/balance/revision-11/formal/`に保存した。source gateが不合格だったためrevision 11の正式candidate identityは固定せず、
+性能試験、Release検証、ManualQa、人間playtestへ進まなかった。この結果はrevision 12へ流用しない。
 
-## revision 5自動調整済みsource gate（履歴・revision 11へ流用禁止）
+## revision 5自動調整済みsource gate（履歴・revision 12へ流用禁止）
 
 seed `17`、`29`、`43`、`61`を`cautious`、`normal`、`evolution`の各方針で実行する専用12run source gateがPASSした。
 実測は次のとおりである。
@@ -71,20 +88,22 @@ damage `0.57`、action rate `1.0`である。segment値は次のとおりであ�
 | damage_multiplier | 0.18 | 0.20 | 0.22 | 0.25 | 0.29 | 0.36 | 0.45 | 0.56 | 0.72 | 0.95 |
 
 実測CSVとsummaryは`artifacts/balance/revision-5/`に保存している。このPASSはrevision 5の自動調整完了記録であり、
-空欄のrevision 11正式candidate identityに対する性能試験、Release検証、ManualQa、
+空欄のrevision 12正式candidate identityに対する性能試験、Release検証、ManualQa、
 人間playtestの完了を意味しない。
 上記の調整値、segment、候補抽選、進化条件、出現・攻撃・10:00遷移のいずれかを変更した場合、このsource gate結果を無効として
 専用12runを全件再実行する。
 
 ## 自動検証記録
 
-- 全GDScript回帰: PASS（2026-09-03、revision 11実装後129/129）
+- 全GDScript回帰: PASS（2026-09-04、revision 12実装後130/130）
 - GDScript guard: PASS（102ファイル）
-- 変更GDScript check-only: PASS（14/14）
-- revision 11専用12run source gate: FAIL（12/12完走、正式実行は1回のみ）
-- revision 10以前のsource gate: 履歴専用、revision 11へ流用禁止
+- 変更GDScript check-only: PASS（12/12）
+- 全8基本武器Lv1接触前撃破fixture: PASS（8/8、接触0、被ダメージ0）
+- revision 12専用12run source gate: 未実施
+- revision 11専用12run source gate: 履歴上FAIL（12/12完走、正式実行は1回のみ、revision 12へ流用禁止）
+- revision 10以前のsource gate: 履歴専用、revision 12へ流用禁止
 - Full HD性能試験（`--performance=full_hd_500_2000`）: 未実施
-- pool overflow / orphan: revision 11専用12runでは0run / 0run、正式候補の性能試験は未実施
+- pool overflow / orphan: revision 12では未評価、正式候補の性能試験は未実施
 - Release export: 未実施
 - Verify（pack audit、Release smoke、引数拒否、build鮮度、identity）: 未実施
 - ManualQa: 未実施
@@ -104,8 +123,8 @@ damage `0.57`、action rate `1.0`である。segment値は次のとおりであ�
 - QA項目`weapon_homing_core`でLv8追尾核の5発が初弾から0.10秒刻みで明確に視認できる。発射後は直進し、
   軌道上の最初の有効敵へ1回だけ命中して消え、再追尾も跳弾もしない。連射中の標的が消えた場合は未発射弾だけが再照準される。
 - 通常敵とエリートは接触追跡だけを行い、遠距離攻撃をしない。最終ボスだけが例外として、予告付きの放射弾を撃つ。
-- プレイヤー4.5m/s、通常敵2.16 / 5.76 / 2.7 / 1.215m/s、エリート1.8m/s、ボス1.44m/sで移動し、
-  斜め入力でも世界空間の速度が増えない。通常`swarmer`はプレイヤーより速い5.76m/sで常時追尾する。
+- プレイヤー4.05m/s、通常敵1.944 / 5.184 / 2.43 / 1.0935m/s、エリート1.62m/s、ボス1.296m/sで移動し、
+  斜め入力でも世界空間の速度が増えない。通常`swarmer`はプレイヤーより速い5.184m/sで常時追尾する。
 - 定時抽選された別枠の群れは四辺10〜12m帯に橙25体・赤25体の10×5千鳥配置で即時出現し、
   発生時に決めた画面方向へ2.59m/sで`2d+2.8m`直進する。
   移動中のプレイヤーを再追尾せず、全生存個体が対辺まで横断して同時に無報酬退出する。
