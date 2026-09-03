@@ -20,6 +20,7 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 
 func _test_contextual_sequence(assertions: Variant) -> void:
 	var tutorial := TutorialController.new()
+	assertions.expect_equal(4, TutorialController.REVISION, "catalyst wording does not replay onboarding")
 	var completed_revisions: Array[int] = []
 	tutorial.revision_completed.connect(func(revision: int) -> void:
 		completed_revisions.append(revision)
@@ -44,6 +45,12 @@ func _test_contextual_sequence(assertions: Variant) -> void:
 	]:
 		assertions.expect_true(tutorial.notify_context(context_id), "%s displays on first encounter" % context_id)
 		assertions.expect_false(tutorial.current_message().is_empty(), "%s has contextual text" % context_id)
+		if context_id == &"evolution":
+			assertions.expect_equal(
+				"武器Lv8＋触媒Lv1以上で宝箱から進化。触媒は最大Lv不要・進化後も消費されません",
+				tutorial.current_message(),
+				"evolution tutorial explains the complete catalyst contract",
+			)
 		assertions.expect_false(tutorial.notify_context(context_id), "%s never repeats in the same run" % context_id)
 		tutorial.advance(TutorialController.CONTEXT_MESSAGE_SECONDS)
 		assertions.expect_equal("", tutorial.current_message(), "%s expires without input" % context_id)

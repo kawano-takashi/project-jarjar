@@ -345,7 +345,7 @@ func _refresh_evolution_guide() -> void:
 		var evolved_weapon: WeaponDefinition = _catalog.weapon(evolution.evolved_weapon_id)
 		if passive == null or evolved_weapon == null:
 			continue
-		lines.append("%s Lv8 ＋ %s → %s" % [
+		lines.append("%s Lv8 ＋ 触媒：%s Lv1以上 → %s" % [
 			base_weapon.display_name,
 			passive.display_name,
 			evolved_weapon.display_name,

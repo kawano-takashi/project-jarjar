@@ -367,7 +367,7 @@ static func _pairing_hint(catalog: DefinitionCatalog, base_weapon_id: StringName
 	var evolved: WeaponDefinition = catalog.weapon(evolution.evolved_weapon_id)
 	if base == null or paired_passive == null or evolved == null:
 		return ""
-	return "進化: %s + %s → %s" % [
+	return "進化: %s Lv8 ＋ 触媒：%s Lv1以上 → %s" % [
 		base.display_name,
 		paired_passive.display_name,
 		evolved.display_name,

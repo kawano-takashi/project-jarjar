@@ -256,6 +256,15 @@ func _test_all_content_fixed_contract(assertions: Variant) -> void:
 		assertions.expect_equal(base_id, evolution.base_weapon_id, "%s evolution base" % base_id)
 		assertions.expect_equal(passive_id, evolution.passive_id, "%s evolution passive" % base_id)
 		assertions.expect_equal(evolved_id, evolution.evolved_weapon_id, "%s evolution target" % base_id)
+		assertions.expect_equal(
+			"進化: %s Lv8 ＋ 触媒：%s Lv1以上 → %s" % [
+				base.display_name,
+				passive.display_name,
+				evolved.display_name,
+			],
+			ProgressionService._pairing_hint(catalog, base_id),
+			"%s pairing hint exposes the level-one catalyst contract" % base_id,
+		)
 
 
 func _test_weapon_level_deltas(assertions: Variant) -> void:
@@ -890,6 +899,11 @@ func _test_offer(assertions: Variant) -> void:
 		assertions.expect_false(seen.has(option.content_id), "offer choices are unique")
 		seen[option.content_id] = true
 		assertions.expect_true(not option.pairing_hint.is_empty(), "evolution pairing visible from start")
+		assertions.expect_true(
+			option.pairing_hint.contains("Lv8 ＋ 触媒：")
+			and option.pairing_hint.contains(" Lv1以上 → "),
+			"level offers identify the paired passive as a level-one catalyst",
+		)
 	for option: UpgradeOption in second_offer.options:
 		second_ids.append(String(option.content_id))
 	assertions.expect_equal(first_ids, second_ids, "same seed gives the same offer")
@@ -1274,9 +1288,18 @@ func _test_chests(assertions: Variant) -> void:
 	var early: RunState = RunStateFactory.create(4444, catalog)
 	early.weapon(&"homing_core").level = 8
 	ProgressionService.apply_direct_upgrade(early, catalog, GameTypes.UpgradeKind.PASSIVE, &"cycle_crystal")
+	assertions.expect_equal(
+		1,
+		early.passive(&"cycle_crystal").level,
+		"a level-one catalyst prepares the standard evolution contract",
+	)
 	early.pending_chest_sources.append(0)
 	var evolution: ChestOutcome = ChestRewardService.create_outcome(early, catalog)
-	assertions.expect_equal(GameTypes.ChestOutcomeKind.EVOLUTION, evolution.kind, "eligible chest evolves")
+	assertions.expect_equal(
+		GameTypes.ChestOutcomeKind.EVOLUTION,
+		evolution.kind,
+		"a level-one catalyst is eligible without reaching its maximum level",
+	)
 	assertions.expect_equal(&"infinite_homing", evolution.content_id, "correct evolution result")
 	assertions.expect_equal(0, evolution.source_elite_index, "outcome keeps its elite source")
 	assertions.expect_equal(0, early.combat_tick, "evolution has no time gate")
@@ -1287,7 +1310,11 @@ func _test_chests(assertions: Variant) -> void:
 	)
 	assertions.expect_true(bool(evolution_result[&"success"]), "evolution applies")
 	assertions.expect_true(early.weapon_for_lineage(&"homing_core").evolved, "runtime becomes evolved")
-	assertions.expect_equal(1, early.passive(&"cycle_crystal").level, "paired passive is not consumed")
+	assertions.expect_equal(
+		1,
+		early.passive(&"cycle_crystal").level,
+		"the level-one catalyst remains unconsumed after evolution",
+	)
 	assertions.expect_equal(0, early.pending_chest_count(), "chest consumes one pending pickup")
 	var healing: RunState = RunStateFactory.create(5555, catalog)
 	healing.weapon(&"homing_core").level = 8

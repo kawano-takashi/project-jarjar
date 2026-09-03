@@ -12,7 +12,7 @@ const MESSAGE_BY_CONTEXT: Dictionary[StringName, String] = {
 	&"xp_pickup": "小さな図形はXPです。近づくと吸い寄せられます",
 	&"level_up": "レベルアップは3択。武器5枠・パッシブ5枠を組み立てます",
 	&"chest_pickup": "2・4・6・8分のエリートは宝箱を落とします",
-	&"evolution": "武器Lv8と対応パッシブが揃うと、宝箱で進化します",
+	&"evolution": "武器Lv8＋触媒Lv1以上で宝箱から進化。触媒は最大Lv不要・進化後も消費されません",
 	&"stop_pickup": "停止場は通常敵とエリートを5秒停止し、ボスを減速します",
 	&"boss_spawn": "10:00。最後のボスを倒せばクリアです",
 }

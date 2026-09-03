@@ -55,11 +55,27 @@ func _test_survival_modals(assertions: Variant, tree: SceneTree) -> void:
 	overlay.show_level_offer({
 		"serial": 71,
 		"options": [
-			_option(GameTypes.UpgradeKind.WEAPON, "共鳴波", 1, 2, "進化: 生命格子", 100.0, "波数 2 → 3"),
-			_option(GameTypes.UpgradeKind.PASSIVE, "周期結晶", 0, 1, "進化: 追尾核", 90.0),
+			_option(
+				GameTypes.UpgradeKind.WEAPON,
+				"共鳴波",
+				1,
+				2,
+				"進化: 共鳴波 Lv8 ＋ 触媒：生命格子 Lv1以上 → 生命共鳴",
+				100.0,
+				"波数 2 → 3",
+			),
+			_option(
+				GameTypes.UpgradeKind.PASSIVE,
+				"周期結晶",
+				0,
+				1,
+				"進化: 追尾核 Lv8 ＋ 触媒：周期結晶 Lv1以上 → 無限追尾",
+				90.0,
+			),
 			_option(-1, "分類なし", 4, 5, "進化: 不明", 80.0, "効果 4 → 5"),
 		],
 	})
+	await tree.process_frame
 	var level_state: Dictionary = overlay.debug_state()
 	assertions.expect_true(level_state["level_visible"], "level-up modal is visible")
 	assertions.expect_equal(3, level_state["option_texts"].size(), "exactly three choices are visible")
@@ -76,6 +92,18 @@ func _test_survival_modals(assertions: Variant, tree: SceneTree) -> void:
 		"passive kind follows the level and precedes the description",
 	)
 	assertions.expect_true(
+		weapon_option_text.contains(
+			"進化: 共鳴波 Lv8 ＋ 触媒：生命格子 Lv1以上 → 生命共鳴"
+		),
+		"weapon choices expose the concise catalyst requirement",
+	)
+	assertions.expect_true(
+		passive_option_text.contains(
+			"進化: 追尾核 Lv8 ＋ 触媒：周期結晶 Lv1以上 → 無限追尾"
+		),
+		"passive choices keep their category while exposing their catalyst role",
+	)
+	assertions.expect_true(
 		unknown_option_text.contains("Lv 4 → 5\n種別：不明\n\n効果 4 → 5"),
 		"unknown kind is not misclassified",
 	)
@@ -83,6 +111,15 @@ func _test_survival_modals(assertions: Variant, tree: SceneTree) -> void:
 	assertions.expect_false(weapon_option_text.contains("進化ペア: 進化"), "pairing hint has one prefix")
 	var choice_zero := overlay.get_node("Root/LevelUpModal/Center/Panel/Content/Choices/LevelChoice0") as Button
 	assertions.expect_equal("共鳴波", choice_zero.accessibility_name, "accessibility name remains the display name")
+	assertions.expect_true(
+		choice_zero.get_combined_minimum_size().y <= choice_zero.size.y,
+		"the longer catalyst hint fits inside a configured level-choice card",
+	)
+	var level_panel := overlay.get_node("Root/LevelUpModal/Center/Panel") as Control
+	assertions.expect_true(
+		level_panel.size.x <= 1920.0 and level_panel.size.y <= 1080.0,
+		"the catalyst cards remain inside the 1920x1080 design viewport",
+	)
 	var choice_two := overlay.get_node("Root/LevelUpModal/Center/Panel/Content/Choices/LevelChoice2") as Button
 	choice_two.pressed.emit()
 	assertions.expect_equal(PackedInt32Array([2]), selected, "choice buttons emit their indexed selection")
@@ -128,6 +165,7 @@ func _test_evolution_guide(assertions: Variant, tree: SceneTree) -> void:
 	tree.root.add_child(overlay)
 	await tree.process_frame
 	assertions.expect_true(overlay.open_pause(), "evolution guide is reachable from the run pause")
+	await tree.process_frame
 	var guide: String = str(overlay.debug_state()["evolution_guide"])
 	var guide_lines: PackedStringArray = guide.split("\n", false)
 	assertions.expect_equal(8, guide_lines.size(), "pause guide exposes all eight evolution pairs")
@@ -136,12 +174,42 @@ func _test_evolution_guide(assertions: Variant, tree: SceneTree) -> void:
 		var base_weapon: WeaponDefinition = catalog.weapon(base_weapon_id)
 		var passive: PassiveDefinition = catalog.passive(evolution.passive_id)
 		var evolved_weapon: WeaponDefinition = catalog.weapon(evolution.evolved_weapon_id)
-		var expected_line: String = "%s Lv8 ＋ %s → %s" % [
+		var expected_line: String = "%s Lv8 ＋ 触媒：%s Lv1以上 → %s" % [
 			base_weapon.display_name,
 			passive.display_name,
 			evolved_weapon.display_name,
 		]
 		assertions.expect_true(guide_lines.has(expected_line), "guide lists %s" % expected_line)
+	var guide_condition := overlay.get_node(
+		"Root/PauseModal/Center/Panel/Content/GuideCondition"
+	) as Label
+	assertions.expect_equal(
+		"進化条件：武器Lv8 ＋ 触媒Lv1以上 ＋ 宝箱。触媒は最大Lv不要・進化後も消費されません",
+		guide_condition.text,
+		"pause guidance explains catalyst level and retention",
+	)
+	assertions.expect_true(
+		guide_condition.get_combined_minimum_size().x <= guide_condition.size.x,
+		"the catalyst condition fits inside the pause guide",
+	)
+	var pause_panel := overlay.get_node("Root/PauseModal/Center/Panel") as Control
+	var pause_root := overlay.get_node("Root") as Control
+	var evolution_guide := overlay.get_node(
+		"Root/PauseModal/Center/Panel/Content/EvolutionGuide"
+	) as Label
+	assertions.expect_true(
+		pause_panel.size.x <= 1920.0 and pause_panel.size.y <= 1080.0,
+		(
+			"the expanded catalyst guide remains inside the 1920x1080 design viewport "
+			+ "(viewport=%s root=%s panel=%s guide=%s guide_min=%s)"
+		) % [
+			overlay.get_viewport().get_visible_rect().size,
+			pause_root.size,
+			pause_panel.size,
+			evolution_guide.size,
+			evolution_guide.get_combined_minimum_size(),
+		],
+	)
 	overlay.queue_free()
 	await tree.process_frame
 
