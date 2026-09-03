@@ -11,7 +11,10 @@ func test_names() -> PackedStringArray:
 		"all_weapon_behaviors_generate_attacks",
 		"resonance_wave_sweeps_both_sides_and_amount_adds_damage",
 		"arc_projectile_snapshot_follows_a_parabolic_lob",
-		"homing_volley_focuses_nearest_and_retargets_residuals",
+		"homing_core_levels_emit_sequential_straight_bursts",
+		"homing_core_burst_locks_and_reacquires_before_launch",
+		"homing_core_projectile_flies_straight_and_hits_once",
+		"homing_core_upgrades_restart_or_preserve_the_burst",
 		"arc_projectile_explodes_once_on_first_impact",
 		"arc_node_damage_uses_single_resolved_impact",
 		"mass_projectile_requires_an_in_range_target",
@@ -42,8 +45,14 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 			_test_resonance_wave_amount(assertions)
 		"arc_projectile_snapshot_follows_a_parabolic_lob":
 			_test_arc_visual_lob(assertions)
-		"homing_volley_focuses_nearest_and_retargets_residuals":
-			_test_homing_focus_and_retarget(assertions)
+		"homing_core_levels_emit_sequential_straight_bursts":
+			_test_homing_core_level_bursts(assertions)
+		"homing_core_burst_locks_and_reacquires_before_launch":
+			_test_homing_core_burst_targeting(assertions)
+		"homing_core_projectile_flies_straight_and_hits_once":
+			_test_homing_core_straight_hit(assertions)
+		"homing_core_upgrades_restart_or_preserve_the_burst":
+			_test_homing_core_upgrade_transitions(assertions)
 		"arc_projectile_explodes_once_on_first_impact":
 			_test_arc_impact_explosion(assertions)
 		"arc_node_damage_uses_single_resolved_impact":
@@ -297,60 +306,331 @@ func _test_arc_visual_lob(assertions: Variant) -> void:
 	assertions.expect_float(start_height, landing_height, "arc projectile returns to launch height at landing")
 
 
-func _test_homing_focus_and_retarget(assertions: Variant) -> void:
+func _test_homing_core_level_bursts(assertions: Variant) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
-	var state: RunState = RunStateFactory.create(7304, catalog)
-	state.weapons.clear()
 	var definition: WeaponDefinition = catalog.weapon(&"homing_core")
-	var runtime := RunWeapon.create(
-		definition.weapon_id,
-		definition.lineage_id,
-		false,
-		state.rng_streams.create_weapon_rng(definition.lineage_id, 0),
-	)
-	runtime.level = 2
-	state.weapons.append(runtime)
-	var simulation := CombatSimulation.new()
-	simulation.initialize(state, catalog)
-	var nearest: EnemyEntity = simulation.spawn_fixture_enemy(
-		GameTypes.EnemyType.BULWARK,
-		Vector2(0.65, 0.0),
-		-1,
-	)
-	nearest.max_hp = 1.0
-	nearest.hp = nearest.max_hp
-	var nearest_id: int = nearest.entity_id
-	var residual_target: EnemyEntity = simulation.spawn_fixture_enemy(
-		GameTypes.EnemyType.BULWARK,
-		Vector2(4.0, 1.0),
-		-1,
-	)
-	assertions.expect_true(simulation.advance_tick(Vector2.ZERO), "production tick fires the homing volley")
-	var entries: Array[Vector2i] = simulation.projectile_pool.snapshot_active()
-	assertions.expect_equal(2, entries.size(), "level two homing volley creates two projectiles")
-	for entry: Vector2i in entries:
-		var projectile: ProjectileState = simulation.projectile_pool.resolve_snapshot_entry(entry)
-		assertions.expect_equal(nearest_id, projectile.target_entity_id, "every homing projectile focuses the nearest target")
-	assertions.expect_true(simulation.advance_tick(Vector2.ZERO), "production tick resolves the focused volley")
-	assertions.expect_true(
-		not simulation.enemy_system.enemy_store.has_entity(nearest_id),
-		"the first homing projectile kills the low-HP nearest target",
-	)
-	var residual_entries: Array[Vector2i] = simulation.projectile_pool.snapshot_active()
-	assertions.expect_equal(1, residual_entries.size(), "the same-tick residual projectile does not spend pierce on the dead target")
-	if residual_entries.size() != 1:
+	var levels := PackedInt32Array([1, 2, 4, 6, 8])
+	var expected_amounts := PackedInt32Array([1, 2, 3, 4, 5])
+	for level_index: int in range(levels.size()):
+		var level: int = levels[level_index]
+		var expected_amount: int = expected_amounts[level_index]
+		var setup: Dictionary = _homing_fixture(catalog, 7304 + level, &"homing_core", level)
+		var simulation: CombatSimulation = setup["simulation"]
+		var runtime: RunWeapon = setup["runtime"]
+		var target: EnemyEntity = simulation.spawn_fixture_enemy(
+			GameTypes.EnemyType.BOSS,
+			Vector2(4.0, 0.0),
+			-1,
+		)
+		target.max_hp = 1_000_000.0
+		target.hp = target.max_hp
+		var expected_ticks := PackedInt32Array()
+		for shot_index: int in range(expected_amount):
+			expected_ticks.append(1 + shot_index * WeaponSystem.HOMING_CORE_BURST_INTERVAL_TICKS)
+		var observed_ticks := PackedInt32Array()
+		var final_tick: int = expected_ticks[expected_ticks.size() - 1]
+		for current_tick: int in range(1, final_tick + 1):
+			var attacks: Array[Dictionary] = simulation.weapon_system.advance_and_fire(
+				Vector2.ZERO,
+				simulation.enemy_system.enemy_store,
+				simulation.enemy_system.uniform_grid,
+				current_tick,
+			)
+			if not attacks.is_empty():
+				observed_ticks.append(current_tick)
+			if current_tick == 1:
+				assertions.expect_equal(
+					definition.cooldown_ticks_at(level),
+					runtime.cooldown_remaining_ticks,
+					"level %d cooldown starts with its first shot" % level,
+				)
+		assertions.expect_equal(
+			expected_ticks,
+			observed_ticks,
+			"level %d emits its amount as one shot every six ticks" % level,
+		)
+		assertions.expect_equal(
+			expected_amount,
+			simulation.projectile_pool.active_count(),
+			"level %d creates exactly its configured projectile amount" % level,
+		)
+		assertions.expect_equal(
+			maxi(0, definition.cooldown_ticks_at(level) - final_tick + 1),
+			runtime.cooldown_remaining_ticks,
+			"level %d cooldown continues while later shots are emitted" % level,
+		)
+		for entry: Vector2i in simulation.projectile_pool.snapshot_active():
+			var projectile: ProjectileState = (
+				simulation.projectile_pool.resolve_snapshot_entry(entry)
+			)
+			assertions.expect_equal(
+				ProjectileState.MovementKind.STRAIGHT,
+				projectile.movement_kind,
+				"base homing core projectiles become straight flights",
+			)
+			assertions.expect_equal(
+				target.entity_id,
+				projectile.target_entity_id,
+				"a valid burst target remains locked across later shots",
+			)
+
+
+func _test_homing_core_burst_targeting(assertions: Variant) -> void:
+	var catalog: DefinitionCatalog = _catalog(assertions)
+	if catalog == null:
 		return
-	var residual: ProjectileState = simulation.projectile_pool.resolve_snapshot_entry(
-		residual_entries[0]
+	var setup: Dictionary = _homing_fixture(catalog, 7314, &"homing_core", 8)
+	var simulation: CombatSimulation = setup["simulation"]
+	var first_target: EnemyEntity = simulation.spawn_fixture_enemy(
+		GameTypes.EnemyType.BULWARK,
+		Vector2(3.0, 0.0),
+		-1,
 	)
-	assertions.expect_equal(0, residual.pierce_remaining, "skipping a zero-HP collision preserves residual pierce")
-	assertions.expect_true(simulation.advance_tick(Vector2.ZERO), "next production tick advances the residual projectile")
-	residual = simulation.projectile_pool.resolve_snapshot_entry(residual_entries[0])
-	assertions.expect_true(residual != null, "residual homing projectile remains active after retargeting")
-	if residual != null:
-		assertions.expect_equal(residual_target.entity_id, residual.target_entity_id, "residual homing projectile retargets the nearest living enemy on the next tick")
+	var closer_later: EnemyEntity = simulation.spawn_fixture_enemy(
+		GameTypes.EnemyType.BULWARK,
+		Vector2(5.0, 2.0),
+		-1,
+	)
+	var death_replacement: EnemyEntity = simulation.spawn_fixture_enemy(
+		GameTypes.EnemyType.BULWARK,
+		Vector2(-5.0, 0.0),
+		-1,
+	)
+	var burst_targets: Array[EnemyEntity] = [
+		first_target,
+		closer_later,
+		death_replacement,
+	]
+	for enemy: EnemyEntity in burst_targets:
+		enemy.max_hp = 1_000_000.0
+		enemy.hp = enemy.max_hp
+	simulation.weapon_system.advance_and_fire(
+		Vector2.ZERO,
+		simulation.enemy_system.enemy_store,
+		simulation.enemy_system.uniform_grid,
+		1,
+	)
+	var first_shot: ProjectileState = _projectile_born_at(simulation, 1)
+	assertions.expect_equal(first_target.entity_id, first_shot.target_entity_id, "burst starts on the nearest target")
+	closer_later.position = Vector2(1.0, 0.5)
+	for current_tick: int in range(2, 8):
+		simulation.weapon_system.advance_and_fire(
+			Vector2(1.0, 0.0),
+			simulation.enemy_system.enemy_store,
+			simulation.enemy_system.uniform_grid,
+			current_tick,
+		)
+	var locked_shot: ProjectileState = _projectile_born_at(simulation, 7)
+	assertions.expect_equal(first_target.entity_id, locked_shot.target_entity_id, "a closer enemy does not replace a living in-range burst target")
+	assertions.expect_equal(Vector2(1.0, 0.0), locked_shot.position, "later shots use the current player position")
+	first_target.position = Vector2(20.0, 0.0)
+	closer_later.position = Vector2(2.0, 2.0)
+	for current_tick: int in range(8, 14):
+		simulation.weapon_system.advance_and_fire(
+			Vector2(2.0, 0.0),
+			simulation.enemy_system.enemy_store,
+			simulation.enemy_system.uniform_grid,
+			current_tick,
+		)
+	var range_retargeted_shot: ProjectileState = _projectile_born_at(simulation, 13)
+	assertions.expect_equal(closer_later.entity_id, range_retargeted_shot.target_entity_id, "an out-of-range target is replaced before the next shot")
+	assertions.expect_equal(Vector2.DOWN, range_retargeted_shot.velocity.normalized(), "reacquired target direction is sampled at launch")
+	closer_later.hp = 0.0
+	death_replacement.position = Vector2.ZERO
+	for current_tick: int in range(14, 20):
+		simulation.weapon_system.advance_and_fire(
+			Vector2(3.0, 0.0),
+			simulation.enemy_system.enemy_store,
+			simulation.enemy_system.uniform_grid,
+			current_tick,
+		)
+	var death_retargeted_shot: ProjectileState = _projectile_born_at(simulation, 19)
+	assertions.expect_equal(death_replacement.entity_id, death_retargeted_shot.target_entity_id, "a dead target is replaced before the next shot")
+	var last_target_direction: Vector2 = death_retargeted_shot.velocity.normalized()
+	death_replacement.hp = 0.0
+	for current_tick: int in range(20, 26):
+		simulation.weapon_system.advance_and_fire(
+			Vector2(4.0, 0.0),
+			simulation.enemy_system.enemy_store,
+			simulation.enemy_system.uniform_grid,
+			current_tick,
+		)
+	var no_target_shot: ProjectileState = _projectile_born_at(simulation, 25)
+	assertions.expect_equal(-1, no_target_shot.target_entity_id, "remaining shots do not wait when every target disappears")
+	assertions.expect_equal(last_target_direction, no_target_shot.velocity.normalized(), "remaining shots preserve the last nonzero aim direction")
+
+	var empty_setup: Dictionary = _homing_fixture(catalog, 7315, &"homing_core", 8)
+	var empty_simulation: CombatSimulation = empty_setup["simulation"]
+	var empty_runtime: RunWeapon = empty_setup["runtime"]
+	var empty_attacks: Array[Dictionary] = empty_simulation.weapon_system.advance_and_fire(
+		Vector2.ZERO,
+		empty_simulation.enemy_system.enemy_store,
+		empty_simulation.enemy_system.uniform_grid,
+		1,
+	)
+	assertions.expect_equal(0, empty_attacks.size(), "a burst waits when activation has no target")
+	assertions.expect_equal(0, empty_runtime.cooldown_remaining_ticks, "waiting for an initial target consumes no cooldown")
+	empty_simulation.spawn_fixture_enemy(GameTypes.EnemyType.BULWARK, Vector2.RIGHT, -1)
+	var resumed_attacks: Array[Dictionary] = empty_simulation.weapon_system.advance_and_fire(
+		Vector2.ZERO,
+		empty_simulation.enemy_system.enemy_store,
+		empty_simulation.enemy_system.uniform_grid,
+		2,
+	)
+	assertions.expect_equal(1, resumed_attacks.size(), "the waiting burst starts immediately when a target appears")
+
+
+func _test_homing_core_straight_hit(assertions: Variant) -> void:
+	var catalog: DefinitionCatalog = _catalog(assertions)
+	if catalog == null:
+		return
+	var setup: Dictionary = _homing_fixture(catalog, 7316, &"homing_core", 1)
+	var simulation: CombatSimulation = setup["simulation"]
+	var original_target: EnemyEntity = simulation.spawn_fixture_enemy(
+		GameTypes.EnemyType.BULWARK,
+		Vector2(3.0, 0.0),
+		-1,
+	)
+	simulation.weapon_system.advance_and_fire(
+		Vector2.ZERO,
+		simulation.enemy_system.enemy_store,
+		simulation.enemy_system.uniform_grid,
+		1,
+	)
+	var entry: Vector2i = simulation.projectile_pool.snapshot_active()[0]
+	var projectile: ProjectileState = simulation.projectile_pool.resolve_snapshot_entry(entry)
+	var launch_velocity: Vector2 = projectile.velocity
+	var launch_damage: float = projectile.damage
+	original_target.hp = 0.0
+	original_target.position = Vector2(0.0, 4.0)
+	var interceptor: EnemyEntity = simulation.spawn_fixture_enemy(
+		GameTypes.EnemyType.BULWARK,
+		Vector2(1.2, 0.0),
+		-1,
+	)
+	var farther_enemy: EnemyEntity = simulation.spawn_fixture_enemy(
+		GameTypes.EnemyType.BULWARK,
+		Vector2(2.2, 0.0),
+		-1,
+	)
+	var records: Array[Dictionary] = []
+	var moving_entries: Array[Vector2i] = [entry]
+	for current_tick: int in range(2, 20):
+		if simulation.projectile_pool.resolve_snapshot_entry(entry) == null:
+			break
+		simulation.weapon_system.move_snapshot_projectiles(
+			moving_entries,
+			simulation.enemy_system.enemy_store,
+			Vector2.ZERO,
+			current_tick,
+			false,
+		)
+		projectile = simulation.projectile_pool.resolve_snapshot_entry(entry)
+		assertions.expect_equal(launch_velocity, projectile.velocity, "launched homing core projectile never bends after target movement or death")
+		records.append_array(simulation.weapon_system.resolve_ally_projectile(
+			entry,
+			simulation.enemy_system.enemy_store,
+			simulation.enemy_system.uniform_grid,
+			Vector2.ZERO,
+			current_tick,
+		))
+	assertions.expect_equal(1, _hit_count_for(records, interceptor.entity_id), "the first enemy on the trajectory is hit exactly once")
+	assertions.expect_equal(0, _hit_count_for(records, farther_enemy.entity_id), "the projectile does not bounce through to a later enemy")
+	assertions.expect_equal(1, records.size(), "one homing core projectile emits one damage record")
+	if not records.is_empty():
+		var event: CombatEvent = records[0]["event"]
+		assertions.expect_float(launch_damage, event.damage_snapshot, "the first contact receives the projectile's full launch damage")
+	assertions.expect_equal(0, simulation.projectile_pool.active_count(), "the projectile disappears after its first valid contact")
+	assertions.expect_equal(
+		0,
+		simulation.weapon_system.resolve_ally_projectile(
+			entry,
+			simulation.enemy_system.enemy_store,
+			simulation.enemy_system.uniform_grid,
+			Vector2.ZERO,
+			20,
+		).size(),
+		"a consumed projectile cannot hit again",
+	)
+
+
+func _test_homing_core_upgrade_transitions(assertions: Variant) -> void:
+	var catalog: DefinitionCatalog = _catalog(assertions)
+	if catalog == null:
+		return
+	var passive_setup: Dictionary = _homing_fixture(catalog, 7317, &"homing_core", 2)
+	var passive_simulation: CombatSimulation = passive_setup["simulation"]
+	var passive_state: RunState = passive_setup["state"]
+	passive_simulation.spawn_fixture_enemy(GameTypes.EnemyType.BOSS, Vector2(4.0, 0.0), -1)
+	passive_simulation.weapon_system.advance_and_fire(
+		Vector2.ZERO,
+		passive_simulation.enemy_system.enemy_store,
+		passive_simulation.enemy_system.uniform_grid,
+		1,
+	)
+	var first_damage: float = _projectile_born_at(passive_simulation, 1).damage
+	var amplifier := RunPassive.create(&"amplifier_core")
+	amplifier.level = 1
+	passive_state.passives.append(amplifier)
+	for current_tick: int in range(2, 8):
+		passive_simulation.weapon_system.advance_and_fire(
+			Vector2.ZERO,
+			passive_simulation.enemy_system.enemy_store,
+			passive_simulation.enemy_system.uniform_grid,
+			current_tick,
+		)
+	var upgraded_damage: float = _projectile_born_at(passive_simulation, 7).damage
+	assertions.expect_float(first_damage * 1.1, upgraded_damage, "other upgrades preserve the burst and affect only shots that remain unfired")
+
+	var level_setup: Dictionary = _homing_fixture(catalog, 7318, &"homing_core", 2)
+	var level_simulation: CombatSimulation = level_setup["simulation"]
+	var level_runtime: RunWeapon = level_setup["runtime"]
+	level_simulation.spawn_fixture_enemy(GameTypes.EnemyType.BOSS, Vector2(4.0, 0.0), -1)
+	level_simulation.weapon_system.advance_and_fire(
+		Vector2.ZERO,
+		level_simulation.enemy_system.enemy_store,
+		level_simulation.enemy_system.uniform_grid,
+		1,
+	)
+	level_runtime.level = 4
+	level_runtime.ready_on_resume = true
+	var restart_ticks := PackedInt32Array([1])
+	for current_tick: int in range(2, 15):
+		var attacks: Array[Dictionary] = level_simulation.weapon_system.advance_and_fire(
+			Vector2.ZERO,
+			level_simulation.enemy_system.enemy_store,
+			level_simulation.enemy_system.uniform_grid,
+			current_tick,
+		)
+		if not attacks.is_empty():
+			restart_ticks.append(current_tick)
+	assertions.expect_equal(PackedInt32Array([1, 2, 8, 14]), restart_ticks, "own level-up discards the old remainder and immediately starts the new three-shot burst")
+
+	var evolution_setup: Dictionary = _homing_fixture(catalog, 7319, &"homing_core", 8)
+	var evolution_simulation: CombatSimulation = evolution_setup["simulation"]
+	var evolution_runtime: RunWeapon = evolution_setup["runtime"]
+	evolution_simulation.spawn_fixture_enemy(GameTypes.EnemyType.BOSS, Vector2(4.0, 0.0), -1)
+	evolution_simulation.weapon_system.advance_and_fire(
+		Vector2.ZERO,
+		evolution_simulation.enemy_system.enemy_store,
+		evolution_simulation.enemy_system.uniform_grid,
+		1,
+	)
+	evolution_runtime.weapon_id = &"infinite_homing"
+	evolution_runtime.level = 1
+	evolution_runtime.evolved = true
+	evolution_runtime.ready_on_resume = true
+	var evolved_attacks: Array[Dictionary] = evolution_simulation.weapon_system.advance_and_fire(
+		Vector2.ZERO,
+		evolution_simulation.enemy_system.enemy_store,
+		evolution_simulation.enemy_system.uniform_grid,
+		2,
+	)
+	assertions.expect_equal(1, evolved_attacks.size(), "evolution discards the old remainder and attacks immediately")
+	assertions.expect_equal(0, evolution_simulation.weapon_system.deterministic_state_values()[1].size(), "evolution removes the base burst from deterministic state")
+	assertions.expect_equal(ProjectileState.MovementKind.HOMING, _projectile_born_at(evolution_simulation, 2).movement_kind, "infinite homing retains in-flight tracking after evolution")
 
 
 func _test_arc_impact_explosion(assertions: Variant) -> void:
@@ -746,6 +1026,8 @@ func _test_infinite_homing_pool(assertions: Variant) -> void:
 	target.hp = target.max_hp
 	var generated_count: int = 0
 	for current_tick: int in range(1, 601):
+		if current_tick == 2:
+			target.position = Vector2(0.0, 7.5)
 		var entries: Array[Vector2i] = simulation.projectile_pool.snapshot_active()
 		simulation.weapon_system.move_snapshot_projectiles(
 			entries,
@@ -754,6 +1036,20 @@ func _test_infinite_homing_pool(assertions: Variant) -> void:
 			current_tick,
 			false,
 		)
+		if current_tick == 2 and not entries.is_empty():
+			var tracking_projectile: ProjectileState = (
+				simulation.projectile_pool.resolve_snapshot_entry(entries[0])
+			)
+			assertions.expect_equal(
+				ProjectileState.MovementKind.HOMING,
+				tracking_projectile.movement_kind,
+				"infinite homing retains its in-flight tracking movement",
+			)
+			assertions.expect_equal(
+				Vector2.DOWN,
+				tracking_projectile.velocity.normalized(),
+				"infinite homing still bends toward a moved living target",
+			)
 		for entry: Vector2i in entries:
 			simulation.weapon_system.resolve_ally_projectile(
 				entry,
@@ -872,6 +1168,45 @@ func _orbital_fixture(
 	enemy.max_hp = 1_000_000.0
 	enemy.hp = enemy.max_hp
 	return {"simulation": simulation, "runtime": runtime}
+
+
+func _homing_fixture(
+	catalog: DefinitionCatalog,
+	fixture_seed: int,
+	weapon_id: StringName,
+	level: int,
+) -> Dictionary:
+	var state: RunState = RunStateFactory.create(fixture_seed, catalog)
+	state.weapons.clear()
+	var definition: WeaponDefinition = catalog.weapon(weapon_id)
+	var runtime := RunWeapon.create(
+		definition.weapon_id,
+		definition.lineage_id,
+		definition.is_evolved,
+		state.rng_streams.create_weapon_rng(definition.lineage_id, 0),
+	)
+	runtime.level = level
+	state.weapons.append(runtime)
+	var simulation := CombatSimulation.new()
+	simulation.initialize(state, catalog)
+	return {
+		"simulation": simulation,
+		"runtime": runtime,
+		"state": state,
+	}
+
+
+func _projectile_born_at(
+	simulation: CombatSimulation,
+	born_tick: int,
+) -> ProjectileState:
+	for entry: Vector2i in simulation.projectile_pool.snapshot_active():
+		var projectile: ProjectileState = (
+			simulation.projectile_pool.resolve_snapshot_entry(entry)
+		)
+		if projectile != null and projectile.born_tick == born_tick:
+			return projectile
+	return null
 
 
 func _hit_count_for(records: Array[Dictionary], entity_id: int) -> int:

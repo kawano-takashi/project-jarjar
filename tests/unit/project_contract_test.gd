@@ -110,7 +110,7 @@ func test_names() -> PackedStringArray:
 		"production_has_no_removed_equipment_loot_or_score_system",
 		"production_and_project_settings_have_no_music_or_bgm",
 		"survival_definition_file_shape_is_exact",
-		"launch_balance_and_engine_contracts_are_revision_nine",
+		"launch_balance_and_engine_contracts_are_revision_ten",
 	])
 
 
@@ -122,7 +122,7 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 			_test_no_music_or_bgm(assertions)
 		"survival_definition_file_shape_is_exact":
 			_test_definition_shape(assertions)
-		"launch_balance_and_engine_contracts_are_revision_nine":
+		"launch_balance_and_engine_contracts_are_revision_ten":
 			_test_launch_balance(assertions)
 		_:
 			assertions.expect_true(false, "registered project contract test")
@@ -247,7 +247,7 @@ func _test_launch_balance(assertions: Variant) -> void:
 	var catalog := DefinitionCatalog.new()
 	assertions.expect_true(catalog.load_and_validate(), "project contract catalog valid: %s" % catalog.error_text)
 	if catalog.is_valid:
-		assertions.expect_equal(9, catalog.balance_manifest().balance_revision, "balance revision is nine")
+		assertions.expect_equal(10, catalog.balance_manifest().balance_revision, "balance revision is ten")
 	assertions.expect_equal(60, int(ProjectSettings.get_setting("physics/common/physics_ticks_per_second", 60)), "gameplay physics is fixed at 60Hz")
 	assertions.expect_equal("4.7", str(ProjectSettings.get_setting("application/config/features", PackedStringArray())[0]).left(3), "project targets Godot 4.7")
 	assertions.expect_false(InputMap.has_action(&"item_lock"), "old item lock input removed")

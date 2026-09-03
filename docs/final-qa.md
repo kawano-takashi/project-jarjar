@@ -1,30 +1,30 @@
 # Project JARJAR 最終QA記録
 
-**状態: 人間QA未実施（balance revision 9 source gate未実施、正式候補未固定）**
+**状態: 人間QA未実施（balance revision 10 source gate未実施、正式候補未固定）**
 
 この文書は候補固定前の自動調整記録、対象identityに対する自動検証結果、および人間が実機で確認した事実を記録する。
 過去のrevision、別のEXE/PCK、別の候補HEADの結果は転記しない。`ManualQa`の終了コード0だけでは合格にしない。
 ユーザーが最終調整完了を明示するまで正式candidateを固定せず、対象identityも記入しない。
-revision 8以前のsource gate、回帰、QA、build identity、playtest記録は履歴専用であり、revision 9候補の証拠として無効である。
+revision 9以前のsource gate、回帰、QA、build identity、playtest記録は履歴専用であり、revision 10候補の証拠として無効である。
 
 ## 対象identity
 
 - candidate_head:
 - exe_sha256:
 - pck_sha256:
-- balance_revision: `9`
+- balance_revision: `10`
 - 実施日:
 - 判定: 未実施
 
 4値のいずれかが変わったら、この記録を無効として新しい対象で全項目を再実施する。
 
-## revision 9 source gate
+## revision 10 source gate
 
-未実施。通常敵と50体高速群れの生成枠をプレイヤー中心・画面軸基準の10〜12m帯へ変更し、
-通常敵へ18m遠方破棄を追加したため、revision 8以前の自動調整結果は流用しない。
-既存の全体balance値、受入閾値、bot方針は変更せず、新しいスポーン挙動を含む再調整を別作業で一度だけ行う。
+未実施。追尾核を6 tick間隔の逐次連射と発射後直進へ変更した。通常敵と50体高速群れの生成枠も
+プレイヤー中心・画面軸基準の10〜12m帯で、通常敵に18m遠方破棄があるため、revision 9以前の自動調整結果は流用しない。
+既存の全体balance値、受入閾値、bot方針は変更せず、新しい追尾核とスポーン挙動を含む再調整を別作業で一度だけ行う。
 
-## revision 5自動調整済みsource gate（履歴・revision 9へ流用禁止）
+## revision 5自動調整済みsource gate（履歴・revision 10へ流用禁止）
 
 seed `17`、`29`、`43`、`61`を`cautious`、`normal`、`evolution`の各方針で実行する専用12run source gateがPASSした。
 実測は次のとおりである。
@@ -55,18 +55,18 @@ damage `0.57`、action rate `1.0`である。segment値は次のとおりであ�
 | damage_multiplier | 0.18 | 0.20 | 0.22 | 0.25 | 0.29 | 0.36 | 0.45 | 0.56 | 0.72 | 0.95 |
 
 実測CSVとsummaryは`artifacts/balance/revision-5/`に保存している。このPASSはrevision 5の自動調整完了記録であり、
-空欄のrevision 9正式candidate identityに対する性能試験、Release検証、ManualQa、
+空欄のrevision 10正式candidate identityに対する性能試験、Release検証、ManualQa、
 人間playtestの完了を意味しない。
 上記の調整値、segment、候補抽選、進化条件、出現・攻撃・10:00遷移のいずれかを変更した場合、このsource gate結果を無効として
 専用12runを全件再実行する。
 
 ## 自動検証記録
 
-- 全GDScript回帰: PASS（2026-09-03、revision 9プレイヤー追従型スポーン実装後122/122）
+- 全GDScript回帰: PASS（2026-09-03、revision 10追尾核逐次連射実装後125/125）
 - GDScript guard: PASS（101ファイル）
-- 変更GDScript check-only: PASS（revision 9の変更15/15）
-- revision 9専用12run source gate: 未実施
-- revision 8以前のsource gate: 履歴専用、revision 9へ流用禁止
+- 変更GDScript check-only: PASS（revision 10の変更11/11）
+- revision 10専用12run source gate: 未実施
+- revision 9以前のsource gate: 履歴専用、revision 10へ流用禁止
 - Full HD性能試験（`--performance=full_hd_500_2000`）: 未実施
 - pool overflow / orphan: revision 5専用12runでは0run / 0run、正式候補の性能試験は未実施
 - Release export: 未実施
@@ -85,6 +85,8 @@ damage `0.57`、action rate `1.0`である。segment値は次のとおりであ�
 - 10:00より前に画面軸方向18mを越えた通常敵が無報酬で破棄され、STOP中と出現待機中にも機能する。
   群れ、エリート、ボスは除外され、10:00ではボス吸収が優先される。
 - プレイヤー攻撃はすべて自動で、手動照準・攻撃入力がない。
+- QA項目`weapon_homing_core`でLv8追尾核の5発が初弾から0.10秒刻みで明確に視認できる。発射後は直進し、
+  軌道上の最初の有効敵へ1回だけ命中して消え、再追尾も跳弾もしない。連射中の標的が消えた場合は未発射弾だけが再照準される。
 - 通常敵とエリートは接触追跡だけを行い、遠距離攻撃をしない。最終ボスだけが例外として、予告付きの放射弾を撃つ。
 - 通常`swarmer`がプレイヤーより速い6.4m/sで常時追尾する。定時抽選された別枠の群れは四辺10〜12m帯に
   橙25体・赤25体の10×5千鳥配置で即時出現し、発生時に決めた画面方向へ32m/sで`2d+2.8m`直進する。

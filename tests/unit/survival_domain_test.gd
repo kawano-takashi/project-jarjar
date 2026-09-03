@@ -150,7 +150,7 @@ func _test_all_content_fixed_contract(assertions: Variant) -> void:
 	assertions.expect_float(
 		650.0,
 		catalog.enemy_for_type(GameTypes.EnemyType.ELITE).base_hp,
-		"revision nine preserves the calibrated elite HP",
+		"revision ten preserves the calibrated elite HP",
 	)
 	var expected_segment_targets: Array[int] = [16, 46, 32, 68, 49, 140, 92, 132, 97, 176]
 	var expected_segment_hp: Array[float] = [
@@ -716,7 +716,7 @@ func _test_xp_yield_fraction_and_growth_order(assertions: Variant) -> void:
 func _test_boss_enrage_validation(assertions: Variant) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	var canonical: SurvivalContentManifest = catalog.manifest()
-	assertions.expect_float(1.6875, canonical.boss_hp_multiplier, "revision nine preserves the prior boss HP pending recalibration")
+	assertions.expect_float(1.6875, canonical.boss_hp_multiplier, "revision ten preserves the prior boss HP pending recalibration")
 	assertions.expect_float(0.114, canonical.boss_damage_multiplier, "calibrated boss damage matches the twelve-run gate")
 	assertions.expect_float(1.1, canonical.boss_action_rate_multiplier, "canonical boss action rate sustains the intended fight length")
 	assertions.expect_float(
@@ -849,25 +849,25 @@ func _test_segment_tuning_contract(assertions: Variant) -> void:
 	target_drift.target_active += 1
 	assertions.expect_false(
 		DefinitionCatalog.new().validate_manifest(_with_segment(canonical, 1, target_drift)),
-		"revision nine rejects target drift",
+		"revision ten rejects target drift",
 	)
 	var hp_drift: EnemySegmentDefinition = canonical.segments[5].duplicate(true) as EnemySegmentDefinition
 	hp_drift.hp_multiplier += 0.01
 	assertions.expect_false(
 		DefinitionCatalog.new().validate_manifest(_with_segment(canonical, 5, hp_drift)),
-		"revision nine rejects HP drift",
+		"revision ten rejects HP drift",
 	)
 	var damage_drift: EnemySegmentDefinition = canonical.segments[7].duplicate(true) as EnemySegmentDefinition
 	damage_drift.damage_multiplier += 0.01
 	assertions.expect_false(
 		DefinitionCatalog.new().validate_manifest(_with_segment(canonical, 7, damage_drift)),
-		"revision nine rejects damage drift",
+		"revision ten rejects damage drift",
 	)
 	var weight_drift: EnemySegmentDefinition = canonical.segments[9].duplicate(true) as EnemySegmentDefinition
 	weight_drift.spawn_weights = PackedFloat32Array([0.30, 0.20, 0.25, 0.25, 0.0, 0.0])
 	assertions.expect_false(
 		DefinitionCatalog.new().validate_manifest(_with_segment(canonical, 9, weight_drift)),
-		"revision nine rejects spawn-weight drift even when weights sum to one",
+		"revision ten rejects spawn-weight drift even when weights sum to one",
 	)
 
 

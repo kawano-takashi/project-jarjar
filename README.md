@@ -13,7 +13,12 @@ Vampire Survivors型の成長方式です。
 予告付きの放射状投射物を使うのは最終ボスだけです。
 戦闘範囲は標的中心8m・効果外縁9m・damage中心10m、安定化した直交投影カメラはsize `18`・follow tau `0.12`秒です。
 
-## revision 9の現在地
+## revision 10の現在地
+
+追尾核は弾数を同時生成せず、初弾を即時、その後を6 combat tick（0.10秒）間隔で1発ずつ発射します。
+連射中は有効な標的を維持し、死亡または標的範囲外になった場合だけ未発射弾を現在位置から再照準します。
+敵がいなくなっても残弾は最後の照準方向へ直進し、発射後は再追尾・跳弾せず最初に接触した有効敵へ1回だけ命中します。
+進化後の無限追尾は従来どおり毎tick発射・飛翔中再追尾です。威力、弾数、発動間隔、射程、成長表、表示文言は変更していません。
 
 通常敵は画面上下左右を各25%で選び、プレイヤーから辺距離10〜12m、辺方向位置`-d〜d`へ生成します。
 アリーナ外でも21 tickの出現待機後に追尾・標的化・攻撃・接触が有効になり、内側へ連続移動してから境界制限を受けます。
@@ -24,15 +29,15 @@ STOP中も生成管理と遠方破棄は進み、敵移動と接触は停止し�
 橙／赤チェック模様を即時生成します。方向は生成時のプレイヤーへ固定し、32m/sで`2d+2.8m`進むため、
 全生存個体が対辺まで横断して同時に無報酬退場します。通常敵・エリート・ボスへの押し出しは維持します。
 通常敵の遠方破棄は`normal_far_despawns`、群れの生成・撃破・退場・XPは従来どおり別統計で記録します。
-実装後の全GDScript回帰122/122、GDScript guard 101ファイル、変更GDScriptのcheck-only 15/15、
+実装後の全GDScript回帰125/125、GDScript guard 101ファイル、変更GDScriptのcheck-only 11/11、
 差分の空白検査がPASSしています。
 
-この敵仕様変更により、revision 8以前のsource gate、回帰、QA、build identityはrevision 9へ流用しません。
-revision 9のsource再調整は未実施で、
+この追尾核仕様変更により、revision 9以前のsource gate、回帰、QA、build identityはrevision 10へ流用しません。
+revision 10のsource再調整は未実施で、
 正式candidateと正式playtest targetも未固定です。Full HD性能試験、Release export、Verify、ManualQa、人間playtestは
 ユーザーが最終調整完了を明示するまで実行禁止です。
 
-## revision 5自動調整の履歴（revision 9へ流用禁止）
+## revision 5自動調整の履歴（revision 10へ流用禁止）
 
 balance revision 5の自動調整は、2026-09-02の専用12run source gateで`passed=true`となり完了しています。
 seed `17`、`29`、`43`、`61`をcautious、normal、evolutionの各方針で実行した結果は、2:00以前死亡0/12、
@@ -53,7 +58,7 @@ audio cueはadmitted 53,321・suppressed 181,691です。調整成果物は`arti
 | hp_multiplier | 0.15 | 0.17 | 0.20 | 0.24 | 0.30 | 0.45 | 0.65 | 0.90 | 1.25 | 1.75 |
 | damage_multiplier | 0.18 | 0.20 | 0.22 | 0.25 | 0.29 | 0.36 | 0.45 | 0.56 | 0.72 | 0.95 |
 
-これらはrevision 5の履歴値であり、revision 9の実データや現候補の証拠ではありません。
+これらはrevision 5の履歴値であり、revision 10の実データや現候補の証拠ではありません。
 
 ## revision 4の履歴（現候補へ流用禁止）
 

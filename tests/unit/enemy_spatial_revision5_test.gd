@@ -3,7 +3,7 @@ extends RefCounted
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"revision_nine_envelope_and_exterior_grid",
+		"revision_ten_envelope_and_exterior_grid",
 		"enemy_entry_contract_and_pool_default",
 		"player_relative_spawn_frame_is_translation_invariant",
 		"outside_entry_and_normal_far_despawn_contracts",
@@ -13,7 +13,7 @@ func test_names() -> PackedStringArray:
 
 func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
 	match test_name:
-		"revision_nine_envelope_and_exterior_grid":
+		"revision_ten_envelope_and_exterior_grid":
 			_test_envelope_and_grid(assertions)
 		"enemy_entry_contract_and_pool_default":
 			_test_entry_contract(assertions)
@@ -24,7 +24,7 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 		"boss_charge_cadence_and_latches":
 			_test_boss_charge(assertions)
 		_:
-			assertions.expect_true(false, "registered revision nine enemy-spatial test")
+			assertions.expect_true(false, "registered revision ten enemy-spatial test")
 
 
 func _test_envelope_and_grid(assertions: Variant) -> void:
@@ -555,9 +555,9 @@ func _test_boss_charge(assertions: Variant) -> void:
 	var phase_one_interval: int = system._boss_action_interval_ticks(120, 1)
 	var phase_two_interval: int = system._boss_action_interval_ticks(120, 2)
 	var phase_three_interval: int = system._boss_action_interval_ticks(120, 3)
-	assertions.expect_equal(110, phase_one_interval, "revision nine phase-one action rate rounds up to 110 ticks")
-	assertions.expect_equal(82, phase_two_interval, "revision nine phase-two action rate rounds up to 82 ticks")
-	assertions.expect_equal(62, phase_three_interval, "revision nine phase-three action rate rounds up to 62 ticks")
+	assertions.expect_equal(110, phase_one_interval, "revision ten phase-one action rate rounds up to 110 ticks")
+	assertions.expect_equal(82, phase_two_interval, "revision ten phase-two action rate rounds up to 82 ticks")
+	assertions.expect_equal(62, phase_three_interval, "revision ten phase-three action rate rounds up to 62 ticks")
 
 	state.combat_tick = boss.activation_tick - 1
 	system.advance_snapshot(boss_ids, Vector2(6.0, 0.0), state.combat_tick)
@@ -651,5 +651,5 @@ func _spawn_side_index(screen_coordinates: Vector2) -> int:
 
 func _catalog(assertions: Variant) -> DefinitionCatalog:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "revision nine content catalog validates")
+	assertions.expect_true(catalog.load_and_validate(), "revision ten content catalog validates")
 	return catalog if catalog.is_valid else null
