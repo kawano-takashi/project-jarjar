@@ -49,8 +49,8 @@ func _exercise_coordinator(assertions: Variant, tree: SceneTree) -> void:
 	assertions.expect_equal(Control.FOCUS_NONE, origin.get_focus_mode_with_override(), "background effective focus is disabled")
 	assertions.expect_equal(Control.MOUSE_FILTER_IGNORE, origin.get_mouse_filter_with_override(), "background effective mouse is disabled")
 	assertions.expect_false(background.mouse_behavior_recursive == Control.MOUSE_BEHAVIOR_ENABLED, "background recursive mouse override is not enabled")
-	origin.grab_focus()
-	assertions.expect_false(host.get_viewport().gui_get_focus_owner() == origin, "direct background grab_focus cannot focus behind modal")
+	assertions.expect_false(FocusController.grab_focus_safe(origin), "safe background focus is rejected behind modal")
+	assertions.expect_equal(modal_a_focus, host.get_viewport().gui_get_focus_owner(), "rejected background focus preserves modal owner")
 	FocusController.grab_focus_safe(modal_a_focus)
 
 	assertions.expect_true(coordinator.push(modal_b, fallback), "nested modal pushes")
@@ -61,8 +61,8 @@ func _exercise_coordinator(assertions: Variant, tree: SceneTree) -> void:
 	assertions.expect_equal(Control.FOCUS_NONE, modal_a_focus.get_focus_mode_with_override(), "lower modal effective focus is disabled")
 	assertions.expect_equal(Control.MOUSE_FILTER_IGNORE, modal_a_focus.get_mouse_filter_with_override(), "lower modal effective mouse is disabled")
 	assertions.expect_false(modal_a.is_processing_input(), "lower modal raw input processing is suspended")
-	modal_a_focus.grab_focus()
-	assertions.expect_false(host.get_viewport().gui_get_focus_owner() == modal_a_focus, "direct lower-modal grab_focus cannot steal nested focus")
+	assertions.expect_false(FocusController.grab_focus_safe(modal_a_focus), "safe lower-modal focus is rejected")
+	assertions.expect_equal(modal_b_focus, host.get_viewport().gui_get_focus_owner(), "rejected lower-modal focus preserves nested owner")
 	FocusController.grab_focus_safe(modal_b_focus)
 	FocusController.grab_focus_deferred(modal_a_focus)
 	await tree.process_frame

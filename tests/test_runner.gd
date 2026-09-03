@@ -3,6 +3,8 @@ extends SceneTree
 
 const TEST_TIMEOUT_MS: int = 600000
 const TEST_SETTINGS_ROOT: String = "res://artifacts/gdscript-tests/settings"
+const TEST_FILTER_ENV: String = "JARJAR_TEST_FILTER"
+const TEST_VERBOSE_ENV: String = "JARJAR_TEST_VERBOSE"
 const PREFLIGHT_EXTENSIONS: Array[String] = ["gd", "gdshader", "tscn", "tres"]
 const IGNORED_ROOT_DIRECTORIES: Array[String] = [
 	".codex",
@@ -42,6 +44,12 @@ func _run() -> void:
 	if not user_arguments.is_empty():
 		_reject(_option_name(user_arguments[0]))
 		return
+	var runtime_options := _read_runtime_options()
+	if not bool(runtime_options["valid"]):
+		_bootstrap_failed(str(runtime_options["reason"]))
+		return
+	var test_filter := str(runtime_options["filter"])
+	var verbose_assertions := bool(runtime_options["verbose"])
 
 	var settings_store: Variant = root.get_node_or_null("SettingsStore")
 	if settings_store == null:
@@ -85,6 +93,19 @@ func _run() -> void:
 	if test_cases.is_empty():
 		_bootstrap_failed("empty-test-set")
 		return
+	if not test_filter.is_empty():
+		var filtered_test_cases: Array = []
+		for test_case: Dictionary in test_cases:
+			if str(test_case["name"]) == test_filter:
+				filtered_test_cases.append(test_case)
+		if filtered_test_cases.size() != 1:
+			_bootstrap_failed(
+				"test-filter name=%s matches=%d"
+				% [test_filter, filtered_test_cases.size()]
+			)
+			return
+		test_cases = filtered_test_cases
+		print("TEST_FILTER name=%s matched=1" % test_filter)
 
 	var passed := 0
 	var failed := 0
@@ -122,16 +143,17 @@ func _run() -> void:
 		assertions.expect_float(1.0, settings_store.master_volume, "runner bootstrap defaults restored")
 
 		for record in assertions.records:
-			print(
-				"ASSERT test=%s label=%s expected=%s actual=%s result=%s"
-				% [
-					test_name,
-					record["label"],
-					record["expected"],
-					record["actual"],
-					"PASS" if record["passed"] else "FAIL",
-				]
-			)
+			if verbose_assertions or not bool(record["passed"]):
+				print(
+					"ASSERT test=%s label=%s expected=%s actual=%s result=%s"
+					% [
+						test_name,
+						record["label"],
+						record["expected"],
+						record["actual"],
+						"PASS" if record["passed"] else "FAIL",
+					]
+				)
 		var elapsed_ms := Time.get_ticks_msec() - test_started_ms
 		if assertions.has_failures():
 			failed += 1
@@ -190,6 +212,7 @@ func _preflight_resources(resource_paths: Array[String]) -> bool:
 
 func _discover_tests(test_script_paths: Array[String]) -> Dictionary:
 	var test_cases: Array[Dictionary] = []
+	var names_in_suite: Dictionary = {}
 	for script_path in test_script_paths:
 		var test_script := ResourceLoader.load(script_path)
 		if test_script == null:
@@ -207,9 +230,34 @@ func _discover_tests(test_script_paths: Array[String]) -> Dictionary:
 			var test_name := str(test_name_value)
 			if test_name.is_empty() or names_in_script.has(test_name):
 				return {"valid": false, "reason": "test-name path=%s" % script_path, "tests": []}
+			if names_in_suite.has(test_name):
+				return {
+					"valid": false,
+					"reason": "test-name-global name=%s first=%s second=%s"
+					% [test_name, names_in_suite[test_name], script_path],
+					"tests": [],
+				}
 			names_in_script[test_name] = true
+			names_in_suite[test_name] = script_path
 			test_cases.append({"name": test_name, "script": test_script, "path": script_path})
 	return {"valid": true, "reason": "", "tests": test_cases}
+
+
+func _read_runtime_options() -> Dictionary:
+	var verbose_value := OS.get_environment(TEST_VERBOSE_ENV)
+	if verbose_value not in ["", "0", "1"]:
+		return {
+			"valid": false,
+			"reason": "test-verbose value=%s" % verbose_value,
+			"filter": "",
+			"verbose": false,
+		}
+	return {
+		"valid": true,
+		"reason": "",
+		"filter": OS.get_environment(TEST_FILTER_ENV),
+		"verbose": verbose_value == "1",
+	}
 
 
 func _bootstrap_failed(reason: String) -> void:

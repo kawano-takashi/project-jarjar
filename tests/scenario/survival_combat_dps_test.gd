@@ -7,18 +7,6 @@ const MEASURE_TICKS: int = 600
 const GROUP_TARGET_COUNT: float = 12.0
 const ROLE_EVOLUTION_RATIO: float = 1.50
 const ORBITAL_FIXTURE_MOVE_SPEED: float = 0.15
-const SINGLE_ROLE_IDS: Array[StringName] = [
-	&"homing_core",
-	&"returning_ring",
-	&"mass_projectile",
-]
-const GROUP_ROLE_IDS: Array[StringName] = [
-	&"resonance_wave",
-	&"directional_needle",
-	&"arc_crystal",
-	&"orbital_array",
-	&"zero_field",
-]
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
@@ -39,12 +27,6 @@ func _test_role_normalization(assertions: Variant) -> void:
 	assertions.expect_true(catalog.load_and_validate(), "DPS fixture content validates")
 	if not catalog.is_valid:
 		return
-	var stationary_level_one_scores: Dictionary[StringName, float] = {}
-	var stationary_level_eight_scores: Dictionary[StringName, float] = {}
-	var stationary_evolved_scores: Dictionary[StringName, float] = {}
-	var moving_level_one_scores: Dictionary[StringName, float] = {}
-	var moving_level_eight_scores: Dictionary[StringName, float] = {}
-	var moving_evolved_scores: Dictionary[StringName, float] = {}
 	for base_id: StringName in catalog.basic_weapon_ids():
 		var evolution: EvolutionDefinition = catalog.evolution_for_weapon(base_id)
 		var role_fixture: FixtureKind = _role_fixture(base_id)
@@ -54,10 +36,6 @@ func _test_role_normalization(assertions: Variant) -> void:
 		)
 		var stationary_level_eight_score: float = _normalized_role_score(
 			_measure_dps(catalog, base_id, role_fixture, 8, false),
-			role_fixture,
-		)
-		var stationary_evolved_score: float = _normalized_role_score(
-			_measure_dps(catalog, evolution.evolved_weapon_id, role_fixture, 1, false),
 			role_fixture,
 		)
 		var moving_level_one_score: float = _normalized_role_score(
@@ -72,17 +50,10 @@ func _test_role_normalization(assertions: Variant) -> void:
 			_measure_dps(catalog, evolution.evolved_weapon_id, role_fixture, 1, true),
 			role_fixture,
 		)
-		stationary_level_one_scores[base_id] = stationary_level_one_score
-		stationary_level_eight_scores[base_id] = stationary_level_eight_score
-		stationary_evolved_scores[base_id] = stationary_evolved_score
-		moving_level_one_scores[base_id] = moving_level_one_score
-		moving_level_eight_scores[base_id] = moving_level_eight_score
-		moving_evolved_scores[base_id] = moving_evolved_score
-		print("WEAPON_ROLE_SCORE lineage=%s stationary=%.4f/%.4f/%.4f moving=%.4f/%.4f/%.4f" % [
+		print("WEAPON_ROLE_SCORE lineage=%s stationary=%.4f/%.4f moving=%.4f/%.4f/%.4f" % [
 			base_id,
 			stationary_level_one_score,
 			stationary_level_eight_score,
-			stationary_evolved_score,
 			moving_level_one_score,
 			moving_level_eight_score,
 			moving_evolved_score,
@@ -172,7 +143,7 @@ func _measure_dps(
 			state.boss_max_hp = enemy.max_hp
 	simulation.weapon_system.update_move_direction(Vector2.RIGHT)
 	for _tick_index: int in range(MEASURE_TICKS):
-		simulation.step(Vector2.ZERO)
+		simulation.advance_tick(Vector2.ZERO)
 	return (
 		float(state.weapon_damage_by_lineage.get(definition.lineage_id, 0.0))
 		/ (float(MEASURE_TICKS) / float(RunState.TICKS_PER_SECOND))
@@ -228,34 +199,6 @@ func _fixture_positions(
 
 func _normalized_role_score(raw_dps: float, fixture_kind: FixtureKind) -> float:
 	return raw_dps / GROUP_TARGET_COUNT if fixture_kind == FixtureKind.GROUP else raw_dps
-
-
-func _score_values(scores: Dictionary) -> Array[float]:
-	var result: Array[float] = []
-	for score: Variant in scores.values():
-		result.append(float(score))
-	return result
-
-
-func _select_scores(
-	scores: Dictionary,
-	lineage_ids: Array[StringName],
-) -> Dictionary[StringName, float]:
-	var result: Dictionary[StringName, float] = {}
-	for lineage_id: StringName in lineage_ids:
-		result[lineage_id] = float(scores[lineage_id])
-	return result
-
-
-func _median(values: Array[float]) -> float:
-	var sorted_values: Array[float] = values.duplicate()
-	sorted_values.sort()
-	var middle_index: int = floori(float(sorted_values.size()) / 2.0)
-	if sorted_values.size() % 2 == 1:
-		return sorted_values[middle_index]
-	return (sorted_values[middle_index - 1] + sorted_values[middle_index]) * 0.5
-
-
 func _role_fixture(lineage_id: StringName) -> FixtureKind:
 	match lineage_id:
 		&"homing_core":

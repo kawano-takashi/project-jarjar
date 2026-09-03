@@ -48,7 +48,9 @@ func test_names() -> PackedStringArray:
 		"shooter_type_chases_for_contact_without_normal_projectiles",
 		"combat_envelope_enforces_8_9_10_meter_gates",
 		"visible_combat_metrics_has_required_revision5_schema",
-		"presentation_and_audio_admission_budgets_are_bounded",
+		"presentation_event_admission_is_bounded_and_priority_aware",
+		"vfx_admission_reserves_important_capacity_and_hard_caps",
+		"audio_admission_metrics_cover_combat_stop_and_modal_cues",
 	])
 
 
@@ -68,8 +70,12 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 			_test_combat_envelope_gates(assertions)
 		"visible_combat_metrics_has_required_revision5_schema":
 			_test_visible_metric_schema(assertions)
-		"presentation_and_audio_admission_budgets_are_bounded":
-			_test_transient_admission_budgets(assertions)
+		"presentation_event_admission_is_bounded_and_priority_aware":
+			_test_presentation_event_admission(assertions)
+		"vfx_admission_reserves_important_capacity_and_hard_caps":
+			_test_vfx_admission(assertions)
+		"audio_admission_metrics_cover_combat_stop_and_modal_cues":
+			_test_audio_admission_metrics(assertions)
 		_:
 			assertions.expect_true(false, "registered Revision 5 combat contract test")
 
@@ -564,7 +570,7 @@ func _test_visible_metric_schema(assertions: Variant) -> void:
 	assertions.expect_equal(3, metrics["normal_far_despawns"], "normal far despawns propagate to visible metrics")
 
 
-func _test_transient_admission_budgets(assertions: Variant) -> void:
+func _test_presentation_event_admission(assertions: Variant) -> void:
 	var event_simulation: CombatSimulation = _simulation(assertions, 8507)
 	if event_simulation == null:
 		return
@@ -671,6 +677,35 @@ func _test_transient_admission_budgets(assertions: Variant) -> void:
 		ordered_simulation._presentation_events.size(),
 		"important-first ordering preserves all thirty-two ordinary admission slots",
 	)
+
+	var terminal_simulation: CombatSimulation = _simulation(assertions, 8511)
+	if terminal_simulation == null:
+		return
+	for event_index: int in range(CombatSimulation.MAX_PRESENTATION_EVENTS_PER_TICK):
+		terminal_simulation._queue_presentation_event(
+			terminal_simulation._make_presentation_event(
+				CombatPresentationEvent.Kind.PLAYER_DEFEATED,
+				StringName("terminal_%d" % event_index),
+				Vector2.ZERO,
+				CombatPresentationEvent.Priority.TERMINAL,
+			)
+		)
+	terminal_simulation._queue_presentation_event(
+		terminal_simulation._make_presentation_event(
+			CombatPresentationEvent.Kind.PLAYER_DEFEATED,
+			&"terminal_64",
+			Vector2.ZERO,
+			CombatPresentationEvent.Priority.TERMINAL,
+		)
+	)
+	assertions.expect_equal(
+		CombatSimulation.MAX_PRESENTATION_EVENTS_PER_TICK,
+		terminal_simulation._presentation_events.size(),
+		"sixty-fifth unique same-priority terminal event is bounded",
+	)
+
+
+func _test_vfx_admission(assertions: Variant) -> void:
 	var ordered_vfx_pool := VfxPool.new()
 	for request_index: int in range(VfxPool.IMPORTANT_RESERVED_SLOTS):
 		assertions.expect_true(
@@ -741,32 +776,8 @@ func _test_transient_admission_budgets(assertions: Variant) -> void:
 		"hard-cap probe does not misclassify an ordinary VFX drop",
 	)
 
-	var terminal_simulation: CombatSimulation = _simulation(assertions, 8511)
-	if terminal_simulation == null:
-		return
-	for event_index: int in range(CombatSimulation.MAX_PRESENTATION_EVENTS_PER_TICK):
-		terminal_simulation._queue_presentation_event(
-			terminal_simulation._make_presentation_event(
-				CombatPresentationEvent.Kind.PLAYER_DEFEATED,
-				StringName("terminal_%d" % event_index),
-				Vector2.ZERO,
-				CombatPresentationEvent.Priority.TERMINAL,
-			)
-		)
-	terminal_simulation._queue_presentation_event(
-		terminal_simulation._make_presentation_event(
-			CombatPresentationEvent.Kind.PLAYER_DEFEATED,
-			&"terminal_64",
-			Vector2.ZERO,
-			CombatPresentationEvent.Priority.TERMINAL,
-		)
-	)
-	assertions.expect_equal(
-		CombatSimulation.MAX_PRESENTATION_EVENTS_PER_TICK,
-		terminal_simulation._presentation_events.size(),
-		"sixty-fifth unique same-priority terminal event is bounded",
-	)
 
+func _test_audio_admission_metrics(assertions: Variant) -> void:
 	var audio_simulation: CombatSimulation = _simulation(assertions, 8508)
 	if audio_simulation == null:
 		return

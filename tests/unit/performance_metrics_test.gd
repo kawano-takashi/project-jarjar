@@ -172,9 +172,24 @@ func _test_fixture_contract(assertions: Variant, context: Dictionary) -> void:
 	assertions.expect_equal(1_024, simulation.xp_pickup_pool.active_count(), "performance fixture XP count")
 	assertions.expect_equal(5, simulation.state.weapons.size(), "performance fixture weapon count")
 	assertions.expect_true(simulation.freeze_all_updates, "performance fixture keeps the runner compatibility flag")
+	var contract: Dictionary = simulation.performance_profile_contract()
+	assertions.expect_equal(&"full_hd_500_2000", contract["profile_name"], "existing performance profile name is unchanged")
+	assertions.expect_equal(500, contract["enemy_count"], "profile contract fixes 500 enemies")
+	assertions.expect_equal(1_200, contract["projectile_count"], "profile contract fixes 1200 projectiles")
+	assertions.expect_equal(800, contract["vfx_count"], "profile contract fixes 800 VFX")
+	assertions.expect_equal(1_024, contract["xp_count"], "profile contract includes the XP stress load")
+	assertions.expect_equal(5, contract["weapon_count"], "profile contract fixes five weapons")
+	assertions.expect_true(bool(contract["active_updates"]), "profile contract requires active simulation updates")
+	assertions.expect_true(bool(contract["exact_count_lock"]), "profile contract keeps exact render counts")
 	var initial_tick: int = simulation.state.combat_tick
-	for _tick: int in range(600):
-		simulation.step(Vector2.RIGHT, 1.0 / 60.0)
+	var movement_cycle: Array[Vector2] = [
+		Vector2.RIGHT,
+		Vector2.DOWN,
+		Vector2.LEFT,
+		Vector2.UP,
+	]
+	for tick_index: int in range(600):
+		simulation.advance_tick(movement_cycle[tick_index % movement_cycle.size()])
 	assertions.expect_equal(initial_tick + 600, simulation.state.combat_tick, "performance fixture advances active combat ticks")
 	assertions.expect_equal(500, simulation.enemy_system.enemy_store.active_count(), "performance enemies remain exact across 600 steps")
 	assertions.expect_equal(1_200, simulation.projectile_pool.active_count(), "performance projectiles remain exact across 600 steps")
@@ -190,13 +205,26 @@ func _test_fixture_contract(assertions: Variant, context: Dictionary) -> void:
 	assertions.expect_true(bool(workload_metrics["exact_counts"]), "performance fixture maintains exact active counts")
 	assertions.expect_equal(600, workload_metrics["workload_ticks"], "performance workload covers every requested step")
 	assertions.expect_equal(600, workload_metrics["grid_updates"], "performance workload updates the grid every step")
-	assertions.expect_true(int(workload_metrics["projectile_collision_resolutions"]) > 0, "performance workload resolves projectile collisions")
+	assertions.expect_true(float(workload_metrics["enemy_motion_distance"]) > 0.0, "fixture enemies really move")
+	assertions.expect_true(float(workload_metrics["projectile_motion_distance"]) > 0.0, "fixture projectiles really move")
+	assertions.expect_true(int(workload_metrics["projectile_collision_resolutions"]) >= 1_200 * 600, "fixture resolves the full projectile collision workload")
 	assertions.expect_true(int(workload_metrics["weapon_attacks"]) > 0, "performance workload fires equipped weapons")
+	assertions.expect_true(int(workload_metrics["enemy_recycles"]) >= 4, "fixture periodically removes and respawns enemies")
 	assertions.expect_true(int(workload_metrics["enemy_pool_reuse"]) > 0, "performance enemy pool reuses slots")
 	assertions.expect_true(int(workload_metrics["projectile_pool_reuse"]) > 0, "performance projectile pool reuses slots")
 	assertions.expect_true(int(workload_metrics["vfx_pool_reuse"]) > 0, "performance VFX pool reuses slots")
 	assertions.expect_true(int(workload_metrics["xp_pool_reuse"]) > 0, "performance XP pool reuses slots")
 	assertions.expect_equal(0, workload_metrics["pool_orphan_count"], "performance pools have no orphan indices")
+	var tracked_id: int = simulation.enemy_system.enemy_store.snapshot_ids_sorted()[0]
+	var tracked_enemy: EnemyEntity = simulation.enemy_system.enemy_store.get_by_id(tracked_id)
+	assertions.expect_true(
+		simulation.enemy_system.uniform_grid.query_circle_candidates(
+			tracked_enemy.position,
+			0.1,
+			0.0,
+		).has(tracked_id),
+		"active workload grid owns the current tracked enemy position",
+	)
 	runner.call("_capture_and_validate_workload_metrics")
 	assertions.expect_equal(PackedStringArray(), runner.get("_failure_reasons"), "formal runner accepts active workload counters")
 	var summary: Dictionary = runner.call("_build_summary", {})

@@ -12,6 +12,14 @@ if (-not $jarjarVersion.StartsWith("4.7.2.stable.official")) { throw "Godot 4.7.
 # 通常のコード変更: GDScript全回帰と全.gd/.tscn/.tresのロード検査
 & $env:JARJAR_GODOT --headless --path . --script res://tests/test_runner.gd
 
+# 任意: 論理テスト名の完全一致で1件だけ実行する（preflightと全テスト発見は維持する）
+$env:JARJAR_TEST_FILTER = "performance_fixture_contract"
+try { & $env:JARJAR_GODOT --headless --path . --script res://tests/test_runner.gd } finally { Remove-Item Env:JARJAR_TEST_FILTER -ErrorAction SilentlyContinue }
+
+# 任意: 成功したASSERTも含む詳細ログを表示する
+$env:JARJAR_TEST_VERBOSE = "1"
+try { & $env:JARJAR_GODOT --headless --path . --script res://tests/test_runner.gd } finally { Remove-Item Env:JARJAR_TEST_VERBOSE -ErrorAction SilentlyContinue }
+
 # ユーザーが最終調整完了を明示した後だけ、以下を上から実行する。
 & $env:JARJAR_GODOT --headless --path . --script res://tests/test_runner.gd
 & $env:JARJAR_GODOT --headless --path . -- --performance=full_hd_500_2000 --run-seed=5002000

@@ -16,7 +16,6 @@ func test_names() -> PackedStringArray:
 		"advance_tick_matches_step_gameplay_state",
 		"fixed_seed_replay_ignores_reduce_motion",
 		"focused_build_progression_matches_revision10_enemy_pacing",
-		"performance_fixture_has_all_survival_loads",
 	])
 
 
@@ -48,8 +47,6 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 			_test_deterministic_replay(assertions)
 		"focused_build_progression_matches_revision10_enemy_pacing":
 			_test_focused_build_pacing(assertions)
-		"performance_fixture_has_all_survival_loads":
-			_test_performance_fixture(assertions)
 		_:
 			assertions.expect_true(false, "registered survival combat scenario test")
 
@@ -455,7 +452,7 @@ func _test_focused_build_pacing(assertions: Variant) -> void:
 	var check_index: int = 0
 	while simulation.state.combat_tick < check_ticks[check_ticks.size() - 1]:
 		if simulation.state.phase == GameTypes.RunPhase.COMBAT:
-			simulation.step(_pacing_move(simulation))
+			simulation.advance_tick(_pacing_move(simulation))
 			_remove_pacing_elites(simulation)
 		else:
 			assertions.expect_true(
@@ -504,79 +501,6 @@ func _test_focused_build_pacing(assertions: Variant) -> void:
 	assertions.expect_equal(3, simulation.state.opened_chests, "all three scheduled chest outcomes are consumed")
 	assertions.expect_equal(1, simulation.state.evolution_count, "revision ten fixture retains its first focused evolution through six minutes")
 	assertions.expect_true(evolved.evolved and evolved.weapon_id == &"infinite_homing", "focused lineage remains evolved after six minutes")
-
-
-func _test_performance_fixture(assertions: Variant) -> void:
-	var setup: Dictionary = _simulation(assertions, 8106)
-	var simulation: CombatSimulation = setup.get("simulation") as CombatSimulation
-	if simulation == null:
-		return
-	assertions.expect_true(simulation.prepare_performance_fixture(500, 1200, 800, 1024), "survival performance fixture fills every requested load")
-	var metrics: Dictionary = simulation.performance_fixture_metrics()
-	assertions.expect_equal(500, metrics["active_enemy"], "performance fixture has 500 enemies")
-	assertions.expect_equal(1200, metrics["active_projectile"], "performance fixture has 1200 projectiles")
-	assertions.expect_equal(800, metrics["active_vfx"], "performance fixture has 800 VFX")
-	assertions.expect_equal(1024, metrics["active_xp"], "performance fixture has 1024 XP crystals")
-	assertions.expect_equal(5, metrics["active_weapon"], "performance fixture has five weapons")
-	assertions.expect_equal(0, metrics["projectile_pool_overflow"], "performance projectile pool does not overflow")
-	assertions.expect_equal(0, metrics["vfx_pool_overflow"], "performance VFX pool does not overflow")
-	assertions.expect_equal(0, metrics["xp_pool_overflow_merges"], "performance XP pool stays below overflow")
-	var contract: Dictionary = simulation.performance_profile_contract()
-	assertions.expect_equal(&"full_hd_500_2000", contract["profile_name"], "existing performance profile name is unchanged")
-	assertions.expect_equal(500, contract["enemy_count"], "profile contract fixes 500 enemies")
-	assertions.expect_equal(1200, contract["projectile_count"], "profile contract fixes 1200 projectiles")
-	assertions.expect_equal(800, contract["vfx_count"], "profile contract fixes 800 VFX")
-	assertions.expect_equal(1024, contract["xp_count"], "profile contract includes the XP stress load")
-	assertions.expect_equal(5, contract["weapon_count"], "profile contract fixes five weapons")
-	assertions.expect_true(bool(contract["active_updates"]), "profile contract requires active simulation updates")
-	assertions.expect_true(bool(contract["exact_count_lock"]), "profile contract keeps exact render counts")
-	var initial_tick: int = simulation.state.combat_tick
-	for tick_index: int in range(120):
-		var movement_cycle: Array[Vector2] = [
-			Vector2.RIGHT,
-			Vector2.DOWN,
-			Vector2.LEFT,
-			Vector2.UP,
-		]
-		simulation.step(movement_cycle[tick_index % movement_cycle.size()])
-	metrics = simulation.performance_fixture_metrics()
-	assertions.expect_equal(initial_tick + 120, simulation.state.combat_tick, "active profile advances all 120 combat ticks")
-	assertions.expect_true(simulation.freeze_all_updates, "legacy fixture flag remains compatible while active workload runs")
-	assertions.expect_true(bool(metrics["active_workload"]), "performance fixture reports active combat workload")
-	assertions.expect_true(bool(metrics["exact_counts"]), "active workload restores exact counts every tick")
-	assertions.expect_equal(500, metrics["active_enemy"], "active workload retains exactly 500 enemies")
-	assertions.expect_equal(1200, metrics["active_projectile"], "active workload retains exactly 1200 projectiles")
-	assertions.expect_equal(800, metrics["active_vfx"], "active workload retains exactly 800 VFX")
-	assertions.expect_equal(1024, metrics["active_xp"], "active workload retains exactly 1024 XP crystals")
-	assertions.expect_equal(5, metrics["active_weapon"], "active workload retains exactly five weapons")
-	assertions.expect_equal(120, metrics["workload_ticks"], "every fixture tick executes active workload")
-	assertions.expect_equal(120, metrics["grid_updates"], "enemy grid rebuilds on every active workload tick")
-	assertions.expect_true(float(metrics["enemy_motion_distance"]) > 0.0, "fixture enemies really move")
-	assertions.expect_true(float(metrics["projectile_motion_distance"]) > 0.0, "fixture projectiles really move")
-	assertions.expect_true(int(metrics["projectile_collision_resolutions"]) >= 1200 * 120, "fixture resolves the full projectile collision workload")
-	assertions.expect_true(int(metrics["weapon_attacks"]) > 0, "five equipped weapons really fire")
-	assertions.expect_true(int(metrics["enemy_recycles"]) >= 4, "fixture periodically removes and respawns enemies")
-	assertions.expect_true(int(metrics["enemy_pool_reuse"]) > 0, "enemy pool slots are reused")
-	assertions.expect_true(int(metrics["projectile_pool_reuse"]) > 0, "projectile pool slots are reused")
-	assertions.expect_true(int(metrics["vfx_pool_reuse"]) > 0, "VFX pool slots are reused")
-	assertions.expect_true(int(metrics["xp_pool_reuse"]) > 0, "XP pool slots are reused")
-	assertions.expect_equal(0, metrics["pool_orphan_count"], "all active/free pool indices remain owned")
-	assertions.expect_equal(0, metrics["enemy_pool_overflow"], "active workload enemy pool does not overflow")
-	assertions.expect_equal(0, metrics["projectile_pool_overflow"], "active workload projectile pool does not overflow")
-	assertions.expect_equal(0, metrics["vfx_pool_overflow"], "active workload VFX pool does not overflow")
-	assertions.expect_equal(0, metrics["xp_pool_overflow_merges"], "active workload XP pool does not overflow")
-	var tracked_id: int = simulation.enemy_system.enemy_store.snapshot_ids_sorted()[0]
-	var tracked_enemy: EnemyEntity = simulation.enemy_system.enemy_store.get_by_id(tracked_id)
-	assertions.expect_true(
-		simulation.enemy_system.uniform_grid.query_circle_candidates(
-			tracked_enemy.position,
-			0.1,
-			0.0,
-		).has(tracked_id),
-		"active workload grid owns the current tracked enemy position",
-	)
-
-
 func _prepare_replay(simulation: CombatSimulation, reduce_motion: bool) -> Dictionary:
 	simulation.configure_accessibility(reduce_motion, false)
 	simulation.state.modal_invulnerable_until_tick = 10_000
