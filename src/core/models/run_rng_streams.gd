@@ -7,10 +7,12 @@ var spawn_seed: int = 0
 var upgrade_seed: int = 0
 var chest_seed: int = 0
 var powerup_seed: int = 0
+var swarm_event_seed: int = 0
 var spawn_rng: RandomNumberGenerator = null
 var upgrade_rng: RandomNumberGenerator = null
 var chest_rng: RandomNumberGenerator = null
 var powerup_rng: RandomNumberGenerator = null
+var swarm_event_rng: RandomNumberGenerator = null
 
 
 static func create(p_run_seed: int) -> RunRngStreams:
@@ -20,10 +22,12 @@ static func create(p_run_seed: int) -> RunRngStreams:
 	streams.upgrade_seed = SeedService.derive(p_run_seed, &"upgrade")
 	streams.chest_seed = SeedService.derive(p_run_seed, &"chest")
 	streams.powerup_seed = SeedService.derive(p_run_seed, &"powerup")
+	streams.swarm_event_seed = SeedService.derive(p_run_seed, &"swarm_event")
 	streams.spawn_rng = _rng_from_seed(streams.spawn_seed)
 	streams.upgrade_rng = _rng_from_seed(streams.upgrade_seed)
 	streams.chest_rng = _rng_from_seed(streams.chest_seed)
 	streams.powerup_rng = _rng_from_seed(streams.powerup_seed)
+	streams.swarm_event_rng = _rng_from_seed(streams.swarm_event_seed)
 	return streams
 
 
@@ -47,6 +51,7 @@ func state_digest() -> Dictionary:
 		&"upgrade": upgrade_rng.state,
 		&"chest": chest_rng.state,
 		&"powerup": powerup_rng.state,
+		&"swarm_event": swarm_event_rng.state,
 	}
 
 

@@ -45,6 +45,7 @@ var damage_invulnerable_until_tick: int = 0
 var modal_invulnerable_until_tick: int = 0
 var next_entity_id: int = 1
 var next_event_serial: int = 1
+var next_swarm_group_id: int = 1
 var spawn_credit: float = 0.0
 var total_kills: int = 0
 var normal_kills: int = 0
@@ -62,6 +63,15 @@ var boss_spawn_tick: int = -1
 var boss_defeat_tick: int = -1
 var absorbed_normal_count: int = 0
 var absorbed_enemy_projectile_count: int = 0
+var swarm_event_attempt_count: int = 0
+var swarm_event_roll_success_count: int = 0
+var swarm_event_spawn_failure_count: int = 0
+var swarm_event_group_count: int = 0
+var swarm_event_generated_count: int = 0
+var swarm_event_kill_count: int = 0
+var swarm_event_exit_count: int = 0
+var swarm_event_absorbed_count: int = 0
+var swarm_event_xp: int = 0
 var kill_chain_count: int = 0
 var kill_chain_last_tick: int = -1
 var kill_chain_accent_milestone: int = 0
@@ -201,4 +211,10 @@ func allocate_entity_id() -> int:
 func allocate_event_serial() -> int:
 	var allocated: int = next_event_serial
 	next_event_serial += 1
+	return allocated
+
+
+func allocate_swarm_group_id() -> int:
+	var allocated: int = next_swarm_group_id
+	next_swarm_group_id += 1
 	return allocated

@@ -22,6 +22,15 @@ const BOSS_VOLLEY_BASE_COUNT: int = 8
 const BOSS_VOLLEY_PHASE_BONUS: int = 4
 const BOSS_PHASE_INTERVAL_MULTIPLIER: float = 0.75
 const BOSS_MIN_INTERVAL_MULTIPLIER: float = 0.20
+const SWARM_PUSH_DISTANCE_PER_TICK: float = 32.0 / float(RunState.TICKS_PER_SECOND)
+const SCREEN_RIGHT_WORLD: Vector2 = Vector2(0.70710678, -0.70710678)
+const SCREEN_DOWN_WORLD: Vector2 = Vector2(0.70710678, 0.70710678)
+const SWARM_DIRECTIONS: Array[Vector2] = [
+	-SCREEN_DOWN_WORLD,
+	SCREEN_DOWN_WORLD,
+	-SCREEN_RIGHT_WORLD,
+	SCREEN_RIGHT_WORLD,
+]
 
 const ACTION_PLAYER_DAMAGE: StringName = &"player_damage"
 const DAMAGE_SOURCE_CONTACT: StringName = &"enemy_contact"
@@ -33,7 +42,11 @@ var _state: RunState = null
 var _catalog: DefinitionCatalog = null
 var _manifest: SurvivalContentManifest = null
 var _spawn_rng: RandomNumberGenerator = null
+var _swarm_rng: RandomNumberGenerator = null
 var _elite_spawned: PackedByteArray = PackedByteArray()
+var _swarm_attempt_ticks: PackedInt32Array = PackedInt32Array()
+var _swarm_attempt_chances: PackedFloat32Array = PackedFloat32Array()
+var _swarm_attempt_consumed: PackedByteArray = PackedByteArray()
 
 
 func initialize(state: RunState, catalog: DefinitionCatalog) -> void:
@@ -41,10 +54,12 @@ func initialize(state: RunState, catalog: DefinitionCatalog) -> void:
 	_catalog = catalog
 	_manifest = catalog.manifest()
 	_spawn_rng = state.rng_streams.spawn_rng if state.rng_streams != null else null
+	_swarm_rng = state.rng_streams.swarm_event_rng if state.rng_streams != null else null
 	enemy_store.clear()
 	uniform_grid.clear()
 	_elite_spawned.resize(_manifest.elite_spawn_ticks.size())
 	_elite_spawned.fill(0)
+	_build_swarm_attempts()
 
 
 func snapshot_ids() -> Array[int]:
@@ -56,6 +71,8 @@ func advance_snapshot(
 	player_position: Vector2,
 	current_tick: int,
 ) -> void:
+	var swarm_sweeps: Array[Dictionary] = []
+	var exited_swarm_ids: Array[int] = []
 	for entity_id: int in ids:
 		var enemy: EnemyEntity = enemy_store.get_by_id(entity_id)
 		if enemy == null or not enemy.is_targetable(current_tick):
@@ -63,9 +80,17 @@ func advance_snapshot(
 		var time_scale: float = _time_scale_for(enemy)
 		if time_scale <= 0.0:
 			continue
-		_move_enemy(enemy, player_position, time_scale)
+		var sweep: Dictionary = _move_enemy(enemy, player_position, time_scale)
+		if not sweep.is_empty():
+			swarm_sweeps.append(sweep)
+			if enemy.remaining_travel_distance <= 0.0:
+				exited_swarm_ids.append(enemy.entity_id)
 		_advance_enemy_timers(enemy, time_scale)
 		_update_boss_state(enemy)
+	_apply_swarm_pushes(ids, swarm_sweeps)
+	for entity_id: int in exited_swarm_ids:
+		if enemy_store.remove(entity_id):
+			_state.swarm_event_exit_count += 1
 	_rebuild_grid(current_tick)
 
 
@@ -144,6 +169,42 @@ func resolve_normal_spawns(player_position: Vector2, current_tick: int) -> Array
 		_state.spawn_credit = maxf(0.0, _state.spawn_credit - 1.0)
 	return spawned
 
+
+func resolve_swarm_event_spawns(
+	player_position: Vector2,
+	current_tick: int,
+) -> Array[EnemyEntity]:
+	var spawned: Array[EnemyEntity] = []
+	if (
+		_manifest.swarm_event == null
+		or _swarm_rng == null
+		or current_tick >= _manifest.boss_start_tick
+	):
+		return spawned
+	for attempt_index: int in range(_swarm_attempt_ticks.size()):
+		if (
+			_swarm_attempt_consumed[attempt_index] != 0
+			or current_tick < _swarm_attempt_ticks[attempt_index]
+		):
+			continue
+		_swarm_attempt_consumed[attempt_index] = 1
+		_state.swarm_event_attempt_count += 1
+		var attempt_rng := RandomNumberGenerator.new()
+		attempt_rng.seed = _swarm_rng.randi()
+		if attempt_rng.randf() >= _swarm_attempt_chances[attempt_index]:
+			continue
+		_state.swarm_event_roll_success_count += 1
+		var direction: Vector2 = SWARM_DIRECTIONS[attempt_rng.randi_range(
+			0,
+			SWARM_DIRECTIONS.size() - 1,
+		)]
+		spawned.append_array(_spawn_swarm_group(
+			player_position,
+			direction,
+			current_tick,
+		))
+	return spawned
+
 func resolve_ready_enemy_damage_actions(
 	ids: Array[int],
 	player_position: Vector2,
@@ -197,7 +258,31 @@ func boss_entity() -> EnemyEntity:
 	return null
 
 
-func _move_enemy(enemy: EnemyEntity, player_position: Vector2, time_scale: float) -> void:
+func _move_enemy(
+	enemy: EnemyEntity,
+	player_position: Vector2,
+	time_scale: float,
+) -> Dictionary:
+	if enemy.movement_kind == EnemyEntity.MovementKind.FIXED_DIRECTION:
+		var previous_position: Vector2 = enemy.position
+		var maximum_step: float = (
+			enemy.definition.move_speed
+			* time_scale
+			/ float(RunState.TICKS_PER_SECOND)
+		)
+		var travel_step: float = minf(enemy.remaining_travel_distance, maximum_step)
+		enemy.position += enemy.fixed_direction * travel_step
+		enemy.remaining_travel_distance = maxf(
+			0.0,
+			enemy.remaining_travel_distance - travel_step,
+		)
+		return {
+			"from": previous_position,
+			"to": enemy.position,
+			"radius": enemy.body_radius(),
+			"group_id": enemy.swarm_group_id,
+			"displacement": enemy.fixed_direction * travel_step,
+		}
 	var offset: Vector2 = player_position - enemy.position
 	var direction: Vector2 = Vector2.ZERO
 	if offset != Vector2.ZERO:
@@ -207,6 +292,56 @@ func _move_enemy(enemy: EnemyEntity, player_position: Vector2, time_scale: float
 		+ direction * enemy.definition.move_speed * time_scale / float(RunState.TICKS_PER_SECOND),
 		enemy.body_radius(),
 	)
+	return {}
+
+
+func _apply_swarm_pushes(ids: Array[int], swarm_sweeps: Array[Dictionary]) -> void:
+	if swarm_sweeps.is_empty():
+		return
+	for entity_id: int in ids:
+		var target: EnemyEntity = enemy_store.get_by_id(entity_id)
+		if target == null or target.is_swarm_event or not target.alive:
+			continue
+		var total_displacement: Vector2 = Vector2.ZERO
+		for sweep: Dictionary in swarm_sweeps:
+			var collision_radius: float = target.body_radius() + float(sweep["radius"])
+			if not _segment_intersects_circle(
+				sweep["from"],
+				sweep["to"],
+				target.position,
+				collision_radius,
+			):
+				continue
+			total_displacement += sweep["displacement"]
+		if total_displacement == Vector2.ZERO:
+			continue
+		if total_displacement.length_squared() > (
+			SWARM_PUSH_DISTANCE_PER_TICK * SWARM_PUSH_DISTANCE_PER_TICK
+		):
+			total_displacement = total_displacement.normalized() * SWARM_PUSH_DISTANCE_PER_TICK
+		target.position = _clamp_enemy_center(
+			target.position + total_displacement,
+			target.body_radius(),
+		)
+
+
+func _segment_intersects_circle(
+	segment_start: Vector2,
+	segment_end: Vector2,
+	circle_center: Vector2,
+	circle_radius: float,
+) -> bool:
+	var segment: Vector2 = segment_end - segment_start
+	var length_squared: float = segment.length_squared()
+	var closest: Vector2 = segment_start
+	if length_squared > 0.0:
+		var ratio: float = clampf(
+			(circle_center - segment_start).dot(segment) / length_squared,
+			0.0,
+			1.0,
+		)
+		closest += segment * ratio
+	return closest.distance_squared_to(circle_center) <= circle_radius * circle_radius
 
 
 func _advance_enemy_timers(enemy: EnemyEntity, time_scale: float) -> void:
@@ -416,6 +551,87 @@ func _spawn_enemy(
 	)
 
 
+func _spawn_swarm_group(
+	player_position: Vector2,
+	direction: Vector2,
+	current_tick: int,
+) -> Array[EnemyEntity]:
+	var spawned: Array[EnemyEntity] = []
+	var event_definition: SwarmEventDefinition = _manifest.swarm_event
+	if (
+		event_definition == null
+		or event_definition.unit_definition == null
+		or enemy_store.free_count() < event_definition.member_count
+	):
+		_state.swarm_event_spawn_failure_count += 1
+		return spawned
+	var segment: EnemySegmentDefinition = _catalog.segment_for_tick(current_tick)
+	var hp_multiplier: float = segment.hp_multiplier if segment != null else 1.0
+	var damage_multiplier: float = segment.damage_multiplier if segment != null else 1.0
+	var group_id: int = _state.allocate_swarm_group_id()
+	var lateral_direction := Vector2(-direction.y, direction.x)
+	for depth_index: int in range(event_definition.depth_count):
+		var stagger: float = (
+			-0.25 if depth_index % 2 == 0 else 0.25
+		) * event_definition.lateral_pitch
+		for lateral_index: int in range(event_definition.lateral_count):
+			var lateral_offset: float = (
+				float(lateral_index)
+				- float(event_definition.lateral_count - 1) * 0.5
+			) * event_definition.lateral_pitch + stagger
+			var depth_offset: float = float(depth_index) * event_definition.depth_pitch
+			var spawn_position: Vector2 = (
+				player_position
+				- direction * (event_definition.spawn_distance + depth_offset)
+				+ lateral_direction * lateral_offset
+			)
+			var enemy: EnemyEntity = enemy_store.try_spawn(
+				_state,
+				GameTypes.EnemyType.SWARMER,
+				event_definition.unit_definition,
+				spawn_position,
+				hp_multiplier,
+				damage_multiplier,
+				current_tick,
+				0,
+			)
+			if enemy == null:
+				for created: EnemyEntity in spawned:
+					enemy_store.remove(created.entity_id)
+				spawned.clear()
+				_state.swarm_event_spawn_failure_count += 1
+				return spawned
+			enemy.configure_swarm_event(
+				group_id,
+				direction,
+				event_definition.travel_distance,
+				(lateral_index + depth_index) % 2 == 1,
+			)
+			enemy.contact_elapsed_ticks = float(
+				event_definition.unit_definition.contact_interval_ticks
+			)
+			spawned.append(enemy)
+	_state.swarm_event_group_count += 1
+	_state.swarm_event_generated_count += spawned.size()
+	return spawned
+
+
+func _build_swarm_attempts() -> void:
+	_swarm_attempt_ticks.clear()
+	_swarm_attempt_chances.clear()
+	if _manifest.swarm_event != null:
+		for schedule: SwarmEventScheduleDefinition in _manifest.swarm_event.schedules:
+			if schedule == null:
+				continue
+			for attempt_offset: int in range(schedule.attempt_count):
+				_swarm_attempt_ticks.append(
+					schedule.first_tick + schedule.interval_ticks * attempt_offset
+				)
+				_swarm_attempt_chances.append(schedule.spawn_chance)
+	_swarm_attempt_consumed.resize(_swarm_attempt_ticks.size())
+	_swarm_attempt_consumed.fill(0)
+
+
 func _select_normal_enemy_type(segment: EnemySegmentDefinition) -> GameTypes.EnemyType:
 	if segment == null or _spawn_rng == null:
 		return GameTypes.EnemyType.PURSUER
@@ -483,7 +699,7 @@ func _farthest_fallback_corner(player_position: Vector2, body_radius: float) -> 
 func _normal_enemy_count() -> int:
 	var count: int = 0
 	for enemy: EnemyEntity in enemy_store.entities:
-		if enemy.enemy_type in NORMAL_ENEMY_TYPES:
+		if enemy.enemy_type in NORMAL_ENEMY_TYPES and not enemy.is_swarm_event:
 			count += 1
 	return count
 

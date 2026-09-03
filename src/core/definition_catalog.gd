@@ -28,6 +28,15 @@ const MAX_APPROVED_AREA_MULTIPLIER: float = 1.5
 const EXPECTED_ELITE_TICKS: Array[int] = [
 	7200, 14400, 21600, 28800,
 ]
+const EXPECTED_SWARM_SCHEDULES: Array = [
+	[&"minute_02", 7500, 300, 3, 1.0],
+	[&"minute_03", 11100, 300, 2, 0.1],
+	[&"minute_04", 14700, 300, 2, 0.1],
+	[&"minute_06", 21900, 300, 2, 0.1],
+	[&"minute_07", 25500, 300, 6, 0.8],
+	[&"minute_08", 29700, 900, 3, 0.8],
+	[&"minute_09", 33300, 900, 3, 0.7],
+]
 const WEIGHT_TOLERANCE: float = 0.0001
 const MIN_SEGMENT_TARGET_HP_RATIO: float = 0.10
 const MIN_SEGMENT_DAMAGE_RATIO: float = 0.15
@@ -72,6 +81,7 @@ func validate_manifest(content_manifest: SurvivalContentManifest) -> bool:
 	_validate_passives()
 	_validate_evolutions()
 	_validate_enemies()
+	_validate_swarm_event()
 	_validate_segments()
 	_finish_validation()
 	return is_valid
@@ -213,8 +223,8 @@ func _index_content() -> void:
 
 
 func _validate_globals() -> void:
-	if _manifest.balance == null or _manifest.balance.balance_revision != 7:
-		_add_error("balance revision must be 7")
+	if _manifest.balance == null or _manifest.balance.balance_revision != 8:
+		_add_error("balance revision must be 8")
 	if _manifest.ticks_per_second != 60:
 		_add_error("ticks_per_second must be 60")
 	if not _manifest.arena_size.is_equal_approx(Vector2(30.0, 30.0)):
@@ -576,16 +586,16 @@ func _validate_enemies() -> void:
 	if elite == null or not elite.drops_chest:
 		_add_error("elite must drop a chest")
 	elif not is_equal_approx(elite.base_hp, 650.0):
-		_add_error("revision 7 elite HP must be 650")
+		_add_error("revision 8 elite HP must remain 650")
 	if boss == null or not boss.is_boss:
 		_add_error("boss definition must be marked as boss")
-	_validate_revision_seven_enemy_roles()
+	_validate_revision_eight_enemy_roles()
 
 
-func _validate_revision_seven_enemy_roles() -> void:
+func _validate_revision_eight_enemy_roles() -> void:
 	var expected_specs: Dictionary[StringName, Array] = {
 		&"pursuer": [20.0, 2.4, 45, 8.0, 1],
-		&"swarmer": [9.0, 4.2, 45, 4.0, 1],
+		&"swarmer": [9.0, 6.4, 45, 4.0, 1],
 		&"bulwark": [80.0, 1.35, 60, 14.0, 2],
 		&"shooter": [34.0, 3.0, 42, 11.0, 2],
 	}
@@ -601,7 +611,88 @@ func _validate_revision_seven_enemy_roles() -> void:
 			or not is_equal_approx(definition.contact_damage, float(expected[3]))
 			or definition.xp_value != int(expected[4])
 		):
-			_add_error("revision 7 enemy role differs from approved values: %s" % enemy_id)
+			_add_error("revision 8 enemy role differs from approved values: %s" % enemy_id)
+
+
+func _validate_swarm_event() -> void:
+	var event_definition: SwarmEventDefinition = _manifest.swarm_event
+	if event_definition == null:
+		_add_error("revision 8 bat swarm definition is required")
+		return
+	if event_definition.event_id != &"bat_swarm":
+		_add_error("swarm event id must be bat_swarm")
+	var unit: EnemyDefinition = event_definition.unit_definition
+	if unit == null:
+		_add_error("bat swarm unit definition is required")
+	else:
+		if unit in _manifest.enemies:
+			_add_error("bat swarm unit must remain outside the normal enemy catalog")
+		if (
+			unit.enemy_id != &"swarmer_event"
+			or unit.enemy_type != GameTypes.EnemyType.SWARMER
+			or not is_equal_approx(unit.base_hp, 1.0)
+			or not is_equal_approx(unit.move_speed, 32.0)
+			or not is_equal_approx(unit.body_radius, 0.26)
+			or unit.contact_interval_ticks != 1
+			or not is_equal_approx(unit.contact_damage, 1.0)
+			or unit.xp_value != 1
+			or unit.drops_chest
+			or unit.is_boss
+		):
+			_add_error("revision 8 bat swarm unit differs from approved values")
+		if (
+			not is_zero_approx(unit.preferred_distance_min)
+			or not is_zero_approx(unit.preferred_distance_max)
+			or unit.special_interval_ticks != 0
+			or unit.telegraph_ticks != 0
+			or not is_zero_approx(unit.area_radius)
+			or not is_zero_approx(unit.projectile_damage)
+			or not is_zero_approx(unit.projectile_speed)
+			or not is_zero_approx(unit.projectile_radius)
+			or unit.projectile_lifetime_ticks != 0
+			or unit.volley_count != 0
+		):
+			_add_error("bat swarm unit must be contact-only")
+	if (
+		event_definition.member_count != 50
+		or event_definition.lateral_count != 10
+		or event_definition.depth_count != 5
+		or event_definition.member_count != (
+			event_definition.lateral_count * event_definition.depth_count
+		)
+		or not is_equal_approx(event_definition.spawn_distance, 18.0)
+		or not is_equal_approx(event_definition.lateral_pitch, 2.0 / 3.0)
+		or not is_equal_approx(event_definition.depth_pitch, 0.7)
+		or not is_equal_approx(event_definition.travel_distance, 38.8)
+	):
+		_add_error("revision 8 bat swarm formation differs from approved values")
+	if event_definition.schedules.size() != EXPECTED_SWARM_SCHEDULES.size():
+		_add_error("bat swarm schedule must contain seven minute groups")
+		return
+	var total_attempt_count: int = 0
+	var seen_ticks: Dictionary[int, bool] = {}
+	for index: int in range(EXPECTED_SWARM_SCHEDULES.size()):
+		var schedule: SwarmEventScheduleDefinition = event_definition.schedules[index]
+		var expected: Array = EXPECTED_SWARM_SCHEDULES[index]
+		if schedule == null:
+			_add_error("bat swarm schedule contains null at index %d" % index)
+			continue
+		if (
+			schedule.schedule_id != expected[0]
+			or schedule.first_tick != int(expected[1])
+			or schedule.interval_ticks != int(expected[2])
+			or schedule.attempt_count != int(expected[3])
+			or not is_equal_approx(schedule.spawn_chance, float(expected[4]))
+		):
+			_add_error("bat swarm schedule differs from approved values: %d" % index)
+		total_attempt_count += schedule.attempt_count
+		for attempt_offset: int in range(schedule.attempt_count):
+			var attempt_tick: int = schedule.first_tick + schedule.interval_ticks * attempt_offset
+			if attempt_tick >= _manifest.boss_start_tick or seen_ticks.has(attempt_tick):
+				_add_error("bat swarm attempt tick is invalid or duplicated: %d" % attempt_tick)
+			seen_ticks[attempt_tick] = true
+	if total_attempt_count != 21:
+		_add_error("bat swarm schedule must contain exactly 21 attempts")
 
 
 func _validate_segments() -> void:
@@ -615,17 +706,17 @@ func _validate_segments() -> void:
 		if definition.start_tick != index * 3600 or definition.end_tick != (index + 1) * 3600:
 			_add_error("segment tick bounds mismatch: %d" % index)
 		if definition.target_active != EXPECTED_TARGETS[index]:
-			_add_error("segment target differs from revision 7 value: %d" % index)
+			_add_error("segment target differs from revision 8 value: %d" % index)
 		if not is_equal_approx(definition.hp_multiplier, BASELINE_HP_MULTIPLIERS[index]):
-			_add_error("segment HP differs from revision 7 value: %d" % index)
+			_add_error("segment HP differs from revision 8 value: %d" % index)
 		if not is_equal_approx(
 			definition.damage_multiplier,
 			BASELINE_DAMAGE_MULTIPLIERS[index],
 		):
-			_add_error("segment damage differs from revision 7 value: %d" % index)
+			_add_error("segment damage differs from revision 8 value: %d" % index)
 		_validate_probability_weights(definition.spawn_weights, "segment_%02d weights" % (index + 1))
 		if not _float_arrays_equal(definition.spawn_weights, EXPECTED_SEGMENT_WEIGHTS[index]):
-			_add_error("segment weights differ from revision 7 value: %d" % index)
+			_add_error("segment weights differ from revision 8 value: %d" % index)
 		if definition.spawn_weights.size() != GameTypes.EnemyType.size():
 			_add_error(
 				"segment spawn weights must contain exactly one entry per EnemyType: %d"

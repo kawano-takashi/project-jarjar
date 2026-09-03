@@ -53,6 +53,7 @@ var _kill_feedback_by_key: Dictionary[String, Dictionary] = {}
 var _player_hit_this_tick: bool = false
 var _absorption_started_tick: int = -1
 var _absorption_enemy_count: int = 0
+var _absorption_swarm_count: int = 0
 var _absorption_projectile_count: int = 0
 var _vacuum_collecting: bool = false
 var _performance_fixture_active: bool = false
@@ -100,6 +101,7 @@ func initialize(p_state: RunState, p_catalog: DefinitionCatalog) -> void:
 	_player_hit_this_tick = false
 	_absorption_started_tick = -1
 	_absorption_enemy_count = 0
+	_absorption_swarm_count = 0
 	_absorption_projectile_count = 0
 	_vacuum_collecting = false
 	_reset_performance_fixture_state()
@@ -210,6 +212,7 @@ func advance_tick(move_input: Vector2) -> bool:
 				1,
 				spawned.enemy_type,
 			))
+	enemy_system.resolve_swarm_event_spawns(player_position, current_tick)
 	enemy_system.resolve_normal_spawns(player_position, current_tick)
 
 	# 3. Allied movement, weapon generation, and damage.
@@ -402,6 +405,15 @@ func visible_combat_metrics() -> Dictionary:
 		),
 		"absorbed_normal_count": state.absorbed_normal_count,
 		"absorbed_enemy_projectile_count": state.absorbed_enemy_projectile_count,
+		"swarm_event_attempts": state.swarm_event_attempt_count,
+		"swarm_event_roll_successes": state.swarm_event_roll_success_count,
+		"swarm_event_spawn_failures": state.swarm_event_spawn_failure_count,
+		"swarm_event_groups": state.swarm_event_group_count,
+		"swarm_event_generated": state.swarm_event_generated_count,
+		"swarm_event_kills": state.swarm_event_kill_count,
+		"swarm_event_exits": state.swarm_event_exit_count,
+		"swarm_event_absorbed": state.swarm_event_absorbed_count,
+		"swarm_event_xp": state.swarm_event_xp,
 		"vfx_admitted": vfx_pool.admitted_count,
 		"vfx_suppressed": vfx_pool.generic_drop_count,
 		"important_vfx_dropped": vfx_pool.important_drop_count,
@@ -428,7 +440,7 @@ func build_snapshot() -> CombatSnapshot:
 			Basis.IDENTITY.scaled(Vector3(diameter_scale, height_scale, diameter_scale)),
 			Vector3(enemy.position.x, 0.5 * height_scale, enemy.position.y),
 		))
-		enemy_visual_kinds.append(_enemy_visual_kind(enemy.enemy_type))
+		enemy_visual_kinds.append(_enemy_entity_visual_kind(enemy))
 		enemy_visual_custom_data.append(Color(
 			enemy.materialization_progress(state.combat_tick),
 			1.0 if enemy.is_hit_flashing(state.combat_tick) else 0.0,
@@ -576,6 +588,7 @@ func prepare_performance_fixture(
 	projectile_pool.overflow_count = 0
 	vfx_pool.overflow_count = 0
 	state.next_entity_id = 1
+	state.next_swarm_group_id = 1
 	state.phase = GameTypes.RunPhase.COMBAT
 	state.current_hp = state.max_hp
 	state.pending_level_ups = 0
@@ -598,6 +611,15 @@ func prepare_performance_fixture(
 	state.spawn_credit = 0.0
 	state.absorbed_normal_count = 0
 	state.absorbed_enemy_projectile_count = 0
+	state.swarm_event_attempt_count = 0
+	state.swarm_event_roll_success_count = 0
+	state.swarm_event_spawn_failure_count = 0
+	state.swarm_event_group_count = 0
+	state.swarm_event_generated_count = 0
+	state.swarm_event_kill_count = 0
+	state.swarm_event_exit_count = 0
+	state.swarm_event_absorbed_count = 0
+	state.swarm_event_xp = 0
 	state.kill_chain_count = 0
 	state.kill_chain_last_tick = -1
 	state.kill_chain_accent_milestone = 0
@@ -733,13 +755,18 @@ func _begin_boss_transition_if_due(current_tick: int) -> void:
 	state.spawn_credit = 0.0
 	_absorption_started_tick = current_tick
 	_absorption_enemy_count = 0
+	_absorption_swarm_count = 0
 	_absorption_projectile_count = 0
 	for entity_id: int in enemy_system.enemy_store.snapshot_ids_sorted():
 		var enemy: EnemyEntity = enemy_system.enemy_store.get_by_id(entity_id)
 		if enemy == null or enemy.enemy_type not in EnemySystem.NORMAL_ENEMY_TYPES:
 			continue
+		var is_swarm_event: bool = enemy.is_swarm_event
 		if enemy_system.enemy_store.remove(entity_id):
-			_absorption_enemy_count += 1
+			if is_swarm_event:
+				_absorption_swarm_count += 1
+			else:
+				_absorption_enemy_count += 1
 	for pool_index: int in projectile_pool.active_indices_snapshot():
 		var projectile: ProjectileState = projectile_pool.slots[pool_index]
 		if projectile.faction != ProjectileState.FACTION_ENEMY:
@@ -747,9 +774,14 @@ func _begin_boss_transition_if_due(current_tick: int) -> void:
 		if projectile_pool.release(pool_index, projectile.generation):
 			_absorption_projectile_count += 1
 	state.absorbed_normal_count += _absorption_enemy_count
+	state.swarm_event_absorbed_count += _absorption_swarm_count
 	state.absorbed_enemy_projectile_count += _absorption_projectile_count
 	_rebuild_uniform_grid(current_tick)
-	var absorbed_total: int = _absorption_enemy_count + _absorption_projectile_count
+	var absorbed_total: int = (
+		_absorption_enemy_count
+		+ _absorption_swarm_count
+		+ _absorption_projectile_count
+	)
 	if absorbed_total <= 0:
 		return
 	_queue_presentation_event(_make_presentation_event(
@@ -787,7 +819,7 @@ func _record_visible_enemy_sample(current_tick: int) -> void:
 			<= CombatEnvelope.TARGET_CENTER_RADIUS * CombatEnvelope.TARGET_CENTER_RADIUS
 		):
 			engaged_count += 1
-		if enemy.enemy_type in EnemySystem.NORMAL_ENEMY_TYPES:
+		if enemy.enemy_type in EnemySystem.NORMAL_ENEMY_TYPES and not enemy.is_swarm_event:
 			active_normal_count += 1
 			if enemy.is_targetable(current_tick):
 				engaged_normal_count += 1
@@ -915,6 +947,9 @@ func _record_enemy_death(
 		"elite_serial": enemy.elite_serial,
 		"source_effect_id": source_effect_id,
 		"center_distance": maxf(0.0, center_distance),
+		"is_swarm_event": enemy.is_swarm_event,
+		"swarm_group_id": enemy.swarm_group_id,
+		"swarm_red_variant": enemy.swarm_red_variant,
 	})
 
 
@@ -929,6 +964,7 @@ func _process_pending_deaths(current_tick: int) -> void:
 			continue
 		var position: Vector2 = death["position"]
 		var enemy_type: GameTypes.EnemyType = int(death["enemy_type"]) as GameTypes.EnemyType
+		var is_swarm_event: bool = bool(death.get("is_swarm_event", false))
 		var vfx_priority: int = VfxPool.PRIORITY_KILL
 		if enemy_type == GameTypes.EnemyType.ELITE:
 			vfx_priority = VfxPool.PRIORITY_IMPORTANT
@@ -966,38 +1002,42 @@ func _process_pending_deaths(current_tick: int) -> void:
 				enemy_type,
 				death.get("source_effect_id", &""),
 			))
-		match enemy_type:
-			GameTypes.EnemyType.ELITE:
-				state.elite_kills += 1
-				var elite_serial: int = int(death["elite_serial"])
-				if elite_serial >= 0 and elite_serial < state.elite_kill_ticks.size():
-					state.elite_kill_ticks[elite_serial] = current_tick
-			GameTypes.EnemyType.BOSS:
-				state.boss_kills += 1
-				state.boss_defeated = true
-				state.boss_defeat_tick = current_tick
-				state.boss_hp = 0.0
-				_queue_presentation_event(_make_presentation_event(
-					CombatPresentationEvent.Kind.BOSS_DEFEATED,
-					&"boss_defeated",
-					position,
-					CombatPresentationEvent.Priority.TERMINAL,
-					1,
-					enemy_type,
-					death.get("source_effect_id", &""),
-				))
-			_:
-				state.normal_kills += 1
-				var normal_type_index: int = int(enemy_type)
-				if normal_type_index >= 0 and normal_type_index < state.normal_kills_by_type.size():
-					state.normal_kills_by_type[normal_type_index] += 1
-				var segment_index: int = clampi(
-					floori(float(current_tick) / 3600.0),
-					0,
-					RunState.ENEMY_SEGMENT_COUNT - 1,
-				)
-				state.normal_kills_by_segment[segment_index] += 1
-				state.normal_xp_by_segment[segment_index] += maxi(1, int(death["xp_value"]))
+		if is_swarm_event:
+			state.swarm_event_kill_count += 1
+			state.swarm_event_xp += maxi(1, int(death["xp_value"]))
+		else:
+			match enemy_type:
+				GameTypes.EnemyType.ELITE:
+					state.elite_kills += 1
+					var elite_serial: int = int(death["elite_serial"])
+					if elite_serial >= 0 and elite_serial < state.elite_kill_ticks.size():
+						state.elite_kill_ticks[elite_serial] = current_tick
+				GameTypes.EnemyType.BOSS:
+					state.boss_kills += 1
+					state.boss_defeated = true
+					state.boss_defeat_tick = current_tick
+					state.boss_hp = 0.0
+					_queue_presentation_event(_make_presentation_event(
+						CombatPresentationEvent.Kind.BOSS_DEFEATED,
+						&"boss_defeated",
+						position,
+						CombatPresentationEvent.Priority.TERMINAL,
+						1,
+						enemy_type,
+						death.get("source_effect_id", &""),
+					))
+				_:
+					state.normal_kills += 1
+					var normal_type_index: int = int(enemy_type)
+					if normal_type_index >= 0 and normal_type_index < state.normal_kills_by_type.size():
+						state.normal_kills_by_type[normal_type_index] += 1
+					var segment_index: int = clampi(
+						floori(float(current_tick) / 3600.0),
+						0,
+						RunState.ENEMY_SEGMENT_COUNT - 1,
+					)
+					state.normal_kills_by_segment[segment_index] += 1
+					state.normal_xp_by_segment[segment_index] += maxi(1, int(death["xp_value"]))
 		_accumulate_kill_feedback(
 			death.get("source_effect_id", &""),
 			position,
@@ -1823,6 +1863,12 @@ func _enemy_visual_kind(enemy_type: int) -> int:
 		GameTypes.EnemyType.BOSS:
 			return CombatSnapshot.EnemyVisualKind.BOSS
 	return CombatSnapshot.EnemyVisualKind.PURSUER
+
+
+func _enemy_entity_visual_kind(enemy: EnemyEntity) -> int:
+	if enemy.is_swarm_event and enemy.swarm_red_variant:
+		return CombatSnapshot.EnemyVisualKind.SWARMER_EVENT_RED
+	return _enemy_visual_kind(enemy.enemy_type)
 
 
 func _projectile_visual_kind(projectile: ProjectileState) -> int:

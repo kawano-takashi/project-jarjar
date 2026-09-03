@@ -9,6 +9,7 @@ enum EnemyVisualKind {
 	SHOOTER,
 	ELITE,
 	BOSS,
+	SWARMER_EVENT_RED,
 }
 
 enum ProjectileVisualKind {

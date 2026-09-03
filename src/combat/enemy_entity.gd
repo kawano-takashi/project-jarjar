@@ -2,6 +2,12 @@ class_name EnemyEntity
 extends RefCounted
 
 
+enum MovementKind {
+	SEEK_PLAYER,
+	FIXED_DIRECTION,
+}
+
+
 var pool_index: int = -1
 var generation: int = 0
 var entity_id: int = -1
@@ -31,6 +37,12 @@ var alive: bool = true
 var elite_serial: int = -1
 var boss_phase: int = 0
 var rng: RandomNumberGenerator = null
+var movement_kind: MovementKind = MovementKind.SEEK_PLAYER
+var swarm_group_id: int = -1
+var fixed_direction: Vector2 = Vector2.ZERO
+var remaining_travel_distance: float = 0.0
+var swarm_red_variant: bool = false
+var is_swarm_event: bool = false
 
 
 func body_radius() -> float:
@@ -111,6 +123,26 @@ func activate(
 	elite_serial = -1
 	boss_phase = 0
 	rng = p_rng
+	movement_kind = MovementKind.SEEK_PLAYER
+	swarm_group_id = -1
+	fixed_direction = Vector2.ZERO
+	remaining_travel_distance = 0.0
+	swarm_red_variant = false
+	is_swarm_event = false
+
+
+func configure_swarm_event(
+	p_group_id: int,
+	p_fixed_direction: Vector2,
+	p_travel_distance: float,
+	p_red_variant: bool,
+) -> void:
+	movement_kind = MovementKind.FIXED_DIRECTION
+	swarm_group_id = p_group_id
+	fixed_direction = p_fixed_direction.normalized()
+	remaining_travel_distance = maxf(0.0, p_travel_distance)
+	swarm_red_variant = p_red_variant
+	is_swarm_event = true
 
 
 func deactivate() -> void:
@@ -141,3 +173,9 @@ func deactivate() -> void:
 	elite_serial = -1
 	boss_phase = 0
 	rng = null
+	movement_kind = MovementKind.SEEK_PLAYER
+	swarm_group_id = -1
+	fixed_direction = Vector2.ZERO
+	remaining_travel_distance = 0.0
+	swarm_red_variant = false
+	is_swarm_event = false

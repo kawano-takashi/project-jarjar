@@ -4,12 +4,12 @@
 
 [resource]
 script = ExtResource("1")
-enemy_id = &"swarmer"
-display_name = "疾走片"
+enemy_id = &"swarmer_event"
+display_name = "高速群れ"
 enemy_type = 1
-base_hp = 9.0
-move_speed = 6.4
+base_hp = 1.0
+move_speed = 32.0
 body_radius = 0.26
-contact_interval_ticks = 45
-contact_damage = 4.0
+contact_interval_ticks = 1
+contact_damage = 1.0
 xp_value = 1

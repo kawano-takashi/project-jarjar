@@ -4,7 +4,7 @@ extends SceneTree
 const BotScript = preload("res://tests/balance/difficulty_calibration_bot.gd")
 const AcceptanceScript = preload("res://tests/balance/difficulty_acceptance.gd")
 
-const BALANCE_REVISION: int = 7
+const BALANCE_REVISION: int = 8
 const FORMAL_RUN_SEEDS: Array[int] = [17, 29, 43, 61]
 const WIDE_RUN_SEEDS: Array[int] = [7, 13, 31, 47, 73, 101, 137, 179]
 const POLICIES: Array[int] = [0, 1, 2]
@@ -21,7 +21,7 @@ const CHECKPOINT_TICKS: Array[int] = [
 const MAX_COMBAT_TICK: int = 54_000
 const MAX_MODAL_CHAIN: int = 128
 const RUNNER_TIMEOUT_MS: int = 1_200_000
-const OUTPUT_ROOT: String = "res://artifacts/balance/revision-7"
+const OUTPUT_ROOT: String = "res://artifacts/balance/revision-8"
 const RUNS_FILENAME: String = "difficulty-runs.csv"
 const CHECKPOINTS_FILENAME: String = "difficulty-checkpoints.csv"
 const SEGMENTS_FILENAME: String = "difficulty-segments.csv"
@@ -87,6 +87,15 @@ const RUN_COLUMNS: Array[String] = [
 	"mean_materializing_enemies",
 	"absorbed_normal_count",
 	"absorbed_enemy_projectile_count",
+	"swarm_event_attempts",
+	"swarm_event_roll_successes",
+	"swarm_event_spawn_failures",
+	"swarm_event_groups",
+	"swarm_event_generated",
+	"swarm_event_kills",
+	"swarm_event_exits",
+	"swarm_event_absorbed",
+	"swarm_event_xp",
 	"feedback_emitted",
 	"feedback_suppressed",
 	"vfx_admitted",
@@ -120,6 +129,15 @@ const VISIBLE_METRIC_KEYS: Array[String] = [
 	"mean_materializing_enemies",
 	"absorbed_normal_count",
 	"absorbed_enemy_projectile_count",
+	"swarm_event_attempts",
+	"swarm_event_roll_successes",
+	"swarm_event_spawn_failures",
+	"swarm_event_groups",
+	"swarm_event_generated",
+	"swarm_event_kills",
+	"swarm_event_exits",
+	"swarm_event_absorbed",
+	"swarm_event_xp",
 	"feedback_emitted",
 	"feedback_suppressed",
 	"vfx_admitted",
@@ -588,6 +606,12 @@ func _digest(simulation: CombatSimulation, runtime: Dictionary) -> String:
 				enemy.boss_charge_spoke_count,
 				enemy.boss_charge_half_step,
 				enemy.boss_action_age_ticks,
+				int(enemy.movement_kind),
+				enemy.swarm_group_id,
+				enemy.fixed_direction,
+				enemy.remaining_travel_distance,
+				enemy.swarm_red_variant,
+				enemy.is_swarm_event,
 			])
 	var projectile_indices: Array[int] = simulation.projectile_pool.active_indices_snapshot()
 	projectile_indices.sort()
@@ -628,6 +652,16 @@ func _digest(simulation: CombatSimulation, runtime: Dictionary) -> String:
 		state.boss_spawned,
 		state.boss_defeated,
 		state.boss_hp,
+		state.next_swarm_group_id,
+		state.swarm_event_attempt_count,
+		state.swarm_event_roll_success_count,
+		state.swarm_event_spawn_failure_count,
+		state.swarm_event_group_count,
+		state.swarm_event_generated_count,
+		state.swarm_event_kill_count,
+		state.swarm_event_exit_count,
+		state.swarm_event_absorbed_count,
+		state.swarm_event_xp,
 		state.rng_streams.state_digest(),
 		runtime.duplicate(true),
 		simulation.call(&"visible_combat_metrics"),

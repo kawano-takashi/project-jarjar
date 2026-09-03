@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="SwarmEventDefinition" load_steps=10 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/swarm_event_definition.gd" id="1_event"]
+[ext_resource type="Resource" path="res://data/definitions/enemies/swarmer_event.tres" id="2_unit"]
+[ext_resource type="Resource" path="res://data/definitions/swarm_events/minute_02.tres" id="3_m02"]
+[ext_resource type="Resource" path="res://data/definitions/swarm_events/minute_03.tres" id="4_m03"]
+[ext_resource type="Resource" path="res://data/definitions/swarm_events/minute_04.tres" id="5_m04"]
+[ext_resource type="Resource" path="res://data/definitions/swarm_events/minute_06.tres" id="6_m06"]
+[ext_resource type="Resource" path="res://data/definitions/swarm_events/minute_07.tres" id="7_m07"]
+[ext_resource type="Resource" path="res://data/definitions/swarm_events/minute_08.tres" id="8_m08"]
+[ext_resource type="Resource" path="res://data/definitions/swarm_events/minute_09.tres" id="9_m09"]
+
+[resource]
+script = ExtResource("1_event")
+event_id = &"bat_swarm"
+unit_definition = ExtResource("2_unit")
+member_count = 50
+lateral_count = 10
+depth_count = 5
+spawn_distance = 18.0
+lateral_pitch = 0.6666667
+depth_pitch = 0.7
+travel_distance = 38.8
+schedules = Array[SwarmEventScheduleDefinition]([ExtResource("3_m02"), ExtResource("4_m03"), ExtResource("5_m04"), ExtResource("6_m06"), ExtResource("7_m07"), ExtResource("8_m08"), ExtResource("9_m09")])

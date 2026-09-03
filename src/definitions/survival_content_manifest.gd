@@ -72,6 +72,7 @@ const DEFAULT_BOSS_ACTION_RATE_MULTIPLIER: float = 1.0
 @export var boss_enrage_max_stacks: int = 10
 @export var boss_attack_bonus_per_stack: float = 0.10
 @export var boss_interval_reduction_per_stack: float = 0.10
+@export var swarm_event: SwarmEventDefinition = null
 @export var weapons: Array[WeaponDefinition] = []
 @export var passives: Array[PassiveDefinition] = []
 @export var evolutions: Array[EvolutionDefinition] = []

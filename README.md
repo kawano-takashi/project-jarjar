@@ -9,20 +9,25 @@ Vampire Survivors型の成長方式です。
 10:00に出現する最終ボスを倒すとランクリアです。名称、形状、演出は幾何学テーマの独自表現です。
 
 通常敵は上下左右4辺の外周固定スポーンですが、カメラ外からの出現を保証するものではありません。
-通常敵とエリートは接触追跡だけを行い、予告付きの放射状投射物を使うのは最終ボスだけです。
+通常敵とエリートは接触追跡だけを行い、これとは別に定時抽選された50体の小型群れが画面方向へ高速横断します。
+予告付きの放射状投射物を使うのは最終ボスだけです。
 戦闘範囲は標的中心8m・効果外縁9m・damage中心10m、安定化した直交投影カメラはsize `18`・follow tau `0.12`秒です。
 
-## revision 6の現在地
+## revision 8の現在地
 
-基本武器8種はLv2〜Lv8の各レベルで直接変わる強化項目を1つに固定しました。弾数、波数、結晶数、環数、
-軌道体数の増加はすべて`+1`です。所持済みのレベルアップ候補と通常強化宝箱には、今回変わる基礎値だけを表示します。
-全GDScript回帰114/114、GDScript guard 98ファイル、変更GDScriptのcheck-only 15/15がPASSしています。
+通常の小型敵`swarmer`は個体抽選と常時追尾を維持したまま、速度を6.4m/sへ変更しました。さらに通常waveとは
+別枠で、50体が画面上下左右のいずれかから固定方向へ32m/sで横断する群れイベントを追加しました。群れは
+10列×5行の橙／赤チェック模様で、通常敵・エリート・ボスだけを進行方向へ押し、38.8m進むと無報酬で退場します。
+発生試行、群れ生成、撃破、退場、XPは通常wave統計と分離して記録します。
+実装後の全GDScript回帰121/121、GDScript guard 101ファイル、変更GDScriptのcheck-only 19/19、
+差分の空白検査がPASSしています。
 
-武器性能を変更したため、revision 5のsource gateはrevision 6へ流用しません。revision 6のsource再調整は未実施で、
+この敵仕様変更により、revision 7以前のsource gate、回帰、QA、build identityはrevision 8へ流用しません。
+revision 8のsource再調整は未実施で、
 正式candidateと正式playtest targetも未固定です。Full HD性能試験、Release export、Verify、ManualQa、人間playtestは
 ユーザーが最終調整完了を明示するまで実行禁止です。
 
-## revision 5自動調整の履歴（revision 6へ流用禁止）
+## revision 5自動調整の履歴（revision 8へ流用禁止）
 
 balance revision 5の自動調整は、2026-09-02の専用12run source gateで`passed=true`となり完了しています。
 seed `17`、`29`、`43`、`61`をcautious、normal、evolutionの各方針で実行した結果は、2:00以前死亡0/12、
@@ -43,7 +48,7 @@ audio cueはadmitted 53,321・suppressed 181,691です。調整成果物は`arti
 | hp_multiplier | 0.15 | 0.17 | 0.20 | 0.24 | 0.30 | 0.45 | 0.65 | 0.90 | 1.25 | 1.75 |
 | damage_multiplier | 0.18 | 0.20 | 0.22 | 0.25 | 0.29 | 0.36 | 0.45 | 0.56 | 0.72 | 0.95 |
 
-これらの値はrevision 6でも未再調整の初期値として残っていますが、revision 5の実測結果は現候補の証拠ではありません。
+これらはrevision 5の履歴値であり、revision 8の実データや現候補の証拠ではありません。
 
 ## revision 4の履歴（現候補へ流用禁止）
 

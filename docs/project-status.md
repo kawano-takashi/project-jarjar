@@ -1,11 +1,11 @@
 # Project JARJAR 現在の状態
 
-- 更新日: 2026-09-02 (JST)
-- 状態: **revision 6 単一強化項目化を実装・source再調整待ち・正式candidate未固定**
-- playable baseline: 未固定（revision 6 作業ツリー）
-- balance revision: `6`（基本武器の成長表を変更、source gate未実施）
+- 更新日: 2026-09-03 (JST)
+- 状態: **revision 8 高速群れイベントを実装・source再調整待ち・正式candidate未固定**
+- playable baseline: 未固定（revision 8 作業ツリー）
+- balance revision: `8`（通常swarmer高速化と別枠の50体群れを追加、source gate未実施）
 - 正式playtest target: 未固定
-- 現revisionの自動調整記録: なし（revision 5の記録は履歴専用）
+- 現revisionの自動調整記録: なし（revision 7以前の記録は履歴専用）
 
 ## 現在地
 
@@ -28,7 +28,41 @@
 被弾後は30 combat tick（0.5秒）の連続被弾防止とする。これとは別に、レベルアップや宝箱の自動モーダル列がすべて
 終了した後だけ45 combat tick（0.75秒）の復帰保護を与える。列の中間や手動ポーズ復帰ではこの45 tickを付与しない。
 
-## revision 6 単一強化項目契約
+## revision 8 高速群れイベント契約
+
+通常の`swarmer`はHP 9、接触威力4、XP 1、既存の出現比率と常時追尾を維持し、移動速度だけを4.2m/sから
+6.4m/sへ変更した。プレイヤー速度5.0m/sを上回る。通常waveと独立して、2:05〜9:45の固定21試行から
+確率抽選された50体の群れを生成する。群れ専用乱数は通常spawn、upgrade、chest、powerupの乱数列から分離する。
+
+群れ個体はHP 1、接触威力1、XP 1、半径0.26m、速度32m/s、接触間隔1 tickである。HPと威力には発生時の
+segment倍率だけを適用し、`normal_enemy_damage_scale`は適用しない。先頭列を発生時のプレイヤー位置から18m離し、
+横10体×奥行5列、横ピッチ2/3m、奥行ピッチ0.7mの千鳥配置にする。橙25体・赤25体が同じ小型meshを共有する。
+画面上下左右から等確率で選んだ固定方向へ全員が38.8m進み、生成後はプレイヤーを再追尾しない。
+
+| 分 | 試行時刻 | 1試行の発生率 |
+|---|---|---:|
+| 2分 | 2:05、2:10、2:15 | 100% |
+| 3分 | 3:05、3:10 | 10% |
+| 4分 | 4:05、4:10 | 10% |
+| 6分 | 6:05、6:10 | 10% |
+| 7分 | 7:05〜7:30、5秒刻み6回 | 80% |
+| 8分 | 8:15、8:30、8:45 | 80% |
+| 9分 | 9:15、9:30、9:45 | 70% |
+
+成功試行は通常active目標、spawn credit、通常の16体/tick上限を変更せず50体を一括生成する。空きpoolが50未満なら
+部分生成せず、その試行を消費して生成失敗を記録する。群れは通常敵・エリート・ボスを進行方向へ押すが、同一tickの
+対象別総移動は32/60m以下とし、押された敵はアリーナ内へ制限する。プレイヤー、他の群れ個体、XP、宝箱、arena objectは
+押さない。群れの生存退場と10:00吸収は無報酬で、撃破時だけ通常のweapon hit/kill、総kill、CHAIN、1 XP結晶を処理する。
+生成、撃破、退場、XP、吸収は通常wave・通常敵種・segment基準統計から分けて計測する。
+
+revision 8では既存の全体balance値と受入閾値、bot方針を変更していない。実データは
+`xp_yield_percent=90`、`normal_enemy_damage_scale=0.4`、bossはHP `1.6875`、damage `0.114`、action rate `1.1`である。
+通常active目標は`[16, 46, 32, 68, 49, 140, 92, 132, 97, 176]`で、segment HP・damage・weightもrevision 7から
+据え置いた。この敵仕様変更によりrevision 7の調整結果を含む旧証拠はrevision 8へ流用せず、全体再調整は別作業で一度だけ行う。
+実装後の全GDScript回帰は121/121 PASS、GDScript guardは101ファイルPASS、変更GDScriptのcheck-onlyは
+19/19 PASS、`git diff --check`もPASSしている。
+
+## revision 6から継続する単一強化項目契約
 
 基本武器はLv2〜Lv8の各レベルで、定義上の直接プロパティを必ず1項目だけ変更する。弾数や軌道体数などの個数増加は
 常に`+1`であり、`+2`以上の増加を設けない。変更した1項目からDPS、外縁、稼働率などが派生して変わることは許容する。
@@ -51,11 +85,10 @@
 未所持候補は従来どおり概要説明を表示する。カタログ読込時と回帰テストで、各基本武器の各レベルについて
 変更項目数がちょうど1であること、および個数増加が`+1`であることを検証する。
 
-この武器成長表の変更により、revision 5の専用12run source gate、回帰、QA、build identityはrevision 6の証拠として無効である。
-敵、XP、segment、boss、候補抽選、進化条件の値はrevision 5から変更していないが、武器性能が変わったため、再調整は別作業で行う。
-実装後の全GDScript回帰は114/114 PASS、GDScript guardは98ファイルPASS、変更GDScriptのcheck-onlyは15/15 PASSである。
+この武器成長表はrevision 6で導入され、revision 8でも維持する。revision 6時点の回帰、QA、build identityは履歴であり、
+高速群れを追加したrevision 8候補の証拠には使用しない。
 
-## revision 5実装と最終調整値（履歴・revision 6へ流用禁止）
+## revision 5実装と最終調整値（履歴・revision 8へ流用禁止）
 
 revision 5の画面内戦闘契約は次のとおりである。
 
@@ -81,7 +114,7 @@ revision 5の画面内戦闘契約は次のとおりである。
 | hp_multiplier | 0.15 | 0.17 | 0.20 | 0.24 | 0.30 | 0.45 | 0.65 | 0.90 | 1.25 | 1.75 |
 | damage_multiplier | 0.18 | 0.20 | 0.22 | 0.25 | 0.29 | 0.36 | 0.45 | 0.56 | 0.72 | 0.95 |
 
-## revision 5 source gate結果（履歴・revision 6へ流用禁止）
+## revision 5 source gate結果（履歴・revision 8へ流用禁止）
 
 2026-09-02にseed `17`、`29`、`43`、`61`をcautious、normal、evolutionの各方針で実行する、
 専用の決定的12run source gateを完走し、`passed=true`でPASSした。
@@ -109,7 +142,7 @@ GDScript guard 97ファイル、今回変更したGDScript 2/2のcheck-only、`g
 このsource gateは自動調整完了の証拠であり、人間playtestの参加・回答・計測値や
 正式candidateのidentity、正式性能試験、Release検証を代替しない。
 
-revision 6への変更により、revision 5以前のcandidate、調整成果物、回帰、QA、build identityは現候補の証拠として無効であり、
+revision 8への変更により、revision 7以前のcandidate、調整成果物、回帰、QA、build identityは現候補の証拠として無効であり、
 履歴としてのみ保持する。現時点で正式candidateは未固定である。Full HD性能試験、Release export、Verify、ManualQa、
 人間playtestはすべて未実施であり、ユーザーが最終調整完了を明示するまで実行してはならない。
 
@@ -153,7 +186,7 @@ revision 4の専用12run PASSも正式candidateのidentityや正式検証結果�
 
 ## 次の作業
 
-1. 別作業でrevision 6の武器性能に合わせたsource再調整と専用12run source gateを実施する。
+1. 別作業でrevision 8の高速群れを含むsource再調整と専用12run source gateを一度だけ実施する。
 2. source gate通過後、ユーザーによる武器演出、敵圧、XPペース、文言その他の最終確認を待つ。
 3. ユーザーが最終調整完了を明示した後だけ、全回帰、GDScript検査、Full HD性能試験、
    Release export、pack audit、smoke、Verify、ManualQaを実施する。
@@ -166,5 +199,5 @@ revision 4の専用12run PASSも正式candidateのidentityや正式検証結果�
 
 ## 正式受入後の棚卸し
 
-5人以上×3run完了までは、revision 6の回帰テスト、Debug QA、性能試験、Release検証、
+5人以上×3run完了までは、revision 8の回帰テスト、Debug QA、性能試験、Release検証、
 GDScript guard、比較用buildを保持する。正式受入後に再棚卸しし、配布・保守に不要な資材を削除する。

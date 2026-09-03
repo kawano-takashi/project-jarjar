@@ -19,6 +19,15 @@ const REQUIRED_VISIBLE_METRIC_KEYS: Array[String] = [
 	"mean_materializing_enemies",
 	"absorbed_normal_count",
 	"absorbed_enemy_projectile_count",
+	"swarm_event_attempts",
+	"swarm_event_roll_successes",
+	"swarm_event_spawn_failures",
+	"swarm_event_groups",
+	"swarm_event_generated",
+	"swarm_event_kills",
+	"swarm_event_exits",
+	"swarm_event_absorbed",
+	"swarm_event_xp",
 	"feedback_emitted",
 	"feedback_suppressed",
 	"vfx_admitted",
@@ -365,7 +374,7 @@ func _test_shooter_contact_contract(assertions: Variant) -> void:
 	)
 	assertions.expect_true(
 		simulation.catalog.segment(3).weight_for(GameTypes.EnemyType.SHOOTER) > 0.0,
-		"SHOOTER enters the revision seven wave table from segment four onward",
+		"SHOOTER remains in the revision eight wave table from segment four onward",
 	)
 	assertions.expect_true(
 		shooter_definition.contact_interval_ticks > 0

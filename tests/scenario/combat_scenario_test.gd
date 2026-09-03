@@ -15,7 +15,7 @@ func test_names() -> PackedStringArray:
 		"normal_damage_invulnerability_is_thirty_ticks",
 		"advance_tick_matches_step_gameplay_state",
 		"fixed_seed_replay_ignores_reduce_motion",
-		"focused_build_progression_matches_revision7_enemy_pacing",
+		"focused_build_progression_matches_revision8_enemy_pacing",
 		"performance_fixture_has_all_survival_loads",
 	])
 
@@ -46,7 +46,7 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 			_test_advance_tick_equivalence(assertions)
 		"fixed_seed_replay_ignores_reduce_motion":
 			_test_deterministic_replay(assertions)
-		"focused_build_progression_matches_revision7_enemy_pacing":
+		"focused_build_progression_matches_revision8_enemy_pacing":
 			_test_focused_build_pacing(assertions)
 		"performance_fixture_has_all_survival_loads":
 			_test_performance_fixture(assertions)
@@ -180,7 +180,7 @@ func _test_boss_phases(assertions: Variant) -> void:
 	)
 	assertions.expect_equal(1, simulation.state.boss_enrage_stacks, "boss gains one pressure stack after thirty seconds")
 	simulation.state.boss_enrage_stacks = 2
-	assertions.expect_float(73.0, simulation.enemy_system._boss_action_interval(100, 1), "two enrage stacks and the revision seven action rate produce a 73-tick interval")
+	assertions.expect_float(73.0, simulation.enemy_system._boss_action_interval(100, 1), "two enrage stacks and the revision eight action rate produce a 73-tick interval")
 
 
 func _test_scheduled_boss_multiplier_separation(assertions: Variant) -> void:
@@ -761,6 +761,7 @@ func _gameplay_digest(simulation: CombatSimulation) -> String:
 		state.modal_invulnerable_until_tick,
 		state.next_entity_id,
 		state.next_event_serial,
+		state.next_swarm_group_id,
 		state.spawn_credit,
 		state.total_kills,
 		state.normal_kills,
@@ -768,6 +769,15 @@ func _gameplay_digest(simulation: CombatSimulation) -> String:
 		state.boss_kills,
 		state.absorbed_normal_count,
 		state.absorbed_enemy_projectile_count,
+		state.swarm_event_attempt_count,
+		state.swarm_event_roll_success_count,
+		state.swarm_event_spawn_failure_count,
+		state.swarm_event_group_count,
+		state.swarm_event_generated_count,
+		state.swarm_event_kill_count,
+		state.swarm_event_exit_count,
+		state.swarm_event_absorbed_count,
+		state.swarm_event_xp,
 		state.kill_chain_count,
 		state.kill_chain_last_tick,
 		state.kill_chain_accent_milestone,
@@ -793,10 +803,12 @@ func _gameplay_digest(simulation: CombatSimulation) -> String:
 		streams.upgrade_seed,
 		streams.chest_seed,
 		streams.powerup_seed,
+		streams.swarm_event_seed,
 		streams.spawn_rng.state,
 		streams.upgrade_rng.state,
 		streams.chest_rng.state,
 		streams.powerup_rng.state,
+		streams.swarm_event_rng.state,
 		_int_bool_entries(state.applied_offer_serials),
 		_int_bool_entries(state.applied_chest_serials),
 		_offer_entry(state.active_level_offer),
@@ -935,13 +947,24 @@ func _enemy_system_entries(simulation: CombatSimulation) -> Array:
 			enemy.alive,
 			enemy.elite_serial,
 			enemy.boss_phase,
+			int(enemy.movement_kind),
+			enemy.swarm_group_id,
+			enemy.fixed_direction,
+			enemy.remaining_travel_distance,
+			enemy.swarm_red_variant,
+			enemy.is_swarm_event,
 			rng_seed,
 			rng_state,
 		])
 	var elite_spawned: Array[int] = []
 	for value: int in simulation.enemy_system._elite_spawned:
 		elite_spawned.append(value)
-	return [result, elite_spawned, simulation.enemy_system.enemy_store.overflow_count]
+	return [
+		result,
+		elite_spawned,
+		simulation.enemy_system._swarm_attempt_consumed,
+		simulation.enemy_system.enemy_store.overflow_count,
+	]
 
 
 func _projectile_entries(simulation: CombatSimulation) -> Array:

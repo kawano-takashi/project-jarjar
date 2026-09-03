@@ -23,6 +23,7 @@ const ABSORPTION_EVENT_SECONDS: float = 0.24
 	%EnemyShooterInstances,
 	%EnemyEliteInstances,
 	%EnemyBossInstances,
+	%EnemySwarmerEventRedInstances,
 ]
 @onready var _projectile_instances: Array[MultiMeshInstance3D] = [
 	%ProjectileInstances,

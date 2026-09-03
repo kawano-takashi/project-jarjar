@@ -239,9 +239,9 @@ func _test_boss_charge(assertions: Variant) -> void:
 	var phase_one_interval: int = system._boss_action_interval_ticks(120, 1)
 	var phase_two_interval: int = system._boss_action_interval_ticks(120, 2)
 	var phase_three_interval: int = system._boss_action_interval_ticks(120, 3)
-	assertions.expect_equal(110, phase_one_interval, "revision seven phase-one action rate rounds up to 110 ticks")
-	assertions.expect_equal(82, phase_two_interval, "revision seven phase-two action rate rounds up to 82 ticks")
-	assertions.expect_equal(62, phase_three_interval, "revision seven phase-three action rate rounds up to 62 ticks")
+	assertions.expect_equal(110, phase_one_interval, "revision eight phase-one action rate rounds up to 110 ticks")
+	assertions.expect_equal(82, phase_two_interval, "revision eight phase-two action rate rounds up to 82 ticks")
+	assertions.expect_equal(62, phase_three_interval, "revision eight phase-three action rate rounds up to 62 ticks")
 
 	state.combat_tick = boss.activation_tick - 1
 	system.advance_snapshot(boss_ids, Vector2(6.0, 0.0), state.combat_tick)
