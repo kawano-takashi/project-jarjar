@@ -11,8 +11,8 @@ func test_names() -> PackedStringArray:
 		"same_tick_boss_victory_beats_player_death",
 		"lethal_enemy_still_resolves_ready_attack_before_death",
 		"evolved_damage_combines_into_base_lineage",
-		"modal_resume_invulnerability_is_limited",
-		"normal_damage_invulnerability_is_thirty_ticks",
+		"level_up_resume_invulnerability_is_limited",
+		"player_damage_has_no_post_hit_invulnerability",
 		"advance_tick_matches_step_gameplay_state",
 		"fixed_seed_replay_ignores_reduce_motion",
 		"focused_build_progression_matches_revision12_enemy_pacing",
@@ -37,10 +37,10 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 			_test_enemy_attack_before_death(assertions)
 		"evolved_damage_combines_into_base_lineage":
 			_test_lineage_damage(assertions)
-		"modal_resume_invulnerability_is_limited":
-			_test_modal_invulnerability(assertions)
-		"normal_damage_invulnerability_is_thirty_ticks":
-			_test_damage_invulnerability(assertions)
+		"level_up_resume_invulnerability_is_limited":
+			_test_level_up_resume_invulnerability(assertions)
+		"player_damage_has_no_post_hit_invulnerability":
+			_test_damage_without_post_hit_invulnerability(assertions)
 		"advance_tick_matches_step_gameplay_state":
 			_test_advance_tick_equivalence(assertions)
 		"fixed_seed_replay_ignores_reduce_motion":
@@ -324,39 +324,32 @@ func _test_lineage_damage(assertions: Variant) -> void:
 	assertions.expect_float(35.0, simulation.state.weapon_damage_by_lineage[&"homing_core"], "lineage damage sums before and after evolution")
 
 
-func _test_modal_invulnerability(assertions: Variant) -> void:
+func _test_level_up_resume_invulnerability(assertions: Variant) -> void:
 	var setup: Dictionary = _simulation(assertions, 8105)
 	var simulation: CombatSimulation = setup.get("simulation") as CombatSimulation
 	if simulation == null:
 		return
 	simulation.state.combat_tick = 100
-	simulation.grant_resume_invulnerability_ticks(45)
-	assertions.expect_equal(146, simulation.state.modal_invulnerable_until_tick, "exclusive deadline covers exactly 45 resumed updates")
-	assertions.expect_true(simulation.state.is_invulnerable(), "resume protection is active before its deadline")
+	simulation.grant_level_up_resume_invulnerability_ticks(45)
+	assertions.expect_equal(146, simulation.state.level_up_invulnerable_until_tick, "exclusive deadline covers exactly 45 resumed updates")
+	assertions.expect_true(simulation.state.is_level_up_resume_invulnerable(), "level-up resume protection is active before its deadline")
 	simulation.state.combat_tick = 145
-	assertions.expect_true(simulation.state.is_invulnerable(), "the forty-fifth resumed update remains protected")
+	assertions.expect_true(simulation.state.is_level_up_resume_invulnerable(), "the forty-fifth resumed update remains protected")
 	simulation.state.combat_tick = 146
-	assertions.expect_true(not simulation.state.is_invulnerable(), "the forty-sixth resumed update can take damage")
+	assertions.expect_true(not simulation.state.is_level_up_resume_invulnerable(), "the forty-sixth resumed update can take damage")
 
 
-func _test_damage_invulnerability(assertions: Variant) -> void:
+func _test_damage_without_post_hit_invulnerability(assertions: Variant) -> void:
 	var setup: Dictionary = _simulation(assertions, 8107)
 	var simulation: CombatSimulation = setup.get("simulation") as CombatSimulation
 	if simulation == null:
 		return
 	simulation.state.combat_tick = 100
 	simulation._apply_raw_player_damage(10.0)
-	assertions.expect_float(90.0, simulation.state.current_hp, "first same-tick hit applies")
-	assertions.expect_equal(131, simulation.state.damage_invulnerable_until_tick, "exclusive deadline covers thirty following ticks")
+	assertions.expect_float(90.0, simulation.state.current_hp, "first damage tick applies")
+	simulation.state.combat_tick = 101
 	simulation._apply_raw_player_damage(50.0)
-	assertions.expect_float(90.0, simulation.state.current_hp, "second same-tick hit is ignored")
-	assertions.expect_equal(131, simulation.state.damage_invulnerable_until_tick, "ignored damage never extends protection")
-	simulation.state.combat_tick = 130
-	simulation._apply_raw_player_damage(50.0)
-	assertions.expect_float(90.0, simulation.state.current_hp, "thirtieth following tick remains protected")
-	simulation.state.combat_tick = 131
-	simulation._apply_raw_player_damage(10.0)
-	assertions.expect_float(80.0, simulation.state.current_hp, "damage resumes when the exclusive deadline is reached")
+	assertions.expect_float(40.0, simulation.state.current_hp, "the next combat tick applies damage without a cooldown")
 
 
 func _test_advance_tick_equivalence(assertions: Variant) -> void:
@@ -441,7 +434,7 @@ func _test_focused_build_pacing(assertions: Variant) -> void:
 		simulation.catalog,
 	)
 	assertions.expect_equal(GameTypes.ChestOutcomeKind.EVOLUTION, ungated_outcome.kind, "evolution eligibility itself has no clock gate at tick zero")
-	simulation.state.modal_invulnerable_until_tick = 100_000
+	simulation.state.level_up_invulnerable_until_tick = 100_000
 	var check_ticks := PackedInt32Array([7200, 14_400, 21_600])
 	var expected_kinds: Array[GameTypes.ChestOutcomeKind] = [
 		GameTypes.ChestOutcomeKind.UPGRADE,
@@ -502,7 +495,7 @@ func _test_focused_build_pacing(assertions: Variant) -> void:
 	assertions.expect_true(evolved.evolved and evolved.weapon_id == &"infinite_homing", "focused lineage remains evolved after six minutes")
 func _prepare_replay(simulation: CombatSimulation, reduce_motion: bool) -> Dictionary:
 	simulation.configure_accessibility(reduce_motion, false)
-	simulation.state.modal_invulnerable_until_tick = 10_000
+	simulation.state.level_up_invulnerable_until_tick = 10_000
 	var mass_definition: WeaponDefinition = simulation.catalog.weapon(&"mass_projectile")
 	var slot_index: int = simulation.state.weapons.size()
 	var mass_weapon: RunWeapon = RunWeapon.create(
@@ -680,8 +673,7 @@ func _gameplay_digest(simulation: CombatSimulation) -> String:
 		state.boss_hp,
 		state.boss_max_hp,
 		state.stop_until_tick,
-		state.damage_invulnerable_until_tick,
-		state.modal_invulnerable_until_tick,
+		state.level_up_invulnerable_until_tick,
 		state.next_entity_id,
 		state.next_event_serial,
 		state.next_swarm_group_id,

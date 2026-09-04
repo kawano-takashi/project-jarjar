@@ -60,7 +60,7 @@ func _test_speed_values_and_ratios(assertions: Variant) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
-	assertions.expect_equal(13, catalog.balance_manifest().balance_revision, "revision thirteen preserves the revision twelve movement tuning")
+	assertions.expect_equal(14, catalog.balance_manifest().balance_revision, "revision fourteen preserves the revision twelve movement tuning")
 	var current_speeds: Array[float] = [CombatSimulation.PLAYER_SPEED]
 	for enemy_id: StringName in ENEMY_IDS:
 		current_speeds.append(catalog.enemy(enemy_id).move_speed)

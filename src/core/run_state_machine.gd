@@ -90,10 +90,10 @@ static func resolve_terminal(
 	return state.phase
 
 
-static func grant_modal_resume_invulnerability(state: RunState, ticks: int = 45) -> void:
+static func grant_level_up_resume_invulnerability(state: RunState, ticks: int = 45) -> void:
 	if state == null or ticks <= 0:
 		return
-	state.modal_invulnerable_until_tick = maxi(
-		state.modal_invulnerable_until_tick,
+	state.level_up_invulnerable_until_tick = maxi(
+		state.level_up_invulnerable_until_tick,
 		state.combat_tick + ticks,
 	)

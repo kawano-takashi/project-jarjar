@@ -650,5 +650,5 @@ func _spawn_side_index(screen_coordinates: Vector2) -> int:
 
 func _catalog(assertions: Variant) -> DefinitionCatalog:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "revision thirteen content catalog validates")
+	assertions.expect_true(catalog.load_and_validate(), "revision fourteen content catalog validates")
 	return catalog if catalog.is_valid else null

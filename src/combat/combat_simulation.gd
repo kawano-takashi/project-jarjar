@@ -25,7 +25,6 @@ const PERFORMANCE_FIXTURE_HP: float = 1_000_000_000.0
 const PERFORMANCE_PROJECTILE_SPEED: float = 7.0
 const PERFORMANCE_PROJECTILE_DISTANCE: float = 10_000.0
 const PERFORMANCE_FIXTURE_LIFETIME_SECONDS: float = 3_600.0
-const PERFORMANCE_INVULNERABLE_UNTIL_TICK: int = 2_000_000_000
 
 var state: RunState = null
 var catalog: DefinitionCatalog = null
@@ -342,7 +341,7 @@ func apply_upgrade_choice(choice_index: int) -> bool:
 		return false
 	_record_audio_cue_id(&"level_up")
 	_refresh_derived_player_stats()
-	_continue_after_modal()
+	_continue_after_modal(true)
 	return true
 
 
@@ -363,7 +362,7 @@ func skip_chest_animation() -> bool:
 	if outcome.kind == GameTypes.ChestOutcomeKind.EVOLUTION:
 		_record_audio_cue_id(&"evolution")
 	_refresh_derived_player_stats()
-	_continue_after_modal()
+	_continue_after_modal(false)
 	return true
 
 
@@ -371,12 +370,12 @@ func complete_chest_reward() -> bool:
 	return skip_chest_animation()
 
 
-func grant_resume_invulnerability_ticks(ticks: int = 45) -> void:
+func grant_level_up_resume_invulnerability_ticks(ticks: int = 45) -> void:
 	if ticks <= 0:
 		return
 	# The grant occurs between ticks. With an exclusive deadline, T+1 through T+ticks
 	# require a deadline of T+ticks+1 to protect exactly `ticks` combat updates.
-	RunStateMachine.grant_modal_resume_invulnerability(state, ticks + 1)
+	RunStateMachine.grant_level_up_resume_invulnerability(state, ticks + 1)
 
 
 func configure_accessibility(reduce_motion: bool, reduce_flashes: bool) -> void:
@@ -608,8 +607,7 @@ func prepare_performance_fixture(
 	state.boss_spawn_tick = -1
 	state.boss_defeat_tick = -1
 	state.stop_until_tick = 0
-	state.damage_invulnerable_until_tick = PERFORMANCE_INVULNERABLE_UNTIL_TICK
-	state.modal_invulnerable_until_tick = PERFORMANCE_INVULNERABLE_UNTIL_TICK
+	state.level_up_invulnerable_until_tick = 0
 	state.spawn_credit = 0.0
 	state.absorbed_normal_count = 0
 	state.normal_far_despawn_count = 0
@@ -1097,13 +1095,13 @@ func _player_damage_candidate_is_preferred(candidate: Dictionary, selected: Dict
 
 
 func _apply_raw_player_damage(raw_damage: float) -> void:
-	if raw_damage <= 0.0 or state.is_invulnerable():
+	if (
+		raw_damage <= 0.0
+		or _performance_fixture_active
+		or state.is_level_up_resume_invulnerable()
+	):
 		return
 	state.current_hp = maxf(0.0, state.current_hp - raw_damage)
-	state.damage_invulnerable_until_tick = maxi(
-		state.damage_invulnerable_until_tick,
-		state.combat_tick + _manifest.damage_invulnerability_ticks + 1,
-	)
 	_step_events.append(&"player_hit")
 	_player_hit_this_tick = true
 
@@ -1465,7 +1463,7 @@ func _resolve_modal_priority() -> void:
 			RunStateMachine.transition(state, GameTypes.RunPhase.CHEST_REWARD)
 
 
-func _continue_after_modal() -> void:
+func _continue_after_modal(grant_level_up_protection: bool) -> void:
 	if state.pending_level_ups > 0:
 		ProgressionService.create_offer(state, catalog)
 		state.phase = GameTypes.RunPhase.LEVEL_UP
@@ -1475,7 +1473,10 @@ func _continue_after_modal() -> void:
 		state.phase = GameTypes.RunPhase.CHEST_REWARD
 		return
 	state.phase = GameTypes.RunPhase.COMBAT
-	grant_resume_invulnerability_ticks(_manifest.modal_resume_invulnerability_ticks)
+	if grant_level_up_protection:
+		grant_level_up_resume_invulnerability_ticks(
+			_manifest.level_up_resume_invulnerability_ticks
+		)
 
 
 func _refresh_derived_player_stats() -> void:

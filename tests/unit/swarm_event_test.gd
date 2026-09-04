@@ -3,11 +3,11 @@ extends RefCounted
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"revision_thirteen_swarm_definition_and_drift_rejection",
+		"revision_fourteen_swarm_definition_and_drift_rejection",
 		"normal_swarmer_outpaces_the_player",
 		"swarm_scheduler_is_isolated_repeatable_and_atomic",
 		"swarm_formation_crosses_player_relative_frame_and_uses_two_visuals",
-		"swarm_contact_kill_and_invulnerability_are_separate",
+		"swarm_contact_damage_and_kill_accounting_are_separate",
 		"swarm_push_is_capped_clamped_and_paused",
 		"boss_transition_absorbs_swarm_without_rewards",
 	])
@@ -15,7 +15,7 @@ func test_names() -> PackedStringArray:
 
 func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
 	match test_name:
-		"revision_thirteen_swarm_definition_and_drift_rejection":
+		"revision_fourteen_swarm_definition_and_drift_rejection":
 			_test_definition_and_drift(assertions)
 		"normal_swarmer_outpaces_the_player":
 			_test_normal_swarmer_speed(assertions)
@@ -23,14 +23,14 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 			_test_scheduler_and_atomic_spawn(assertions)
 		"swarm_formation_crosses_player_relative_frame_and_uses_two_visuals":
 			_test_formation_motion_and_visuals(assertions)
-		"swarm_contact_kill_and_invulnerability_are_separate":
+		"swarm_contact_damage_and_kill_accounting_are_separate":
 			_test_contact_and_death_accounting(assertions)
 		"swarm_push_is_capped_clamped_and_paused":
 			_test_push_and_pause(assertions)
 		"boss_transition_absorbs_swarm_without_rewards":
 			_test_boss_transition_absorption(assertions)
 		_:
-			assertions.expect_true(false, "registered revision thirteen swarm test")
+			assertions.expect_true(false, "registered revision fourteen swarm test")
 
 
 func _test_definition_and_drift(assertions: Variant) -> void:
@@ -40,7 +40,7 @@ func _test_definition_and_drift(assertions: Variant) -> void:
 	var manifest: SurvivalContentManifest = catalog.manifest()
 	var event_definition: SwarmEventDefinition = manifest.swarm_event
 	var unit: EnemyDefinition = event_definition.unit_definition
-	assertions.expect_equal(13, manifest.balance.balance_revision, "swarm ships as balance revision thirteen")
+	assertions.expect_equal(14, manifest.balance.balance_revision, "swarm ships as balance revision fourteen")
 	assertions.expect_equal(6, GameTypes.EnemyType.size(), "swarm adds no seventh EnemyType")
 	assertions.expect_equal(6, catalog.enemies.size(), "event unit stays outside the normal enemy catalog")
 	assertions.expect_float(5.184, catalog.enemy(&"swarmer").move_speed, "normal swarmer is faster than the player")
@@ -369,7 +369,7 @@ func _test_formation_motion_and_visuals(assertions: Variant) -> void:
 	var travel_distance: float = 2.0 * 11.0 + 4.0 * 0.7
 	assertions.expect_float(travel_distance - event_step, first_after.remaining_travel_distance, "travel derives from spawn depth and formation depth")
 	var travel_ticks: int = ceili(travel_distance / event_step)
-	assertions.expect_equal(575, travel_ticks, "revision thirteen preserves the 575-tick full crossing")
+	assertions.expect_equal(575, travel_ticks, "revision fourteen preserves the 575-tick full crossing")
 	for movement_index: int in range(1, travel_ticks):
 		var movement_tick: int = 7501 + movement_index
 		state.combat_tick = movement_tick
@@ -414,20 +414,18 @@ func _test_contact_and_death_accounting(assertions: Variant) -> void:
 	)
 	assertions.expect_equal(50, records.size(), "all overlapping members report contact independently")
 	simulation._apply_player_damage_candidates(records)
-	assertions.expect_float(99.78, state.current_hp, "thirty-tick invulnerability admits only one simultaneous hit")
+	assertions.expect_float(99.78, state.current_hp, "maximum-one arbitration admits one simultaneous hit")
+	state.combat_tick = 7501
 	simulation._apply_player_damage_candidates(records)
-	assertions.expect_float(99.78, state.current_hp, "same-tick records cannot stack damage")
-	state.combat_tick = 7530
-	simulation._apply_raw_player_damage(0.22)
-	assertions.expect_float(99.78, state.current_hp, "invulnerability protects thirty following ticks")
-	state.combat_tick = 7531
-	simulation._apply_raw_player_damage(0.22)
-	assertions.expect_float(99.56, state.current_hp, "contact becomes eligible after the thirty-tick window")
+	assertions.expect_float(99.56, state.current_hp, "the next combat tick admits another maximum hit")
+	state.combat_tick = 7502
+	simulation._apply_player_damage_candidates(records)
+	assertions.expect_float(99.34, state.current_hp, "continued overlap damages on every combat tick")
 
 	var killed: EnemyEntity = group[0]
 	killed.hp = 0.0
 	simulation._record_enemy_death(killed, &"homing_core", 0.0)
-	simulation._process_pending_deaths(7531)
+	simulation._process_pending_deaths(7502)
 	assertions.expect_equal(1, state.total_kills, "event kill contributes to total kills")
 	assertions.expect_equal(1, state.weapon_kill_count, "event kill contributes to weapon kills")
 	assertions.expect_equal(1, state.kill_chain_count, "event kill contributes to chain")
@@ -440,7 +438,7 @@ func _test_contact_and_death_accounting(assertions: Variant) -> void:
 	assertions.expect_equal(1, simulation.xp_pickup_pool.active_count(), "event kill creates one XP crystal")
 	var pickup_index: int = simulation.xp_pickup_pool.active_indices_snapshot()[0]
 	assertions.expect_equal(1, simulation.xp_pickup_pool.slots[pickup_index].value, "event crystal carries one raw XP before global scaling")
-	state.combat_tick = 7532
+	state.combat_tick = 7503
 	var collected_xp: int = simulation.xp_pickup_pool.advance_and_collect(
 		Vector2.ZERO,
 		CombatSimulation.FIXED_DELTA_SECONDS,
@@ -631,5 +629,5 @@ func _active_swarm_count(system: EnemySystem) -> int:
 
 func _catalog(assertions: Variant) -> DefinitionCatalog:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "revision thirteen catalog validates: %s" % catalog.error_text)
+	assertions.expect_true(catalog.load_and_validate(), "revision fourteen catalog validates: %s" % catalog.error_text)
 	return catalog if catalog.is_valid else null

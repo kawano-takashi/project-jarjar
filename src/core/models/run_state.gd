@@ -41,8 +41,7 @@ var boss_enrage_stacks: int = 0
 var boss_hp: float = 0.0
 var boss_max_hp: float = 0.0
 var stop_until_tick: int = 0
-var damage_invulnerable_until_tick: int = 0
-var modal_invulnerable_until_tick: int = 0
+var level_up_invulnerable_until_tick: int = 0
 var next_entity_id: int = 1
 var next_event_serial: int = 1
 var next_swarm_group_id: int = 1
@@ -188,11 +187,8 @@ func _kill_chain_milestone(count: int) -> int:
 	return 0
 
 
-func is_invulnerable() -> bool:
-	return combat_tick < maxi(
-		damage_invulnerable_until_tick,
-		modal_invulnerable_until_tick,
-	)
+func is_level_up_resume_invulnerable() -> bool:
+	return combat_tick < level_up_invulnerable_until_tick
 
 
 func pending_chest_count() -> int:

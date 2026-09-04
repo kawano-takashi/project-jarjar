@@ -4,12 +4,14 @@ extends RefCounted
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
 		"catalog_locks_contact_damage_and_radius_without_per_enemy_cadence",
-		"seeking_enemy_stops_at_contact_and_rehits_after_thirty_protected_ticks",
-		"player_pushes_enemy_at_full_speed_and_recontact_keeps_shared_invulnerability",
+		"seeking_enemy_stops_at_contact_and_damages_every_tick",
+		"player_pushes_enemy_at_full_speed_and_recontact_damages_immediately",
 		"all_active_enemy_kinds_offer_contact_while_entry_and_stop_gate_actions",
 		"exact_overlap_is_deterministic_and_wall_clamp_allows_temporary_overlap",
 		"fixed_direction_swarm_crosses_the_player_without_soft_separation",
-		"contact_and_projectiles_apply_only_the_strongest_candidate_and_consume_hits",
+		"contact_and_projectiles_apply_only_the_strongest_candidate_every_tick",
+		"level_up_resume_protection_consumes_projectiles_without_damage",
+		"player_hit_feedback_is_emitted_each_damage_tick_with_audio_cap",
 		"equal_damage_candidate_ties_use_stable_source_entity_pool_order",
 	])
 
@@ -18,9 +20,9 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 	match test_name:
 		"catalog_locks_contact_damage_and_radius_without_per_enemy_cadence":
 			_test_contact_catalog_contract(assertions)
-		"seeking_enemy_stops_at_contact_and_rehits_after_thirty_protected_ticks":
+		"seeking_enemy_stops_at_contact_and_damages_every_tick":
 			_test_continuous_contact(assertions)
-		"player_pushes_enemy_at_full_speed_and_recontact_keeps_shared_invulnerability":
+		"player_pushes_enemy_at_full_speed_and_recontact_damages_immediately":
 			_test_player_push_and_recontact(assertions)
 		"all_active_enemy_kinds_offer_contact_while_entry_and_stop_gate_actions":
 			_test_enemy_kinds_entry_and_stop(assertions)
@@ -28,12 +30,16 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 			_test_exact_overlap_and_wall(assertions)
 		"fixed_direction_swarm_crosses_the_player_without_soft_separation":
 			_test_swarm_passthrough(assertions)
-		"contact_and_projectiles_apply_only_the_strongest_candidate_and_consume_hits":
+		"contact_and_projectiles_apply_only_the_strongest_candidate_every_tick":
 			_test_maximum_damage_and_projectile_consumption(assertions)
+		"level_up_resume_protection_consumes_projectiles_without_damage":
+			_test_level_up_protection_and_projectile_consumption(assertions)
+		"player_hit_feedback_is_emitted_each_damage_tick_with_audio_cap":
+			_test_player_hit_feedback_and_audio_cap(assertions)
 		"equal_damage_candidate_ties_use_stable_source_entity_pool_order":
 			_test_stable_tie_break(assertions)
 		_:
-			assertions.expect_true(false, "registered revision thirteen contact-damage test")
+			assertions.expect_true(false, "registered revision fourteen contact-damage test")
 
 
 func _test_contact_catalog_contract(assertions: Variant) -> void:
@@ -48,9 +54,25 @@ func _test_contact_catalog_contract(assertions: Variant) -> void:
 		property_names.has(&"contact_interval_ticks"),
 		"enemy definitions no longer expose a per-enemy contact cadence",
 	)
-	assertions.expect_float(0.38, definition.body_radius, "revision thirteen locks pursuer radius")
-	assertions.expect_float(8.0, definition.contact_damage, "revision thirteen locks pursuer contact damage")
+	assertions.expect_float(0.38, definition.body_radius, "revision fourteen locks pursuer radius")
+	assertions.expect_float(8.0, definition.contact_damage, "revision fourteen locks pursuer contact damage")
 	var canonical: SurvivalContentManifest = catalog.manifest()
+	var manifest_property_names: Array[StringName] = []
+	for property: Dictionary in canonical.get_property_list():
+		manifest_property_names.append(StringName(property.get("name", &"")))
+	assertions.expect_false(
+		manifest_property_names.has(&"damage_invulnerability_ticks"),
+		"the global post-hit invulnerability setting is removed",
+	)
+	assertions.expect_false(
+		manifest_property_names.has(&"modal_resume_invulnerability_ticks"),
+		"the generic modal protection setting is removed",
+	)
+	assertions.expect_equal(
+		45,
+		canonical.level_up_resume_invulnerability_ticks,
+		"level-up resume protection remains forty-five ticks",
+	)
 	var enemy_index: int = _enemy_index(canonical, &"pursuer")
 	var radius_drift: EnemyDefinition = definition.duplicate(true) as EnemyDefinition
 	radius_drift.body_radius += 0.01
@@ -71,7 +93,7 @@ func _test_contact_catalog_contract(assertions: Variant) -> void:
 
 
 func _test_continuous_contact(assertions: Variant) -> void:
-	var simulation: CombatSimulation = _simulation(assertions, 13_001)
+	var simulation: CombatSimulation = _simulation(assertions, 14_001)
 	if simulation == null:
 		return
 	var definition: EnemyDefinition = simulation.catalog.enemy(&"pursuer")
@@ -83,7 +105,7 @@ func _test_continuous_contact(assertions: Variant) -> void:
 	var ids: Array[int] = [enemy.entity_id]
 	var expected_damage: float = definition.contact_damage
 	var candidate_ticks: int = 0
-	for tick: int in range(1, 33):
+	for tick: int in range(1, 6):
 		simulation.state.combat_tick = tick
 		simulation.enemy_system.advance_snapshot(ids, simulation.player_position, tick)
 		var candidates: Array[Dictionary] = (
@@ -100,28 +122,21 @@ func _test_continuous_contact(assertions: Variant) -> void:
 			enemy.position.distance_to(simulation.player_position),
 			"pursuer remains at the combined contact radius",
 		)
-		if tick == 1:
-			assertions.expect_float(
-				100.0 - expected_damage,
-				simulation.state.current_hp,
-				"first contact damages immediately",
-			)
-		elif tick == 31:
-			assertions.expect_float(
-				100.0 - expected_damage,
-				simulation.state.current_hp,
-				"the next thirty combat ticks remain protected",
-			)
-	assertions.expect_equal(32, candidate_ticks, "overlap produces one contact candidate every tick")
+		assertions.expect_float(
+			100.0 - expected_damage * float(tick),
+			simulation.state.current_hp,
+			"contact applies damage on every combat tick",
+		)
+	assertions.expect_equal(5, candidate_ticks, "overlap produces one contact candidate every tick")
 	assertions.expect_float(
-		100.0 - expected_damage * 2.0,
+		100.0 - expected_damage * 5.0,
 		simulation.state.current_hp,
-		"contact damages again on the first tick after the protection window",
+		"five contact ticks apply five full damage instances",
 	)
 
 
 func _test_player_push_and_recontact(assertions: Variant) -> void:
-	var simulation: CombatSimulation = _simulation(assertions, 13_002)
+	var simulation: CombatSimulation = _simulation(assertions, 14_002)
 	if simulation == null:
 		return
 	var definition: EnemyDefinition = simulation.catalog.enemy(&"pursuer")
@@ -169,32 +184,32 @@ func _test_player_push_and_recontact(assertions: Variant) -> void:
 
 	simulation.state.combat_tick = 20
 	simulation.player_position = enemy.position - Vector2.RIGHT * contact_radius
-	var protected_candidates: Array[Dictionary] = (
+	var recontact_candidates: Array[Dictionary] = (
 		simulation.enemy_system.resolve_contact_damage_candidates(
 			ids,
 			simulation.player_position,
 			20,
 		)
 	)
-	simulation._apply_player_damage_candidates(protected_candidates)
-	assertions.expect_float(
-		hp_after_first_hit,
-		simulation.state.current_hp,
-		"recontact does not reset or bypass the shared remaining invulnerability",
-	)
-	simulation.state.combat_tick = 32
-	var eligible_candidates: Array[Dictionary] = (
-		simulation.enemy_system.resolve_contact_damage_candidates(
-			ids,
-			simulation.player_position,
-			32,
-		)
-	)
-	simulation._apply_player_damage_candidates(eligible_candidates)
+	simulation._apply_player_damage_candidates(recontact_candidates)
 	assertions.expect_float(
 		hp_after_first_hit - definition.contact_damage,
 		simulation.state.current_hp,
-		"recontact damages as soon as the original invulnerability expires",
+		"recontact damages immediately without residual post-hit protection",
+	)
+	simulation.state.combat_tick = 21
+	var next_tick_candidates: Array[Dictionary] = (
+		simulation.enemy_system.resolve_contact_damage_candidates(
+			ids,
+			simulation.player_position,
+			21,
+		)
+	)
+	simulation._apply_player_damage_candidates(next_tick_candidates)
+	assertions.expect_float(
+		hp_after_first_hit - definition.contact_damage * 2.0,
+		simulation.state.current_hp,
+		"continued recontact damages again on the next combat tick",
 	)
 
 
@@ -202,7 +217,7 @@ func _test_enemy_kinds_entry_and_stop(assertions: Variant) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
-	var state: RunState = RunStateFactory.create(13_003, catalog)
+	var state: RunState = RunStateFactory.create(14_003, catalog)
 	state.combat_tick = 100
 	var system := EnemySystem.new()
 	system.initialize(state, catalog)
@@ -276,7 +291,7 @@ func _test_exact_overlap_and_wall(assertions: Variant) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
-	var first_state: RunState = RunStateFactory.create(13_004, catalog)
+	var first_state: RunState = RunStateFactory.create(14_004, catalog)
 	var first_system := EnemySystem.new()
 	first_system.initialize(first_state, catalog)
 	var definition: EnemyDefinition = catalog.enemy(&"pursuer")
@@ -300,7 +315,7 @@ func _test_exact_overlap_and_wall(assertions: Variant) -> void:
 		"an exact center overlap separates along the entity-ID-derived direction",
 	)
 
-	var replay_state: RunState = RunStateFactory.create(13_004, catalog)
+	var replay_state: RunState = RunStateFactory.create(14_004, catalog)
 	var replay_system := EnemySystem.new()
 	replay_system.initialize(replay_state, catalog)
 	var replay: EnemyEntity = replay_system.enemy_store.try_spawn(
@@ -316,7 +331,7 @@ func _test_exact_overlap_and_wall(assertions: Variant) -> void:
 	replay_system.advance_snapshot([replay.entity_id], Vector2.ZERO, 1)
 	assertions.expect_equal(first.position, replay.position, "exact-overlap separation replays deterministically")
 
-	var wall_state: RunState = RunStateFactory.create(13_005, catalog)
+	var wall_state: RunState = RunStateFactory.create(14_005, catalog)
 	var wall_system := EnemySystem.new()
 	wall_system.initialize(wall_state, catalog)
 	var wall_player := Vector2(CombatEnvelope.PLAYER_CENTER_LIMIT, 0.0)
@@ -355,7 +370,7 @@ func _test_swarm_passthrough(assertions: Variant) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
-	var state: RunState = RunStateFactory.create(13_006, catalog)
+	var state: RunState = RunStateFactory.create(14_006, catalog)
 	var system := EnemySystem.new()
 	system.initialize(state, catalog)
 	var unit: EnemyDefinition = catalog.manifest().swarm_event.unit_definition
@@ -390,27 +405,84 @@ func _test_swarm_passthrough(assertions: Variant) -> void:
 
 
 func _test_maximum_damage_and_projectile_consumption(assertions: Variant) -> void:
-	var simulation: CombatSimulation = _simulation(assertions, 13_007)
+	var simulation: CombatSimulation = _simulation(assertions, 14_007)
 	if simulation == null:
 		return
 	simulation.state.combat_tick = 100
+	simulation.state.max_hp = 300.0
+	simulation.state.current_hp = 300.0
 	simulation.state.weapons.clear()
 	simulation.spawn_fixture_enemy(GameTypes.EnemyType.PURSUER, Vector2.ZERO)
 	simulation.spawn_fixture_enemy(GameTypes.EnemyType.ELITE, Vector2.ZERO)
 	_spawn_hostile_projectile(simulation, 12.0, &"weaker_projectile")
 	_spawn_hostile_projectile(simulation, 30.0, &"stronger_projectile")
 	assertions.expect_true(simulation.advance_tick(Vector2.ZERO), "combined collision tick advances")
-	assertions.expect_float(70.0, simulation.state.current_hp, "only the largest post-multiplier damage is applied")
+	assertions.expect_float(270.0, simulation.state.current_hp, "only the largest post-multiplier damage is applied")
 	assertions.expect_equal(0, simulation.projectile_pool.active_count(), "selected and unselected collided projectiles are consumed")
 
-	_spawn_hostile_projectile(simulation, 99.0, &"invulnerable_projectile")
-	assertions.expect_true(simulation.advance_tick(Vector2.ZERO), "invulnerable collision tick advances")
-	assertions.expect_float(70.0, simulation.state.current_hp, "the shared invulnerability blocks the next collision tick")
-	assertions.expect_equal(0, simulation.projectile_pool.active_count(), "a projectile collided during invulnerability is still consumed")
+	_spawn_hostile_projectile(simulation, 99.0, &"next_tick_projectile")
+	assertions.expect_true(simulation.advance_tick(Vector2.ZERO), "next collision tick advances")
+	assertions.expect_float(171.0, simulation.state.current_hp, "the strongest next-tick projectile applies without post-hit protection")
+	assertions.expect_equal(0, simulation.projectile_pool.active_count(), "the next-tick projectile is consumed")
+	assertions.expect_true(simulation.advance_tick(Vector2.ZERO), "continued contact tick advances")
+	assertions.expect_float(153.0, simulation.state.current_hp, "contact resumes as the next tick's maximum candidate")
+
+
+func _test_level_up_protection_and_projectile_consumption(assertions: Variant) -> void:
+	var simulation: CombatSimulation = _simulation(assertions, 14_008)
+	if simulation == null:
+		return
+	simulation.state.combat_tick = 100
+	simulation.state.max_hp = 200.0
+	simulation.state.current_hp = 200.0
+	simulation.state.weapons.clear()
+	simulation.spawn_fixture_enemy(GameTypes.EnemyType.ELITE, Vector2.ZERO)
+	simulation.grant_level_up_resume_invulnerability_ticks(45)
+	_spawn_hostile_projectile(simulation, 99.0, &"protected_projectile")
+	assertions.expect_true(simulation.advance_tick(Vector2.ZERO), "protected collision tick advances")
+	assertions.expect_float(200.0, simulation.state.current_hp, "level-up resume protection blocks every damage candidate")
+	assertions.expect_equal(0, simulation.projectile_pool.active_count(), "a projectile collided during protection is consumed")
+	assertions.expect_false(simulation._player_hit_this_tick, "protected collision emits no player-hit event")
+
+	simulation.state.combat_tick = 144
+	_spawn_hostile_projectile(simulation, 99.0, &"last_protected_projectile")
+	assertions.expect_true(simulation.advance_tick(Vector2.ZERO), "forty-fifth protected update advances")
+	assertions.expect_float(200.0, simulation.state.current_hp, "the forty-fifth resumed update remains protected")
+	assertions.expect_equal(0, simulation.projectile_pool.active_count(), "the last protected projectile is consumed")
+
+	_spawn_hostile_projectile(simulation, 40.0, &"first_eligible_projectile")
+	assertions.expect_true(simulation.advance_tick(Vector2.ZERO), "forty-sixth resumed update advances")
+	assertions.expect_float(160.0, simulation.state.current_hp, "damage resumes on the forty-sixth update")
+	assertions.expect_equal(0, simulation.projectile_pool.active_count(), "the first eligible projectile is consumed")
+	assertions.expect_true(simulation._player_hit_this_tick, "eligible collision emits a player-hit event")
+
+
+func _test_player_hit_feedback_and_audio_cap(assertions: Variant) -> void:
+	var simulation: CombatSimulation = _simulation(assertions, 14_009)
+	if simulation == null:
+		return
+	simulation.state.max_hp = 200.0
+	simulation.state.current_hp = 200.0
+	var player_hit_events: int = 0
+	for tick: int in range(1, RunState.TICKS_PER_SECOND + 1):
+		simulation.state.combat_tick = tick
+		simulation._step_events.clear()
+		simulation._presentation_events.clear()
+		simulation._player_hit_this_tick = false
+		simulation._apply_raw_player_damage(1.0)
+		simulation._flush_transient_feedback()
+		for event: CombatPresentationEvent in simulation._presentation_events:
+			if event.kind == CombatPresentationEvent.Kind.PLAYER_HIT:
+				player_hit_events += 1
+		simulation._record_audio_cue_metrics()
+	assertions.expect_float(140.0, simulation.state.current_hp, "sixty combat ticks apply sixty damage instances")
+	assertions.expect_equal(60, player_hit_events, "every damaging tick emits one player-hit presentation event")
+	assertions.expect_equal(8, simulation._audio_cue_admission.admitted_count, "existing noncritical audio cap admits eight cues per second")
+	assertions.expect_equal(52, simulation._audio_cue_admission.suppressed_count, "remaining per-tick hit cues are audio-suppressed")
 
 
 func _test_stable_tie_break(assertions: Variant) -> void:
-	var simulation: CombatSimulation = _simulation(assertions, 13_008)
+	var simulation: CombatSimulation = _simulation(assertions, 14_010)
 	if simulation == null:
 		return
 	var source_winner: Dictionary = simulation._select_player_damage_candidate([
@@ -428,6 +500,11 @@ func _test_stable_tie_break(assertions: Variant) -> void:
 		_damage_candidate(10.0, &"same", 3, 2),
 	])
 	assertions.expect_equal(2, int(pool_winner.get("source_pool_index", -1)), "equal source and entity use stable pool order")
+	var generation_winner: Dictionary = simulation._select_player_damage_candidate([
+		_damage_candidate(10.0, &"same", 3, 2, 8),
+		_damage_candidate(10.0, &"same", 3, 2, 4),
+	])
+	assertions.expect_equal(4, int(generation_winner.get("source_generation", -1)), "fully tied candidates use stable generation order")
 
 
 func _spawn_hostile_projectile(
@@ -437,7 +514,7 @@ func _spawn_hostile_projectile(
 ) -> ProjectileState:
 	return simulation.projectile_pool.acquire(
 		ProjectileState.FACTION_ENEMY,
-		&"revision13_contact_probe",
+		&"revision14_damage_probe",
 		-1,
 		simulation.player_position,
 		Vector2.ZERO,
@@ -457,13 +534,14 @@ func _damage_candidate(
 	source_effect_id: StringName,
 	source_entity_id: int,
 	source_pool_index: int,
+	source_generation: int = 1,
 ) -> Dictionary:
 	return {
 		"raw_damage": damage,
 		"source_effect_id": source_effect_id,
 		"source_entity_id": source_entity_id,
 		"source_pool_index": source_pool_index,
-		"source_generation": 1,
+		"source_generation": source_generation,
 	}
 
 
@@ -501,6 +579,6 @@ func _catalog(assertions: Variant) -> DefinitionCatalog:
 	var catalog := DefinitionCatalog.new()
 	assertions.expect_true(
 		catalog.load_and_validate(),
-		"revision thirteen contact content validates: %s" % catalog.error_text,
+		"revision fourteen contact content validates: %s" % catalog.error_text,
 	)
 	return catalog if catalog.is_valid else null

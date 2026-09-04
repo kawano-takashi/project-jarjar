@@ -102,7 +102,6 @@ func _measure_dps(
 	state.boss_spawned = true
 	state.boss_transition_started = true
 	state.build_maxed = true
-	state.damage_invulnerable_until_tick = RunState.BOSS_START_TICK + MEASURE_TICKS + 10
 	var definition: WeaponDefinition = catalog.weapon(weapon_id)
 	var runtime: RunWeapon = RunWeapon.create(
 		definition.weapon_id,
