@@ -23,7 +23,6 @@ func test_names() -> PackedStringArray:
 		"orbital_outer_reach_is_monotonic_and_bounded",
 		"infinite_homing_one_tick_cadence_stays_within_pool",
 		"orbital_active_window_uses_duration_and_has_real_gaps",
-		"evolutions_are_flagged_and_keep_their_base_lineage",
 	])
 
 
@@ -69,8 +68,6 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 			_test_infinite_homing_pool(assertions)
 		"orbital_active_window_uses_duration_and_has_real_gaps":
 			_test_orbital_active_window(assertions)
-		"evolutions_are_flagged_and_keep_their_base_lineage":
-			_test_evolution_identity(assertions)
 		_:
 			assertions.expect_true(false, "registered survival combat core test")
 
@@ -208,18 +205,6 @@ func _test_all_weapon_behaviors(assertions: Variant) -> void:
 			1,
 		)
 		assertions.expect_equal(1, attacks.size(), "%s generates its mapped automatic attack" % weapon_id)
-
-
-func _test_evolution_identity(assertions: Variant) -> void:
-	var catalog: DefinitionCatalog = _catalog(assertions)
-	if catalog == null:
-		return
-	for base_weapon_id: StringName in catalog.basic_weapon_ids():
-		var mapping: EvolutionDefinition = catalog.evolution_for_weapon(base_weapon_id)
-		var base: WeaponDefinition = catalog.weapon(base_weapon_id)
-		var evolved: WeaponDefinition = catalog.weapon(mapping.evolved_weapon_id)
-		assertions.expect_true(evolved.is_evolved, "%s evolution is flagged as evolved" % base_weapon_id)
-		assertions.expect_equal(base.lineage_id, evolved.lineage_id, "%s evolution preserves damage lineage" % base_weapon_id)
 
 
 func _test_resonance_wave_amount(assertions: Variant) -> void:

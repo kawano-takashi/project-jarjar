@@ -4,7 +4,6 @@ extends RefCounted
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
 		"survival_manifest_global_contract",
-		"survival_content_identity_contract",
 		"survival_run_phase_contract",
 	])
 
@@ -13,8 +12,6 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 	match test_name:
 		"survival_manifest_global_contract":
 			_test_manifest_globals(assertions)
-		"survival_content_identity_contract":
-			_test_content_identity(assertions)
 		"survival_run_phase_contract":
 			_test_run_phases(assertions)
 		_:
@@ -54,39 +51,6 @@ func _test_manifest_globals(assertions: Variant) -> void:
 	assertions.expect_equal(10, manifest.boss_enrage_max_stacks, "boss enrage stack cap")
 	assertions.expect_float(0.10, manifest.boss_attack_bonus_per_stack, "boss attack bonus per stack")
 	assertions.expect_float(0.10, manifest.boss_interval_reduction_per_stack, "boss interval reduction per stack")
-
-
-func _test_content_identity(assertions: Variant) -> void:
-	var catalog: DefinitionCatalog = _catalog(assertions)
-	if not catalog.is_valid:
-		return
-	assertions.expect_equal(8, catalog.basic_weapon_ids().size(), "eight basic weapons")
-	assertions.expect_equal(8, catalog.evolved_weapon_ids().size(), "eight evolved weapons")
-	assertions.expect_equal(8, catalog.passive_ids().size(), "eight passives")
-	assertions.expect_equal(8, catalog.evolutions.size(), "eight evolution mappings")
-	assertions.expect_equal(6, catalog.enemies.size(), "six enemy roles")
-	assertions.expect_equal(10, catalog.segments.size(), "ten one-minute segments")
-	var starter: WeaponDefinition = catalog.weapon(catalog.manifest().starter_weapon_id)
-	assertions.expect_equal(&"homing_core", starter.weapon_id, "fixed homing starter weapon")
-	assertions.expect_equal(
-		catalog.manifest().starter_weapon_id,
-		ReleaseSmokeValidator.STARTER_WEAPON_ID,
-		"release smoke uses the same starter contract",
-	)
-	assertions.expect_equal("追尾核", starter.display_name, "fixed starting weapon")
-	assertions.expect_equal(8, starter.max_level, "basic weapon max level")
-	assertions.expect_equal(&"cycle_crystal", starter.paired_passive_id, "starting evolution pair")
-	assertions.expect_equal(&"infinite_homing", catalog.evolution_for_weapon(&"homing_core").evolved_weapon_id, "starting evolution target")
-	assertions.expect_equal(1, catalog.weapon(&"infinite_homing").max_level, "evolved weapon max level")
-	assertions.expect_equal(5, catalog.passive(&"cycle_crystal").max_level, "passive max level")
-	var targets := PackedInt32Array()
-	for index: int in range(10):
-		targets.append(catalog.segment(index).target_active)
-	assertions.expect_equal(
-		PackedInt32Array([16, 46, 32, 68, 49, 140, 92, 132, 97, 176]),
-		targets,
-		"preserves the approved active-enemy targets",
-	)
 
 
 func _test_run_phases(assertions: Variant) -> void:

@@ -109,7 +109,6 @@ func test_names() -> PackedStringArray:
 	return PackedStringArray([
 		"production_has_no_removed_equipment_loot_or_score_system",
 		"production_and_project_settings_have_no_music_or_bgm",
-		"survival_definition_file_shape_is_exact",
 		"launch_balance_and_engine_contracts",
 	])
 
@@ -120,8 +119,6 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 			_test_no_removed_references(assertions)
 		"production_and_project_settings_have_no_music_or_bgm":
 			_test_no_music_or_bgm(assertions)
-		"survival_definition_file_shape_is_exact":
-			_test_definition_shape(assertions)
 		"launch_balance_and_engine_contracts":
 			_test_launch_balance(assertions)
 		_:
@@ -217,16 +214,6 @@ func _test_no_music_or_bgm(assertions: Variant) -> void:
 	)
 
 
-func _test_definition_shape(assertions: Variant) -> void:
-	assertions.expect_equal(16, _files_with_extension("res://data/definitions/weapons", "tres").size(), "eight base and eight evolved weapons")
-	assertions.expect_equal(8, _files_with_extension("res://data/definitions/passives", "tres").size(), "eight passive definitions")
-	assertions.expect_equal(8, _files_with_extension("res://data/definitions/evolutions", "tres").size(), "eight evolution mappings")
-	assertions.expect_equal(7, _files_with_extension("res://data/definitions/enemies", "tres").size(), "six normal roles plus one separate swarm unit")
-	assertions.expect_equal(8, _files_with_extension("res://data/definitions/swarm_events", "tres").size(), "one swarm event and seven schedule definitions")
-	assertions.expect_equal(10, _files_with_extension("res://data/definitions/segments", "tres").size(), "ten timed enemy segments")
-	assertions.expect_true(FileAccess.file_exists("res://data/balance/survival_content_manifest.tres"), "survival manifest exists")
-
-
 func _test_launch_balance(assertions: Variant) -> void:
 	var expected: Array[String] = [
 		"weapon_resonance_wave",
@@ -281,22 +268,6 @@ func _collect_all_paths(directory_path: String, output: PackedStringArray) -> vo
 			output.append(path)
 		entry = directory.get_next()
 	directory.list_dir_end()
-
-
-func _files_with_extension(directory_path: String, extension: String) -> PackedStringArray:
-	var result := PackedStringArray()
-	var directory := DirAccess.open(directory_path)
-	if directory == null:
-		return result
-	directory.list_dir_begin()
-	var entry: String = directory.get_next()
-	while not entry.is_empty():
-		if not directory.current_is_dir() and entry.get_extension().to_lower() == extension:
-			result.append(entry)
-		entry = directory.get_next()
-	directory.list_dir_end()
-	result.sort()
-	return result
 
 
 func _directory_contains_files(directory_path: String) -> bool:

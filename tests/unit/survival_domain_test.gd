@@ -133,7 +133,14 @@ func _test_all_content_fixed_contract(assertions: Variant) -> void:
 	assertions.expect_equal(expected_base_ids, catalog.basic_weapon_ids(), "all eight base weapon IDs are fixed")
 	assertions.expect_equal(expected_evolved_ids, catalog.evolved_weapon_ids(), "all eight evolved weapon IDs are fixed")
 	assertions.expect_equal(expected_passive_ids, catalog.passive_ids(), "all eight passive IDs are fixed")
+	assertions.expect_equal(8, catalog.evolutions.size(), "eight evolution mappings")
+	assertions.expect_equal(10, catalog.segments.size(), "ten one-minute segments")
 	assertions.expect_equal(&"homing_core", catalog.manifest().starter_weapon_id, "nearest-target weapon is the starter")
+	assertions.expect_equal(
+		catalog.manifest().starter_weapon_id,
+		ReleaseSmokeValidator.STARTER_WEAPON_ID,
+		"release smoke uses the same starter contract",
+	)
 	assertions.expect_equal(2, catalog.manifest().owned_offer_attempt_count, "owned offer uses two attempts")
 	assertions.expect_float(0.3, catalog.manifest().owned_offer_luck_coefficient, "owned offer luck coefficient")
 	assertions.expect_equal(90, catalog.manifest().xp_yield_percent, "tuned XP yield supports the denser arena")
