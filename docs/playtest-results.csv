@@ -1,1 +1,1 @@
-tester_id,run_index,run_seed,growth_choice_experience_1_to_5,immediate_retry_yes_no,is_first_run,first_time_eligible_yes_no,run_clear,survival_seconds,final_level,total_kills,elite_kills,boss_result,evolution_count
+tester_id,run_index,play_again_yes_no

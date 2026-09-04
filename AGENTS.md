@@ -26,23 +26,24 @@ try { & $env:JARJAR_GODOT --headless --path . --script res://tests/test_runner.g
 New-Item -ItemType Directory -Force -Path .\build\windows | Out-Null
 & $env:JARJAR_GODOT --headless --path . --export-release "Windows Desktop" .\build\windows\ProjectJARJAR.exe
 .\tests\release.ps1 -Task Verify
+# 任意の試遊
 .\tests\release.ps1 -Task ManualQa
 
-# 手動QA合格後に対象identityを artifacts/playtest/target.txt へ手入力してから実施する。
+# Verifyが表示した対象identityを artifacts/playtest/target.txt へ手入力してから実施する。
 .\tests\release.ps1 -Task Playtest -TesterId T01
 ```
 
 ## Workflow
 
-- QAやplaytestへ進む前に `docs/final-qa.md` の人間確認と最終調整完了の記録を確認する。
+- 人間による成功基準は、5人以上×各3runの全回答の70%以上が「また遊びたい」と答えることとする。QAやplaytestへ進む前に `docs/playtest.md` の最終調整完了の記録を確認する。
 - 実装仕様はコードとテストを正とし、進捗や変更履歴の別文書を維持しない。
-- バランス調整は、人間によるテストへ渡す直前に一度だけ実施する。仕様策定中は数値調整や自動calibrationを行わず、仕様と受入基準の確定に留める。その一度の調整で受入基準に届かない場合も反復調整せず、測定結果を報告して次の判断を待つ。
+- バランス調整は、人間によるテストへ渡す直前に一度だけ実施する。仕様策定中は数値調整や自動calibrationを行わず、仕様の確定に留める。調整後も成功を確認できない場合は反復調整せず、測定結果や本人の感想を報告して次の判断を待つ。自動難易度測定は調整の参考資料とし、プレイ開始や成功判定の必須条件にしない。
 - `tests/test_runner.gd` は `tests/**/*_test.gd` を再帰検出する。`unit/`、`scenario/`、`simulation/` は整理用であり、登録簿も実行順契約もない。
 - PowerShellテストは既存のWindows Release buildだけを検証する。コード変更だけならGDScriptテストを使い、buildまで検証するときだけ性能試験・export・`tests/release.ps1` を使う。
 - `Verify` はpack audit、Release smoke、代表的なRelease引数拒否、build鮮度、identityを検証する。buildやsource testは実行しない。
-- `ManualQa` のexit 0はセッション終了だけを表し、QA合格ではない。人間が `docs/final-qa.md` に判定を記録する。
-- 正式playtest対象が未固定なら `docs/playtest-protocol.md` を実施・集計しない。
-- 手動QA合格後、`Verify` が表示した3値を `artifacts/playtest/target.txt` に `candidate_head`、`exe_sha256`、`pck_sha256` として手入力する。自動固定しない。
+- `ManualQa` のexit 0はセッション終了だけを表す。人間が `docs/playtest.md` に「また遊びたい」への回答を記録する。
+- プレイテストの対象固定・起動・回答記録・集計は `docs/playtest.md` に従う。
+- プレイテストを始める前に、`Verify` が表示した3値を `artifacts/playtest/target.txt` に `candidate_head`、`exe_sha256`、`pck_sha256` として手入力する。自動固定しない。
 - EXE、PCK、候補HEADのいずれかが変わったら旧playtestデータを流用しない。
 - 人間の参加・回答・計測値を生成または補完しない。
 

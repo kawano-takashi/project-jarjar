@@ -26,5 +26,4 @@ PATH上のGodot 4.7.2-stable Standardで `project.godot` を開いてくださ�
 実装仕様と数値は `src/`、`data/`、`tests/` を参照してください。
 
 - [ビルド・テスト・作業上の制約](AGENTS.md)
-- [人間による確認とQA記録](docs/final-qa.md)
-- [正式対象固定後のプレイテスト手順と受入基準](docs/playtest-protocol.md)
+- [プレイテストの成功基準・手順・結果](docs/playtest.md)

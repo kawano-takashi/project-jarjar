@@ -616,7 +616,7 @@ try {
             Invoke-WithCleanSettings -ArtifactRoot $releaseArtifactRoot -Action {
                 [void](Invoke-LoggedProcess -LogPath $logPath -Label "manual_qa" -Executable $consoleExecutable -Arguments @() -CreateNoWindow $false)
             }
-            [System.Console]::Out.WriteLine("MANUAL_QA_SESSION_COMPLETED record_result=docs/final-qa.md")
+            [System.Console]::Out.WriteLine("MANUAL_QA_SESSION_COMPLETED record_result=docs/playtest.md")
         }
         "Playtest" {
             Initialize-ArtifactDirectory -Path $playtestArtifactRoot
