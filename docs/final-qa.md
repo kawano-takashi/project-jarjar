@@ -1,145 +1,40 @@
-# Project JARJAR 最終QA記録
+# Project JARJAR QA記録
 
-**状態: balance revision 14ソース検証済み・人間QA未実施・正式候補未固定**
+コードから分からない人間の確認結果と、実施した検証の証拠を記録する。
+実装仕様や変更履歴はここへ複製しない。別のEXE/PCKや候補HEADの結果は転記しない。
 
-この文書は候補固定前の自動調整記録、対象identityに対する自動検証結果、および人間が実機で確認した事実を記録する。
-過去のrevision、別のEXE/PCK、別の候補HEADの結果は転記しない。`ManualQa`の終了コード0だけでは合格にしない。
-ユーザーが最終調整完了を明示するまで正式candidateを固定せず、対象identityも記入しない。
-revision 13以前のsource gate、回帰、QA、build identity、playtest記録は履歴専用であり、revision 14候補の証拠として無効である。
+## 人間の確認記録
+
+- 毎tick被弾、押し分け、壁際、高速群れ通過の体感確認: 未実施
+- 最終調整完了のユーザー明示: なし
+- Manual QA: 未実施
+
+体感確認で未達の場合は測定結果を報告し、承認済みの速度、威力、倍率、スポーン、受入閾値を自動調整しない。
+最終調整完了の明示後に `AGENTS.md` の検証手順を実施する。
+`ManualQa` の終了コード0はセッション終了だけを表し、人間が記録する合格判定を代替しない。
 
 ## 対象identity
+
+手動QA合格後、`Verify` が表示した次の3値を `artifacts/playtest/target.txt` へ手入力する。
+3値のいずれかが変わった場合は、別の対象としてQAを実施し、playtestデータを流用しない。
 
 - candidate_head:
 - exe_sha256:
 - pck_sha256:
-- balance_revision: `14`
 - 実施日:
-- 判定: 未実施
-
-4値のいずれかが変わったら、この記録を無効として新しい対象で全項目を再実施する。
-
-## revision 14ソース検証
-
-2026-09-04にGodot 4.7.2-stableで全敵攻撃の毎tickダメージを検証した。出現完了した行動可能な全敵との接触候補と、
-同tickに衝突した全敵弾を集約し、既存倍率適用後の最大威力1件だけを毎combat tick適用する。同値は
-source/entity/pool/generation順で安定決定し、不採用またはレベルアップ復帰保護中に衝突した敵弾もすべて消費する。
-通常被弾後の30 tick保護は廃止し、接触中は固定60Hzで毎tick再被弾する。HPは0で下限固定し、離脱中は停止、再接触時は即時再開する。
-
-レベルアップ画面から直接戦闘へ戻る場合だけ、次の45 combat tickを保護し、46 tick目から被弾可能とする。
-宝箱単独、レベルアップ後に宝箱で終わる列、列の中間、手動ポーズ復帰には保護を付けない。実ダメージtickごとに
-`player_hit`を発行し、音・振動の実出力は既存の最大8回/秒の受付上限を維持する。点滅や新しいHUD HIT表示は追加しない。
-
-通常追尾敵、エリート、ボスの合成半径停止、プレイヤーの4.05m/s移動と必要最小限の押し分け、完全同位置と壁際の処理、
-高速群れの通過・隊列・敵押し出し・総走行距離・575 tick退出はrevision 13から維持する。
-通常被弾用フィールドを完全削除し、残る45 tick保護のデータ・状態・APIはレベルアップ専用名へ変更した。
-カタログはrevision 14、接触威力、半径を固定検証する。生HP、接触威力、速度、倍率、スポーン、確率、進化時刻、受入閾値は変更していない。
-
-- 全GDScript回帰: PASS（141/141）
-- 全リソース事前ロード: PASS（172件）
-- GDScript guard: PASS（103ファイル）
-- 変更GDScript check-only: PASS（14/14）
-- 差分整合性検査: PASS
-- revision 14正式12run source gate: **未実施**
-- 自動難易度評価: 未実施
-
-既存回帰でSTOP、同tick撃破敵との相打ち、ボス勝利優先、決定的replayも再確認した。
-この状態は正式candidateの固定や人間の体感確認を代替しない。数値調整、正式12run source gate、性能試験、Release export、
-Verify、ManualQa、人間playtestは実行していない。revision 13の全回帰138/138と専用検証8/8は履歴扱いであり、revision 14へ流用しない。
-
-## revision 12ソース検証（履歴）
-
-2026-09-04にGodot 4.7.2-stableで、revision 12速度値、60 tick移動距離、全方向・斜め入力、
-revision 11との相対速度比、高速群れ2.59m/s・575 tick退出・速度由来押し出し上限・STOP停止を検証した。
-基本武器8種のLv1接触前撃破fixtureも8/8でPASSし、各構成が600 tick以内に通常Swarmerを武器撃破、
-撃破前の幾何学的接触0、プレイヤーダメージ0となった。
-
-- 全GDScript回帰: PASS（130/130）
-- GDScript guard: PASS（102ファイル）
-- 変更GDScript check-only: PASS（12/12）
-- 差分整合性検査: PASS
-- revision 12正式12run source gate: 未実施
-- 自動難易度評価: 未実施
-
-この結果はrevision 12の履歴であり、被弾挙動を変更したrevision 14候補には流用しない。revision 12では
-正式12run source gate、性能試験、Release export、Verify、ManualQa、人間playtestを実行していない。
-
-## revision 11 source gate（履歴）
-
-2026-09-03にseed `17`、`29`、`43`、`61`を`cautious`、`normal`、`evolution`の各方針で実行する
-正式12run source gateを一度だけ実施し、`passed=false`となった。停止条件に従い、同じ作業内で速度や他balance値を
-再調整せず、source gateも再実行していない。
-
-- 2:00以前の死亡: 0/12
-- 最終ボス到達: 12/12（必要9〜11/12、不合格）
-- 最終ボス撃破: 5/12（必要5〜8/12）
-- 3:00までの初回進化: 0/12
-- normal方針の5:00までの初回進化: 2/4
-- normal方針の7:00までの初回進化: 3/4（必要4/4、不合格）
-- normal方針の初回進化時刻平均: 343.75秒（現行source gateの範囲315〜345秒）
-- ボス戦中央値: 71.95秒、60秒以内のエリート撃破率: 0.75
-- wave pair 2–3 / 4–5 / 6–7 / 8–9: すべて不合格。`pressure / kill gain / XP gain`は順に
-  `0.291 / 0.027 / 0.027`、`0.267 / 0.002 / -0.074`、`0.321 / 0.383 / 0.430`、`0.270 / 0.033 / 0.027`
-- pool overflow / orphan、必須metric欠落、画面外weapon hit / kill、envelope超過: すべて0run
-- audio admitted / suppressed: 58,885 / 181,677
-
-実測は`artifacts/balance/revision-11/formal/`に保存した。source gateが不合格だったためrevision 11の正式candidate identityは固定せず、
-性能試験、Release検証、ManualQa、人間playtestへ進まなかった。この結果はrevision 14へ流用しない。
-
-## revision 5自動調整済みsource gate（履歴・revision 14へ流用禁止）
-
-seed `17`、`29`、`43`、`61`を`cautious`、`normal`、`evolution`の各方針で実行する専用12run source gateがPASSした。
-実測は次のとおりである。
-
-- 2:00以前の死亡: 0/12
-- 最終ボス到達: 11/12
-- 最終ボス撃破: 6/12
-- 3:00までの初回進化: 0/12
-- normal方針の5:00までの初回進化: 2/4
-- normal方針の7:00までの初回進化: 4/4
-- normal方針の初回進化時刻平均: 321.641667秒
-- 画面外weapon hit / kill: 0 / 0（該当runはいずれも0/12）
-- 最大hit中心距離: 9.623473167m
-- 最大kill中心距離: 9.570774078m
-- 最大effect外縁距離: 8.996990412m
-- VFX admitted / suppressed / important drop: 90,151 / 0 / 0
-- audio admitted / suppressed: 53,321 / 181,691
-- pool overflow: 0run、orphan: 0run
-- 必須metric取得: 12/12
-
-自動調整の最終値は`xp_yield_percent=90`、通常敵damage scale `0.55`、bossのHP `0.5625`、
-damage `0.57`、action rate `1.0`である。segment値は次のとおりである。
-
-| segment | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
-|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| target_active | 16 | 24 | 36 | 52 | 72 | 96 | 120 | 144 | 168 | 192 |
-| hp_multiplier | 0.15 | 0.17 | 0.20 | 0.24 | 0.30 | 0.45 | 0.65 | 0.90 | 1.25 | 1.75 |
-| damage_multiplier | 0.18 | 0.20 | 0.22 | 0.25 | 0.29 | 0.36 | 0.45 | 0.56 | 0.72 | 0.95 |
-
-実測CSVとsummaryは`artifacts/balance/revision-5/`に保存している。このPASSはrevision 5の自動調整完了記録であり、
-空欄のrevision 14正式candidate identityに対する性能試験、Release検証、ManualQa、
-人間playtestの完了を意味しない。
-上記の調整値、segment、候補抽選、進化条件、出現・攻撃・10:00遷移のいずれかを変更した場合、このsource gate結果を無効として
-専用12runを全件再実行する。
+- 人間の判定: 未実施
 
 ## 自動検証記録
 
-- 全GDScript回帰: PASS（2026-09-04、revision 14実装後141/141）
-- 全リソース事前ロード: PASS（172件）
-- GDScript guard: PASS（103ファイル）
-- 変更GDScript check-only: PASS（14/14）
-- revision 14毎tickダメージ専用テスト: PASS（10/10）
-- 全8基本武器Lv1接触前撃破fixture: PASS（8/8、接触0、被ダメージ0）
-- revision 14専用12run source gate: 未実施
-- revision 13ソース検証: 履歴上PASS（138/138、revision 14へ流用禁止）
-- revision 12ソース検証: 履歴上PASS（130/130、revision 14へ流用禁止）
-- revision 11専用12run source gate: 履歴上FAIL（12/12完走、正式実行は1回のみ、revision 14へ流用禁止）
-- revision 10以前のsource gate: 履歴専用、revision 14へ流用禁止
-- Full HD性能試験（`--performance=full_hd_500_2000`）: 未実施
-- pool overflow / orphan: revision 14では未評価、正式候補の性能試験は未実施
-- Release export: 未実施
-- Verify（pack audit、Release smoke、引数拒否、build鮮度、identity）: 未実施
-- ManualQa: 未実施
-- 人間playtest: 未実施
+- ソース検証（2026-09-05、Godot 4.7.2-stable）: 全回帰147/147 PASS、全リソース170件の事前ロードPASS
+- GDScript guard: 102ファイルPASS、変更GDScript check-only: 20/20 PASS
+- PowerShell構文・差分整合性検査: PASS（Release buildでの実行は未実施）
+- 専用12run source gate・自動難易度評価: 未実施
+- Full HD性能試験・Release export・Verify: 未実施
+
+専用12runの出力先は `artifacts/balance/formal/`、追加のwide実行は `artifacts/balance/wide/`。
+これらは実行時のソースに対する測定であり、ゲーム内容を変更した場合は過去の結果を受入証拠に使わない。
+数値調整は人間テストへ渡す直前の一度に限り、未達でも反復調整せず結果を報告する。
 
 ## 人間による確認
 

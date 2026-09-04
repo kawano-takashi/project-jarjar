@@ -39,7 +39,7 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 		"equal_damage_candidate_ties_use_stable_source_entity_pool_order":
 			_test_stable_tie_break(assertions)
 		_:
-			assertions.expect_true(false, "registered revision fourteen contact-damage test")
+			assertions.expect_true(false, "registered contact-damage test")
 
 
 func _test_contact_catalog_contract(assertions: Variant) -> void:
@@ -54,8 +54,8 @@ func _test_contact_catalog_contract(assertions: Variant) -> void:
 		property_names.has(&"contact_interval_ticks"),
 		"enemy definitions no longer expose a per-enemy contact cadence",
 	)
-	assertions.expect_float(0.38, definition.body_radius, "revision fourteen locks pursuer radius")
-	assertions.expect_float(8.0, definition.contact_damage, "revision fourteen locks pursuer contact damage")
+	assertions.expect_float(0.38, definition.body_radius, "locks pursuer radius")
+	assertions.expect_float(8.0, definition.contact_damage, "locks pursuer contact damage")
 	var canonical: SurvivalContentManifest = catalog.manifest()
 	var manifest_property_names: Array[StringName] = []
 	for property: Dictionary in canonical.get_property_list():
@@ -514,7 +514,7 @@ func _spawn_hostile_projectile(
 ) -> ProjectileState:
 	return simulation.projectile_pool.acquire(
 		ProjectileState.FACTION_ENEMY,
-		&"revision14_damage_probe",
+		&"player_damage_probe",
 		-1,
 		simulation.player_position,
 		Vector2.ZERO,
@@ -579,6 +579,6 @@ func _catalog(assertions: Variant) -> DefinitionCatalog:
 	var catalog := DefinitionCatalog.new()
 	assertions.expect_true(
 		catalog.load_and_validate(),
-		"revision fourteen contact content validates: %s" % catalog.error_text,
+		"contact content validates: %s" % catalog.error_text,
 	)
 	return catalog if catalog.is_valid else null

@@ -1,26 +1,22 @@
 # Project JARJAR 人間プレイテスト手順
 
-**状態: 使用禁止（balance revision 14は人間の体感確認待ち・正式候補未固定）**
-
-現在フェーズは `docs/project-status.md` を正とする。正式プレイテスト対象はまだ固定していないため、
-現時点では候補者を採用せず、資格確認も結果収集も行わない。
+人間の確認結果は [QA記録](final-qa.md) を参照する。下記の正式対象固定条件を満たすまで、
+候補者の採用、資格確認、結果収集、集計を行わない。
 
 ## 正式対象の固定条件
 
 ユーザーが最終調整完了を明示するまで、正式性能試験、Release export、Verify、ManualQa、人間playtestを実施しない。
 完了明示後に全検証とRelease exportを再実施し、`docs/final-qa.md`へ人間によるManual QAのPASSを記録した後、
-`artifacts/playtest/target.txt`へ次の4行を手動で記録する。
+`artifacts/playtest/target.txt`へ次の3行を手動で記録する。
 
 ```text
 candidate_head=<40hex>
 exe_sha256=<64hex>
 pck_sha256=<64hex>
-balance_revision=14
 ```
 
-`docs/project-status.md`が「正式playtest対象固定済み」へ更新され、同じ4値が一致するまで下記手順を開始しない。
-EXE/PCK、balance revision、候補HEADのいずれかが変わった場合、以前の対象やデータを流用しない。
-revision 13以前のsource gate、回帰、QA、build identity、playtest記録は履歴専用であり、revision 14候補の証拠として無効である。
+`docs/final-qa.md`の人間QAが合格で、QA記録・target・現在のbuildの3値が一致するまで下記手順を開始しない。
+EXE/PCK、候補HEADのいずれかが変わった場合、以前の対象やデータを流用しない。
 
 ## 専用12run調整ゲート
 
@@ -39,47 +35,11 @@ revision 13以前のsource gate、回帰、QA、build identity、playtest記録�
 - wave pair 2–3、4–5、6–7、8–9の各組でpressure reductionが0.25〜0.35、kill gainが0.15〜0.30、
   XP gainとkill gainの差が0.05以下。
 
-revision 14の正式12run source gateは未実施であり、自動難易度は未評価である。毎tickダメージのソース検証、全回帰、
-全8基本武器の接触前撃破fixtureはPASSしているが、正式candidate固定や人間playtest開始の根拠にはしない。
-
-revision 11 source gateは2026-09-03に一度だけ実施し、12/12完走したが`passed=false`となった。
-2:00以前死亡0/12、ボス到達12/12（必要9〜11）、撃破5/12、3:00まで進化0/12、normal方針は
-5:00まで2/4・7:00まで3/4（必要4/4）・初回進化平均343.75秒である。ボス戦中央値71.95秒、
-60秒以内のエリート撃破率0.75、pool overflow / orphan、必須metric欠落、画面外weapon hit / kill、envelope超過はすべて0runだった。
-wave pair 2–3、4–5、6–7、8–9はすべて不合格である。実測は`artifacts/balance/revision-11/formal/`に保存した。
-同じ作業内で速度や他balance値を再調整せず、source gateも再実行していない。このためrevision 11の正式対象は固定しなかった。
-
-追尾核を逐次連射・発射後直進へ変更し、通常敵と50体群れの生成枠をプレイヤー追従化したrevision 10に加え、
-revision 11でプレイヤーと通常敵の移動速度を10%下げ、高速群れを2.59m/sへ変更し、revision 12で通常移動速度だけを
-さらに10%下げた。revision 13では数値を維持したまま継続接触とソフト接触を導入した。revision 14では通常被弾後の保護を廃止し、
-接触と敵弾を毎tickの最大威力1件に統合し、45 tick保護をレベルアップから直接復帰した場合だけに限定した。
-下記の旧結果は履歴としてのみ保持し、revision 14の正式対象固定には使わない。
-
-revision 5 source gateはseed `17`、`29`、`43`、`61`を`cautious`、`normal`、`evolution`の各方針で実行する
-12runでPASSした。実測は2:00以前死亡0/12、最終ボス到達11/12、撃破6/12、3:00まで進化0/12、
-normal方針は5:00まで2/4・7:00まで4/4・初回進化平均321.641667秒である。
-
-画面外weapon hit / killは0 / 0（該当runはいずれも0/12）、最大hit中心距離は9.623473167m、
-最大kill中心距離は9.570774078m、最大effect外縁距離は8.996990412mである。
-VFX admitted / suppressed / important dropは90,151 / 0 / 0、audio admitted / suppressedは53,321 / 181,691、
-pool overflowは0run、orphanは0run、必須metric取得は12/12である。
-実測CSVとsummaryは`artifacts/balance/revision-5/`に保存している。
-同じrevision 5作業ツリーで全GDScript回帰112/112もPASSしたが、revision 14の証拠としては無効である。
-
-この自動調整の最終値は`xp_yield_percent=90`、通常敵damage scale `0.55`、bossのHP `0.5625`、
-damage `0.57`、action rate `1.0`である。segment値は次のとおりである。
-
-| segment | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
-|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| target_active | 16 | 24 | 36 | 52 | 72 | 96 | 120 | 144 | 168 | 192 |
-| hp_multiplier | 0.15 | 0.17 | 0.20 | 0.24 | 0.30 | 0.45 | 0.65 | 0.90 | 1.25 | 1.75 |
-| damage_multiplier | 0.18 | 0.20 | 0.22 | 0.25 | 0.29 | 0.36 | 0.45 | 0.56 | 0.72 | 0.95 |
-
-この12runは調整用の自動ゲートであり、下記の初見tester、人間の回答、人間playtestの計測値として数えない。
-上記のXP、通常敵damage、segment、boss、候補抽選、進化条件、出現・攻撃・10:00遷移のいずれかを変更した場合、
-このsource gate結果を無効として全12runを再実行する。
-ユーザーが最終調整完了を明示するまで正式candidateは固定せず、Full HD性能試験、Release export、Verify、ManualQa、
-人間playtestは未実施のままとする。
+この12runは人間テストへ渡す直前の一度の調整で実施する。実行結果は `docs/final-qa.md` に記録し、
+未達の場合も反復調整せず、測定結果を報告して次の判断を待つ。
+出力先は `artifacts/balance/formal/`。同じ出力先には次回実行の結果が上書きされる。
+ゲーム内容を変更した場合、過去の測定結果を受入証拠に使わない。
+自動runは初見tester、人間の回答、人間playtestの計測値として数えない。
 
 ## 初見資格
 
@@ -88,12 +48,12 @@ damage `0.57`、action rate `1.0`である。segment値は次のとおりであ�
 1. 「Project JARJARの過去または現行buildを、一度もプレイしたことがありませんか。」
 2. 「Project JARJARのゲームプレイを、対面・配信・録画のいずれでも一度も見たことがありませんか。」
 
-両方に「はい」と回答し、過去のどの`balance_revision`の受入データにも参加していない人だけを採用する。
+両方に「はい」と回答し、過去の受入テストにも参加していない人だけを採用する。
 このQAの実機操作者はtesterへ数えない。氏名、メールアドレス、端末識別子などの個人情報は記録しない。
 
-| balance_revision | 全testerの初見資格確認済み | 確認日 (YYYY-MM-DD) |
-|---:|---|---|
-| 14 | 未確認 |  |
+| 全testerの初見資格確認済み | 確認日 (YYYY-MM-DD) |
+|---|---|
+| 未確認 |  |
 
 実際に全員の条件を確認するまでは、上表を`yes`へ変更しない。
 
@@ -185,4 +145,4 @@ run 3の回答後はTITLEへ戻り、ゲーム内の「終了」で閉じる。
 `正式プレイテスト集計を再開 H`
 
 `H`は`artifacts/playtest/target.txt`へ記録した40文字候補HEADへ置換する。再開時に現在HEAD、target記録、
-EXE/PCK SHA-256、balance revision、初見資格`yes`、全CSV制約を再検証する。不一致が1件でもあれば集計しない。
+EXE/PCK SHA-256、初見資格`yes`、全CSV制約を再検証する。不一致が1件でもあれば集計しない。

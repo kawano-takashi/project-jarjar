@@ -4,7 +4,6 @@ extends SceneTree
 const BotScript = preload("res://tests/balance/difficulty_calibration_bot.gd")
 const AcceptanceScript = preload("res://tests/balance/difficulty_acceptance.gd")
 
-const BALANCE_REVISION: int = 14
 const FORMAL_RUN_SEEDS: Array[int] = [17, 29, 43, 61]
 const WIDE_RUN_SEEDS: Array[int] = [7, 13, 31, 47, 73, 101, 137, 179]
 const POLICIES: Array[int] = [0, 1, 2]
@@ -21,13 +20,12 @@ const CHECKPOINT_TICKS: Array[int] = [
 const MAX_COMBAT_TICK: int = 54_000
 const MAX_MODAL_CHAIN: int = 128
 const RUNNER_TIMEOUT_MS: int = 1_200_000
-const OUTPUT_ROOT: String = "res://artifacts/balance/revision-14"
+const OUTPUT_ROOT: String = "res://artifacts/balance"
 const RUNS_FILENAME: String = "difficulty-runs.csv"
 const CHECKPOINTS_FILENAME: String = "difficulty-checkpoints.csv"
 const SEGMENTS_FILENAME: String = "difficulty-segments.csv"
 const SUMMARY_FILENAME: String = "difficulty-summary.txt"
 const RUN_COLUMNS: Array[String] = [
-	"balance_revision",
 	"policy",
 	"seed",
 	"outcome",
@@ -149,7 +147,6 @@ const VISIBLE_METRIC_KEYS: Array[String] = [
 	"audio_suppressed",
 ]
 const CHECKPOINT_COLUMNS: Array[String] = [
-	"balance_revision",
 	"policy",
 	"seed",
 	"checkpoint_tick",
@@ -172,7 +169,6 @@ const CHECKPOINT_COLUMNS: Array[String] = [
 	"boss_max_hp",
 ]
 const SEGMENT_COLUMNS: Array[String] = [
-	"balance_revision",
 	"policy",
 	"seed",
 	"segment_index",
@@ -279,9 +275,6 @@ func _load_catalog() -> Dictionary:
 	var catalog := DefinitionCatalog.new()
 	if not catalog.load_and_validate():
 		return {"valid": false, "reason": "definition_catalog_invalid"}
-	var balance: BalanceManifest = catalog.balance_manifest()
-	if balance == null or balance.balance_revision != BALANCE_REVISION:
-		return {"valid": false, "reason": "balance_revision_mismatch"}
 	if catalog.manifest().starter_weapon_id != &"homing_core":
 		return {"valid": false, "reason": "starter_weapon_must_be_homing_core"}
 	return {"valid": true, "reason": "", "catalog": catalog}
@@ -439,7 +432,6 @@ func _run_row(
 			}
 	var row: Dictionary = {
 		"infrastructure_error": "",
-		"balance_revision": BALANCE_REVISION,
 		"policy": BotScript.policy_name_for(policy_value),
 		"seed": run_seed,
 		"outcome": outcome,
@@ -523,7 +515,6 @@ func _append_segment_rows(run_row: Dictionary, segment_rows: Array[Dictionary]) 
 	for segment_index: int in range(RunState.ENEMY_SEGMENT_COUNT):
 		var sample_count: int = samples[segment_index]
 		segment_rows.append({
-			"balance_revision": BALANCE_REVISION,
 			"policy": run_row["policy"],
 			"seed": run_row["seed"],
 			"segment_index": segment_index,
@@ -548,7 +539,6 @@ func _checkpoint_row(
 ) -> Dictionary:
 	var state: RunState = simulation.state
 	return {
-		"balance_revision": BALANCE_REVISION,
 		"policy": BotScript.policy_name_for(policy_value),
 		"seed": run_seed,
 		"checkpoint_tick": checkpoint_tick,
@@ -747,7 +737,6 @@ func _write_summary(
 ) -> String:
 	var reasons: PackedStringArray = acceptance.get("reasons", PackedStringArray())
 	var lines: PackedStringArray = PackedStringArray([
-		"balance_revision=%d" % BALANCE_REVISION,
 		"gate=%s" % ("wide" if _wide_mode else "formal"),
 		"run_count=%d" % int(acceptance.get("run_count", 0)),
 		"early_deaths=%d" % int(acceptance.get("early_deaths", 0)),

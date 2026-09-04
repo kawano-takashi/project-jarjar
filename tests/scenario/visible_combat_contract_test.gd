@@ -47,7 +47,7 @@ func test_names() -> PackedStringArray:
 		"boss_volley_event_preserves_latched_phase_spokes",
 		"shooter_type_chases_for_contact_without_normal_projectiles",
 		"combat_envelope_enforces_8_9_10_meter_gates",
-		"visible_combat_metrics_has_required_revision5_schema",
+		"visible_combat_metrics_has_required_schema",
 		"presentation_event_admission_is_bounded_and_priority_aware",
 		"vfx_admission_reserves_important_capacity_and_hard_caps",
 		"audio_admission_metrics_cover_combat_stop_and_modal_cues",
@@ -68,7 +68,7 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 			_test_shooter_contact_contract(assertions)
 		"combat_envelope_enforces_8_9_10_meter_gates":
 			_test_combat_envelope_gates(assertions)
-		"visible_combat_metrics_has_required_revision5_schema":
+		"visible_combat_metrics_has_required_schema":
 			_test_visible_metric_schema(assertions)
 		"presentation_event_admission_is_bounded_and_priority_aware":
 			_test_presentation_event_admission(assertions)
@@ -77,7 +77,7 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 		"audio_admission_metrics_cover_combat_stop_and_modal_cues":
 			_test_audio_admission_metrics(assertions)
 		_:
-			assertions.expect_true(false, "registered Revision 5 combat contract test")
+			assertions.expect_true(false, "registered combat contract test")
 
 
 func _test_boss_transition_absorption(assertions: Variant) -> void:
@@ -380,7 +380,7 @@ func _test_shooter_contact_contract(assertions: Variant) -> void:
 	)
 	assertions.expect_true(
 		simulation.catalog.segment(3).weight_for(GameTypes.EnemyType.SHOOTER) > 0.0,
-		"SHOOTER remains in the revision twelve wave table from segment four onward",
+		"SHOOTER remains in the wave table from segment four onward",
 	)
 	assertions.expect_true(
 		shooter_definition.contact_damage > 0.0,
@@ -561,7 +561,7 @@ func _test_visible_metric_schema(assertions: Variant) -> void:
 		return
 	simulation.state.normal_far_despawn_count = 3
 	var metrics: Dictionary = simulation.visible_combat_metrics()
-	assertions.expect_equal(REQUIRED_VISIBLE_METRIC_KEYS.size(), metrics.size(), "Revision 5 metrics expose every required visibility and VFX value")
+	assertions.expect_equal(REQUIRED_VISIBLE_METRIC_KEYS.size(), metrics.size(), "metrics expose every required visibility and VFX value")
 	for key: String in REQUIRED_VISIBLE_METRIC_KEYS:
 		assertions.expect_true(metrics.has(key), "visible combat metrics include %s" % key)
 	assertions.expect_equal(3, metrics["normal_far_despawns"], "normal far despawns propagate to visible metrics")
@@ -835,7 +835,7 @@ func _damage_record(
 			simulation.state,
 			&"weapon_hit",
 			-1,
-			&"revision5_envelope_probe",
+			&"combat_envelope_probe",
 			damage,
 		),
 		"effect_outer_distance": effect_outer_distance,
@@ -891,7 +891,7 @@ func _arena_object_digest(arena: ArenaObjectSystem) -> Array:
 
 func _simulation(assertions: Variant, run_seed: int) -> CombatSimulation:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "Revision 5 combat content validates")
+	assertions.expect_true(catalog.load_and_validate(), "combat content validates")
 	if not catalog.is_valid:
 		return null
 	var state: RunState = RunStateFactory.create(run_seed, catalog)

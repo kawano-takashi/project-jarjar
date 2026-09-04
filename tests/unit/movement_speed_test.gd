@@ -18,14 +18,14 @@ const ENEMY_IDS: Array[StringName] = [
 	&"elite",
 	&"boss",
 ]
-const REVISION_ELEVEN_SPEEDS: Array[float] = [
-	4.5,
-	2.16,
-	5.76,
-	2.7,
-	1.215,
-	1.8,
-	1.44,
+const EXPECTED_SPEEDS: Array[float] = [
+	4.05,
+	1.944,
+	5.184,
+	2.43,
+	1.0935,
+	1.62,
+	1.296,
 ]
 const CONTACT_FIXTURE_MAX_TICKS: int = 600
 const CONTACT_FIXTURE_SEED: int = 12_120
@@ -35,49 +35,40 @@ const ESCAPE_DIRECTION_COUNT: int = 32
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"revision_twelve_speeds_are_ten_percent_lower_with_ratios_preserved",
+		"movement_speeds_match_approved_values",
 		"player_and_regular_enemies_travel_their_configured_sixty_tick_distance",
 		"player_and_enemy_world_directions_keep_equal_speed",
-		"all_level_one_weapons_kill_a_revision_twelve_swarmer_before_contact",
+		"all_level_one_weapons_kill_a_swarmer_before_contact",
 	])
 
 
 func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
 	match test_name:
-		"revision_twelve_speeds_are_ten_percent_lower_with_ratios_preserved":
-			_test_speed_values_and_ratios(assertions)
+		"movement_speeds_match_approved_values":
+			_test_speed_values(assertions)
 		"player_and_regular_enemies_travel_their_configured_sixty_tick_distance":
 			_test_sixty_tick_distances(assertions)
 		"player_and_enemy_world_directions_keep_equal_speed":
 			_test_world_direction_speed(assertions)
-		"all_level_one_weapons_kill_a_revision_twelve_swarmer_before_contact":
+		"all_level_one_weapons_kill_a_swarmer_before_contact":
 			_test_level_one_weapon_contact_fixture(assertions)
 		_:
-			assertions.expect_true(false, "registered revision twelve movement-speed test")
+			assertions.expect_true(false, "registered movement-speed test")
 
 
-func _test_speed_values_and_ratios(assertions: Variant) -> void:
+func _test_speed_values(assertions: Variant) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
-	assertions.expect_equal(14, catalog.balance_manifest().balance_revision, "revision fourteen preserves the revision twelve movement tuning")
 	var current_speeds: Array[float] = [CombatSimulation.PLAYER_SPEED]
 	for enemy_id: StringName in ENEMY_IDS:
 		current_speeds.append(catalog.enemy(enemy_id).move_speed)
 	for index: int in range(current_speeds.size()):
 		assertions.expect_float(
-			REVISION_ELEVEN_SPEEDS[index] * 0.9,
+			EXPECTED_SPEEDS[index],
 			current_speeds[index],
-			"%s speed is exactly ten percent below revision eleven" % UNIT_LABELS[index],
+			"%s speed matches its approved definition" % UNIT_LABELS[index],
 		)
-	for first_index: int in range(current_speeds.size()):
-		for second_index: int in range(first_index + 1, current_speeds.size()):
-			assertions.expect_float(
-				REVISION_ELEVEN_SPEEDS[first_index] / REVISION_ELEVEN_SPEEDS[second_index],
-				current_speeds[first_index] / current_speeds[second_index],
-				"%s/%s relative speed is unchanged"
-				% [UNIT_LABELS[first_index], UNIT_LABELS[second_index]],
-			)
 
 
 func _test_sixty_tick_distances(assertions: Variant) -> void:
@@ -195,7 +186,7 @@ func _test_level_one_weapon_contact_fixture(assertions: Variant) -> void:
 	var effective_hp: float = swarmer_definition.base_hp * segment.hp_multiplier
 	assertions.expect_float(0.215, segment.hp_multiplier, "fixture uses the actual 1:00-2:00 HP multiplier")
 	assertions.expect_float(1.935, effective_hp, "fixture swarmer has the actual 1:00-2:00 HP")
-	assertions.expect_float(5.184, swarmer_definition.move_speed, "fixture swarmer uses revision twelve speed")
+	assertions.expect_float(5.184, swarmer_definition.move_speed, "fixture swarmer uses speed")
 	assertions.expect_float(0.26, swarmer_definition.body_radius, "fixture preserves the normal swarmer body radius")
 	assertions.expect_float(4.0, swarmer_definition.contact_damage, "fixture preserves normal contact damage")
 	assertions.expect_float(10.0, CombatEnvelope.SPAWN_INNER_HALF_EXTENT, "fixture starts at the minimum spawn distance")
@@ -225,7 +216,7 @@ func _test_level_one_weapon_contact_fixture(assertions: Variant) -> void:
 		assertions.expect_equal(21, int(result["entry_ticks"]), "%s swarmer waits the standard twenty-one ticks" % label)
 		assertions.expect_float(10.0, float(result["spawn_distance"]), "%s swarmer starts ten metres away" % label)
 		assertions.expect_float(effective_hp, float(result["effective_hp"]), "%s swarmer uses effective HP 1.935" % label)
-		assertions.expect_float(5.184, float(result["move_speed"]), "%s swarmer keeps revision twelve speed" % label)
+		assertions.expect_float(5.184, float(result["move_speed"]), "%s swarmer keeps speed" % label)
 		assertions.expect_equal(1, int(result["peak_enemy_count"]), "%s fixture never introduces another enemy" % label)
 		assertions.expect_true(int(result["ticks_elapsed"]) <= CONTACT_FIXTURE_MAX_TICKS, "%s resolves within six hundred ticks" % label)
 		assertions.expect_equal(1, int(result["weapon_kills"]), "%s records a weapon kill" % label)
@@ -472,6 +463,6 @@ func _catalog(assertions: Variant) -> DefinitionCatalog:
 	var catalog := DefinitionCatalog.new()
 	assertions.expect_true(
 		catalog.load_and_validate(),
-		"revision twelve movement catalog validates: %s" % catalog.error_text,
+		"movement catalog validates: %s" % catalog.error_text,
 	)
 	return catalog if catalog.is_valid else null

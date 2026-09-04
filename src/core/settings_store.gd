@@ -5,7 +5,6 @@ const USER_SETTINGS_PATH := "user://settings.cfg"
 const SETTINGS_SECTION := "settings"
 const RUNNER_BOOTSTRAP_SUFFIX := "/runner/settings.cfg"
 const TEST_SETTINGS_ROOT := "res://artifacts/gdscript-tests/settings"
-const CURRENT_TUTORIAL_REVISION: int = 4
 
 const DEFAULT_SETTINGS: Dictionary = {
 	"master_volume": 1.0,
@@ -13,7 +12,7 @@ const DEFAULT_SETTINGS: Dictionary = {
 	"reduce_motion": false,
 	"reduce_flashes": false,
 	"controller_vibration": true,
-	"tutorial_revision": 0,
+	"tutorial_completed": false,
 }
 
 var initialized: bool = false
@@ -25,7 +24,7 @@ var sfx_volume: float = 0.9
 var reduce_motion: bool = false
 var reduce_flashes: bool = false
 var controller_vibration: bool = true
-var tutorial_revision: int = 0
+var tutorial_completed: bool = false
 
 var _runner_bootstrap_path: String = ""
 var _runner_test_user_root: String = ""
@@ -161,7 +160,7 @@ func get_settings() -> Dictionary:
 		"reduce_motion": reduce_motion,
 		"reduce_flashes": reduce_flashes,
 		"controller_vibration": controller_vibration,
-		"tutorial_revision": tutorial_revision,
+		"tutorial_completed": tutorial_completed,
 	}
 
 
@@ -222,7 +221,7 @@ func _read_values(config: ConfigFile) -> Dictionary:
 		"reduce_motion": _read_bool(config, "reduce_motion", false),
 		"reduce_flashes": _read_bool(config, "reduce_flashes", false),
 		"controller_vibration": _read_bool(config, "controller_vibration", true),
-		"tutorial_revision": _read_int(config, "tutorial_revision", 0),
+		"tutorial_completed": _read_bool(config, "tutorial_completed", false),
 	}
 
 
@@ -240,20 +239,13 @@ func _read_bool(config: ConfigFile, key: String, default_value: bool) -> bool:
 	return value
 
 
-func _read_int(config: ConfigFile, key: String, default_value: int) -> int:
-	var value: Variant = config.get_value(SETTINGS_SECTION, key, default_value)
-	if typeof(value) != TYPE_INT:
-		return default_value
-	return maxi(0, int(value))
-
-
 func _write_values(config: ConfigFile, values: Dictionary) -> void:
 	config.set_value(SETTINGS_SECTION, "master_volume", values["master_volume"])
 	config.set_value(SETTINGS_SECTION, "sfx_volume", values["sfx_volume"])
 	config.set_value(SETTINGS_SECTION, "reduce_motion", values["reduce_motion"])
 	config.set_value(SETTINGS_SECTION, "reduce_flashes", values["reduce_flashes"])
 	config.set_value(SETTINGS_SECTION, "controller_vibration", values["controller_vibration"])
-	config.set_value(SETTINGS_SECTION, "tutorial_revision", values["tutorial_revision"])
+	config.set_value(SETTINGS_SECTION, "tutorial_completed", values["tutorial_completed"])
 
 
 func _apply_values(values: Dictionary) -> void:
@@ -262,7 +254,7 @@ func _apply_values(values: Dictionary) -> void:
 	reduce_motion = values["reduce_motion"]
 	reduce_flashes = values["reduce_flashes"]
 	controller_vibration = values["controller_vibration"]
-	tutorial_revision = values["tutorial_revision"]
+	tutorial_completed = values["tutorial_completed"]
 
 
 func _resolve_game_settings_path(settings_path: String) -> String:

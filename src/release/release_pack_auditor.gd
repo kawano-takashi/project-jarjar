@@ -4,7 +4,6 @@ extends RefCounted
 
 const MANIFEST_RELATIVE_PATH: String = "artifacts/release-tests/pack-manifest.txt"
 const REQUIRED_MAIN_SCENE_PATH: String = "res://scenes/main.tscn"
-const REQUIRED_BALANCE_PATH: String = "res://data/balance/balance_manifest.tres"
 const REQUIRED_SURVIVAL_MANIFEST_PATH: String = "res://data/balance/survival_content_manifest.tres"
 const FORBIDDEN_PREFIXES: Array[String] = [
 	"res://tests/",
@@ -100,33 +99,18 @@ static func audit(manifest_path: String) -> Dictionary:
 		if ResourceLoader.exists(REQUIRED_MAIN_SCENE_PATH)
 		else null
 	)
-	var balance_resource: Resource = (
-		ResourceLoader.load(REQUIRED_BALANCE_PATH)
-		if ResourceLoader.exists(REQUIRED_BALANCE_PATH)
-		else null
-	)
 	var survival_resource: Resource = (
 		ResourceLoader.load(REQUIRED_SURVIVAL_MANIFEST_PATH)
 		if ResourceLoader.exists(REQUIRED_SURVIVAL_MANIFEST_PATH)
 		else null
 	)
 	var main_scene_valid: bool = main_resource is PackedScene
-	var balance_manifest_valid: bool = balance_resource is BalanceManifest
 	var survival_manifest_valid: bool = survival_resource is SurvivalContentManifest
-	var balance_revision: int = (
-		(balance_resource as BalanceManifest).balance_revision
-		if balance_manifest_valid
-		else -1
-	)
 	if survival_manifest_valid:
-		var survival_manifest := survival_resource as SurvivalContentManifest
-		survival_manifest_valid = (
-			survival_manifest.balance != null
-			and survival_manifest.balance.balance_revision == balance_revision
-		)
+		var catalog := DefinitionCatalog.new()
+		survival_manifest_valid = catalog.validate_manifest(survival_resource as SurvivalContentManifest)
 	var required_count: int = (
 		int(main_scene_valid)
-		+ int(balance_manifest_valid)
 		+ int(survival_manifest_valid)
 	)
 
@@ -137,9 +121,7 @@ static func audit(manifest_path: String) -> Dictionary:
 		"forbidden_paths": forbidden_paths,
 		"required_count": required_count,
 		"main_scene_valid": main_scene_valid,
-		"balance_manifest_valid": balance_manifest_valid,
 		"survival_manifest_valid": survival_manifest_valid,
-		"balance_revision": balance_revision,
 	}
 	if resource_paths.is_empty():
 		return _failure(3, &"empty_manifest", details)
@@ -147,8 +129,6 @@ static func audit(manifest_path: String) -> Dictionary:
 		return _failure(3, &"forbidden_prefix", details)
 	if not main_scene_valid:
 		return _failure(3, &"main_scene_invalid", details)
-	if not balance_manifest_valid:
-		return _failure(3, &"balance_manifest_invalid", details)
 	if not survival_manifest_valid:
 		return _failure(3, &"survival_manifest_invalid", details)
 
@@ -156,8 +136,8 @@ static func audit(manifest_path: String) -> Dictionary:
 	details["exit_code"] = 0
 	details["reason"] = &""
 	details["message"] = (
-		"PACK_AUDIT_OK paths=%d required=3 forbidden=0 balance_revision=%d"
-		% [resource_paths.size(), balance_revision]
+		"PACK_AUDIT_OK paths=%d required=2 forbidden=0"
+		% resource_paths.size()
 	)
 	return details
 

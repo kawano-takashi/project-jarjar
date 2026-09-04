@@ -2,9 +2,8 @@ class_name TutorialController
 extends RefCounted
 
 
-signal revision_completed(revision: int)
+signal completed()
 
-const REVISION: int = 4
 const MOVE_REQUIRED_SECONDS: float = 1.0
 const CONTEXT_MESSAGE_SECONDS: float = 4.5
 const MOVE_MESSAGE: String = "WASD / 矢印 / 左スティックで移動。攻撃は自動です"
@@ -22,18 +21,16 @@ var move_elapsed: float = 0.0
 var move_completed: bool = false
 var message_remaining: float = 0.0
 var active_message: String = ""
-var revision_marked: bool = false
 
 var _shown_contexts: Dictionary[StringName, bool] = {}
 
 
-func begin_run(stored_revision: int) -> void:
-	enabled = stored_revision < REVISION
+func begin_run(tutorial_completed: bool) -> void:
+	enabled = not tutorial_completed
 	move_elapsed = 0.0
 	move_completed = not enabled
 	message_remaining = 0.0
 	active_message = MOVE_MESSAGE if enabled else ""
-	revision_marked = not enabled
 	_shown_contexts.clear()
 
 
@@ -48,9 +45,7 @@ func advance_movement(actual_movement: Vector2, delta: float) -> bool:
 	move_completed = true
 	active_message = ""
 	message_remaining = 0.0
-	if not revision_marked:
-		revision_marked = true
-		revision_completed.emit(REVISION)
+	completed.emit()
 	return true
 
 
@@ -86,12 +81,10 @@ func debug_state() -> Dictionary:
 		shown.append(context_id)
 	shown.sort()
 	return {
-		"revision": REVISION,
 		"enabled": enabled,
 		"move_elapsed": move_elapsed,
 		"move_completed": move_completed,
 		"message": current_message(),
 		"message_remaining": message_remaining,
-		"revision_marked": revision_marked,
 		"shown_contexts": shown,
 	}

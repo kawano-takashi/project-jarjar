@@ -1,7 +1,6 @@
-[gd_resource type="Resource" script_class="SurvivalContentManifest" load_steps=57 format=3]
+[gd_resource type="Resource" script_class="SurvivalContentManifest" load_steps=56 format=3]
 
 [ext_resource type="Script" path="res://src/definitions/survival_content_manifest.gd" id="1_manifest"]
-[ext_resource type="Resource" path="res://data/balance/balance_manifest.tres" id="2_balance"]
 [ext_resource type="Resource" path="res://data/definitions/weapons/resonance_wave.tres" id="3_w01"]
 [ext_resource type="Resource" path="res://data/definitions/weapons/homing_core.tres" id="4_w02"]
 [ext_resource type="Resource" path="res://data/definitions/weapons/directional_needle.tres" id="5_w03"]
@@ -59,7 +58,6 @@
 
 [resource]
 script = ExtResource("1_manifest")
-balance = ExtResource("2_balance")
 arena_size = Vector2(30, 30)
 xp_early_max_level = 19
 xp_early_coefficient = 10

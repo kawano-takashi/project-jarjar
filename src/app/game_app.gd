@@ -99,7 +99,7 @@ func _initialize_settings_for_launch(settings_store: Variant) -> Error:
 		LaunchArgumentsScript.MODE_QA_SCENARIO,
 		LaunchArgumentsScript.MODE_PERFORMANCE,
 	]:
-		settings_store.tutorial_revision = TutorialController.REVISION
+		settings_store.tutorial_completed = true
 	return initialize_error
 
 
@@ -110,7 +110,7 @@ func _ready() -> void:
 		== LaunchArgumentsScript.MODE_RELEASE_PACK_AUDIT
 	):
 		return
-	_tutorial_controller.revision_completed.connect(_on_tutorial_revision_completed)
+	_tutorial_controller.completed.connect(_on_tutorial_completed)
 	_tutorial_overlay = TutorialOverlayScript.new()
 	add_child(_tutorial_overlay)
 	_audio_pool = AudioVoicePoolScript.new()
@@ -229,7 +229,7 @@ func start_new_run_with_seed(run_seed: int) -> bool:
 		return false
 	var settings_store: Variant = _settings_store()
 	_tutorial_controller.begin_run(
-		int(settings_store.tutorial_revision) if settings_store != null else 0
+		bool(settings_store.tutorial_completed) if settings_store != null else false
 	)
 	combat_simulation = CombatSimulation.new()
 	combat_simulation.initialize(run_state, _definition_catalog)
@@ -561,11 +561,11 @@ func _refresh_tutorial_overlay() -> void:
 		_tutorial_overlay.show_message(message)
 
 
-func _on_tutorial_revision_completed(revision: int) -> void:
+func _on_tutorial_completed() -> void:
 	var settings_store: Variant = _settings_store()
 	if settings_store == null:
 		return
-	settings_store.tutorial_revision = maxi(int(settings_store.tutorial_revision), revision)
+	settings_store.tutorial_completed = true
 	if str(settings_store.active_settings_path).is_empty():
 		return
 	var save_error: Error = settings_store.save_settings()
@@ -724,7 +724,7 @@ func _start_qa_mode(scenario_id: String) -> void:
 		print("QA_SCENARIO_FAILED reason=state")
 		get_tree().quit(1)
 		return
-	_tutorial_controller.begin_run(TutorialController.REVISION)
+	_tutorial_controller.begin_run(true)
 	match run_state.phase:
 		GameTypes.RunPhase.RESULT:
 			_show_result()

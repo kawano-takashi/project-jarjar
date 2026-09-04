@@ -15,7 +15,7 @@ func test_names() -> PackedStringArray:
 		"player_damage_has_no_post_hit_invulnerability",
 		"advance_tick_matches_step_gameplay_state",
 		"fixed_seed_replay_ignores_reduce_motion",
-		"focused_build_progression_matches_revision12_enemy_pacing",
+		"focused_build_progression_matches_enemy_pacing",
 	])
 
 
@@ -45,7 +45,7 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 			_test_advance_tick_equivalence(assertions)
 		"fixed_seed_replay_ignores_reduce_motion":
 			_test_deterministic_replay(assertions)
-		"focused_build_progression_matches_revision12_enemy_pacing":
+		"focused_build_progression_matches_enemy_pacing":
 			_test_focused_build_pacing(assertions)
 		_:
 			assertions.expect_true(false, "registered survival combat scenario test")
@@ -61,7 +61,7 @@ func _test_continuous_clock(assertions: Variant) -> void:
 	assertions.expect_equal(60, simulation.state.combat_tick, "one second advances exactly sixty combat ticks")
 	assertions.expect_float(1.0, simulation.state.elapsed_seconds(), "HUD clock derives from integer combat ticks")
 	var first_segment: EnemySegmentDefinition = simulation.catalog.segment_for_tick(simulation.state.combat_tick)
-	assertions.expect_equal(16, first_segment.target_active, "first minute uses the Revision 5 active-enemy target")
+	assertions.expect_equal(16, first_segment.target_active, "first minute uses the active-enemy target")
 	assertions.expect_true(simulation.enemy_system.enemy_store.active_count() <= 16, "spawn fill never overshoots the segment target")
 
 
@@ -177,7 +177,7 @@ func _test_boss_phases(assertions: Variant) -> void:
 	)
 	assertions.expect_equal(1, simulation.state.boss_enrage_stacks, "boss gains one pressure stack after thirty seconds")
 	simulation.state.boss_enrage_stacks = 2
-	assertions.expect_float(73.0, simulation.enemy_system._boss_action_interval(100, 1), "two enrage stacks and the revision twelve action rate produce a 73-tick interval")
+	assertions.expect_float(73.0, simulation.enemy_system._boss_action_interval(100, 1), "two enrage stacks and the action rate produce a 73-tick interval")
 
 
 func _test_scheduled_boss_multiplier_separation(assertions: Variant) -> void:
@@ -464,7 +464,7 @@ func _test_focused_build_pacing(assertions: Variant) -> void:
 			if check_index == 0:
 				assertions.expect_equal(0, simulation.state.evolution_count, "two-minute chest has no prior evolution")
 			elif check_index == 1:
-				assertions.expect_equal(8, homing.level, "focused homing reaches maximum by four minutes with Revision 5 XP tuning")
+				assertions.expect_equal(8, homing.level, "focused homing reaches maximum by four minutes with XP tuning")
 				assertions.expect_true(cycle_crystal != null, "focused build owns the paired passive by four minutes")
 			else:
 				assertions.expect_true(homing.evolved, "focused lineage remains evolved at six minutes")
@@ -491,7 +491,7 @@ func _test_focused_build_pacing(assertions: Variant) -> void:
 			check_index += 1
 	var evolved: RunWeapon = simulation.state.weapon_for_lineage(&"homing_core")
 	assertions.expect_equal(3, simulation.state.opened_chests, "all three scheduled chest outcomes are consumed")
-	assertions.expect_equal(1, simulation.state.evolution_count, "revision twelve fixture retains its first focused evolution through six minutes")
+	assertions.expect_equal(1, simulation.state.evolution_count, "fixture retains its first focused evolution through six minutes")
 	assertions.expect_true(evolved.evolved and evolved.weapon_id == &"infinite_homing", "focused lineage remains evolved after six minutes")
 func _prepare_replay(simulation: CombatSimulation, reduce_motion: bool) -> Dictionary:
 	simulation.configure_accessibility(reduce_motion, false)

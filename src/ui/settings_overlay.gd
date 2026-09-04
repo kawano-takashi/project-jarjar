@@ -181,7 +181,7 @@ func _on_toggle_changed(_pressed: bool) -> void:
 
 func _on_tutorial_again_pressed() -> void:
 	if _settings_store != null:
-		_settings_store.tutorial_revision = 0
+		_settings_store.tutorial_completed = false
 	_apply_and_emit()
 
 

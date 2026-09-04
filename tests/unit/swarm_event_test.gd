@@ -3,7 +3,7 @@ extends RefCounted
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"revision_fourteen_swarm_definition_and_drift_rejection",
+		"swarm_definition_and_drift_rejection",
 		"normal_swarmer_outpaces_the_player",
 		"swarm_scheduler_is_isolated_repeatable_and_atomic",
 		"swarm_formation_crosses_player_relative_frame_and_uses_two_visuals",
@@ -15,7 +15,7 @@ func test_names() -> PackedStringArray:
 
 func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
 	match test_name:
-		"revision_fourteen_swarm_definition_and_drift_rejection":
+		"swarm_definition_and_drift_rejection":
 			_test_definition_and_drift(assertions)
 		"normal_swarmer_outpaces_the_player":
 			_test_normal_swarmer_speed(assertions)
@@ -30,7 +30,7 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 		"boss_transition_absorbs_swarm_without_rewards":
 			_test_boss_transition_absorption(assertions)
 		_:
-			assertions.expect_true(false, "registered revision fourteen swarm test")
+			assertions.expect_true(false, "registered swarm test")
 
 
 func _test_definition_and_drift(assertions: Variant) -> void:
@@ -40,7 +40,6 @@ func _test_definition_and_drift(assertions: Variant) -> void:
 	var manifest: SurvivalContentManifest = catalog.manifest()
 	var event_definition: SwarmEventDefinition = manifest.swarm_event
 	var unit: EnemyDefinition = event_definition.unit_definition
-	assertions.expect_equal(14, manifest.balance.balance_revision, "swarm ships as balance revision fourteen")
 	assertions.expect_equal(6, GameTypes.EnemyType.size(), "swarm adds no seventh EnemyType")
 	assertions.expect_equal(6, catalog.enemies.size(), "event unit stays outside the normal enemy catalog")
 	assertions.expect_float(5.184, catalog.enemy(&"swarmer").move_speed, "normal swarmer is faster than the player")
@@ -369,7 +368,7 @@ func _test_formation_motion_and_visuals(assertions: Variant) -> void:
 	var travel_distance: float = 2.0 * 11.0 + 4.0 * 0.7
 	assertions.expect_float(travel_distance - event_step, first_after.remaining_travel_distance, "travel derives from spawn depth and formation depth")
 	var travel_ticks: int = ceili(travel_distance / event_step)
-	assertions.expect_equal(575, travel_ticks, "revision fourteen preserves the 575-tick full crossing")
+	assertions.expect_equal(575, travel_ticks, "preserves the 575-tick full crossing")
 	for movement_index: int in range(1, travel_ticks):
 		var movement_tick: int = 7501 + movement_index
 		state.combat_tick = movement_tick
@@ -629,5 +628,5 @@ func _active_swarm_count(system: EnemySystem) -> int:
 
 func _catalog(assertions: Variant) -> DefinitionCatalog:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "revision fourteen catalog validates: %s" % catalog.error_text)
+	assertions.expect_true(catalog.load_and_validate(), "catalog validates: %s" % catalog.error_text)
 	return catalog if catalog.is_valid else null

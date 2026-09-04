@@ -10,13 +10,13 @@ const ORBITAL_FIXTURE_MOVE_SPEED: float = 0.15
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"survival_weapon_dps_matrix_revision_six_contract",
+		"survival_weapon_dps_matrix_contract",
 	])
 
 
 func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
 	match test_name:
-		"survival_weapon_dps_matrix_revision_six_contract":
+		"survival_weapon_dps_matrix_contract":
 			_test_role_normalization(assertions)
 		_:
 			assertions.expect_true(false, "registered survival weapon DPS test")

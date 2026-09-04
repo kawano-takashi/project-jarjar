@@ -440,32 +440,14 @@ function Get-CandidateHead {
 }
 
 
-function Get-SourceBalanceRevision {
-    $balancePath = Join-Path $repositoryRoot "data\balance\balance_manifest.tres"
-    $contents = [System.IO.File]::ReadAllText($balancePath)
-    $matches = [System.Text.RegularExpressions.Regex]::Matches(
-        $contents,
-        '(?m)^\s*balance_revision\s*=\s*([0-9]+)\s*$'
-    )
-    if ($matches.Count -ne 1) {
-        throw "balance_revision must occur exactly once in balance_manifest.tres."
-    }
-    return [int]$matches[0].Groups[1].Value
-}
-
-
 function Get-BuildIdentity {
-    param(
-        [Parameter(Mandatory = $true)][string]$CandidateHead,
-        [Parameter(Mandatory = $true)][int]$BalanceRevision
-    )
+    param([Parameter(Mandatory = $true)][string]$CandidateHead)
 
     return [pscustomobject]@{
         CandidateHead = $CandidateHead
         ExeSha256 = (Get-FileHash -LiteralPath $guiExecutable -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
         ConsoleSha256 = (Get-FileHash -LiteralPath $consoleExecutable -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
         PckSha256 = (Get-FileHash -LiteralPath $pckPath -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
-        BalanceRevision = $BalanceRevision
     }
 }
 
@@ -474,7 +456,7 @@ function Write-BuildIdentity {
     param([Parameter(Mandatory = $true)][psobject]$Identity)
 
     [System.Console]::Out.WriteLine(
-        "BUILD_IDENTITY candidate_head=$($Identity.CandidateHead) exe_sha256=$($Identity.ExeSha256) pck_sha256=$($Identity.PckSha256) balance_revision=$($Identity.BalanceRevision)"
+        "BUILD_IDENTITY candidate_head=$($Identity.CandidateHead) exe_sha256=$($Identity.ExeSha256) pck_sha256=$($Identity.PckSha256)"
     )
     [System.Console]::Out.WriteLine("BUILD_CONSOLE_SHA256 $($Identity.ConsoleSha256)")
 }
@@ -493,19 +475,19 @@ function Invoke-PackAudit {
     if (-not (Test-Path -LiteralPath $packManifestPath -PathType Leaf)) {
         throw "Pack audit did not create its manifest."
     }
-    $auditLines = @($result.Lines | Where-Object { $_ -cmatch '^PACK_AUDIT_OK paths=([0-9]+) required=3 forbidden=0 balance_revision=([0-9]+)$' })
+    $auditLines = @($result.Lines | Where-Object { $_ -cmatch '^PACK_AUDIT_OK paths=([0-9]+) required=2 forbidden=0$' })
     if ($auditLines.Count -ne 1) {
         throw "Pack audit success marker count was $($auditLines.Count)."
     }
     $match = [System.Text.RegularExpressions.Regex]::Match(
         $auditLines[0],
-        '^PACK_AUDIT_OK paths=([0-9]+) required=3 forbidden=0 balance_revision=([0-9]+)$'
+        '^PACK_AUDIT_OK paths=([0-9]+) required=2 forbidden=0$'
     )
     $manifestLines = @([System.IO.File]::ReadAllLines($packManifestPath) | Where-Object { -not [string]::IsNullOrEmpty($_) })
     if ($manifestLines.Count -ne [int]$match.Groups[1].Value) {
         throw "Pack manifest path count does not match the audit marker."
     }
-    foreach ($requiredPath in @("res://scenes/main.tscn", "res://data/balance/balance_manifest.tres", "res://data/balance/survival_content_manifest.tres")) {
+    foreach ($requiredPath in @("res://scenes/main.tscn", "res://data/balance/survival_content_manifest.tres")) {
         if ($manifestLines -cnotcontains $requiredPath) {
             throw "Pack manifest is missing $requiredPath"
         }
@@ -528,7 +510,6 @@ function Invoke-PackAudit {
             }
         }
     }
-    return [int]$match.Groups[2].Value
 }
 
 
@@ -562,9 +543,9 @@ function Read-PlaytestTarget {
         }
         $values[$key] = $value
     }
-    $requiredKeys = @("candidate_head", "exe_sha256", "pck_sha256", "balance_revision")
+    $requiredKeys = @("candidate_head", "exe_sha256", "pck_sha256")
     if ($values.Count -ne $requiredKeys.Count) {
-        throw "Playtest target must contain exactly four keys."
+        throw "Playtest target must contain exactly three keys."
     }
     foreach ($key in $requiredKeys) {
         if (-not $values.ContainsKey($key)) {
@@ -577,15 +558,10 @@ function Read-PlaytestTarget {
     if ([string]$values.exe_sha256 -cnotmatch '^[0-9a-fA-F]{64}$' -or [string]$values.pck_sha256 -cnotmatch '^[0-9a-fA-F]{64}$') {
         throw "Playtest target contains an invalid SHA-256."
     }
-    $balanceRevision = 0
-    if ([string]$values.balance_revision -cnotmatch '^[0-9]+$' -or -not [int]::TryParse([string]$values.balance_revision, [ref]$balanceRevision)) {
-        throw "Playtest target balance_revision is invalid."
-    }
     return [pscustomobject]@{
         CandidateHead = [string]$values.candidate_head
         ExeSha256 = ([string]$values.exe_sha256).ToLowerInvariant()
         PckSha256 = ([string]$values.pck_sha256).ToLowerInvariant()
-        BalanceRevision = $balanceRevision
     }
 }
 
@@ -596,7 +572,7 @@ function Assert-TargetMatchesIdentity {
         [Parameter(Mandatory = $true)][psobject]$CurrentIdentity
     )
 
-    foreach ($field in @("CandidateHead", "ExeSha256", "PckSha256", "BalanceRevision")) {
+    foreach ($field in @("CandidateHead", "ExeSha256", "PckSha256")) {
         if ($TargetIdentity.$field -cne $CurrentIdentity.$field) {
             throw "Playtest target does not match current build identity: $field"
         }
@@ -614,7 +590,6 @@ try {
     }
     Assert-BuildArtifactsReady
     $candidateHead = Get-CandidateHead
-    $sourceBalanceRevision = Get-SourceBalanceRevision
 
     switch ($Task) {
         "Verify" {
@@ -623,14 +598,11 @@ try {
             [void](Assert-ArtifactPathSafe -Path $logPath)
             [System.IO.File]::WriteAllText($logPath, "", $utf8)
             Invoke-WithCleanSettings -ArtifactRoot $releaseArtifactRoot -Action {
-                $builtBalanceRevision = Invoke-PackAudit -LogPath $logPath
-                if ($builtBalanceRevision -ne $sourceBalanceRevision) {
-                    throw "Built balance revision $builtBalanceRevision does not match source revision $sourceBalanceRevision."
-                }
+                Invoke-PackAudit -LogPath $logPath
                 Assert-RepresentativeReleaseArgumentRejections -LogPath $logPath
                 [void](Invoke-LoggedProcess -LogPath $logPath -Label "release_smoke" -Executable $consoleExecutable -Arguments @("--headless", "--", "--smoke-run") -RequiredMarkers @("RELEASE_SMOKE_OK seed=20260827 failures=2"))
             }
-            $identity = Get-BuildIdentity -CandidateHead $candidateHead -BalanceRevision $sourceBalanceRevision
+            $identity = Get-BuildIdentity -CandidateHead $candidateHead
             Write-BuildIdentity -Identity $identity
             [System.Console]::Out.WriteLine("RELEASE_VERIFY_OK")
         }
@@ -639,7 +611,7 @@ try {
             $logPath = Join-Path $releaseArtifactRoot "manual-qa.log"
             [void](Assert-ArtifactPathSafe -Path $logPath)
             [System.IO.File]::WriteAllText($logPath, "", $utf8)
-            $identity = Get-BuildIdentity -CandidateHead $candidateHead -BalanceRevision $sourceBalanceRevision
+            $identity = Get-BuildIdentity -CandidateHead $candidateHead
             Write-BuildIdentity -Identity $identity
             Invoke-WithCleanSettings -ArtifactRoot $releaseArtifactRoot -Action {
                 [void](Invoke-LoggedProcess -LogPath $logPath -Label "manual_qa" -Executable $consoleExecutable -Arguments @() -CreateNoWindow $false)
@@ -649,7 +621,7 @@ try {
         "Playtest" {
             Initialize-ArtifactDirectory -Path $playtestArtifactRoot
             $targetIdentity = Read-PlaytestTarget
-            $currentIdentity = Get-BuildIdentity -CandidateHead $candidateHead -BalanceRevision $sourceBalanceRevision
+            $currentIdentity = Get-BuildIdentity -CandidateHead $candidateHead
             Assert-TargetMatchesIdentity -TargetIdentity $targetIdentity -CurrentIdentity $currentIdentity
             $safeTesterId = $TesterId.ToLowerInvariant()
             $logPath = Join-Path $playtestArtifactRoot ("playtest-$safeTesterId.log")

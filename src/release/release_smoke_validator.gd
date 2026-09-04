@@ -3,7 +3,6 @@ extends RefCounted
 
 
 const RUN_SEED: int = 20260827
-const CURRENT_TUTORIAL_REVISION: int = 4
 const STARTER_WEAPON_ID: StringName = &"homing_core"
 
 const ACTION_START_RUN: StringName = &"start_run"
@@ -38,7 +37,7 @@ func begin(game_app: Node, settings_store: Variant) -> Dictionary:
 	var title_validation := _validate_title(game_app)
 	if not bool(title_validation["success"]):
 		return _fail(title_validation["reason"])
-	var settings_validation := _validate_ephemeral_defaults(settings_store, 0)
+	var settings_validation := _validate_ephemeral_defaults(settings_store, false)
 	if not bool(settings_validation["success"]):
 		return _fail(settings_validation["reason"])
 
@@ -50,7 +49,7 @@ func begin(game_app: Node, settings_store: Variant) -> Dictionary:
 		return _fail(&"run_state_factory_failed")
 	_expected_initial_snapshot = _initial_snapshot(expected_state)
 	_settings_store = settings_store
-	_settings_store.tutorial_revision = CURRENT_TUTORIAL_REVISION
+	_settings_store.tutorial_completed = true
 	_stage = Stage.AWAITING_START
 	return _ok(ACTION_START_RUN, {"run_seed": RUN_SEED})
 
@@ -60,7 +59,7 @@ func validate_started_and_prepare_timeout(game_app: Node) -> Dictionary:
 		return _fail(&"invalid_start_stage")
 	var runtime_validation := _validate_ephemeral_defaults(
 		_settings_store,
-		CURRENT_TUTORIAL_REVISION,
+		true,
 	)
 	if not bool(runtime_validation["success"]):
 		return _fail(runtime_validation["reason"])
@@ -118,7 +117,7 @@ func validate_title_and_finish(game_app: Node) -> Dictionary:
 		return _fail(title_validation["reason"])
 	var runtime_validation := _validate_ephemeral_defaults(
 		_settings_store,
-		CURRENT_TUTORIAL_REVISION,
+		true,
 	)
 	if not bool(runtime_validation["success"]):
 		return _fail(runtime_validation["reason"])
@@ -159,7 +158,7 @@ func _validate_title(game_app: Node) -> Dictionary:
 
 func _validate_ephemeral_defaults(
 	settings_store: Variant,
-	tutorial_revision_expected: int,
+	tutorial_completed_expected: bool,
 ) -> Dictionary:
 	if settings_store == null:
 		return _validation_failure(&"settings_store_missing")
@@ -179,8 +178,8 @@ func _validate_ephemeral_defaults(
 		return _validation_failure(&"settings_reduce_flashes_not_default")
 	if not bool(settings_store.controller_vibration):
 		return _validation_failure(&"settings_vibration_not_default")
-	if int(settings_store.tutorial_revision) != tutorial_revision_expected:
-		return _validation_failure(&"settings_tutorial_revision_invalid")
+	if bool(settings_store.tutorial_completed) != tutorial_completed_expected:
+		return _validation_failure(&"settings_tutorial_completed_invalid")
 	return _validation_ok()
 
 
