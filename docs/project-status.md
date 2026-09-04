@@ -66,6 +66,56 @@ STOP、プレイヤー押し分け、壁、完全同位置、高速群れ通過�
 既存回帰で同tick相打ち、ボス勝利優先、決定的replay、575 tick退出も再確認した。revision 13の138/138 PASSは履歴扱いである。
 数値調整、revision 14正式12run source gate、Full HD性能試験、Release export、Verify、ManualQa、playtest固定は実施していない。
 
+## revision 14 予測回避calibration bot
+
+[Godot 4.7の固定physics tick](https://docs.godotengine.org/en/4.7/tutorials/physics/interpolation/physics_interpolation_quick_start_guide.html)、
+[Camera3Dの`KEEP_HEIGHT`](https://docs.godotengine.org/en/4.7/classes/class_camera3d.html)、
+[Dynamic Window Approach](https://publications.ri.cmu.edu/the-dynamic-window-approach-to-collision-avoidance)、
+[Velocity Obstacles](https://www.ariel.ac.il/sites/shiller/papers/fiorini98motion.pdf)を実装前に確認した。
+旧botの15 combat tick保持と現在位置だけの反発操舵を廃止し、各combat tickに観測、120 tick先の予測、入力選択をやり直す。
+
+視界はプレイヤー中心、画面軸基準、半幅16m・半奥行10.9869713097598mの地面投影矩形であり、対象円が交差すれば視認する。
+敵、敵弾、出現待機、表示中のボス発射予告、XP、宝箱、回復、STOP、VACUUMへ同じ判定を使い、画面外へ出た動的対象の履歴は即時破棄する。
+静的な宝箱位置だけは従来どおり記憶する。未来のspawn、乱数結果、武器による未来の撃破は参照しない。
+
+通常Swarmerを含む全通常敵、Shooter、Bulwark、Elite、Bossはプレイヤー追尾として予測する。
+固定方向で横断するのは`configure_swarm_event`済みの群れだけであり、群れには隊列全体の掃引包絡を追加する。
+連続視認した対象は世代付きIDごとの位置差を観測し、新規視認、出現待機、STOP中は既知の移動種別、定義速度、時間倍率で補完する。
+追尾方向は予測区間内でも再帰更新する。既存の敵弾、出現待機終了、STOPの通常敵停止・ボス半速、表示中のボス予告から発生する
+8/12/16方向弾を、生成tickの次tickから衝突可能になる順序で扱う。
+
+各tickで32等分方向、停止、目的方向、直前方向、最近傍脅威の左右接線を重複除去して評価する。
+プレイヤー速度4.05m/s、アリーナ境界、双方の半径、共通0.20m余白を経路へ適用する。
+画面内全対象の16方向密度を集計し、各sector代表と最短衝突時刻順から通常脅威を最大32件選ぶ。
+群れ包絡と表示中の全ボス予告弾はこの上限外で必ず詳細評価する。120 tick無接触の候補では方針別目的、壁回避、入力継続性を比較し、
+全候補が危険なら初接触が遅い、接触tickが少ない、最大被害が小さい、終了時余裕が大きい順で選ぶ。
+完全同値はseed由来の左右差、安定ID、候補順で決める。観測履歴を含む将来判断状態は安定順でrun digestへ含め、ゲームRNGは消費しない。
+cautious/normal/evolutionの目的優先順位と強化選択は変更せず、安全候補制約だけを共通化した。
+
+旧botを一時的なdetached worktreeへ固定し、seed 17、各180 tick、武器・通常spawnなしの同一fixtureで比較した。
+生存tickは全場面で旧新とも180である。
+
+| 場面 | 旧bot 被害tick / 総被害 | 新bot 被害tick / 総被害 |
+|---|---:|---:|
+| 追尾Swarmer | 73 / 292 | 61 / 244 |
+| 対向Pursuer包囲 | 4 / 32 | 0 / 0 |
+| 固定群れ横断 | 0 / 0 | 0 / 0 |
+| ボス弾交差 | 0 / 0 | 0 / 0 |
+| 出現待機＋ボス予告 | 1 / 8 | 0 / 0 |
+| 壁・角 | 130 / 524 | 117 / 472 |
+| **合計** | **208 / 856** | **178 / 716** |
+
+各場面で生存を短くせず被害tickと総被害を増やさず、合計では両指標を厳密に改善した。
+測定後、一時比較fixture、生成UID、旧bot比較worktreeを削除し、最終差分には新botと恒久回帰だけを残した。
+恒久回帰は毎tick再判断、視界境界、32方向＋停止、0.20m余白、2秒予測、全脅威種、出現待機、STOP、8/12/16方向予告、
+壁、回避不能順位、同値入力安定、全体密度＋重点32件、群れ包絡、世代別観測履歴、3方針共通安全制約、目的・強化選択維持、
+同seed入力・診断一致、ゲームRNG不変を固定する。
+
+runnerは`balance_revision=14`と`artifacts/balance/revision-14/formal/`へ整合した。Godot 4.7.2-stableで全GDScript回帰146/146、
+全リソース172件の事前ロード、GDScript guard 103ファイル、変更GDScriptのcheck-only 3/3、差分整合性検査がPASSした。
+balance値、確率、進化時刻、受入閾値は変更していない。revision 14正式12run、wide run、性能試験、export、Release Verify、
+ManualQa、playtest固定は実施しておらず、自動難易度は未評価のままである。
+
 ## revision 12 移動速度再調整契約（revision 14で維持）
 
 通常ユニットの座標移動速度だけをrevision 11から厳密にさらに10%下げ、相対速度比を維持する。隠れた共通倍率は置かず、

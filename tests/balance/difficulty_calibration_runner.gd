@@ -4,7 +4,7 @@ extends SceneTree
 const BotScript = preload("res://tests/balance/difficulty_calibration_bot.gd")
 const AcceptanceScript = preload("res://tests/balance/difficulty_acceptance.gd")
 
-const BALANCE_REVISION: int = 11
+const BALANCE_REVISION: int = 14
 const FORMAL_RUN_SEEDS: Array[int] = [17, 29, 43, 61]
 const WIDE_RUN_SEEDS: Array[int] = [7, 13, 31, 47, 73, 101, 137, 179]
 const POLICIES: Array[int] = [0, 1, 2]
@@ -21,7 +21,7 @@ const CHECKPOINT_TICKS: Array[int] = [
 const MAX_COMBAT_TICK: int = 54_000
 const MAX_MODAL_CHAIN: int = 128
 const RUNNER_TIMEOUT_MS: int = 1_200_000
-const OUTPUT_ROOT: String = "res://artifacts/balance/revision-12"
+const OUTPUT_ROOT: String = "res://artifacts/balance/revision-14"
 const RUNS_FILENAME: String = "difficulty-runs.csv"
 const CHECKPOINTS_FILENAME: String = "difficulty-checkpoints.csv"
 const SEGMENTS_FILENAME: String = "difficulty-segments.csv"
