@@ -127,13 +127,17 @@ func collect_at(player_position: Vector2) -> Array[ArenaPickup]:
 
 
 func spawn_chest(position: Vector2, elite_serial: int) -> ArenaPickup:
-	return _spawn_pickup(ArenaPickup.Kind.CHEST, position, elite_serial)
+	if elite_serial < 0 or elite_serial >= _catalog.elite_chest_kinds.size():
+		return null
+	var pickup: ArenaPickup = _spawn_pickup(ArenaPickup.Kind.CHEST, position, elite_serial)
+	pickup.chest_kind = _catalog.elite_chest_kinds[elite_serial]
+	return pickup
 
 
-func chest_transforms() -> Array[Transform3D]:
+func chest_transforms(chest_kind: int = -1) -> Array[Transform3D]:
 	var result: Array[Transform3D] = []
 	for pickup: ArenaPickup in pickups:
-		if pickup.active and pickup.kind == ArenaPickup.Kind.CHEST:
+		if pickup.active and pickup.kind == ArenaPickup.Kind.CHEST and (chest_kind < 0 or int(pickup.chest_kind) == chest_kind):
 			result.append(pickup.transform())
 	return result
 

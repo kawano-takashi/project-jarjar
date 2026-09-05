@@ -23,6 +23,7 @@ const REQUIRED_VISIBLE_METRIC_KEYS: Array[String] = [
 	"swarm_event_attempts",
 	"swarm_event_roll_successes",
 	"swarm_event_spawn_failures",
+	"swarm_event_skipped_busy",
 	"swarm_event_groups",
 	"swarm_event_generated",
 	"swarm_event_kills",
@@ -86,7 +87,7 @@ func _test_boss_transition_absorption(assertions: Variant) -> void:
 		return
 	var boss_start_tick: int = simulation.catalog.boss_start_tick
 	simulation.state.combat_tick = boss_start_tick - 1
-	# This fixture jumps directly to 10:00, so mark the four earlier scheduled
+	# This fixture jumps directly to the boss boundary, so mark all earlier scheduled
 	# elites handled. The elite below represents an already-active survivor.
 	simulation.enemy_system._elite_spawned.fill(1)
 	var contact_enemy: EnemyEntity = simulation.spawn_fixture_enemy(
@@ -128,7 +129,7 @@ func _test_boss_transition_absorption(assertions: Variant) -> void:
 	)
 	var existing_chest: ArenaPickup = simulation.arena_object_system.spawn_chest(
 		Vector2(-12.0, 12.0),
-		77,
+		0,
 	)
 	assertions.expect_true(existing_xp != null and existing_chest != null, "persistent world fixtures allocate")
 	if existing_xp == null or existing_chest == null:
@@ -154,8 +155,8 @@ func _test_boss_transition_absorption(assertions: Variant) -> void:
 	var xp_count_before: int = simulation.xp_pickup_pool.active_count()
 	var xp_value_before: int = simulation.xp_pickup_pool.total_value()
 	var arena_before: Array = _arena_object_digest(simulation.arena_object_system)
-	assertions.expect_true(simulation.advance_tick(Vector2.ZERO), "10:00 transition tick advances")
-	assertions.expect_equal(boss_start_tick, simulation.state.combat_tick, "transition starts on the exact 10:00 tick")
+	assertions.expect_true(simulation.advance_tick(Vector2.ZERO), "the boss boundary transition tick advances")
+	assertions.expect_equal(boss_start_tick, simulation.state.combat_tick, "transition starts on the exact the boss boundary tick")
 	assertions.expect_true(simulation.state.boss_transition_started, "boss transition latches once")
 	assertions.expect_true(not simulation.enemy_system.enemy_store.has_entity(contact_enemy_id), "contact enemy is removed before its ready attack")
 	assertions.expect_true(not simulation.enemy_system.enemy_store.has_entity(shooter_id), "shooter is absorbed before its ready projectile action")
@@ -177,7 +178,7 @@ func _test_boss_transition_absorption(assertions: Variant) -> void:
 	assertions.expect_equal(2, simulation.state.absorbed_normal_count, "transition records both absorbed normal enemies")
 	assertions.expect_equal(2, simulation.state.absorbed_enemy_projectile_count, "transition records both absorbed hostile projectiles")
 	var boss: EnemyEntity = simulation.enemy_system.boss_entity()
-	assertions.expect_true(boss != null, "10:00 production scheduler creates the boss")
+	assertions.expect_true(boss != null, "the boss boundary production scheduler creates the boss")
 	if boss == null:
 		return
 	assertions.expect_equal(Vector2.ZERO, boss.position, "boss entry starts at the exact arena center")

@@ -4,7 +4,7 @@ extends Resource
 
 ## 群れの予定ID。空文字不可、所属区間内で重複不可。
 @export var schedule_id: StringName = &""
-## 最初の試行時刻。区間開始からの整数tick、0以上。全試行を区間内に収める。
+## 最初の予告試行時刻。区間開始からの整数tick、0以上。全試行を区間内に収める。別の群れが予告・通過中なら消費して見送る。
 @export_range(0, 100, 1, "or_greater", "suffix:tick") var first_offset_ticks: int = 0
 ## 試行間隔。正整数tick（60/秒）。first_offset+(attempt_count−1)×intervalが区間長未満。
 @export_range(0, 100, 1, "or_greater", "suffix:tick") var interval_ticks: int = 0
@@ -12,3 +12,7 @@ extends Resource
 @export_range(0, 100, 1, "or_greater") var attempt_count: int = 0
 ## 各試行で群れが発生する確率。有限な0〜1。抽選の相対重みではない。
 @export_range(0.0, 1.0, 0.001) var spawn_chance: float = 0.0
+## 群れ個体の基礎HP倍率。有限かつ正。通常敵の区間倍率は適用しない。
+@export_range(0, 100, 0.001, "or_greater") var hp_multiplier: float = 0.0
+## 群れ個体の接触ダメージ倍率。有限かつ0以上。通常敵の区間・共通ダメージ倍率は適用しない。
+@export_range(0, 100, 0.001, "or_greater") var damage_multiplier: float = 0.0

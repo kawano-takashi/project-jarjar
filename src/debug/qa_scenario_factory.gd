@@ -134,7 +134,10 @@ static func _prepare_chest_state(
 		&"cycle_crystal",
 	).get(&"success", false)):
 		return false
-	state.pending_chest_sources.append(-1)
+	var source_index: int = catalog.elite_chest_kinds.find(GameTypes.ChestKind.EVOLUTION_CAPABLE)
+	if source_index < 0:
+		return false
+	state.pending_chest_sources.append(source_index)
 	var outcome: ChestOutcome = ChestRewardService.create_outcome(state, catalog)
 	if outcome == null or outcome.kind != GameTypes.ChestOutcomeKind.EVOLUTION:
 		return false

@@ -34,7 +34,7 @@ func _test_initial_state(assertions: Variant) -> void:
 	assertions.expect_equal(&"homing_core", state.weapons[0].weapon_id, "starter attacks the nearest enemy")
 	assertions.expect_equal(1, state.weapons[0].level, "starter begins at level one")
 	assertions.expect_equal(1, state.level, "player begins at level one")
-	assertions.expect_equal(0, state.combat_tick, "ten-minute clock begins at zero")
+	assertions.expect_equal(0, state.combat_tick, "combat clock begins at zero")
 	assertions.expect_equal(0, state.pending_level_ups, "no initial level modal")
 	assertions.expect_equal(0, state.pending_chest_count(), "no initial chest modal")
 

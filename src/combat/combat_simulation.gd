@@ -125,7 +125,7 @@ func advance_tick(move_input: Vector2) -> bool:
 	_pending_deaths.clear()
 	_pending_death_ids.clear()
 	# Boss entry is a tick-boundary operation. Removing the old combatants before
-	# snapshots are taken guarantees they cannot move, attack, or collide on 10:00.
+	# snapshots are taken guarantees they cannot move, attack, or collide on the boundary.
 	_begin_boss_transition_if_due(current_tick)
 	var enemy_snapshot: Array[int] = enemy_system.snapshot_ids()
 	var projectile_snapshot: Array[Vector2i] = projectile_pool.snapshot_active()
@@ -407,6 +407,7 @@ func visible_combat_metrics() -> Dictionary:
 		"swarm_event_attempts": state.swarm_event_attempt_count,
 		"swarm_event_roll_successes": state.swarm_event_roll_success_count,
 		"swarm_event_spawn_failures": state.swarm_event_spawn_failure_count,
+		"swarm_event_skipped_busy": state.swarm_event_skipped_busy_count,
 		"swarm_event_groups": state.swarm_event_group_count,
 		"swarm_event_generated": state.swarm_event_generated_count,
 		"swarm_event_kills": state.swarm_event_kill_count,
@@ -509,6 +510,24 @@ func build_snapshot() -> CombatSnapshot:
 		snapshot_events,
 	)
 	_apply_snapshot_markers(snapshot)
+	snapshot.normal_chest_transforms = arena_object_system.chest_transforms(GameTypes.ChestKind.NORMAL)
+	snapshot.evolution_chest_transforms = arena_object_system.chest_transforms(GameTypes.ChestKind.EVOLUTION_CAPABLE)
+	var warning: SwarmWarningState = enemy_system.swarm_warning
+	if warning != null:
+		var swarm: SwarmEventDefinition = _manifest.swarm_event
+		snapshot.swarm_warning_active = true
+		snapshot.swarm_warning_anchor = warning.anchor
+		snapshot.swarm_warning_direction = warning.direction
+		snapshot.swarm_warning_progress = warning.progress(state.combat_tick)
+		snapshot.swarm_warning_width = (
+			(float(swarm.lateral_count - 1) + 0.5) * swarm.lateral_pitch
+			+ 2.0 * swarm.unit_definition.body_radius
+		)
+		snapshot.swarm_warning_length = 2.0 * (
+			warning.spawn_distance
+			+ float(swarm.depth_count - 1) * swarm.depth_pitch
+			+ swarm.unit_definition.body_radius
+		)
 	_step_events.clear()
 	_presentation_events.clear()
 	return snapshot
@@ -613,6 +632,8 @@ func prepare_performance_fixture(
 	state.swarm_event_attempt_count = 0
 	state.swarm_event_roll_success_count = 0
 	state.swarm_event_spawn_failure_count = 0
+	state.swarm_event_skipped_busy_count = 0
+	enemy_system.cancel_swarm_warning()
 	state.swarm_event_group_count = 0
 	state.swarm_event_generated_count = 0
 	state.swarm_event_kill_count = 0
@@ -751,6 +772,7 @@ func _begin_boss_transition_if_due(current_tick: int) -> void:
 	):
 		return
 	state.boss_transition_started = true
+	enemy_system.cancel_swarm_warning()
 	state.spawn_credit = 0.0
 	_absorption_started_tick = current_tick
 	_absorption_enemy_count = 0

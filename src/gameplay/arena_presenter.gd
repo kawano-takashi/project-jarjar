@@ -40,6 +40,9 @@ const ABSORPTION_EVENT_SECONDS: float = 0.24
 @onready var _evolved_core_instances: MultiMeshInstance3D = %EvolvedCoreInstances
 @onready var _vfx_instances: MultiMeshInstance3D = %VfxInstances
 @onready var _chest_instances: MultiMeshInstance3D = %ChestInstances
+@onready var _evolution_chest_instances: MultiMeshInstance3D = %EvolutionChestInstances
+@onready var _swarm_warning_marker: MeshInstance3D = %SwarmWarningMarker
+@onready var _swarm_warning_arrows: MultiMeshInstance3D = %SwarmWarningArrows
 @onready var _xp_instances: MultiMeshInstance3D = %XpInstances
 @onready var _pickup_instances: MultiMeshInstance3D = %PickupInstances
 @onready var _node_instances: MultiMeshInstance3D = %NodeInstances
@@ -221,7 +224,8 @@ func _apply_snapshot(snapshot: CombatSnapshot, delta: float) -> void:
 		snapshot.projectile_visual_custom_data,
 	)
 	_copy_vfx_prefix(snapshot, _vfx_instances)
-	_copy_transform_prefix(snapshot.chest_transforms, _chest_instances)
+	_copy_transform_prefix(snapshot.normal_chest_transforms, _chest_instances)
+	_copy_transform_prefix(snapshot.evolution_chest_transforms, _evolution_chest_instances)
 	_copy_transform_prefix(snapshot.xp_transforms, _xp_instances)
 	_copy_transform_prefix(snapshot.pickup_transforms, _pickup_instances)
 	_copy_transform_prefix(snapshot.node_transforms, _node_instances)
@@ -359,6 +363,7 @@ func _update_camera(player_position: Vector2, delta: float) -> void:
 
 
 func _update_snapshot_markers(snapshot: CombatSnapshot) -> void:
+	_update_swarm_warning(snapshot)
 	if snapshot.important_marker_active:
 		_last_important_position = snapshot.important_marker_position
 	_update_ring(
@@ -384,6 +389,31 @@ func _update_snapshot_markers(snapshot: CombatSnapshot) -> void:
 		snapshot.absorption_radius,
 		snapshot.absorption_progress,
 	)
+
+
+func _update_swarm_warning(snapshot: CombatSnapshot) -> void:
+	_swarm_warning_marker.visible = snapshot.swarm_warning_active
+	var arrows: MultiMesh = _swarm_warning_arrows.multimesh
+	arrows.visible_instance_count = 6 if snapshot.swarm_warning_active else 0
+	if not snapshot.swarm_warning_active:
+		return
+	var direction: Vector2 = snapshot.swarm_warning_direction
+	var angle: float = direction.angle()
+	_swarm_warning_marker.transform = Transform3D(
+		Basis(Vector3.UP, -angle).scaled_local(Vector3(snapshot.swarm_warning_length, 1.0, snapshot.swarm_warning_width)),
+		Vector3(snapshot.swarm_warning_anchor.x, 0.07, snapshot.swarm_warning_anchor.y),
+	)
+	_swarm_warning_marker.transparency = 0.78 if _reduce_flashes else 0.66
+	var tangent := Vector2(-direction.y, direction.x)
+	for index: int in range(6):
+		var side: float = -1.0 if index % 2 == 0 else 1.0
+		var tip: Vector2 = snapshot.swarm_warning_anchor + direction * (float(floori(float(index) / 2.0)) - 1.0) * 2.5
+		var wing: Vector2 = (direction + tangent * side).normalized()
+		var center: Vector2 = tip - wing * 0.6
+		arrows.set_instance_transform(index, Transform3D(
+			Basis(Vector3.UP, -wing.angle()).scaled_local(Vector3(1.2, 1.0, 0.10)),
+			Vector3(center.x, 0.09, center.y),
+		))
 
 
 func _update_ring(
@@ -510,6 +540,8 @@ func _configure_render_capacity() -> void:
 	_resize_multimesh(_xp_instances, catalog.manifest().progression.xp_pool_capacity)
 	_resize_multimesh(_node_instances, catalog.manifest().arena.node_site_positions.size())
 	_resize_multimesh(_chest_instances, catalog.elite_spawn_ticks.size())
+	_resize_multimesh(_evolution_chest_instances, catalog.elite_spawn_ticks.size())
+	_resize_multimesh(_swarm_warning_arrows, 6)
 	var boss: EnemyDefinition = catalog.enemy_for_type(GameTypes.EnemyType.BOSS)
 	_resize_multimesh(_boss_charge_spokes, boss.volley_count + 2 * catalog.manifest().combat.boss_volley_phase_bonus)
 
@@ -590,11 +622,13 @@ func _hide_presentation_markers() -> void:
 		_important_marker,
 		_boss_charge_marker,
 		_absorption_marker,
+		_swarm_warning_marker,
 		_terminal_boss_ring,
 		_terminal_player_ring,
 	]:
 		marker.visible = false
 	_important_countdown.visible = false
+	_swarm_warning_arrows.multimesh.visible_instance_count = 0
 	if _boss_charge_spokes.multimesh != null:
 		_boss_charge_spokes.multimesh.visible_instance_count = 0
 

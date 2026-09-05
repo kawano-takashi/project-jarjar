@@ -65,6 +65,7 @@ var absorbed_enemy_projectile_count: int = 0
 var swarm_event_attempt_count: int = 0
 var swarm_event_roll_success_count: int = 0
 var swarm_event_spawn_failure_count: int = 0
+var swarm_event_skipped_busy_count: int = 0
 var swarm_event_group_count: int = 0
 var swarm_event_generated_count: int = 0
 var swarm_event_kill_count: int = 0

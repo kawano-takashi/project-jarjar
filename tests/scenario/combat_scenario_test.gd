@@ -4,7 +4,7 @@ extends RefCounted
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
 		"continuous_clock_and_time_only_spawn_targets",
-		"four_elites_and_final_boss_are_guaranteed",
+		"scheduled_elites_and_final_boss_are_guaranteed",
 		"stop_freezes_normal_and_halves_boss_projectiles",
 		"boss_three_phases_and_activation_relative_enrage",
 		"scheduled_boss_uses_dedicated_manifest_multipliers",
@@ -23,7 +23,7 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 	match test_name:
 		"continuous_clock_and_time_only_spawn_targets":
 			_test_continuous_clock(assertions)
-		"four_elites_and_final_boss_are_guaranteed":
+		"scheduled_elites_and_final_boss_are_guaranteed":
 			_test_scheduled_elites_and_boss(assertions)
 		"stop_freezes_normal_and_halves_boss_projectiles":
 			_test_stop_scaling(assertions)
@@ -86,10 +86,10 @@ func _test_scheduled_elites_and_boss(assertions: Variant) -> void:
 		Vector2.ZERO,
 		BalanceTestFixtures.catalog().boss_start_tick,
 	)
-	assertions.expect_equal(1, boss_spawns.size(), "10:00 creates one final boss")
-	assertions.expect_equal(GameTypes.EnemyType.BOSS, boss_spawns[0].enemy_type, "10:00 scheduled entity is the boss")
+	assertions.expect_equal(1, boss_spawns.size(), "the boss boundary creates one final boss")
+	assertions.expect_equal(GameTypes.EnemyType.BOSS, boss_spawns[0].enemy_type, "the boss boundary scheduled entity is the boss")
 	assertions.expect_true(simulation.state.boss_spawned, "boss-spawn state latches after successful allocation")
-	assertions.expect_equal(0, simulation.enemy_system.resolve_normal_spawns(Vector2.ZERO, BalanceTestFixtures.catalog().boss_start_tick).size(), "normal spawning stops at 10:00")
+	assertions.expect_equal(0, simulation.enemy_system.resolve_normal_spawns(Vector2.ZERO, BalanceTestFixtures.catalog().boss_start_tick).size(), "normal spawning stops at the boss boundary")
 
 
 func _test_stop_scaling(assertions: Variant) -> void:
@@ -428,18 +428,19 @@ func _test_focused_build_pacing(assertions: Variant) -> void:
 		GameTypes.UpgradeKind.PASSIVE,
 		&"cycle_crystal",
 	)
-	gate_probe.pending_chest_sources.append(0)
+	gate_probe.pending_chest_sources.append(simulation.catalog.elite_chest_kinds.find(GameTypes.ChestKind.EVOLUTION_CAPABLE))
 	var ungated_outcome: ChestOutcome = ChestRewardService.create_outcome(
 		gate_probe,
 		simulation.catalog,
 	)
 	assertions.expect_equal(GameTypes.ChestOutcomeKind.EVOLUTION, ungated_outcome.kind, "evolution eligibility itself has no clock gate at tick zero")
 	simulation.state.level_up_invulnerable_until_tick = 100_000
-	var check_ticks := PackedInt32Array([7200, 14_400, 21_600])
+	var check_ticks := PackedInt32Array([7200, 14_400, 21_600, 28_800])
 	var expected_kinds: Array[GameTypes.ChestOutcomeKind] = [
 		GameTypes.ChestOutcomeKind.UPGRADE,
-		GameTypes.ChestOutcomeKind.EVOLUTION,
 		GameTypes.ChestOutcomeKind.UPGRADE,
+		GameTypes.ChestOutcomeKind.UPGRADE,
+		GameTypes.ChestOutcomeKind.EVOLUTION,
 	]
 	var check_index: int = 0
 	while simulation.state.combat_tick < check_ticks[check_ticks.size() - 1]:
@@ -461,14 +462,10 @@ func _test_focused_build_pacing(assertions: Variant) -> void:
 					return
 			var homing: RunWeapon = simulation.state.weapon_for_lineage(&"homing_core")
 			var cycle_crystal: RunPassive = simulation.state.passive(&"cycle_crystal")
-			if check_index == 0:
-				assertions.expect_equal(0, simulation.state.evolution_count, "two-minute chest has no prior evolution")
-			elif check_index == 1:
-				assertions.expect_equal(8, homing.level, "focused homing reaches maximum by four minutes with XP tuning")
-				assertions.expect_true(cycle_crystal != null, "focused build owns the paired passive by four minutes")
-			else:
-				assertions.expect_true(homing.evolved, "focused lineage remains evolved at six minutes")
-				assertions.expect_equal(1, simulation.state.evolution_count, "focused pacing creates one evolution before the six-minute chest")
+			assertions.expect_equal(0, simulation.state.evolution_count, "normal chests cannot evolve before the first eligible source")
+			if check_index == 3:
+				assertions.expect_equal(simulation.catalog.weapon(&"homing_core").max_level, homing.level, "focused build prepares its maximum weapon for the first evolution chest")
+				assertions.expect_true(cycle_crystal != null, "focused build has the paired passive for its first evolution chest")
 			var cycle_level_before: int = 0 if cycle_crystal == null else cycle_crystal.level
 			simulation.state.pending_chest_sources.append(check_index)
 			var outcome: ChestOutcome = ChestRewardService.create_outcome(
@@ -482,17 +479,17 @@ func _test_focused_build_pacing(assertions: Variant) -> void:
 				outcome.serial,
 			)
 			assertions.expect_true(bool(result.get(&"success", false)), "scheduled chest applies exactly one outcome")
-			if check_index == 1:
+			if check_index == 3:
 				assertions.expect_equal(
 					cycle_level_before,
 					simulation.state.passive(&"cycle_crystal").level,
-					"four-minute evolution does not consume or rank its paired passive",
+					"evolution does not consume or rank its paired passive",
 				)
 			check_index += 1
 	var evolved: RunWeapon = simulation.state.weapon_for_lineage(&"homing_core")
-	assertions.expect_equal(3, simulation.state.opened_chests, "all three scheduled chest outcomes are consumed")
-	assertions.expect_equal(1, simulation.state.evolution_count, "fixture retains its first focused evolution through six minutes")
-	assertions.expect_true(evolved.evolved and evolved.weapon_id == &"infinite_homing", "focused lineage remains evolved after six minutes")
+	assertions.expect_equal(4, simulation.state.opened_chests, "all four scheduled chest outcomes are consumed")
+	assertions.expect_equal(1, simulation.state.evolution_count, "fixture retains its first focused evolution through the first eligible chest")
+	assertions.expect_true(evolved.evolved and evolved.weapon_id == &"infinite_homing", "focused lineage remains evolved after the first eligible chest")
 func _prepare_replay(simulation: CombatSimulation, reduce_motion: bool) -> Dictionary:
 	simulation.configure_accessibility(reduce_motion, false)
 	simulation.state.level_up_invulnerable_until_tick = 10_000

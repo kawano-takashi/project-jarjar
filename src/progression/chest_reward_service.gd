@@ -15,14 +15,17 @@ static func create_outcome(
 		return null
 	if state.active_chest_outcome != null and not state.active_chest_outcome.applied:
 		return state.active_chest_outcome
+	var source_index: int = state.pending_chest_sources[0]
+	if source_index < 0 or source_index >= catalog.elite_chest_kinds.size():
+		return null
 	var outcome := ChestOutcome.new()
 	outcome.serial = state.next_chest_serial
 	outcome.source_elite_index = state.pending_chest_sources[0]
+	outcome.source_chest_kind = catalog.elite_chest_kinds[source_index]
 	state.next_chest_serial += 1
-	var evolution_candidates: Array[EvolutionDefinition] = _eligible_evolutions(
-		state,
-		catalog,
-	)
+	var evolution_candidates: Array[EvolutionDefinition] = []
+	if outcome.source_chest_kind == GameTypes.ChestKind.EVOLUTION_CAPABLE:
+		evolution_candidates = _eligible_evolutions(state, catalog)
 	if not evolution_candidates.is_empty():
 		var selected_evolution: EvolutionDefinition = evolution_candidates[
 			state.rng_streams.chest_rng.randi_range(0, evolution_candidates.size() - 1)
@@ -74,11 +77,18 @@ static func apply_outcome(
 	if (
 		state.pending_chest_sources.is_empty()
 		or state.pending_chest_sources[0] != outcome.source_elite_index
+		or outcome.source_elite_index < 0
+		or outcome.source_elite_index >= catalog.elite_chest_kinds.size()
 	):
 		return _failure(&"chest_source_mismatch")
 	var result: Dictionary
 	match outcome.kind:
 		GameTypes.ChestOutcomeKind.EVOLUTION:
+			if (
+				outcome.source_chest_kind != GameTypes.ChestKind.EVOLUTION_CAPABLE
+				or catalog.elite_chest_kinds[outcome.source_elite_index] != GameTypes.ChestKind.EVOLUTION_CAPABLE
+			):
+				return _failure(&"chest_cannot_evolve")
 			result = _apply_evolution(state, catalog, outcome)
 		GameTypes.ChestOutcomeKind.UPGRADE:
 			var upgrade_result: Dictionary = ProgressionService.apply_direct_upgrade(

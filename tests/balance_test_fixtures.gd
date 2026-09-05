@@ -24,6 +24,16 @@ static func grid() -> UniformGrid:
 	return result
 
 
+static func elite_spawns(offsets: Array, kind: GameTypes.ChestKind = GameTypes.ChestKind.NORMAL) -> Array[EliteSpawnDefinition]:
+	var result: Array[EliteSpawnDefinition] = []
+	for offset: int in offsets:
+		var event := EliteSpawnDefinition.new()
+		event.offset_ticks = offset
+		event.chest_kind = kind
+		result.append(event)
+	return result
+
+
 static func xp_pool() -> XpPickupPool:
 	var result := XpPickupPool.new()
 	result.configure(catalog().manifest().progression)

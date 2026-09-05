@@ -15,6 +15,7 @@ enum WeaponBehavior {
 	AURA,
 }
 enum EnemyType { PURSUER, SWARMER, BULWARK, SHOOTER, ELITE, BOSS }
+enum ChestKind { NORMAL, EVOLUTION_CAPABLE }
 enum ChestOutcomeKind { EVOLUTION, UPGRADE, FULL_HEAL }
 enum NodeDropType { NONE, HEAL, VACUUM, STOP }
 
@@ -83,6 +84,10 @@ static func enemy_type_to_key(value: EnemyType) -> StringName:
 		EnemyType.BOSS:
 			return &"boss"
 	return &""
+
+
+static func chest_kind_label(value: ChestKind) -> String:
+	return "進化可能宝箱" if value == ChestKind.EVOLUTION_CAPABLE else "通常宝箱"
 
 
 static func chest_outcome_kind_to_key(value: ChestOutcomeKind) -> StringName:

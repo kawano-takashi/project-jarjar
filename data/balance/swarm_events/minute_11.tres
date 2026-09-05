@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="SwarmEventScheduleDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/swarm_event_schedule_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+schedule_id = &"minute_11"
+first_offset_ticks = 300
+interval_ticks = 300
+attempt_count = 6
+spawn_chance = 0.8
+hp_multiplier = 0.78
+damage_multiplier = 0.5

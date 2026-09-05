@@ -45,7 +45,10 @@ var _swarm_rng: RandomNumberGenerator = null
 var _elite_spawned: PackedByteArray = PackedByteArray()
 var _swarm_attempt_ticks: PackedInt32Array = PackedInt32Array()
 var _swarm_attempt_chances: PackedFloat32Array = PackedFloat32Array()
+var _swarm_attempt_hp: PackedFloat64Array = PackedFloat64Array()
+var _swarm_attempt_damage: PackedFloat64Array = PackedFloat64Array()
 var _swarm_attempt_consumed: PackedByteArray = PackedByteArray()
+var swarm_warning: SwarmWarningState = null
 
 
 func initialize(state: RunState, catalog: DefinitionCatalog) -> void:
@@ -58,6 +61,7 @@ func initialize(state: RunState, catalog: DefinitionCatalog) -> void:
 	uniform_grid.configure(_manifest.arena.size)
 	_elite_spawned.resize(_catalog.elite_spawn_ticks.size())
 	_elite_spawned.fill(0)
+	cancel_swarm_warning()
 	_build_swarm_attempts()
 
 
@@ -185,7 +189,19 @@ func resolve_swarm_event_spawns(
 		or _swarm_rng == null
 		or current_tick >= _catalog.boss_start_tick
 	):
+		cancel_swarm_warning()
 		return spawned
+	var occupied_this_tick: bool = swarm_warning != null or has_active_swarm()
+	if swarm_warning != null and current_tick >= swarm_warning.spawn_tick:
+		spawned.append_array(_spawn_swarm_group(
+			swarm_warning.anchor,
+			swarm_warning.direction,
+			current_tick,
+			swarm_warning.spawn_distance,
+			swarm_warning.hp_multiplier,
+			swarm_warning.damage_multiplier,
+		))
+		cancel_swarm_warning()
 	for attempt_index: int in range(_swarm_attempt_ticks.size()):
 		if (
 			_swarm_attempt_consumed[attempt_index] != 0
@@ -199,15 +215,33 @@ func resolve_swarm_event_spawns(
 		if not WeightedSelector.chance_succeeds_with_value(_swarm_attempt_chances[attempt_index], attempt_rng.randf()):
 			continue
 		_state.swarm_event_roll_success_count += 1
+		if occupied_this_tick:
+			_state.swarm_event_skipped_busy_count += 1
+			continue
 		var outward_direction: Vector2 = _sample_spawn_outward_direction(attempt_rng)
 		var spawn_distance: float = _sample_spawn_distance(attempt_rng)
-		spawned.append_array(_spawn_swarm_group(
-			player_position,
-			-outward_direction,
-			current_tick,
-			spawn_distance,
-		))
+		swarm_warning = SwarmWarningState.new()
+		swarm_warning.anchor = player_position
+		swarm_warning.direction = -outward_direction
+		swarm_warning.spawn_distance = spawn_distance
+		swarm_warning.start_tick = current_tick
+		swarm_warning.spawn_tick = current_tick + _manifest.swarm_event.telegraph_ticks
+		swarm_warning.hp_multiplier = _swarm_attempt_hp[attempt_index]
+		swarm_warning.damage_multiplier = _swarm_attempt_damage[attempt_index]
+		occupied_this_tick = true
 	return spawned
+
+
+func has_active_swarm() -> bool:
+	for enemy: EnemyEntity in enemy_store.entities:
+		if enemy.alive and enemy.is_swarm_event:
+			return true
+	return false
+
+
+func cancel_swarm_warning() -> void:
+	swarm_warning = null
+
 
 func resolve_contact_damage_candidates(
 	ids: Array[int],
@@ -589,6 +623,8 @@ func _spawn_swarm_group(
 	direction: Vector2,
 	current_tick: int,
 	spawn_distance: float,
+	hp_multiplier: float,
+	damage_multiplier: float,
 ) -> Array[EnemyEntity]:
 	var spawned: Array[EnemyEntity] = []
 	var event_definition: SwarmEventDefinition = _manifest.swarm_event
@@ -599,9 +635,6 @@ func _spawn_swarm_group(
 	):
 		_state.swarm_event_spawn_failure_count += 1
 		return spawned
-	var segment: EnemySegmentDefinition = _catalog.segment_for_tick(current_tick)
-	var hp_multiplier: float = segment.hp_multiplier
-	var damage_multiplier: float = segment.damage_multiplier
 	var group_id: int = _state.allocate_swarm_group_id()
 	var lateral_direction := Vector2(-direction.y, direction.x)
 	var formation_depth: float = (
@@ -655,9 +688,13 @@ func _spawn_swarm_group(
 func _build_swarm_attempts() -> void:
 	_swarm_attempt_ticks.clear()
 	_swarm_attempt_chances.clear()
+	_swarm_attempt_hp.clear()
+	_swarm_attempt_damage.clear()
 	for attempt: Dictionary in _catalog.swarm_attempts:
 		_swarm_attempt_ticks.append(int(attempt[&"tick"]))
 		_swarm_attempt_chances.append(float(attempt[&"chance"]))
+		_swarm_attempt_hp.append(float(attempt[&"hp_multiplier"]))
+		_swarm_attempt_damage.append(float(attempt[&"damage_multiplier"]))
 	_swarm_attempt_consumed.resize(_swarm_attempt_ticks.size())
 	_swarm_attempt_consumed.fill(0)
 

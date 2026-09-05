@@ -81,11 +81,11 @@ func _test_scheduler_and_atomic_spawn(assertions: Variant) -> void:
 	first_state.spawn_credit = 7.25
 	var normal_rng_before: int = first_state.rng_streams.spawn_rng.state
 	var swarm_rng_before: int = first_state.rng_streams.swarm_event_rng.state
-	var first_group: Array[EnemyEntity] = first_system.resolve_swarm_event_spawns(
+	var first_group: Array[EnemyEntity] = _spawn_scheduled(first_system,
 		Vector2(2.0, -1.0),
 		7500,
 	)
-	var second_group: Array[EnemyEntity] = second_system.resolve_swarm_event_spawns(
+	var second_group: Array[EnemyEntity] = _spawn_scheduled(second_system,
 		Vector2(2.0, -1.0),
 		7500,
 	)
@@ -151,7 +151,7 @@ func _test_scheduler_and_atomic_spawn(assertions: Variant) -> void:
 		)
 	assertions.expect_float(7.25, first_state.spawn_credit, "swarm attempt consumes no spawn credit")
 	assertions.expect_equal(0, first_system._normal_enemy_count(), "event members do not count toward the normal target")
-	assertions.expect_equal(0, first_system.resolve_swarm_event_spawns(Vector2.ZERO, 7500).size(), "one attempt cannot execute twice")
+	assertions.expect_equal(0, _spawn_scheduled(first_system, Vector2.ZERO, 7500).size(), "one attempt cannot execute twice")
 	assertions.expect_equal(1, first_state.swarm_event_attempt_count, "duplicate call does not duplicate attempt telemetry")
 	first_state.spawn_credit = 16.0
 	var normal_spawns: Array[EnemyEntity] = first_system.resolve_normal_spawns(Vector2.ZERO, 7500)
@@ -169,13 +169,13 @@ func _test_scheduler_and_atomic_spawn(assertions: Variant) -> void:
 	changed_system._swarm_attempt_chances[0] = 0.0
 	changed_state.combat_tick = 7500
 	baseline_state.combat_tick = 7500
-	changed_system.resolve_swarm_event_spawns(Vector2.ZERO, 7500)
-	baseline_system.resolve_swarm_event_spawns(Vector2.ZERO, 7500)
+	_spawn_scheduled(changed_system, Vector2.ZERO, 7500)
+	_spawn_scheduled(baseline_system, Vector2.ZERO, 7500)
 	baseline_system.enemy_store.clear()
 	changed_state.combat_tick = 7800
 	baseline_state.combat_tick = 7800
-	var changed_second: Array[EnemyEntity] = changed_system.resolve_swarm_event_spawns(Vector2.ZERO, 7800)
-	var baseline_second: Array[EnemyEntity] = baseline_system.resolve_swarm_event_spawns(Vector2.ZERO, 7800)
+	var changed_second: Array[EnemyEntity] = _spawn_scheduled(changed_system, Vector2.ZERO, 7800)
+	var baseline_second: Array[EnemyEntity] = _spawn_scheduled(baseline_system, Vector2.ZERO, 7800)
 	assertions.expect_equal(50, changed_second.size(), "second trial succeeds independently of the first result")
 	assertions.expect_equal(50, baseline_second.size(), "baseline second trial succeeds")
 	assertions.expect_equal(changed_second[0].fixed_direction, baseline_second[0].fixed_direction, "per-attempt seed isolates later direction")
@@ -197,7 +197,7 @@ func _test_scheduler_and_atomic_spawn(assertions: Variant) -> void:
 		)
 	overflow_state.combat_tick = 7500
 	var count_before: int = overflow_system.enemy_store.active_count()
-	assertions.expect_equal(0, overflow_system.resolve_swarm_event_spawns(Vector2.ZERO, 7500).size(), "fewer than fifty free slots rejects the whole group")
+	assertions.expect_equal(0, _spawn_scheduled(overflow_system, Vector2.ZERO, 7500).size(), "fewer than fifty free slots rejects the whole group")
 	assertions.expect_equal(count_before, overflow_system.enemy_store.active_count(), "atomic rejection creates no partial group")
 	assertions.expect_equal(1, overflow_state.swarm_event_spawn_failure_count, "atomic rejection records one group failure")
 	assertions.expect_equal(0, overflow_state.swarm_event_group_count, "failed roll success does not count as generated group")
@@ -222,6 +222,8 @@ func _test_formation_motion_and_visuals(assertions: Variant) -> void:
 		direction,
 		7500,
 		11.0,
+		1.325,
+		0.22,
 	)
 	assertions.expect_equal(50, group.size(), "direct fixture creates one complete formation")
 	var red_count: int = 0
@@ -323,10 +325,12 @@ func _test_contact_and_death_accounting(assertions: Variant) -> void:
 		Vector2.RIGHT,
 		7500,
 		11.0,
+		1.325,
+		0.22,
 	)
 	for enemy: EnemyEntity in group:
 		enemy.position = Vector2.ZERO
-	assertions.expect_float(0.22, group[0].damage_multiplier, "event damage uses only the current segment multiplier")
+	assertions.expect_float(0.22, group[0].damage_multiplier, "event damage uses its explicit schedule multiplier")
 	assertions.expect_float(0.22, group[0].definition.contact_damage * group[0].damage_multiplier, "normal global damage scale is not applied")
 	assertions.expect_true(group[0].is_targetable(7500), "event member has no materialization delay")
 	var ids: Array[int] = simulation.enemy_system.snapshot_ids()
@@ -485,6 +489,8 @@ func _test_push_and_pause(assertions: Variant) -> void:
 		Vector2.RIGHT,
 		0,
 		11.0,
+		1.325,
+		0.22,
 	)
 	var modal_position: Vector2 = modal_group[0].position
 	modal_state.phase = GameTypes.RunPhase.LEVEL_UP
@@ -506,11 +512,13 @@ func _test_boss_transition_absorption(assertions: Variant) -> void:
 		Vector2.RIGHT,
 		state.combat_tick,
 		11.0,
+		1.325,
+		0.22,
 	)
 	assertions.expect_equal(50, group.size(), "transition fixture starts with one full swarm")
 	var total_kills_before: int = state.total_kills
 	var chain_before: int = state.kill_chain_count
-	assertions.expect_true(simulation.advance_tick(Vector2.ZERO), "ten-minute transition tick resolves")
+	assertions.expect_true(simulation.advance_tick(Vector2.ZERO), "configured boss transition tick resolves")
 	assertions.expect_equal(0, _active_swarm_count(simulation.enemy_system), "transition removes every remaining event member")
 	assertions.expect_equal(50, state.swarm_event_absorbed_count, "transition separately counts absorbed event members")
 	assertions.expect_equal(0, state.absorbed_normal_count, "event absorption does not inflate normal absorption")
@@ -552,5 +560,33 @@ func _active_swarm_count(system: EnemySystem) -> int:
 
 func _catalog(assertions: Variant) -> DefinitionCatalog:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.validate_manifest(BalanceTestFixtures.manifest()), "catalog validates: %s" % catalog.error_text)
+	var content: SurvivalContentManifest = BalanceTestFixtures.manifest()
+	# Detached geometry/accounting fixture, independent of production tuning.
+	content.swarm_event.telegraph_ticks = 30
+	content.swarm_event.lateral_count = 10
+	content.swarm_event.depth_count = 5
+	content.swarm_event.lateral_pitch = 0.6666667
+	content.swarm_event.depth_pitch = 0.7
+	content.swarm_event.unit_definition.base_hp = 1.0
+	content.swarm_event.unit_definition.move_speed = 2.59
+	content.swarm_event.unit_definition.contact_damage = 1.0
+	for segment: EnemySegmentDefinition in content.segments:
+		segment.swarm_schedules = []
+	var schedule := SwarmEventScheduleDefinition.new()
+	schedule.schedule_id = &"fixture"
+	schedule.first_offset_ticks = 300
+	schedule.interval_ticks = 300
+	schedule.attempt_count = 3
+	schedule.spawn_chance = 1.0
+	schedule.hp_multiplier = 1.325
+	schedule.damage_multiplier = 0.22
+	content.segments[2].swarm_schedules = [schedule]
+	assertions.expect_true(catalog.validate_manifest(content), "catalog validates: %s" % catalog.error_text)
 	return catalog if catalog.is_valid else null
+
+
+func _spawn_scheduled(system: EnemySystem, anchor: Vector2, tick: int) -> Array[EnemyEntity]:
+	var spawned: Array[EnemyEntity] = system.resolve_swarm_event_spawns(anchor, tick)
+	if system.swarm_warning != null:
+		spawned.append_array(system.resolve_swarm_event_spawns(anchor, system.swarm_warning.spawn_tick))
+	return spawned

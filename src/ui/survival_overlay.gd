@@ -110,16 +110,18 @@ func show_chest_outcome(outcome: Variant) -> void:
 	var source_weapon_id: String = str(_read_property(outcome, &"source_weapon_id", ""))
 	var previous_level: int = int(_read_property(outcome, &"previous_level", 0))
 	var new_level: int = int(_read_property(outcome, &"new_level", previous_level))
+	var chest_kind: GameTypes.ChestKind = int(_read_property(outcome, &"source_chest_kind", GameTypes.ChestKind.NORMAL)) as GameTypes.ChestKind
+	var chest_label: String = GameTypes.chest_kind_label(chest_kind)
 	if not source_weapon_id.is_empty():
 		_chest_heading.text = "EVOLUTION"
-		_chest_result.text = "%s\n進化完了" % (display_name if not display_name.is_empty() else "武器")
+		_chest_result.text = "%s\n%s\n進化完了" % [chest_label, display_name if not display_name.is_empty() else "武器"]
 	elif not display_name.is_empty() and new_level > previous_level:
-		_chest_heading.text = "宝箱強化"
+		_chest_heading.text = chest_label
 		_chest_result.text = "%s\nLv %d → %d" % [display_name, previous_level, new_level]
 		if not upgrade_detail.is_empty():
 			_chest_result.text += "\n%s" % upgrade_detail
 	else:
-		_chest_heading.text = "宝箱"
+		_chest_heading.text = chest_label
 		_chest_result.text = "HPを全回復しました"
 	_chest_remaining = CHEST_DISPLAY_SECONDS
 	_chest_continue_emitted = false

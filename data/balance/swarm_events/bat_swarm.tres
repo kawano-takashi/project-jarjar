@@ -11,3 +11,4 @@ lateral_count = 10
 depth_count = 5
 lateral_pitch = 0.6666667
 depth_pitch = 0.7
+telegraph_ticks = 90

@@ -739,6 +739,7 @@ func _test_slot_and_max_rejections(assertions: Variant) -> void:
 
 func _test_chests(assertions: Variant) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
+	var evolution_source: int = catalog.elite_chest_kinds.find(GameTypes.ChestKind.EVOLUTION_CAPABLE)
 	var early: RunState = RunStateFactory.create(4444, catalog)
 	early.weapon(&"homing_core").level = 8
 	ProgressionService.apply_direct_upgrade(early, catalog, GameTypes.UpgradeKind.PASSIVE, &"cycle_crystal")
@@ -747,7 +748,7 @@ func _test_chests(assertions: Variant) -> void:
 		early.passive(&"cycle_crystal").level,
 		"a level-one catalyst prepares the standard evolution contract",
 	)
-	early.pending_chest_sources.append(0)
+	early.pending_chest_sources.append(evolution_source)
 	var evolution: ChestOutcome = ChestRewardService.create_outcome(early, catalog)
 	assertions.expect_equal(
 		GameTypes.ChestOutcomeKind.EVOLUTION,
@@ -755,7 +756,7 @@ func _test_chests(assertions: Variant) -> void:
 		"a level-one catalyst is eligible without reaching its maximum level",
 	)
 	assertions.expect_equal(&"infinite_homing", evolution.content_id, "correct evolution result")
-	assertions.expect_equal(0, evolution.source_elite_index, "outcome keeps its elite source")
+	assertions.expect_equal(evolution_source, evolution.source_elite_index, "outcome keeps its elite source")
 	assertions.expect_equal(0, early.combat_tick, "evolution has no time gate")
 	var evolution_result: Dictionary = ChestRewardService.apply_outcome(
 		early,
@@ -780,12 +781,12 @@ func _test_chests(assertions: Variant) -> void:
 	assertions.expect_float(healing.max_hp, healing.current_hp, "full-heal fallback restores HP")
 	var capped: RunState = _five_evolution_ready_state(catalog)
 	for _chest_index: int in range(4):
-		capped.pending_chest_sources.append(_chest_index)
+		capped.pending_chest_sources.append(evolution_source + _chest_index)
 		var outcome: ChestOutcome = ChestRewardService.create_outcome(capped, catalog)
 		assertions.expect_equal(GameTypes.ChestOutcomeKind.EVOLUTION, outcome.kind, "first four eligible chests evolve")
 		ChestRewardService.apply_outcome(capped, catalog, outcome.serial)
 	assertions.expect_equal(4, capped.evolution_count, "run evolution cap is four")
-	capped.pending_chest_sources.append(4)
+	capped.pending_chest_sources.append(evolution_source + 4)
 	var after_cap: ChestOutcome = ChestRewardService.create_outcome(capped, catalog)
 	assertions.expect_not_equal(GameTypes.ChestOutcomeKind.EVOLUTION, after_cap.kind, "fifth chest cannot evolve")
 

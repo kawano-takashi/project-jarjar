@@ -448,12 +448,12 @@ func _test_outside_entry_and_far_despawn(assertions: Variant) -> void:
 	)
 	assertions.expect_true(
 		boss_tick_system.enemy_store.has_entity(boss_tick_normal_id),
-		"ten-minute boundary disables far despawn for boss absorption",
+		"boss boundary disables far despawn for boss absorption",
 	)
 	assertions.expect_equal(
 		0,
 		boss_tick_state.normal_far_despawn_count,
-		"boss transition owns ten-minute removal telemetry",
+		"boss transition owns boss-boundary removal telemetry",
 	)
 
 

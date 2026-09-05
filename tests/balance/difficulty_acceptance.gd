@@ -5,15 +5,13 @@ extends RefCounted
 const EXPECTED_RUN_COUNT: int = 12
 const EXPECTED_NORMAL_RUN_COUNT: int = 4
 const TWO_MINUTE_TICK: int = 7_200
-const THREE_MINUTE_TICK: int = 10_800
-const FIVE_MINUTE_TICK: int = 18_000
-const SEVEN_MINUTE_TICK: int = 25_200
+const NINE_MINUTE_TICK: int = 32_400
 const BOSS_REACH_MIN: int = 9
 const BOSS_REACH_MAX: int = 11
 const BOSS_CLEAR_MIN: int = 5
 const BOSS_CLEAR_MAX: int = 8
-const NORMAL_EVOLUTION_MEAN_SECONDS_MIN: float = 315.0
-const NORMAL_EVOLUTION_MEAN_SECONDS_MAX: float = 345.0
+const NORMAL_EVOLUTION_MEAN_SECONDS_MIN: float = 420.0
+const NORMAL_EVOLUTION_MEAN_SECONDS_MAX: float = 540.0
 const BOSS_FIGHT_SECONDS_MIN: float = 60.0
 const BOSS_FIGHT_SECONDS_MAX: float = 120.0
 const ELITE_SIXTY_SECOND_RATIO_MIN: float = 0.75
@@ -33,10 +31,10 @@ static func evaluate(
 	var early_deaths: int = 0
 	var boss_reached: int = 0
 	var boss_cleared: int = 0
-	var evolved_by_three: int = 0
+	var evolved_before_first_chest: int = 0
 	var normal_run_count: int = 0
-	var normal_evolved_by_five: int = 0
-	var normal_evolved_by_seven: int = 0
+	var normal_evolved_by_nine: int = 0
+	var normal_build_maxed_seconds: Array[float] = []
 	var normal_evolved_runs: int = 0
 	var normal_evolution_seconds_total: float = 0.0
 	var overflow_runs: int = 0
@@ -67,17 +65,21 @@ static func evaluate(
 			if fight_seconds >= 0.0:
 				boss_fight_seconds.append(fight_seconds)
 		var evolution_tick: int = int(result.get("first_evolution_tick", -1))
-		if evolution_tick >= 0 and evolution_tick <= THREE_MINUTE_TICK:
-			evolved_by_three += 1
+		var first_chest_tick: int = int(result.get("first_evolution_chest_tick", -1))
+		if first_chest_tick < 0:
+			reasons.append("first_evolution_chest_tick missing or invalid")
+		if evolution_tick >= 0 and evolution_tick < first_chest_tick:
+			evolved_before_first_chest += 1
 		if str(result.get("policy", "")) == "normal":
 			normal_run_count += 1
+			var build_tick: int = int(result.get("build_maxed_tick", -1))
+			if build_tick >= 0:
+				normal_build_maxed_seconds.append(float(build_tick) / float(RunState.TICKS_PER_SECOND))
 			if evolution_tick >= 0:
 				normal_evolved_runs += 1
 				normal_evolution_seconds_total += float(evolution_tick) / 60.0
-				if evolution_tick <= FIVE_MINUTE_TICK:
-					normal_evolved_by_five += 1
-				if evolution_tick <= SEVEN_MINUTE_TICK:
-					normal_evolved_by_seven += 1
+				if evolution_tick <= NINE_MINUTE_TICK:
+					normal_evolved_by_nine += 1
 			var elite_spawns: PackedInt32Array = result.get("elite_spawn_ticks", PackedInt32Array())
 			var elite_kills: PackedInt32Array = result.get("elite_kill_ticks", PackedInt32Array())
 			for elite_index: int in range(elite_spawns.size()):
@@ -157,9 +159,7 @@ static func evaluate(
 	var boss_reach_max: int = 22 if wide_mode else BOSS_REACH_MAX
 	var boss_clear_min: int = 10 if wide_mode else BOSS_CLEAR_MIN
 	var boss_clear_max: int = 16 if wide_mode else BOSS_CLEAR_MAX
-	var normal_by_five_min: int = 2 if wide_mode else 1
-	var normal_by_five_max: int = 4 if wide_mode else 2
-	var normal_by_seven: int = expected_normal_count
+	var normal_by_nine: int = expected_normal_count
 	if results.size() != expected_run_count:
 		reasons.append("run_count expected=%d actual=%d" % [expected_run_count, results.size()])
 	if early_deaths != 0:
@@ -174,22 +174,17 @@ static func evaluate(
 			"boss_cleared expected=%d..%d actual=%d"
 			% [boss_clear_min, boss_clear_max, boss_cleared]
 		)
-	if evolved_by_three != 0:
-		reasons.append("evolved_by_3m expected=0 actual=%d" % evolved_by_three)
+	if evolved_before_first_chest != 0:
+		reasons.append("evolved_before_first_chest expected=0 actual=%d" % evolved_before_first_chest)
 	if normal_run_count != expected_normal_count:
 		reasons.append(
 			"normal_run_count expected=%d actual=%d"
 			% [expected_normal_count, normal_run_count]
 		)
-	if normal_evolved_by_five < normal_by_five_min or normal_evolved_by_five > normal_by_five_max:
+	if normal_evolved_by_nine != normal_by_nine:
 		reasons.append(
-			"normal_evolved_by_5m expected=%d..%d actual=%d"
-			% [normal_by_five_min, normal_by_five_max, normal_evolved_by_five]
-		)
-	if normal_evolved_by_seven != normal_by_seven:
-		reasons.append(
-			"normal_evolved_by_7m expected=%d actual=%d"
-			% [normal_by_seven, normal_evolved_by_seven]
+			"normal_evolved_by_9m expected=%d actual=%d"
+			% [normal_by_nine, normal_evolved_by_nine]
 		)
 	if (
 		normal_mean_evolution_seconds < NORMAL_EVOLUTION_MEAN_SECONDS_MIN
@@ -270,11 +265,14 @@ static func evaluate(
 		"early_deaths": early_deaths,
 		"boss_reached": boss_reached,
 		"boss_cleared": boss_cleared,
-		"evolved_by_three": evolved_by_three,
+		"evolved_before_first_chest": evolved_before_first_chest,
 		"normal_run_count": normal_run_count,
 		"normal_evolved_runs": normal_evolved_runs,
-		"normal_evolved_by_five": normal_evolved_by_five,
-		"normal_evolved_by_seven": normal_evolved_by_seven,
+		"normal_evolution_missing_runs": normal_run_count - normal_evolved_runs,
+		"normal_build_maxed_runs": normal_build_maxed_seconds.size(),
+		"normal_build_maxed_missing_runs": normal_run_count - normal_build_maxed_seconds.size(),
+		"normal_build_maxed_median_seconds": _median(normal_build_maxed_seconds),
+		"normal_evolved_by_nine": normal_evolved_by_nine,
 		"normal_mean_evolution_seconds": normal_mean_evolution_seconds,
 		"normal_mean_evolution_minutes": (
 			-1.0
@@ -302,12 +300,16 @@ static func evaluate(
 
 static func _wave_pair_metrics(segment_rows: Array[Dictionary]) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
-	for peak_index: int in [1, 3, 5, 7]:
+	var last_segment_index: int = -1
+	for row: Dictionary in segment_rows:
+		last_segment_index = maxi(last_segment_index, int(row.get("segment_index", -1)))
+	# The difficulty minute starts at 2:00; its following minute is the kill wave.
+	for peak_index: int in range(2, last_segment_index, 2):
 		var peak: Dictionary = _segment_medians(segment_rows, peak_index)
 		var rest: Dictionary = _segment_medians(segment_rows, peak_index + 1)
 		var pressure_reduction: float = _reduction(float(peak["engaged"]), float(rest["engaged"]))
-		var kill_gain: float = _gain(float(peak["kills"]), float(rest["kills"]))
-		var xp_gain: float = _gain(float(peak["xp"]), float(rest["xp"]))
+		var kill_gain: float = _gain(float(rest["kills"]), float(peak["kills"]))
+		var xp_gain: float = _gain(float(rest["xp"]), float(peak["xp"]))
 		var passed: bool = (
 			pressure_reduction >= PRESSURE_REDUCTION_MIN
 			and pressure_reduction <= PRESSURE_REDUCTION_MAX

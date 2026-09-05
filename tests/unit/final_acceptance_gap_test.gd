@@ -7,7 +7,7 @@ const COMBAT_HUD_SCENE: PackedScene = preload("res://scenes/ui/combat_hud.tscn")
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
 		"arena_powerup_pool_caps_and_merges_without_losing_effects",
-		"boss_hud_clock_continues_after_ten_minutes",
+		"boss_hud_clock_continues_after_twenty_minutes",
 		"segment_validator_rejects_incomplete_spawn_weight_shape",
 	])
 
@@ -16,7 +16,7 @@ func run_test(test_name: String, assertions: Variant, context: Dictionary) -> vo
 	match test_name:
 		"arena_powerup_pool_caps_and_merges_without_losing_effects":
 			_test_powerup_pool(assertions)
-		"boss_hud_clock_continues_after_ten_minutes":
+		"boss_hud_clock_continues_after_twenty_minutes":
 			await _test_boss_hud_clock(assertions, context["tree"] as SceneTree)
 		"segment_validator_rejects_incomplete_spawn_weight_shape":
 			_test_segment_shape(assertions)
@@ -76,10 +76,10 @@ func _test_boss_hud_clock(assertions: Variant, tree: SceneTree) -> void:
 	hud.update_from_values({
 		"weapon_slot_count": 5,
 		"passive_slot_count": 5,
-		"time_seconds": 665.0,
+		"time_seconds": 1265.0,
 		"boss_active": true,
 	})
-	assertions.expect_equal("11:05  BOSS", hud.debug_state()["time"], "boss HUD reports real elapsed time after ten minutes")
+	assertions.expect_equal("21:05  BOSS", hud.debug_state()["time"], "boss HUD reports real elapsed time after twenty minutes")
 	hud.queue_free()
 	await tree.process_frame
 

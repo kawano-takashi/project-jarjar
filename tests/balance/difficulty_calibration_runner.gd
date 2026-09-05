@@ -7,24 +7,17 @@ const AcceptanceScript = preload("res://tests/balance/difficulty_acceptance.gd")
 const FORMAL_RUN_SEEDS: Array[int] = [17, 29, 43, 61]
 const WIDE_RUN_SEEDS: Array[int] = [7, 13, 31, 47, 73, 101, 137, 179]
 const POLICIES: Array[int] = [0, 1, 2]
-const CHECKPOINT_TICKS: Array[int] = [
-	7_200,
-	10_800,
-	14_400,
-	18_000,
-	21_600,
-	25_200,
-	28_800,
-	36_000,
-]
-const MAX_COMBAT_TICK: int = 54_000
 const MAX_MODAL_CHAIN: int = 128
 const RUNNER_TIMEOUT_MS: int = 1_200_000
 const OUTPUT_ROOT: String = "res://artifacts/balance"
 const RUNS_FILENAME: String = "difficulty-runs.csv"
 const CHECKPOINTS_FILENAME: String = "difficulty-checkpoints.csv"
 const SEGMENTS_FILENAME: String = "difficulty-segments.csv"
+const GROWTH_FILENAME: String = "difficulty-growth.csv"
 const SUMMARY_FILENAME: String = "difficulty-summary.txt"
+const GROWTH_COLUMNS: Array[String] = [
+	"policy", "milestone", "reached_runs", "missing_runs", "median_seconds",
+]
 const RUN_COLUMNS: Array[String] = [
 	"policy",
 	"seed",
@@ -35,6 +28,9 @@ const RUN_COLUMNS: Array[String] = [
 	"boss_cleared",
 	"death_before_two_minutes",
 	"first_evolution_tick",
+	"first_evolution_chest_tick",
+	"evolution_ticks",
+	"build_maxed_tick",
 	"first_evolution_minutes",
 	"final_hp",
 	"final_max_hp",
@@ -79,6 +75,7 @@ const RUN_COLUMNS: Array[String] = [
 	"swarm_event_attempts",
 	"swarm_event_roll_successes",
 	"swarm_event_spawn_failures",
+	"swarm_event_skipped_busy",
 	"swarm_event_groups",
 	"swarm_event_generated",
 	"swarm_event_kills",
@@ -122,6 +119,7 @@ const VISIBLE_METRIC_KEYS: Array[String] = [
 	"swarm_event_attempts",
 	"swarm_event_roll_successes",
 	"swarm_event_spawn_failures",
+	"swarm_event_skipped_busy",
 	"swarm_event_groups",
 	"swarm_event_generated",
 	"swarm_event_kills",
@@ -233,6 +231,7 @@ func _run() -> void:
 		segment_rows,
 		acceptance,
 		infrastructure_error,
+		growth_rows(run_rows, catalog.manifest().progression.max_evolutions_per_run),
 	)
 	if not write_error.is_empty():
 		print("DIFFICULTY_CALIBRATION_ERROR reason=%s" % write_error)
@@ -244,13 +243,12 @@ func _run() -> void:
 		return
 	if bool(acceptance.get("passed", false)):
 		print(
-			"DIFFICULTY_CALIBRATION_OK runs=%d boss_reached=%d boss_cleared=%d normal_by_5m=%d normal_by_7m=%d normal_mean_seconds=%.3f"
+			"DIFFICULTY_CALIBRATION_OK runs=%d boss_reached=%d boss_cleared=%d normal_by_9m=%d normal_mean_seconds=%.3f"
 			% [
 				int(acceptance["run_count"]),
 				int(acceptance["boss_reached"]),
 				int(acceptance["boss_cleared"]),
-				int(acceptance["normal_evolved_by_five"]),
-				int(acceptance["normal_evolved_by_seven"]),
+				int(acceptance["normal_evolved_by_nine"]),
 				float(acceptance["normal_mean_evolution_seconds"]),
 			]
 		)
@@ -286,17 +284,20 @@ func _run_one(
 		return {"infrastructure_error": "bot_policy_invalid"}
 	var runtime: Dictionary = {
 		"first_evolution_tick": -1,
+		"evolution_ticks": PackedInt32Array(),
+		"build_maxed_tick": -1,
 		"minimum_hp_ratio": 1.0,
 		"damage_tick_count": 0,
 		"net_damage_taken": 0.0,
 	}
+	var checkpoints: PackedInt32Array = checkpoint_ticks(catalog)
 	var checkpoint_index: int = 0
 	var infrastructure_error: String = ""
 
 	while (
 		state.phase != GameTypes.RunPhase.RESULT
 		and state.phase != GameTypes.RunPhase.FAILED
-		and state.combat_tick < MAX_COMBAT_TICK
+		and state.combat_tick < maximum_combat_tick(catalog)
 	):
 		if Time.get_ticks_msec() - _runner_started_ms >= RUNNER_TIMEOUT_MS:
 			infrastructure_error = "runner_timeout"
@@ -321,25 +322,25 @@ func _run_one(
 			break
 		_update_minimum_hp_ratio(state, runtime)
 		while (
-			checkpoint_index < CHECKPOINT_TICKS.size()
-			and state.combat_tick >= CHECKPOINT_TICKS[checkpoint_index]
+			checkpoint_index < checkpoints.size()
+			and state.combat_tick >= checkpoints[checkpoint_index]
 		):
 			checkpoint_rows.append(_checkpoint_row(
 				simulation,
 				policy_value,
 				run_seed,
-				CHECKPOINT_TICKS[checkpoint_index],
+				checkpoints[checkpoint_index],
 			))
 			checkpoint_index += 1
 
 	if not infrastructure_error.is_empty():
 		return {"infrastructure_error": infrastructure_error}
-	while checkpoint_index < CHECKPOINT_TICKS.size():
+	while checkpoint_index < checkpoints.size():
 		checkpoint_rows.append(_checkpoint_row(
 			simulation,
 			policy_value,
 			run_seed,
-			CHECKPOINT_TICKS[checkpoint_index],
+			checkpoints[checkpoint_index],
 		))
 		checkpoint_index += 1
 	runtime["bot_state"] = bot.deterministic_state_values()
@@ -370,14 +371,9 @@ func _resolve_modals(
 				or simulation.state.active_level_offer != null
 			):
 				return "chest_before_level_queue tick=%d" % simulation.state.combat_tick
-			var evolution_before: int = simulation.state.evolution_count
 			if not simulation.complete_chest_reward():
 				return "chest_apply_failed tick=%d" % simulation.state.combat_tick
-			if (
-				simulation.state.evolution_count > evolution_before
-				and int(runtime["first_evolution_tick"]) < 0
-			):
-				runtime["first_evolution_tick"] = simulation.state.combat_tick
+		observe_growth(simulation.state, runtime)
 	return ""
 
 
@@ -432,6 +428,9 @@ func _run_row(
 			and state.combat_tick <= AcceptanceScript.TWO_MINUTE_TICK
 		),
 		"first_evolution_tick": first_evolution_tick,
+		"first_evolution_chest_tick": first_evolution_chest_tick(simulation.catalog),
+		"evolution_ticks": runtime["evolution_ticks"],
+		"build_maxed_tick": runtime["build_maxed_tick"],
 		"first_evolution_minutes": (
 			-1.0 if first_evolution_tick < 0 else float(first_evolution_tick) / 3_600.0
 		),
@@ -653,6 +652,7 @@ func _write_artifacts(
 	segment_rows: Array[Dictionary],
 	acceptance: Dictionary,
 	infrastructure_error: String,
+	growth_observations: Array[Dictionary],
 ) -> String:
 	var gate_directory: String = "wide" if _wide_mode else "formal"
 	var output_directory: String = ProjectSettings.globalize_path(
@@ -682,6 +682,13 @@ func _write_artifacts(
 	)
 	if not segments_error.is_empty():
 		return segments_error
+	var growth_error: String = _write_csv(
+		output_directory.path_join(GROWTH_FILENAME),
+		GROWTH_COLUMNS,
+		growth_observations,
+	)
+	if not growth_error.is_empty():
+		return growth_error
 	return _write_summary(
 		output_directory.path_join(SUMMARY_FILENAME),
 		acceptance,
@@ -721,10 +728,14 @@ func _write_summary(
 		"early_deaths=%d" % int(acceptance.get("early_deaths", 0)),
 		"boss_reached=%d" % int(acceptance.get("boss_reached", 0)),
 		"boss_cleared=%d" % int(acceptance.get("boss_cleared", 0)),
-		"evolved_by_3m=%d" % int(acceptance.get("evolved_by_three", 0)),
+		"evolved_before_first_chest=%d" % int(acceptance.get("evolved_before_first_chest", 0)),
 		"normal_run_count=%d" % int(acceptance.get("normal_run_count", 0)),
-		"normal_evolved_by_5m=%d" % int(acceptance.get("normal_evolved_by_five", 0)),
-		"normal_evolved_by_7m=%d" % int(acceptance.get("normal_evolved_by_seven", 0)),
+		"normal_evolution_missing_runs=%d" % int(acceptance.get("normal_evolution_missing_runs", 0)),
+		"normal_build_maxed_runs=%d" % int(acceptance.get("normal_build_maxed_runs", 0)),
+		"normal_build_maxed_missing_runs=%d" % int(acceptance.get("normal_build_maxed_missing_runs", 0)),
+		"normal_build_maxed_median_seconds=%.6f" % float(acceptance.get("normal_build_maxed_median_seconds", -1.0)),
+		"normal_build_maxed_target_seconds=960..1080 (observation only)",
+		"normal_evolved_by_9m=%d" % int(acceptance.get("normal_evolved_by_nine", 0)),
 		"normal_first_evolution_mean_seconds=%.6f" % float(acceptance.get("normal_mean_evolution_seconds", -1.0)),
 		"normal_first_evolution_mean_minutes=%.6f" % float(acceptance.get("normal_mean_evolution_minutes", -1.0)),
 		"boss_fight_median_seconds=%.6f" % float(acceptance.get("boss_fight_median_seconds", -1.0)),
@@ -767,3 +778,65 @@ func _format_value(value: Variant) -> String:
 	if value is float:
 		return "%.9f" % float(value)
 	return str(value)
+
+
+static func checkpoint_ticks(catalog: DefinitionCatalog) -> PackedInt32Array:
+	return catalog.segment_end_ticks.duplicate()
+
+
+static func maximum_combat_tick(catalog: DefinitionCatalog) -> int:
+	return catalog.boss_start_tick + 5 * 60 * RunState.TICKS_PER_SECOND
+
+
+static func first_evolution_chest_tick(catalog: DefinitionCatalog) -> int:
+	var first_tick: int = -1
+	for index: int in range(catalog.elite_chest_kinds.size()):
+		if catalog.elite_chest_kinds[index] == GameTypes.ChestKind.EVOLUTION_CAPABLE:
+			var tick: int = catalog.elite_spawn_ticks[index]
+			first_tick = tick if first_tick < 0 else mini(first_tick, tick)
+	return first_tick
+
+
+static func observe_growth(state: RunState, runtime: Dictionary) -> void:
+	var evolution_ticks: PackedInt32Array = runtime["evolution_ticks"]
+	while evolution_ticks.size() < state.evolution_count:
+		evolution_ticks.append(state.combat_tick)
+	runtime["evolution_ticks"] = evolution_ticks
+	if not evolution_ticks.is_empty():
+		runtime["first_evolution_tick"] = evolution_ticks[0]
+	if state.build_maxed and int(runtime["build_maxed_tick"]) < 0:
+		runtime["build_maxed_tick"] = state.combat_tick
+
+
+static func growth_rows(results: Array[Dictionary], evolution_limit: int) -> Array[Dictionary]:
+	var policies: Array[String] = []
+	for result: Dictionary in results:
+		var policy: String = str(result["policy"])
+		if not policies.has(policy):
+			policies.append(policy)
+	policies.sort()
+	var rows: Array[Dictionary] = []
+	for policy: String in policies:
+		for milestone: int in range(evolution_limit + 1):
+			var seconds: Array[float] = []
+			var run_count: int = 0
+			for result: Dictionary in results:
+				if str(result["policy"]) != policy:
+					continue
+				run_count += 1
+				var ticks: PackedInt32Array = result.get("evolution_ticks", PackedInt32Array())
+				var tick: int = -1
+				if milestone == evolution_limit:
+					tick = int(result.get("build_maxed_tick", -1))
+				elif milestone < ticks.size():
+					tick = ticks[milestone]
+				if tick >= 0:
+					seconds.append(float(tick) / float(RunState.TICKS_PER_SECOND))
+			rows.append({
+				"policy": policy,
+				"milestone": "build_maxed" if milestone == evolution_limit else "evolution_%d" % (milestone + 1),
+				"reached_runs": seconds.size(),
+				"missing_runs": run_count - seconds.size(),
+				"median_seconds": AcceptanceScript._median(seconds),
+			})
+	return rows

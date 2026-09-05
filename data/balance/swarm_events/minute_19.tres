@@ -4,8 +4,10 @@
 
 [resource]
 script = ExtResource("1")
-schedule_id = &"minute_07"
-first_offset_ticks = 300
-interval_ticks = 300
-attempt_count = 6
-spawn_chance = 0.8
+schedule_id = &"minute_19"
+first_offset_ticks = 900
+interval_ticks = 900
+attempt_count = 3
+spawn_chance = 0.7
+hp_multiplier = 1.4
+damage_multiplier = 1.5

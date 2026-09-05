@@ -145,11 +145,13 @@ func _test_segment_boundaries(assertions: Variant) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
-	var ticks: PackedInt32Array = PackedInt32Array([0, 3599, 3600, 35999, 36000])
-	var expected: PackedInt32Array = PackedInt32Array([0, 0, 1, 9, 9])
-	for index: int in range(ticks.size()):
-		var segment: EnemySegmentDefinition = catalog.segment_for_tick(ticks[index])
-		assertions.expect_equal(expected[index], catalog.manifest().segments.find(segment), "tick %d resolves the expected time-only segment" % ticks[index])
+	for index: int in range(catalog.segment_end_ticks.size()):
+		var start_tick: int = catalog.segment_start_ticks[index]
+		var end_tick: int = catalog.segment_end_ticks[index]
+		assertions.expect_equal(catalog.segment(index), catalog.segment_for_tick(start_tick), "segment begins on its configured first tick")
+		assertions.expect_equal(catalog.segment(index), catalog.segment_for_tick(end_tick - 1), "segment owns the tick before its exclusive end")
+		assertions.expect_equal(index + 1 if index + 1 < catalog.segments.size() else -1, catalog.segment_index_for_tick(end_tick), "exclusive end selects the next segment or boss phase")
+
 
 
 func _test_arena_node_respawn(assertions: Variant) -> void:

@@ -1,4 +1,4 @@
-[gd_scene load_steps=72 format=3]
+[gd_scene load_steps=79 format=3]
 
 [ext_resource type="Script" path="res://src/gameplay/arena_presenter.gd" id="1_presenter"]
 [ext_resource type="PackedScene" path="res://scenes/ui/combat_hud.tscn" id="2_hud"]
@@ -466,6 +466,44 @@ mesh = SubResource("ChestMesh")
 instance_count = 0
 visible_instance_count = 0
 
+[sub_resource type="StandardMaterial3D" id="EvolutionChestMaterial"]
+albedo_color = Color(0.48, 0.92, 1, 1)
+emission_enabled = true
+emission = Color(0.15, 0.48, 0.65, 1)
+emission_energy_multiplier = 0.8
+roughness = 0.28
+
+[sub_resource type="CylinderMesh" id="EvolutionChestMesh"]
+material = SubResource("EvolutionChestMaterial")
+top_radius = 0.0
+bottom_radius = 0.46
+height = 0.84
+radial_segments = 4
+
+[sub_resource type="MultiMesh" id="EvolutionChestMultiMesh"]
+transform_format = 1
+mesh = SubResource("EvolutionChestMesh")
+instance_count = 0
+visible_instance_count = 0
+
+[sub_resource type="StandardMaterial3D" id="SwarmWarningMaterial"]
+shading_mode = 0
+albedo_color = Color(1, 0.42, 0.14, 1)
+
+[sub_resource type="BoxMesh" id="SwarmWarningMesh"]
+material = SubResource("SwarmWarningMaterial")
+size = Vector3(1, 0.02, 1)
+
+[sub_resource type="BoxMesh" id="SwarmWarningArrowMesh"]
+material = SubResource("SwarmWarningMaterial")
+size = Vector3(1, 0.02, 1)
+
+[sub_resource type="MultiMesh" id="SwarmWarningArrowMultiMesh"]
+transform_format = 1
+mesh = SubResource("SwarmWarningArrowMesh")
+instance_count = 0
+visible_instance_count = 0
+
 [sub_resource type="StandardMaterial3D" id="XpMaterial"]
 albedo_color = Color(0.2, 0.92, 1, 1)
 emission_enabled = true
@@ -732,6 +770,22 @@ multimesh = SubResource("VfxMultiMesh")
 [node name="ChestInstances" type="MultiMeshInstance3D" parent="."]
 unique_name_in_owner = true
 multimesh = SubResource("ChestMultiMesh")
+
+[node name="EvolutionChestInstances" type="MultiMeshInstance3D" parent="."]
+unique_name_in_owner = true
+cast_shadow = 0
+multimesh = SubResource("EvolutionChestMultiMesh")
+
+[node name="SwarmWarningMarker" type="MeshInstance3D" parent="."]
+unique_name_in_owner = true
+visible = false
+cast_shadow = 0
+mesh = SubResource("SwarmWarningMesh")
+
+[node name="SwarmWarningArrows" type="MultiMeshInstance3D" parent="."]
+unique_name_in_owner = true
+cast_shadow = 0
+multimesh = SubResource("SwarmWarningArrowMultiMesh")
 
 [node name="XpInstances" type="MultiMeshInstance3D" parent="."]
 unique_name_in_owner = true

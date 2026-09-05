@@ -9,3 +9,5 @@ first_offset_ticks = 300
 interval_ticks = 300
 attempt_count = 3
 spawn_chance = 1.0
+hp_multiplier = 1.325
+damage_multiplier = 0.22

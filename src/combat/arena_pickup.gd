@@ -8,6 +8,7 @@ var pickup_id: int = -1
 var kind: Kind = Kind.HEAL
 var position: Vector2 = Vector2.ZERO
 var source_serial: int = -1
+var chest_kind: GameTypes.ChestKind = GameTypes.ChestKind.NORMAL
 var active: bool = true
 var effect_counts: PackedInt32Array = PackedInt32Array()
 
@@ -31,6 +32,7 @@ func activate(
 	kind = p_kind
 	position = p_position
 	source_serial = p_source_serial
+	chest_kind = GameTypes.ChestKind.NORMAL
 	active = true
 	effect_counts.resize(Kind.size())
 	effect_counts.fill(0)
@@ -42,6 +44,7 @@ func deactivate() -> void:
 	kind = Kind.HEAL
 	position = Vector2.ZERO
 	source_serial = -1
+	chest_kind = GameTypes.ChestKind.NORMAL
 	active = false
 	if effect_counts.size() != Kind.size():
 		effect_counts.resize(Kind.size())

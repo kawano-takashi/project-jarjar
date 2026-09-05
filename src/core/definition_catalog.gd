@@ -22,6 +22,7 @@ var boss_start_tick: int = 0
 var segment_start_ticks: PackedInt32Array = []
 var segment_end_ticks: PackedInt32Array = []
 var elite_spawn_ticks: PackedInt32Array = []
+var elite_chest_kinds: Array[GameTypes.ChestKind] = []
 var swarm_attempts: Array[Dictionary] = []
 var envelope: CombatEnvelope = null
 var maximum_enemy_body_radius: float = 0.0
@@ -147,6 +148,7 @@ func _reset() -> void:
 	segment_start_ticks.clear()
 	segment_end_ticks.clear()
 	elite_spawn_ticks.clear()
+	elite_chest_kinds.clear()
 	swarm_attempts.clear()
 	boss_start_tick = 0
 	maximum_enemy_body_radius = 0.0
@@ -358,7 +360,7 @@ func _validate_enemy(definition: EnemyDefinition) -> void:
 func _validate_swarm() -> void:
 	var swarm: SwarmEventDefinition = _manifest.swarm_event
 	_validate_numbers(swarm)
-	for key: String in ["lateral_count", "depth_count", "lateral_pitch", "depth_pitch"]:
+	for key: String in ["lateral_count", "depth_count", "lateral_pitch", "depth_pitch", "telegraph_ticks"]:
 		_positive(swarm, key)
 	_require(swarm, "event_id", swarm.event_id != &"", "nonempty ID")
 	_require(swarm, "member_count", swarm.member_count > 0 and swarm.member_count <= EnemyStore.CAPACITY, "formation product in [1, enemy pool capacity %d]" % EnemyStore.CAPACITY)
@@ -386,10 +388,16 @@ func _validate_segments() -> void:
 			_require(definition, "duration_ticks", false, "positive duration, cumulative tick <= 2147483647")
 			continue
 		segment_start_ticks.append(boss_start_tick)
-		for offset: int in definition.elite_offsets_ticks:
-			_require(definition, "elite_offsets_ticks", offset >= 0 and offset < definition.duration_ticks, "0 <= every offset < duration_ticks")
-			if offset >= 0 and offset < definition.duration_ticks:
-				elite_spawn_ticks.append(boss_start_tick + offset)
+		for elite: EliteSpawnDefinition in definition.elite_spawns:
+			if elite == null:
+				_error(definition, "elite_spawns", null, "required elite spawn Resource")
+				continue
+			_validate_numbers(elite)
+			_require(elite, "offset_ticks", elite.offset_ticks >= 0 and elite.offset_ticks < definition.duration_ticks, "0 <= offset_ticks < duration_ticks")
+			_require(elite, "chest_kind", int(elite.chest_kind) in GameTypes.ChestKind.values(), "supported chest kind")
+			if elite.offset_ticks >= 0 and elite.offset_ticks < definition.duration_ticks:
+				elite_spawn_ticks.append(boss_start_tick + elite.offset_ticks)
+				elite_chest_kinds.append(elite.chest_kind)
 		var ids: Dictionary[StringName, bool] = {}
 		for schedule: SwarmEventScheduleDefinition in definition.swarm_schedules:
 			if schedule == null:
@@ -399,13 +407,14 @@ func _validate_segments() -> void:
 			_require(schedule, "schedule_id", schedule.schedule_id != &"" and not ids.has(schedule.schedule_id), "nonempty unique ID within segment")
 			ids[schedule.schedule_id] = true
 			_positive(schedule, "interval_ticks")
+			_positive(schedule, "hp_multiplier")
 			_require(schedule, "spawn_chance", schedule.spawn_chance <= 1.0, "probability in [0, 1]")
 			var last_offset: int = schedule.first_offset_ticks + maxi(0, schedule.attempt_count - 1) * schedule.interval_ticks
 			var fits: bool = schedule.first_offset_ticks >= 0 and last_offset >= schedule.first_offset_ticks and last_offset < definition.duration_ticks
 			_require(schedule, "first_offset_ticks", fits, "all attempts inside segment: first + (count - 1) * interval < duration_ticks (%d)" % definition.duration_ticks)
 			if fits and schedule.interval_ticks > 0 and schedule.attempt_count >= 0:
 				for attempt: int in range(schedule.attempt_count):
-					swarm_attempts.append({&"tick": boss_start_tick + schedule.first_offset_ticks + attempt * schedule.interval_ticks, &"chance": schedule.spawn_chance})
+					swarm_attempts.append({&"tick": boss_start_tick + schedule.first_offset_ticks + attempt * schedule.interval_ticks, &"chance": schedule.spawn_chance, &"hp_multiplier": schedule.hp_multiplier, &"damage_multiplier": schedule.damage_multiplier})
 		boss_start_tick += definition.duration_ticks
 		segment_end_ticks.append(boss_start_tick)
 

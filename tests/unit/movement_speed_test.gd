@@ -201,13 +201,22 @@ func _run_level_one_contact_fixture(
 	segment: EnemySegmentDefinition,
 	swarmer_definition: EnemyDefinition,
 ) -> Dictionary:
+	# A fixed fixture clock keeps orbital phase independent of the production run length.
+	var fixture_content: SurvivalContentManifest = catalog.manifest().duplicate_deep(Resource.DEEP_DUPLICATE_ALL) as SurvivalContentManifest
+	fixture_content.segments = [fixture_content.segments[0]]
+	fixture_content.segments[0].duration_ticks = 36_000
+	fixture_content.segments[0].elite_spawns = []
+	fixture_content.segments[0].swarm_schedules = []
+	catalog = DefinitionCatalog.new()
+	if not catalog.validate_manifest(fixture_content):
+		return {"spawned": false}
 	var state: RunState = RunStateFactory.create(
 		SeedService.derive(CONTACT_FIXTURE_SEED, weapon_id),
 		catalog,
 	)
 	state.weapons.clear()
 	state.passives.clear()
-	state.combat_tick = BalanceTestFixtures.catalog().boss_start_tick
+	state.combat_tick = catalog.boss_start_tick
 	state.boss_spawned = true
 	state.boss_transition_started = true
 	state.build_maxed = true

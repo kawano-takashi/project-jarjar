@@ -43,6 +43,8 @@ var vfx_transforms: Array[Transform3D] = []
 var vfx_colors: Array[Color] = []
 var vfx_custom_data: Array[Color] = []
 var chest_transforms: Array[Transform3D] = []
+var normal_chest_transforms: Array[Transform3D] = []
+var evolution_chest_transforms: Array[Transform3D] = []
 var xp_transforms: Array[Transform3D] = []
 var pickup_transforms: Array[Transform3D] = []
 var node_transforms: Array[Transform3D] = []
@@ -55,6 +57,13 @@ var active_pickup_count: int = 0
 var active_node_count: int = 0
 var hud_values: Dictionary = {}
 var presentation_events: Array[CombatPresentationEvent] = []
+
+var swarm_warning_active: bool = false
+var swarm_warning_anchor: Vector2 = Vector2.ZERO
+var swarm_warning_direction: Vector2 = Vector2.ZERO
+var swarm_warning_progress: float = 0.0
+var swarm_warning_width: float = 0.0
+var swarm_warning_length: float = 0.0
 
 var boss_charge_active: bool = false
 var boss_charge_position: Vector2 = Vector2.ZERO

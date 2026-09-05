@@ -6,6 +6,8 @@ extends Resource
 @export var event_id: StringName = &""
 ## 群れ個体のEnemyDefinition。必須、接触専用のSWARMER。
 @export var unit_definition: EnemyDefinition = null
+## 進路を固定してから出現するまでの予告時間。正整数tick（60/秒）。ポーズ・強化選択中は進まない。
+@export_range(1, 600, 1, "or_greater", "suffix:tick") var telegraph_ticks: int = 0
 var member_count: int:
 	get:
 		return lateral_count * depth_count

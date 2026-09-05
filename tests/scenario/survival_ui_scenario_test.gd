@@ -270,7 +270,7 @@ func _test_combat_hud(assertions: Variant, tree: SceneTree) -> void:
 	hud.update_from_values({
 		"weapon_slot_count": 5,
 		"passive_slot_count": 5,
-		"time_seconds": 600.0,
+		"time_seconds": 1200.0,
 		"level": 42,
 		"total_kills": 1234,
 		"current_hp": 88.0,
@@ -305,7 +305,7 @@ func _test_summary(assertions: Variant, tree: SceneTree) -> void:
 	assertions.expect_true(catalog.validate_manifest(BalanceTestFixtures.manifest()), "summary catalog valid")
 	var state: RunState = RunStateFactory.create(20260827, catalog)
 	state.phase = GameTypes.RunPhase.RESULT
-	state.combat_tick = 36000
+	state.combat_tick = catalog.boss_start_tick
 	state.boss_defeated = true
 	state.weapons[0].weapon_id = &"infinite_homing"
 	state.weapons[0].evolved = true

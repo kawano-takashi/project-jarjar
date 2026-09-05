@@ -121,14 +121,16 @@ func _test_timeline(a: Variant) -> void:
 		var segment: EnemySegmentDefinition = content.segments[0].duplicate_deep(Resource.DEEP_DUPLICATE_ALL) as EnemySegmentDefinition
 		segment.duration_ticks = duration
 		segment.target_active = 0
-		segment.elite_offsets_ticks = []
+		segment.elite_spawns = []
 		segment.swarm_schedules = []
 		segments.append(segment)
-	segments[0].elite_offsets_ticks = PackedInt32Array([0, 3])
-	segments[1].elite_offsets_ticks = PackedInt32Array([1, 1])
-	segments[2].elite_offsets_ticks = PackedInt32Array([2])
+	segments[0].elite_spawns = BalanceTestFixtures.elite_spawns([0, 3])
+	segments[1].elite_spawns = BalanceTestFixtures.elite_spawns([1, 1])
+	segments[2].elite_spawns = BalanceTestFixtures.elite_spawns([2])
 	for id: StringName in [&"first", &"second"]:
 		var schedule := SwarmEventScheduleDefinition.new()
+		schedule.hp_multiplier = 1.0
+		schedule.damage_multiplier = 0.5
 		schedule.schedule_id = id
 		schedule.first_offset_ticks = 2
 		schedule.interval_ticks = 2
@@ -138,6 +140,7 @@ func _test_timeline(a: Variant) -> void:
 	content.segments = segments
 	content.swarm_event.lateral_count = 2
 	content.swarm_event.depth_count = 1
+	content.swarm_event.telegraph_ticks = 1
 	var catalog: DefinitionCatalog = _catalog(content, a)
 	a.expect_equal(PackedInt32Array([0, 5, 12]), catalog.segment_start_ticks, "starts accumulate ordered durations")
 	a.expect_equal(PackedInt32Array([5, 12, 15]), catalog.segment_end_ticks, "unequal ends are exclusive")
@@ -158,8 +161,9 @@ func _test_timeline(a: Variant) -> void:
 	a.expect_equal(5, simulation.state.elite_spawn_ticks.size(), "elite state follows scheduled event count")
 	a.expect_equal(catalog.elite_spawn_ticks, simulation.state.elite_spawn_ticks, "every scheduled elite fires at its absolute tick")
 	a.expect_equal(4, simulation.state.swarm_event_attempt_count, "each attempt is consumed once")
-	a.expect_equal(2, simulation.state.swarm_event_group_count, "chance zero emits nothing and chance one always fires")
-	a.expect_equal(4, simulation.state.swarm_event_generated_count, "formation dimensions determine member count")
+	a.expect_equal(1, simulation.state.swarm_event_group_count, "busy follow-up is consumed while the first formation remains")
+	a.expect_equal(2, simulation.state.swarm_event_generated_count, "formation dimensions determine member count")
+	a.expect_equal(1, simulation.state.swarm_event_skipped_busy_count, "busy attempt is separately recorded")
 
 
 func _test_weights(a: Variant) -> void:
@@ -326,7 +330,7 @@ func _test_ui(a: Variant, tree: SceneTree) -> void:
 	content.arena.node_site_positions = PackedVector2Array([Vector2(-10, 0), Vector2(10, 0), Vector2(0, 5)])
 	content.arena.initial_active_sites = PackedInt32Array([1])
 	content.progression.xp_pool_capacity = 2377
-	content.segments[0].elite_offsets_ticks = PackedInt32Array([1, 2, 3, 4, 5, 6])
+	content.segments[0].elite_spawns = BalanceTestFixtures.elite_spawns([1, 2, 3, 4, 5, 6])
 	content.progression.weapon_slot_count = 7
 	content.progression.passive_slot_count = 9
 	content.progression.level_offer_count = 9
@@ -351,7 +355,7 @@ func _test_ui(a: Variant, tree: SceneTree) -> void:
 	hud.update_from_snapshot(simulation.build_snapshot())
 	a.expect_equal(2377, (arena.get_node("%XpInstances") as MultiMeshInstance3D).multimesh.instance_count, "XP drawing covers the configured pool")
 	a.expect_equal(3, (arena.get_node("%NodeInstances") as MultiMeshInstance3D).multimesh.instance_count, "node drawing follows site count")
-	a.expect_equal(10, (arena.get_node("%ChestInstances") as MultiMeshInstance3D).multimesh.instance_count, "chest drawing covers every configured elite")
+	a.expect_equal(catalog.elite_spawn_ticks.size(), (arena.get_node("%ChestInstances") as MultiMeshInstance3D).multimesh.instance_count, "chest drawing covers every configured elite")
 	var boss_snapshot := CombatSnapshot.new()
 	boss_snapshot.boss_charge_active = true
 	boss_snapshot.boss_charge_spoke_count = 29
@@ -429,7 +433,7 @@ func _test_evolution_source(a: Variant) -> void:
 	var state: RunState = RunStateFactory.create(109, catalog)
 	state.weapons[0].level = catalog.weapon(first.base_weapon_id).max_level
 	ProgressionService.apply_direct_upgrade(state, catalog, GameTypes.UpgradeKind.PASSIVE, first.passive_id)
-	state.pending_chest_sources.append(0)
+	state.pending_chest_sources.append(catalog.elite_chest_kinds.find(GameTypes.ChestKind.EVOLUTION_CAPABLE))
 	var before: String = JSON.stringify(_values(content))
 	var outcome: ChestOutcome = ChestRewardService.create_outcome(state, catalog)
 	a.expect_equal(first.evolved_weapon_id, outcome.content_id, "chest follows the newly configured pairing")

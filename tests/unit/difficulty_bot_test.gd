@@ -758,9 +758,10 @@ func _test_acceptance_bounds(assertions: Variant) -> void:
 	var passing: Array[Dictionary] = _passing_results()
 	var accepted: Dictionary = AcceptanceScript.evaluate(passing)
 	assertions.expect_true(bool(accepted["passed"]), "official twelve-run boundary fixture passes")
-	assertions.expect_equal(2, accepted["normal_evolved_by_five"], "exactly two normal runs evolve by five minutes")
-	assertions.expect_equal(4, accepted["normal_evolved_by_seven"], "all normal runs evolve by seven minutes")
-	assertions.expect_float(330.0, float(accepted["normal_mean_evolution_seconds"]), "normal first evolution mean is 330 seconds")
+	assertions.expect_equal(4, accepted["normal_evolved_by_nine"], "all normal runs evolve by nine minutes")
+	assertions.expect_float(510.0, float(accepted["normal_mean_evolution_seconds"]), "normal first evolution mean is 510 seconds")
+	assertions.expect_equal(4, accepted["normal_build_maxed_runs"], "normal build completion count is observed")
+	assertions.expect_float(1020.0, accepted["normal_build_maxed_median_seconds"], "normal build completion median is observed")
 	var passing_segments: Array[Dictionary] = _passing_segment_results()
 	var accepted_with_segments: Dictionary = AcceptanceScript.evaluate(
 		passing,
@@ -770,6 +771,9 @@ func _test_acceptance_bounds(assertions: Variant) -> void:
 		bool(accepted_with_segments["passed"]),
 		"wave, elite, and boss duration boundaries pass together",
 	)
+	assertions.expect_equal(9, accepted_with_segments["wave_pair_metrics"].size(), "all twenty-minute wave pairs are measured")
+	assertions.expect_equal(2, accepted_with_segments["wave_pair_metrics"][0]["peak_segment"], "difficulty begins at minute two")
+	assertions.expect_equal(3, accepted_with_segments["wave_pair_metrics"][0]["rest_segment"], "mass killing follows the difficulty minute")
 	var five_elites: Array[Dictionary] = _passing_results()
 	for row: Dictionary in five_elites:
 		var spawns: PackedInt32Array = row["elite_spawn_ticks"]
@@ -782,7 +786,7 @@ func _test_acceptance_bounds(assertions: Variant) -> void:
 	var flat_rest_segments: Array[Dictionary] = []
 	flat_rest_segments.assign(passing_segments.duplicate(true))
 	for row: Dictionary in flat_rest_segments:
-		if int(row["segment_index"]) in [2, 4, 6, 8]:
+		if int(row["segment_index"]) in [3, 5, 7, 9]:
 			row["mean_engaged_normal"] = 80.0
 	assertions.expect_false(
 		bool(AcceptanceScript.evaluate(passing, flat_rest_segments)["passed"]),
@@ -840,38 +844,38 @@ func _test_acceptance_bounds(assertions: Variant) -> void:
 	too_many_early_evolutions.assign(passing.duplicate(true))
 	too_many_early_evolutions[6]["first_evolution_tick"] = 18_000
 	var early_evolution_result: Dictionary = AcceptanceScript.evaluate(too_many_early_evolutions)
-	assertions.expect_false(bool(early_evolution_result["passed"]), "three normal evolutions by five minutes fails the exact count")
+	assertions.expect_false(bool(early_evolution_result["passed"]), "evolution before the first eligible chest fails")
 
 	var forbidden_three_minute_evolution: Array[Dictionary] = []
 	forbidden_three_minute_evolution.assign(passing.duplicate(true))
 	forbidden_three_minute_evolution[0]["first_evolution_tick"] = 10_800
 	var forbidden_result: Dictionary = AcceptanceScript.evaluate(forbidden_three_minute_evolution)
-	assertions.expect_false(bool(forbidden_result["passed"]), "any evolution by three minutes fails")
+	assertions.expect_false(bool(forbidden_result["passed"]), "a non-normal policy also cannot evolve before the first eligible chest")
 
 	var late_normal: Array[Dictionary] = []
 	late_normal.assign(passing.duplicate(true))
-	late_normal[7]["first_evolution_tick"] = 25_201
+	late_normal[7]["first_evolution_tick"] = 32_401
 	assertions.expect_false(
 		bool(AcceptanceScript.evaluate(late_normal)["passed"]),
-		"a normal evolution after seven minutes fails",
+		"a normal evolution after nine minutes fails",
 	)
 	var low_mean: Array[Dictionary] = []
 	low_mean.assign(passing.duplicate(true))
-	var low_ticks: Array[int] = [14_400, 15_000, 19_800, 19_800]
+	var low_ticks: Array[int] = [24_000, 24_600, 25_200, 25_800]
 	for index: int in range(4):
 		low_mean[index + 4]["first_evolution_tick"] = low_ticks[index]
 	assertions.expect_false(
 		bool(AcceptanceScript.evaluate(low_mean)["passed"]),
-		"a normal evolution mean below 315 seconds fails",
+		"a normal evolution mean below 420 seconds fails",
 	)
 	var high_mean: Array[Dictionary] = []
 	high_mean.assign(passing.duplicate(true))
-	var high_ticks: Array[int] = [18_000, 18_600, 23_400, 24_000]
+	var high_ticks: Array[int] = [32_400, 33_000, 33_600, 34_200]
 	for index: int in range(4):
 		high_mean[index + 4]["first_evolution_tick"] = high_ticks[index]
 	assertions.expect_false(
 		bool(AcceptanceScript.evaluate(high_mean)["passed"]),
-		"a normal evolution mean above 345 seconds fails",
+		"a normal evolution mean above 540 seconds fails",
 	)
 
 	var overflowed: Array[Dictionary] = []
@@ -936,10 +940,10 @@ func _passing_results() -> Array[Dictionary]:
 	var results: Array[Dictionary] = []
 	for index: int in range(12):
 		var policy_name: String = "cautious"
-		var first_evolution_tick: int = 21_600
+		var first_evolution_tick: int = 30_600
 		if index >= 4 and index < 8:
 			policy_name = "normal"
-			var normal_ticks: Array[int] = [17_400, 18_000, 21_600, 22_200]
+			var normal_ticks: Array[int] = [28_800, 30_000, 31_200, 32_400]
 			first_evolution_tick = normal_ticks[index - 4]
 		elif index >= 8:
 			policy_name = "evolution"
@@ -950,6 +954,8 @@ func _passing_results() -> Array[Dictionary]:
 			"boss_cleared": index < 6,
 			"boss_fight_seconds": 90.0,
 			"first_evolution_tick": first_evolution_tick,
+			"first_evolution_chest_tick": 28_800,
+			"build_maxed_tick": 61_200,
 			"weapon_hits": 100,
 			"weapon_kills": 20,
 			"visible_weapon_hits": 100,
@@ -996,9 +1002,9 @@ func _passing_segment_results(run_count: int = 12) -> Array[Dictionary]:
 	var results: Array[Dictionary] = []
 	var runs_per_policy: int = floori(float(run_count) / 3.0)
 	for run_index: int in range(run_count):
-		for segment_index: int in range(10):
-			var is_peak: bool = segment_index in [1, 3, 5, 7]
-			var is_rest: bool = segment_index in [2, 4, 6, 8]
+		for segment_index: int in range(20):
+			var is_peak: bool = segment_index % 2 == 0 and segment_index >= 2
+			var is_rest: bool = segment_index % 2 == 1 and segment_index >= 3
 			results.append({
 				"policy": ["cautious", "normal", "evolution"][
 					floori(float(run_index) / float(runs_per_policy))
@@ -1007,7 +1013,7 @@ func _passing_segment_results(run_count: int = 12) -> Array[Dictionary]:
 				"segment_index": segment_index,
 				"completed": true,
 				"mean_engaged_normal": 100.0 if is_peak else (70.0 if is_rest else 50.0),
-				"normal_kills": 120 if is_peak else (100 if is_rest else 50),
-				"normal_xp": 120 if is_peak else (100 if is_rest else 50),
+				"normal_kills": 100 if is_peak else (120 if is_rest else 50),
+				"normal_xp": 100 if is_peak else (120 if is_rest else 50),
 			})
 	return results
