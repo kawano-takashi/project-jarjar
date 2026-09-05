@@ -65,6 +65,7 @@ New-Item -ItemType Directory -Force -Path .\build\windows | Out-Null
 - 公開項目には意味・単位・有効範囲・成立条件をドキュメントコメントとInspectorヒントで示す。時間は整数tick、1秒＝60tickとする。
 - テストを通す目的で、DPS比率・評価ボットの判断・受入閾値・人間の成功基準を無断変更しない。
 - 完了報告には変更項目・変更前後の実効値・変更理由・実行した検証・未確認事項を記載する。QA・playtestの開始条件は既存のWorkflowに従う。
+- バランスに関わる作業では docs/balance-intent.md を参照し、設計意図と判断理由を確認する。
 
 ## Export Templates
 
