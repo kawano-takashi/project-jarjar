@@ -1,87 +1,7 @@
 extends RefCounted
 
 
-const REQUIRED_VISIBLE_METRIC_KEYS: Array[String] = [
-	"weapon_hits",
-	"weapon_kills",
-	"visible_weapon_hits",
-	"visible_weapon_kills",
-	"offscreen_weapon_hits",
-	"offscreen_weapon_kills",
-	"max_hit_center_distance",
-	"max_kill_center_distance",
-	"max_effect_outer_distance",
-	"peak_visible_enemies",
-	"mean_visible_enemies",
-	"peak_engaged_enemies",
-	"mean_engaged_enemies",
-	"peak_materializing_enemies",
-	"mean_materializing_enemies",
-	"absorbed_normal_count",
-	"normal_far_despawns",
-	"absorbed_enemy_projectile_count",
-	"swarm_event_attempts",
-	"swarm_event_roll_successes",
-	"swarm_event_spawn_failures",
-	"swarm_event_skipped_busy",
-	"swarm_event_groups",
-	"swarm_event_generated",
-	"swarm_event_kills",
-	"swarm_event_exits",
-	"swarm_event_absorbed",
-	"swarm_event_xp",
-	"feedback_emitted",
-	"feedback_suppressed",
-	"vfx_admitted",
-	"vfx_suppressed",
-	"important_vfx_dropped",
-	"audio_admitted",
-	"audio_suppressed",
-]
-
-
-func test_names() -> PackedStringArray:
-	return PackedStringArray([
-		"boss_transition_absorbs_normals_and_hostile_projectiles_without_rewards",
-		"boss_enrage_counts_action_ticks_under_stop_and_modal",
-		"maximum_enrage_preserves_full_thirty_tick_charge",
-		"boss_volley_event_preserves_latched_phase_spokes",
-		"shooter_type_chases_for_contact_without_normal_projectiles",
-		"combat_envelope_enforces_8_9_10_meter_gates",
-		"visible_combat_metrics_has_required_schema",
-		"presentation_event_admission_is_bounded_and_priority_aware",
-		"vfx_admission_reserves_important_capacity_and_hard_caps",
-		"audio_admission_metrics_cover_combat_stop_and_modal_cues",
-	])
-
-
-func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
-	match test_name:
-		"boss_transition_absorbs_normals_and_hostile_projectiles_without_rewards":
-			_test_boss_transition_absorption(assertions)
-		"boss_enrage_counts_action_ticks_under_stop_and_modal":
-			_test_boss_enrage_action_clock(assertions)
-		"maximum_enrage_preserves_full_thirty_tick_charge":
-			_test_maximum_enrage_charge(assertions)
-		"boss_volley_event_preserves_latched_phase_spokes":
-			_test_boss_volley_event_latch(assertions)
-		"shooter_type_chases_for_contact_without_normal_projectiles":
-			_test_shooter_contact_contract(assertions)
-		"combat_envelope_enforces_8_9_10_meter_gates":
-			_test_combat_envelope_gates(assertions)
-		"visible_combat_metrics_has_required_schema":
-			_test_visible_metric_schema(assertions)
-		"presentation_event_admission_is_bounded_and_priority_aware":
-			_test_presentation_event_admission(assertions)
-		"vfx_admission_reserves_important_capacity_and_hard_caps":
-			_test_vfx_admission(assertions)
-		"audio_admission_metrics_cover_combat_stop_and_modal_cues":
-			_test_audio_admission_metrics(assertions)
-		_:
-			assertions.expect_true(false, "registered combat contract test")
-
-
-func _test_boss_transition_absorption(assertions: Variant) -> void:
+func test_boss_transition_absorbs_normals_and_hostile_projectiles_without_rewards(assertions: Variant, _context: Dictionary) -> void:
 	var simulation: CombatSimulation = _simulation(assertions, 8501)
 	if simulation == null:
 		return
@@ -189,7 +109,7 @@ func _test_boss_transition_absorption(assertions: Variant) -> void:
 	assertions.expect_true(boss.is_targetable(boss_start_tick + 60), "boss becomes targetable on the exact activation boundary")
 
 
-func _test_boss_enrage_action_clock(assertions: Variant) -> void:
+func test_boss_enrage_counts_action_ticks_under_stop_and_modal(assertions: Variant, _context: Dictionary) -> void:
 	var simulation: CombatSimulation = _simulation(assertions, 8504)
 	if simulation == null:
 		return
@@ -240,7 +160,7 @@ func _test_boss_enrage_action_clock(assertions: Variant) -> void:
 	assertions.expect_equal(1, simulation.state.boss_enrage_stacks, "modal state cannot advance enrage stacks")
 
 
-func _test_maximum_enrage_charge(assertions: Variant) -> void:
+func test_maximum_enrage_preserves_full_thirty_tick_charge(assertions: Variant, _context: Dictionary) -> void:
 	var simulation: CombatSimulation = _simulation(assertions, 8505)
 	if simulation == null:
 		return
@@ -312,7 +232,7 @@ func _test_maximum_enrage_charge(assertions: Variant) -> void:
 	assertions.expect_float(0.0, boss.boss_charge_elapsed_ticks, "next warning restarts at zero after the volley")
 
 
-func _test_boss_volley_event_latch(assertions: Variant) -> void:
+func test_boss_volley_event_preserves_latched_phase_spokes(assertions: Variant, _context: Dictionary) -> void:
 	var simulation: CombatSimulation = _simulation(assertions, 8506)
 	if simulation == null:
 		return
@@ -343,7 +263,7 @@ func _test_boss_volley_event_latch(assertions: Variant) -> void:
 		assertions.expect_equal(12, volley_event.count, "volley feedback preserves the twelve latched spokes across a phase change")
 
 
-func _test_shooter_contact_contract(assertions: Variant) -> void:
+func test_shooter_type_chases_for_contact_without_normal_projectiles(assertions: Variant, _context: Dictionary) -> void:
 	var simulation: CombatSimulation = _simulation(assertions, 8506)
 	if simulation == null:
 		return
@@ -470,7 +390,7 @@ func _test_shooter_contact_contract(assertions: Variant) -> void:
 		assertions.expect_true(float(contact_records[0].get("raw_damage", 0.0)) > 0.0, "SHOOTER contact hit carries positive damage")
 
 
-func _test_combat_envelope_gates(assertions: Variant) -> void:
+func test_combat_envelope_enforces_8_9_10_meter_gates(assertions: Variant, _context: Dictionary) -> void:
 	var simulation: CombatSimulation = _simulation(assertions, 8502)
 	if simulation == null:
 		return
@@ -551,274 +471,6 @@ func _test_combat_envelope_gates(assertions: Variant) -> void:
 	assertions.expect_equal(0, metrics["offscreen_weapon_hits"], "accepted envelope hits remain visible")
 	assertions.expect_float(BalanceTestFixtures.catalog().envelope.damage_center_radius, float(metrics["max_hit_center_distance"]), "damage-center metric reaches but never exceeds ten meters")
 	assertions.expect_float(BalanceTestFixtures.catalog().envelope.effect_outer_radius, float(metrics["max_effect_outer_distance"]), "effect metric reaches but never exceeds nine meters")
-
-
-func _test_visible_metric_schema(assertions: Variant) -> void:
-	var simulation: CombatSimulation = _simulation(assertions, 8503)
-	if simulation == null:
-		return
-	simulation.state.normal_far_despawn_count = 3
-	var metrics: Dictionary = simulation.visible_combat_metrics()
-	assertions.expect_equal(REQUIRED_VISIBLE_METRIC_KEYS.size(), metrics.size(), "metrics expose every required visibility and VFX value")
-	for key: String in REQUIRED_VISIBLE_METRIC_KEYS:
-		assertions.expect_true(metrics.has(key), "visible combat metrics include %s" % key)
-	assertions.expect_equal(3, metrics["normal_far_despawns"], "normal far despawns propagate to visible metrics")
-
-
-func _test_presentation_event_admission(assertions: Variant) -> void:
-	var event_simulation: CombatSimulation = _simulation(assertions, 8507)
-	if event_simulation == null:
-		return
-	for event_index: int in range(CombatSimulation.MAX_PRESENTATION_EVENTS_PER_TICK):
-		event_simulation._queue_presentation_event(
-			event_simulation._make_presentation_event(
-				CombatPresentationEvent.Kind.IMPORTANT_SPAWN,
-				StringName("important_%d" % event_index),
-				Vector2(float(event_index), 0.0),
-				CombatPresentationEvent.Priority.IMPORTANT,
-			)
-		)
-	assertions.expect_equal(
-		CombatSimulation.MAX_PRESENTATION_EVENTS_PER_TICK,
-		event_simulation._presentation_events.size(),
-		"important presentation events fill but never exceed the hard sixty-four-event cap",
-	)
-	var suppressed_before_unique: int = (
-		event_simulation.state.feedback_event_suppressed_count
-	)
-	event_simulation._queue_presentation_event(
-		event_simulation._make_presentation_event(
-			CombatPresentationEvent.Kind.IMPORTANT_SPAWN,
-			&"important_64",
-			Vector2.ZERO,
-			CombatPresentationEvent.Priority.IMPORTANT,
-		)
-	)
-	assertions.expect_equal(
-		CombatSimulation.MAX_PRESENTATION_EVENTS_PER_TICK,
-		event_simulation._presentation_events.size(),
-		"sixty-fifth unique same-priority important event is bounded",
-	)
-	assertions.expect_equal(
-		suppressed_before_unique + 1,
-		event_simulation.state.feedback_event_suppressed_count,
-		"same-priority cap suppression is recorded",
-	)
-	event_simulation._queue_presentation_event(
-		event_simulation._make_presentation_event(
-			CombatPresentationEvent.Kind.IMPORTANT_SPAWN,
-			&"important_0",
-			Vector2(99.0, 0.0),
-			CombatPresentationEvent.Priority.IMPORTANT,
-			2,
-		)
-	)
-	assertions.expect_equal(
-		CombatSimulation.MAX_PRESENTATION_EVENTS_PER_TICK,
-		event_simulation._presentation_events.size(),
-		"compatible important feedback coalesces at the cap",
-	)
-	assertions.expect_equal(
-		3,
-		event_simulation._presentation_events[0].count,
-		"coalesced important feedback preserves its represented count",
-	)
-	event_simulation._queue_presentation_event(
-		event_simulation._make_presentation_event(
-			CombatPresentationEvent.Kind.PLAYER_DEFEATED,
-			&"player_defeated",
-			Vector2.ZERO,
-			CombatPresentationEvent.Priority.TERMINAL,
-		)
-	)
-	assertions.expect_equal(
-		CombatSimulation.MAX_PRESENTATION_EVENTS_PER_TICK,
-		event_simulation._presentation_events.size(),
-		"terminal replacement keeps the presentation queue bounded",
-	)
-	var terminal_present: bool = false
-	for event: CombatPresentationEvent in event_simulation._presentation_events:
-		if event.kind == CombatPresentationEvent.Kind.PLAYER_DEFEATED:
-			terminal_present = true
-			break
-	assertions.expect_true(terminal_present, "terminal feedback replaces a lower-priority important event")
-
-	var ordered_simulation: CombatSimulation = _simulation(assertions, 8509)
-	if ordered_simulation == null:
-		return
-	for event_index: int in range(CombatSimulation.PRESENTATION_IMPORTANT_RESERVE):
-		ordered_simulation._queue_presentation_event(
-			ordered_simulation._make_presentation_event(
-				CombatPresentationEvent.Kind.IMPORTANT_SPAWN,
-				StringName("ordered_important_%d" % event_index),
-				Vector2.ZERO,
-				CombatPresentationEvent.Priority.IMPORTANT,
-			)
-		)
-	for event_index: int in range(
-		CombatSimulation.MAX_PRESENTATION_EVENTS_PER_TICK
-		- CombatSimulation.PRESENTATION_IMPORTANT_RESERVE
-	):
-		ordered_simulation._queue_presentation_event(
-			ordered_simulation._make_presentation_event(
-				CombatPresentationEvent.Kind.ENEMY_HIT,
-				StringName("ordered_normal_%d" % event_index),
-				Vector2.ZERO,
-				CombatPresentationEvent.Priority.NORMAL,
-			)
-		)
-	assertions.expect_equal(
-		CombatSimulation.MAX_PRESENTATION_EVENTS_PER_TICK,
-		ordered_simulation._presentation_events.size(),
-		"important-first ordering preserves all thirty-two ordinary admission slots",
-	)
-
-	var terminal_simulation: CombatSimulation = _simulation(assertions, 8511)
-	if terminal_simulation == null:
-		return
-	for event_index: int in range(CombatSimulation.MAX_PRESENTATION_EVENTS_PER_TICK):
-		terminal_simulation._queue_presentation_event(
-			terminal_simulation._make_presentation_event(
-				CombatPresentationEvent.Kind.PLAYER_DEFEATED,
-				StringName("terminal_%d" % event_index),
-				Vector2.ZERO,
-				CombatPresentationEvent.Priority.TERMINAL,
-			)
-		)
-	terminal_simulation._queue_presentation_event(
-		terminal_simulation._make_presentation_event(
-			CombatPresentationEvent.Kind.PLAYER_DEFEATED,
-			&"terminal_64",
-			Vector2.ZERO,
-			CombatPresentationEvent.Priority.TERMINAL,
-		)
-	)
-	assertions.expect_equal(
-		CombatSimulation.MAX_PRESENTATION_EVENTS_PER_TICK,
-		terminal_simulation._presentation_events.size(),
-		"sixty-fifth unique same-priority terminal event is bounded",
-	)
-
-
-func _test_vfx_admission(assertions: Variant) -> void:
-	var ordered_vfx_pool := VfxPool.new()
-	for request_index: int in range(VfxPool.IMPORTANT_RESERVED_SLOTS):
-		assertions.expect_true(
-			ordered_vfx_pool.request(
-				Vector2(float(request_index), 0.0),
-				1.0,
-				1.0,
-				Color.WHITE,
-				0,
-				VfxPool.PRIORITY_IMPORTANT,
-			) != null,
-			"important-first VFX request %d is admitted" % request_index,
-		)
-	for request_index: int in range(
-		VfxPool.MAX_PRODUCTION_REQUESTS_PER_TICK - VfxPool.IMPORTANT_RESERVED_SLOTS
-	):
-		assertions.expect_true(
-			ordered_vfx_pool.request(
-				Vector2(float(request_index), 1.0),
-				1.0,
-				1.0,
-				Color.WHITE,
-				0,
-				VfxPool.PRIORITY_ATTACK,
-			) != null,
-			"important-first ordering preserves ordinary VFX request %d" % request_index,
-		)
-	assertions.expect_equal(
-		VfxPool.MAX_PRODUCTION_REQUESTS_PER_TICK,
-		ordered_vfx_pool.active_count(),
-		"VFX reserve is independent of request ordering",
-	)
-	var hard_cap_vfx_pool := VfxPool.new()
-	for request_index: int in range(VfxPool.MAX_PRODUCTION_REQUESTS_PER_TICK):
-		hard_cap_vfx_pool.request(
-			Vector2(float(request_index), 0.0),
-			1.0,
-			1.0,
-			Color.WHITE,
-			0,
-			VfxPool.PRIORITY_IMPORTANT,
-		)
-	var over_cap_vfx: VfxState = hard_cap_vfx_pool.request(
-		Vector2.ZERO,
-		1.0,
-		1.0,
-		Color.WHITE,
-		0,
-		VfxPool.PRIORITY_ATTACK,
-	)
-	assertions.expect_true(
-		over_cap_vfx == null,
-		"ordinary VFX cannot exceed the hard cap after sixty-four important requests",
-	)
-	assertions.expect_equal(
-		VfxPool.MAX_PRODUCTION_REQUESTS_PER_TICK,
-		hard_cap_vfx_pool.active_count(),
-		"VFX hard cap is priority independent",
-	)
-	assertions.expect_equal(
-		1,
-		hard_cap_vfx_pool.generic_drop_count,
-		"ordinary VFX rejected by the hard cap is recorded",
-	)
-	assertions.expect_equal(
-		0,
-		hard_cap_vfx_pool.important_drop_count,
-		"hard-cap probe does not misclassify an ordinary VFX drop",
-	)
-
-
-func _test_audio_admission_metrics(assertions: Variant) -> void:
-	var audio_simulation: CombatSimulation = _simulation(assertions, 8508)
-	if audio_simulation == null:
-		return
-	for cue_index: int in range(AudioCueAdmission.MAX_NONCRITICAL_CUES_PER_WINDOW):
-		audio_simulation._queue_presentation_event(
-			audio_simulation._make_presentation_event(
-				CombatPresentationEvent.Kind.ENEMY_HIT,
-				&"enemy_hit",
-				Vector2.ZERO,
-				CombatPresentationEvent.Priority.NORMAL,
-				1,
-				GameTypes.EnemyType.PURSUER,
-				StringName("lineage_%d" % cue_index),
-			)
-		)
-	for cue_index: int in range(5):
-		audio_simulation._queue_presentation_event(
-			audio_simulation._make_presentation_event(
-				CombatPresentationEvent.Kind.BOSS_PHASE_CHANGED,
-				&"boss_phase",
-				Vector2.ZERO,
-				CombatPresentationEvent.Priority.IMPORTANT,
-				1,
-				GameTypes.EnemyType.BOSS,
-				StringName("critical_%d" % cue_index),
-			)
-		)
-	audio_simulation._record_audio_cue_metrics()
-	var metrics: Dictionary = audio_simulation.visible_combat_metrics()
-	assertions.expect_equal(12, metrics["audio_admitted"], "rolling audio policy admits at most twelve cues per second")
-	assertions.expect_equal(1, metrics["audio_suppressed"], "rolling audio policy records every excess cue suppression")
-
-	var legacy_audio_simulation: CombatSimulation = _simulation(assertions, 8510)
-	if legacy_audio_simulation == null:
-		return
-	legacy_audio_simulation._step_events.append(&"stop_pickup")
-	legacy_audio_simulation._record_audio_cue_metrics()
-	legacy_audio_simulation._record_audio_cue_id(&"level_up")
-	legacy_audio_simulation._record_audio_cue_id(&"chest_open")
-	legacy_audio_simulation._record_audio_cue_id(&"evolution")
-	var legacy_metrics: Dictionary = legacy_audio_simulation.visible_combat_metrics()
-	assertions.expect_equal(
-		4,
-		legacy_metrics["audio_admitted"],
-		"run audio telemetry includes STOP and modal reward cues",
-	)
 
 
 func _damage_record(

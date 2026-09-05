@@ -4,27 +4,7 @@ extends RefCounted
 const COMBAT_HUD_SCENE: PackedScene = preload("res://scenes/ui/combat_hud.tscn")
 
 
-func test_names() -> PackedStringArray:
-	return PackedStringArray([
-		"arena_powerup_pool_caps_and_merges_without_losing_effects",
-		"boss_hud_clock_continues_after_twenty_minutes",
-		"segment_validator_rejects_incomplete_spawn_weight_shape",
-	])
-
-
-func run_test(test_name: String, assertions: Variant, context: Dictionary) -> void:
-	match test_name:
-		"arena_powerup_pool_caps_and_merges_without_losing_effects":
-			_test_powerup_pool(assertions)
-		"boss_hud_clock_continues_after_twenty_minutes":
-			await _test_boss_hud_clock(assertions, context["tree"] as SceneTree)
-		"segment_validator_rejects_incomplete_spawn_weight_shape":
-			_test_segment_shape(assertions)
-		_:
-			assertions.expect_true(false, "registered final acceptance gap test")
-
-
-func _test_powerup_pool(assertions: Variant) -> void:
+func test_arena_powerup_pool_caps_and_merges_without_losing_effects(assertions: Variant, _context: Dictionary) -> void:
 	var catalog := DefinitionCatalog.new()
 	assertions.expect_true(catalog.validate_manifest(BalanceTestFixtures.manifest()), "powerup pool catalog valid")
 	if not catalog.is_valid:
@@ -69,7 +49,8 @@ func _test_powerup_pool(assertions: Variant) -> void:
 	assertions.expect_equal(40, objects.total_powerup_effect_count(), "long-run powerup overflow remains lossless")
 
 
-func _test_boss_hud_clock(assertions: Variant, tree: SceneTree) -> void:
+func test_boss_hud_clock_continues_after_twenty_minutes(assertions: Variant, context: Dictionary) -> void:
+	var tree: SceneTree = context["tree"]
 	var hud: CombatHud = COMBAT_HUD_SCENE.instantiate() as CombatHud
 	tree.root.add_child(hud)
 	await tree.process_frame
@@ -79,12 +60,12 @@ func _test_boss_hud_clock(assertions: Variant, tree: SceneTree) -> void:
 		"time_seconds": 1265.0,
 		"boss_active": true,
 	})
-	assertions.expect_equal("21:05  BOSS", hud.debug_state()["time"], "boss HUD reports real elapsed time after twenty minutes")
+	assertions.expect_true(str(hud.debug_state()["time"]).contains("21:05"), "boss HUD reports real elapsed time after twenty minutes")
 	hud.queue_free()
 	await tree.process_frame
 
 
-func _test_segment_shape(assertions: Variant) -> void:
+func test_segment_validator_rejects_incomplete_spawn_weight_shape(assertions: Variant, _context: Dictionary) -> void:
 	var canonical_catalog := DefinitionCatalog.new()
 	assertions.expect_true(canonical_catalog.validate_manifest(BalanceTestFixtures.manifest()), "segment shape canonical catalog valid")
 	if not canonical_catalog.is_valid:

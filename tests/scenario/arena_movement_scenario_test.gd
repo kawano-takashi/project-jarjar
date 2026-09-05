@@ -5,27 +5,8 @@ const ARENA_SCENE: PackedScene = preload("res://scenes/gameplay/arena_combat.tsc
 const SCREEN_DIRECTION_DOT_MINIMUM: float = 0.9999
 
 
-func test_names() -> PackedStringArray:
-	return PackedStringArray([
-		"camera_relative_movement_matches_view",
-		"survival_arena_dimensions_follow_validated_settings",
-		"gameplay_movement_input_bindings",
-	])
-
-
-func run_test(test_name: String, assertions: Variant, context: Dictionary) -> void:
-	match test_name:
-		"camera_relative_movement_matches_view":
-			await _test_camera_relative_movement(assertions, context["tree"] as SceneTree)
-		"survival_arena_dimensions_follow_validated_settings":
-			await _test_arena_dimensions(assertions, context["tree"] as SceneTree)
-		"gameplay_movement_input_bindings":
-			_test_input_bindings(assertions)
-		_:
-			assertions.expect_true(false, "registered arena movement scenario test")
-
-
-func _test_camera_relative_movement(assertions: Variant, tree: SceneTree) -> void:
+func test_camera_relative_movement_matches_view(assertions: Variant, context: Dictionary) -> void:
+	var tree: SceneTree = context["tree"]
 	var arena: ArenaPresenter = ARENA_SCENE.instantiate() as ArenaPresenter
 	assertions.expect_true(arena != null, "survival arena scene instantiates")
 	if arena == null:
@@ -45,7 +26,8 @@ func _test_camera_relative_movement(assertions: Variant, tree: SceneTree) -> voi
 	await _detach(arena, viewport, tree)
 
 
-func _test_arena_dimensions(assertions: Variant, tree: SceneTree) -> void:
+func test_survival_arena_dimensions_follow_validated_settings(assertions: Variant, context: Dictionary) -> void:
+	var tree: SceneTree = context["tree"]
 	var content: SurvivalContentManifest = BalanceTestFixtures.manifest()
 	content.arena.size = Vector2(44.0, 30.0)
 	content.progression.xp_pool_capacity = 3072
@@ -74,7 +56,7 @@ func _test_arena_dimensions(assertions: Variant, tree: SceneTree) -> void:
 	await _detach(arena, viewport, tree)
 
 
-func _test_input_bindings(assertions: Variant) -> void:
+func test_gameplay_movement_input_bindings(assertions: Variant, _context: Dictionary) -> void:
 	_assert_action_bindings(assertions, &"move_up", KEY_W, KEY_UP, JOY_BUTTON_DPAD_UP, JOY_AXIS_LEFT_Y, -1.0)
 	_assert_action_bindings(assertions, &"move_down", KEY_S, KEY_DOWN, JOY_BUTTON_DPAD_DOWN, JOY_AXIS_LEFT_Y, 1.0)
 	_assert_action_bindings(assertions, &"move_left", KEY_A, KEY_LEFT, JOY_BUTTON_DPAD_LEFT, JOY_AXIS_LEFT_X, -1.0)

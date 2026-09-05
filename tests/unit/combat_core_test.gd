@@ -1,75 +1,7 @@
 extends RefCounted
 
 
-func test_names() -> PackedStringArray:
-	return PackedStringArray([
-		"survival_pool_active_free_index_contract",
-		"xp_pool_overflow_merges_without_loss",
-		"thirty_two_meter_grid_boundaries",
-		"segment_tick_boundaries",
-		"arena_nodes_hold_four_active_and_respawn",
-		"all_weapon_behaviors_generate_attacks",
-		"resonance_wave_sweeps_both_sides_and_amount_adds_damage",
-		"arc_projectile_snapshot_follows_a_parabolic_lob",
-		"homing_core_levels_emit_sequential_straight_bursts",
-		"homing_core_burst_locks_and_reacquires_before_launch",
-		"homing_core_projectile_flies_straight_and_hits_once",
-		"homing_core_upgrades_restart_or_preserve_the_burst",
-		"arc_projectile_explodes_once_on_first_impact",
-		"arc_node_damage_uses_single_resolved_impact",
-		"mass_projectile_requires_an_in_range_target",
-		"directional_projectile_preserves_last_nonzero_move_direction",
-		"returning_ring_uses_explicit_outbound_range_and_hits_on_return",
-		"infinite_homing_configured_cadence_stays_within_pool",
-		"orbital_active_window_uses_duration_and_has_real_gaps",
-	])
-
-
-func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
-	match test_name:
-		"survival_pool_active_free_index_contract":
-			_test_pool_active_free_indices(assertions)
-		"xp_pool_overflow_merges_without_loss":
-			_test_xp_overflow_merge(assertions)
-		"thirty_two_meter_grid_boundaries":
-			_test_grid_boundaries(assertions)
-		"segment_tick_boundaries":
-			_test_segment_boundaries(assertions)
-		"arena_nodes_hold_four_active_and_respawn":
-			_test_arena_node_respawn(assertions)
-		"all_weapon_behaviors_generate_attacks":
-			_test_all_weapon_behaviors(assertions)
-		"resonance_wave_sweeps_both_sides_and_amount_adds_damage":
-			_test_resonance_wave_amount(assertions)
-		"arc_projectile_snapshot_follows_a_parabolic_lob":
-			_test_arc_visual_lob(assertions)
-		"homing_core_levels_emit_sequential_straight_bursts":
-			_test_homing_core_level_bursts(assertions)
-		"homing_core_burst_locks_and_reacquires_before_launch":
-			_test_homing_core_burst_targeting(assertions)
-		"homing_core_projectile_flies_straight_and_hits_once":
-			_test_homing_core_straight_hit(assertions)
-		"homing_core_upgrades_restart_or_preserve_the_burst":
-			_test_homing_core_upgrade_transitions(assertions)
-		"arc_projectile_explodes_once_on_first_impact":
-			_test_arc_impact_explosion(assertions)
-		"arc_node_damage_uses_single_resolved_impact":
-			_test_arc_node_impact_order(assertions)
-		"mass_projectile_requires_an_in_range_target":
-			_test_mass_range_gate(assertions)
-		"directional_projectile_preserves_last_nonzero_move_direction":
-			_test_directional_move_targeting(assertions)
-		"returning_ring_uses_explicit_outbound_range_and_hits_on_return":
-			_test_returning_ring_rehit(assertions)
-		"infinite_homing_configured_cadence_stays_within_pool":
-			_test_infinite_homing_pool(assertions)
-		"orbital_active_window_uses_duration_and_has_real_gaps":
-			_test_orbital_active_window(assertions)
-		_:
-			assertions.expect_true(false, "registered survival combat core test")
-
-
-func _test_pool_active_free_indices(assertions: Variant) -> void:
+func test_survival_pool_active_free_index_contract(assertions: Variant, _context: Dictionary) -> void:
 	var pool := ProjectilePool.new()
 	var first: ProjectileState = _fixture_projectile(pool, Vector2.ZERO)
 	var second: ProjectileState = _fixture_projectile(pool, Vector2.RIGHT)
@@ -120,7 +52,7 @@ func _test_pool_active_free_indices(assertions: Variant) -> void:
 	assertions.expect_equal(1, enemy_pool.active_indices_snapshot().size(), "enemy snapshot traverses active indices only")
 
 
-func _test_xp_overflow_merge(assertions: Variant) -> void:
+func test_xp_pool_overflow_merges_without_loss(assertions: Variant, _context: Dictionary) -> void:
 	var pool := BalanceTestFixtures.xp_pool()
 	for index: int in range(pool.capacity):
 		pool.acquire(Vector2(float(index % 40), float(floori(float(index) / 40.0))), 1, 0, Vector2.ZERO)
@@ -132,7 +64,7 @@ func _test_xp_overflow_merge(assertions: Variant) -> void:
 	assertions.expect_equal(1, pool.overflow_merge_count, "overflow merge is observable")
 
 
-func _test_grid_boundaries(assertions: Variant) -> void:
+func test_thirty_two_meter_grid_boundaries(assertions: Variant, _context: Dictionary) -> void:
 	var grid := BalanceTestFixtures.grid()
 	assertions.expect_equal(Vector2(-16.0, -16.0), grid.arena_min, "grid begins at the 32m arena corner")
 	assertions.expect_equal(Vector2(16.0, 16.0), grid.arena_max, "grid ends at the 32m arena corner")
@@ -141,7 +73,7 @@ func _test_grid_boundaries(assertions: Variant) -> void:
 	assertions.expect_equal(256, grid.cell_count, "2m cells cover the complete 32 by 32 arena")
 
 
-func _test_segment_boundaries(assertions: Variant) -> void:
+func test_segment_tick_boundaries(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
@@ -153,8 +85,7 @@ func _test_segment_boundaries(assertions: Variant) -> void:
 		assertions.expect_equal(index + 1 if index + 1 < catalog.segments.size() else -1, catalog.segment_index_for_tick(end_tick), "exclusive end selects the next segment or boss phase")
 
 
-
-func _test_arena_node_respawn(assertions: Variant) -> void:
+func test_arena_nodes_hold_four_active_and_respawn(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
@@ -176,7 +107,7 @@ func _test_arena_node_respawn(assertions: Variant) -> void:
 	assertions.expect_equal(4, nodes.active_node_count(), "node respawns at an empty site after thirty seconds")
 
 
-func _test_all_weapon_behaviors(assertions: Variant) -> void:
+func test_all_weapon_behaviors_generate_attacks(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
@@ -206,7 +137,7 @@ func _test_all_weapon_behaviors(assertions: Variant) -> void:
 		assertions.expect_equal(1, attacks.size(), "%s generates its mapped automatic attack" % weapon_id)
 
 
-func _test_resonance_wave_amount(assertions: Variant) -> void:
+func test_resonance_wave_sweeps_both_sides_and_amount_adds_damage(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
@@ -256,7 +187,7 @@ func _test_resonance_wave_amount(assertions: Variant) -> void:
 	assertions.expect_equal(1, _hit_count_for(level_two_hits, left_enemy.entity_id), "the opposite sweep remains active")
 
 
-func _test_arc_visual_lob(assertions: Variant) -> void:
+func test_arc_projectile_snapshot_follows_a_parabolic_lob(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
@@ -290,7 +221,7 @@ func _test_arc_visual_lob(assertions: Variant) -> void:
 	assertions.expect_float(start_height, landing_height, "arc projectile returns to launch height at landing")
 
 
-func _test_homing_core_level_bursts(assertions: Variant) -> void:
+func test_homing_core_levels_emit_sequential_straight_bursts(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
@@ -361,7 +292,7 @@ func _test_homing_core_level_bursts(assertions: Variant) -> void:
 			)
 
 
-func _test_homing_core_burst_targeting(assertions: Variant) -> void:
+func test_homing_core_burst_locks_and_reacquires_before_launch(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
@@ -466,7 +397,7 @@ func _test_homing_core_burst_targeting(assertions: Variant) -> void:
 	assertions.expect_equal(1, resumed_attacks.size(), "the waiting burst starts immediately when a target appears")
 
 
-func _test_homing_core_straight_hit(assertions: Variant) -> void:
+func test_homing_core_projectile_flies_straight_and_hits_once(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
@@ -540,7 +471,7 @@ func _test_homing_core_straight_hit(assertions: Variant) -> void:
 	)
 
 
-func _test_homing_core_upgrade_transitions(assertions: Variant) -> void:
+func test_homing_core_upgrades_restart_or_preserve_the_burst(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
@@ -617,7 +548,7 @@ func _test_homing_core_upgrade_transitions(assertions: Variant) -> void:
 	assertions.expect_equal(ProjectileState.MovementKind.HOMING, _projectile_born_at(evolution_simulation, 2).movement_kind, "infinite homing retains in-flight tracking after evolution")
 
 
-func _test_arc_impact_explosion(assertions: Variant) -> void:
+func test_arc_projectile_explodes_once_on_first_impact(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
@@ -681,7 +612,7 @@ func _test_arc_impact_explosion(assertions: Variant) -> void:
 	assertions.expect_equal(0, repeated_records.size(), "released arc projectile cannot deal a double hit")
 
 
-func _test_arc_node_impact_order(assertions: Variant) -> void:
+func test_arc_node_damage_uses_single_resolved_impact(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
@@ -806,7 +737,7 @@ func _test_arc_node_impact_order(assertions: Variant) -> void:
 	assertions.expect_equal(0, straight_simulation.projectile_pool.active_count(), "expired straight projectile still recycles")
 
 
-func _test_mass_range_gate(assertions: Variant) -> void:
+func test_mass_projectile_requires_an_in_range_target(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
@@ -850,7 +781,7 @@ func _test_mass_range_gate(assertions: Variant) -> void:
 	assertions.expect_equal(near_enemy.entity_id, projectile.target_entity_id, "mass projectile excludes the farther target")
 
 
-func _test_directional_move_targeting(assertions: Variant) -> void:
+func test_directional_projectile_preserves_last_nonzero_move_direction(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
@@ -879,7 +810,7 @@ func _test_directional_move_targeting(assertions: Variant) -> void:
 	assertions.expect_equal(Vector2.UP, projectile.velocity.normalized(), "directional needle follows the last nonzero move direction")
 
 
-func _test_returning_ring_rehit(assertions: Variant) -> void:
+func test_returning_ring_uses_explicit_outbound_range_and_hits_on_return(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
@@ -954,11 +885,77 @@ func _test_returning_ring_rehit(assertions: Variant) -> void:
 	assertions.expect_equal(1, return_hit_count, "moving the player during return does not repeatedly clear the returning hit set")
 
 
-
-
-func _test_infinite_homing_pool(assertions: Variant) -> void:
+func test_infinite_homing_configured_cadence_stays_within_pool(assertions: Variant, _context: Dictionary) -> void:
 	for cooldown_ticks: int in [1, 7]:
 		_assert_infinite_homing_cadence(assertions, cooldown_ticks)
+
+
+func test_orbital_active_window_uses_duration_and_has_real_gaps(assertions: Variant, _context: Dictionary) -> void:
+	var catalog: DefinitionCatalog = _catalog(assertions)
+	if catalog == null:
+		return
+	var base_setup: Dictionary = _orbital_fixture(catalog, &"orbital_array", 8, 0)
+	var base_simulation: CombatSimulation = base_setup["simulation"]
+	var base_runtime: RunWeapon = base_setup["runtime"]
+	var base_definition: WeaponDefinition = catalog.weapon(&"orbital_array")
+	var first_pulse: Array[Dictionary] = base_simulation.weapon_system.advance_and_fire(
+		Vector2.ZERO,
+		base_simulation.enemy_system.enemy_store,
+		base_simulation.enemy_system.uniform_grid,
+		1,
+	)
+	var base_duration: int = base_definition.duration_ticks_at(base_runtime.level)
+	assertions.expect_equal(1 + base_duration, base_simulation.weapon_system.orbital_active_until_tick(&"orbital_array"), "base orbit duration establishes an exclusive active deadline")
+	assertions.expect_equal(1, first_pulse.size(), "orbit activation produces its first damage pulse")
+	assertions.expect_equal(5, base_simulation.weapon_system.orbital_transforms(Vector2.ZERO, base_duration).size(), "orbit visuals remain visible through the final active tick")
+	var gap_tick: int = 1 + base_duration
+	var gap_pulse: Array[Dictionary] = base_simulation.weapon_system.advance_and_fire(
+		Vector2.ZERO,
+		base_simulation.enemy_system.enemy_store,
+		base_simulation.enemy_system.uniform_grid,
+		gap_tick,
+	)
+	assertions.expect_equal(0, gap_pulse.size(), "base orbit deals no damage when its active window closes")
+	assertions.expect_equal(0, base_simulation.weapon_system.orbital_transforms(Vector2.ZERO, gap_tick).size(), "base orbit visuals disappear during cooldown")
+	var reactivation_tick: int = gap_tick + base_definition.cooldown_ticks_at(8)
+	for current_tick: int in range(gap_tick + 1, reactivation_tick + 1):
+		base_simulation.weapon_system.advance_and_fire(
+			Vector2.ZERO,
+			base_simulation.enemy_system.enemy_store,
+			base_simulation.enemy_system.uniform_grid,
+			current_tick,
+		)
+	assertions.expect_true(base_simulation.weapon_system.orbital_is_active(&"orbital_array", reactivation_tick), "base orbit reactivates only after a real cooldown gap")
+	var passive_setup: Dictionary = _orbital_fixture(catalog, &"orbital_array", 8, 5)
+	var passive_simulation: CombatSimulation = passive_setup["simulation"]
+	passive_simulation.weapon_system.advance_and_fire(
+		Vector2.ZERO,
+		passive_simulation.enemy_system.enemy_store,
+		passive_simulation.enemy_system.uniform_grid,
+		1,
+	)
+	assertions.expect_equal(1 + roundi(float(base_duration) * 1.5), passive_simulation.weapon_system.orbital_active_until_tick(&"orbital_array"), "duration passive extends the actual orbit active window")
+	var evolved_setup: Dictionary = _orbital_fixture(catalog, &"eternal_orbit", 1, 5)
+	var evolved_simulation: CombatSimulation = evolved_setup["simulation"]
+	evolved_simulation.weapon_system.advance_and_fire(
+		Vector2.ZERO,
+		evolved_simulation.enemy_system.enemy_store,
+		evolved_simulation.enemy_system.uniform_grid,
+		1,
+	)
+	assertions.expect_equal(-1, evolved_simulation.weapon_system.orbital_active_until_tick(&"orbital_array"), "eternal orbit uses no finite active deadline")
+	assertions.expect_true(evolved_simulation.weapon_system.orbital_is_active(&"orbital_array", BalanceTestFixtures.catalog().boss_start_tick * 2), "eternal orbit has no gameplay or visual gap through an unlimited boss fight")
+	assertions.expect_equal(8, evolved_simulation.weapon_system.orbital_transforms(Vector2.ZERO, BalanceTestFixtures.catalog().boss_start_tick * 2).size(), "eternal orbit continuously renders every evolved orb")
+	var long_run_tick: int = 2_000_000
+	var long_run_pulse: Array[Dictionary] = evolved_simulation.weapon_system.advance_and_fire(
+		Vector2.ZERO,
+		evolved_simulation.enemy_system.enemy_store,
+		evolved_simulation.enemy_system.uniform_grid,
+		long_run_tick,
+	)
+	assertions.expect_equal(1, long_run_pulse.size(), "eternal orbit still pulses after the former finite duration plus passive window")
+	assertions.expect_true(evolved_simulation.weapon_system.orbital_is_active(&"orbital_array", long_run_tick), "eternal orbit remains strictly continuous at long-run ticks")
+	assertions.expect_equal(8, evolved_simulation.weapon_system.orbital_transforms(Vector2.ZERO, long_run_tick).size(), "eternal orbit keeps rendering without a long-run gap")
 
 
 func _assert_infinite_homing_cadence(assertions: Variant, cooldown_ticks: int) -> void:
@@ -1035,74 +1032,6 @@ func _assert_infinite_homing_cadence(assertions: Variant, cooldown_ticks: int) -
 	assertions.expect_equal(expected_total, generated_count, "homing emits throughout the configured cadence")
 	assertions.expect_equal(0, simulation.projectile_pool.overflow_count, "configured homing cadence does not overflow the projectile pool")
 	assertions.expect_true(simulation.projectile_pool.active_count() < ProjectilePool.CAPACITY, "expired homing projectiles recycle active slots")
-
-
-func _test_orbital_active_window(assertions: Variant) -> void:
-	var catalog: DefinitionCatalog = _catalog(assertions)
-	if catalog == null:
-		return
-	var base_setup: Dictionary = _orbital_fixture(catalog, &"orbital_array", 8, 0)
-	var base_simulation: CombatSimulation = base_setup["simulation"]
-	var base_runtime: RunWeapon = base_setup["runtime"]
-	var base_definition: WeaponDefinition = catalog.weapon(&"orbital_array")
-	var first_pulse: Array[Dictionary] = base_simulation.weapon_system.advance_and_fire(
-		Vector2.ZERO,
-		base_simulation.enemy_system.enemy_store,
-		base_simulation.enemy_system.uniform_grid,
-		1,
-	)
-	var base_duration: int = base_definition.duration_ticks_at(base_runtime.level)
-	assertions.expect_equal(1 + base_duration, base_simulation.weapon_system.orbital_active_until_tick(&"orbital_array"), "base orbit duration establishes an exclusive active deadline")
-	assertions.expect_equal(1, first_pulse.size(), "orbit activation produces its first damage pulse")
-	assertions.expect_equal(5, base_simulation.weapon_system.orbital_transforms(Vector2.ZERO, base_duration).size(), "orbit visuals remain visible through the final active tick")
-	var gap_tick: int = 1 + base_duration
-	var gap_pulse: Array[Dictionary] = base_simulation.weapon_system.advance_and_fire(
-		Vector2.ZERO,
-		base_simulation.enemy_system.enemy_store,
-		base_simulation.enemy_system.uniform_grid,
-		gap_tick,
-	)
-	assertions.expect_equal(0, gap_pulse.size(), "base orbit deals no damage when its active window closes")
-	assertions.expect_equal(0, base_simulation.weapon_system.orbital_transforms(Vector2.ZERO, gap_tick).size(), "base orbit visuals disappear during cooldown")
-	var reactivation_tick: int = gap_tick + base_definition.cooldown_ticks_at(8)
-	for current_tick: int in range(gap_tick + 1, reactivation_tick + 1):
-		base_simulation.weapon_system.advance_and_fire(
-			Vector2.ZERO,
-			base_simulation.enemy_system.enemy_store,
-			base_simulation.enemy_system.uniform_grid,
-			current_tick,
-		)
-	assertions.expect_true(base_simulation.weapon_system.orbital_is_active(&"orbital_array", reactivation_tick), "base orbit reactivates only after a real cooldown gap")
-	var passive_setup: Dictionary = _orbital_fixture(catalog, &"orbital_array", 8, 5)
-	var passive_simulation: CombatSimulation = passive_setup["simulation"]
-	passive_simulation.weapon_system.advance_and_fire(
-		Vector2.ZERO,
-		passive_simulation.enemy_system.enemy_store,
-		passive_simulation.enemy_system.uniform_grid,
-		1,
-	)
-	assertions.expect_equal(1 + roundi(float(base_duration) * 1.5), passive_simulation.weapon_system.orbital_active_until_tick(&"orbital_array"), "duration passive extends the actual orbit active window")
-	var evolved_setup: Dictionary = _orbital_fixture(catalog, &"eternal_orbit", 1, 5)
-	var evolved_simulation: CombatSimulation = evolved_setup["simulation"]
-	evolved_simulation.weapon_system.advance_and_fire(
-		Vector2.ZERO,
-		evolved_simulation.enemy_system.enemy_store,
-		evolved_simulation.enemy_system.uniform_grid,
-		1,
-	)
-	assertions.expect_equal(-1, evolved_simulation.weapon_system.orbital_active_until_tick(&"orbital_array"), "eternal orbit uses no finite active deadline")
-	assertions.expect_true(evolved_simulation.weapon_system.orbital_is_active(&"orbital_array", BalanceTestFixtures.catalog().boss_start_tick * 2), "eternal orbit has no gameplay or visual gap through an unlimited boss fight")
-	assertions.expect_equal(8, evolved_simulation.weapon_system.orbital_transforms(Vector2.ZERO, BalanceTestFixtures.catalog().boss_start_tick * 2).size(), "eternal orbit continuously renders every evolved orb")
-	var long_run_tick: int = 2_000_000
-	var long_run_pulse: Array[Dictionary] = evolved_simulation.weapon_system.advance_and_fire(
-		Vector2.ZERO,
-		evolved_simulation.enemy_system.enemy_store,
-		evolved_simulation.enemy_system.uniform_grid,
-		long_run_tick,
-	)
-	assertions.expect_equal(1, long_run_pulse.size(), "eternal orbit still pulses after the former finite duration plus passive window")
-	assertions.expect_true(evolved_simulation.weapon_system.orbital_is_active(&"orbital_array", long_run_tick), "eternal orbit remains strictly continuous at long-run ticks")
-	assertions.expect_equal(8, evolved_simulation.weapon_system.orbital_transforms(Vector2.ZERO, long_run_tick).size(), "eternal orbit keeps rendering without a long-run gap")
 
 
 func _orbital_fixture(

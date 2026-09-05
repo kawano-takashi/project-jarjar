@@ -1,48 +1,7 @@
 extends RefCounted
 
 
-func test_names() -> PackedStringArray:
-	return PackedStringArray([
-		"catalog_accepts_contact_tuning_without_per_enemy_cadence",
-		"seeking_enemy_stops_at_contact_and_damages_every_tick",
-		"player_pushes_enemy_at_full_speed_and_recontact_damages_immediately",
-		"all_active_enemy_kinds_offer_contact_while_entry_and_stop_gate_actions",
-		"exact_overlap_is_deterministic_and_wall_clamp_allows_temporary_overlap",
-		"fixed_direction_swarm_crosses_the_player_without_soft_separation",
-		"contact_and_projectiles_apply_only_the_strongest_candidate_every_tick",
-		"level_up_resume_protection_consumes_projectiles_without_damage",
-		"player_hit_feedback_is_emitted_each_damage_tick_with_audio_cap",
-		"equal_damage_candidate_ties_use_stable_source_entity_pool_order",
-	])
-
-
-func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
-	match test_name:
-		"catalog_accepts_contact_tuning_without_per_enemy_cadence":
-			_test_contact_catalog_contract(assertions)
-		"seeking_enemy_stops_at_contact_and_damages_every_tick":
-			_test_continuous_contact(assertions)
-		"player_pushes_enemy_at_full_speed_and_recontact_damages_immediately":
-			_test_player_push_and_recontact(assertions)
-		"all_active_enemy_kinds_offer_contact_while_entry_and_stop_gate_actions":
-			_test_enemy_kinds_entry_and_stop(assertions)
-		"exact_overlap_is_deterministic_and_wall_clamp_allows_temporary_overlap":
-			_test_exact_overlap_and_wall(assertions)
-		"fixed_direction_swarm_crosses_the_player_without_soft_separation":
-			_test_swarm_passthrough(assertions)
-		"contact_and_projectiles_apply_only_the_strongest_candidate_every_tick":
-			_test_maximum_damage_and_projectile_consumption(assertions)
-		"level_up_resume_protection_consumes_projectiles_without_damage":
-			_test_level_up_protection_and_projectile_consumption(assertions)
-		"player_hit_feedback_is_emitted_each_damage_tick_with_audio_cap":
-			_test_player_hit_feedback_and_audio_cap(assertions)
-		"equal_damage_candidate_ties_use_stable_source_entity_pool_order":
-			_test_stable_tie_break(assertions)
-		_:
-			assertions.expect_true(false, "registered contact-damage test")
-
-
-func _test_contact_catalog_contract(assertions: Variant) -> void:
+func test_catalog_accepts_contact_tuning_without_per_enemy_cadence(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
@@ -85,7 +44,7 @@ func _test_contact_catalog_contract(assertions: Variant) -> void:
 	)
 
 
-func _test_continuous_contact(assertions: Variant) -> void:
+func test_seeking_enemy_stops_at_contact_and_damages_every_tick(assertions: Variant, _context: Dictionary) -> void:
 	var simulation: CombatSimulation = _simulation(assertions, 14_001)
 	if simulation == null:
 		return
@@ -128,7 +87,7 @@ func _test_continuous_contact(assertions: Variant) -> void:
 	)
 
 
-func _test_player_push_and_recontact(assertions: Variant) -> void:
+func test_player_pushes_enemy_at_full_speed_and_recontact_damages_immediately(assertions: Variant, _context: Dictionary) -> void:
 	var simulation: CombatSimulation = _simulation(assertions, 14_002)
 	if simulation == null:
 		return
@@ -206,7 +165,7 @@ func _test_player_push_and_recontact(assertions: Variant) -> void:
 	)
 
 
-func _test_enemy_kinds_entry_and_stop(assertions: Variant) -> void:
+func test_all_active_enemy_kinds_offer_contact_while_entry_and_stop_gate_actions(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
@@ -280,7 +239,7 @@ func _test_enemy_kinds_entry_and_stop(assertions: Variant) -> void:
 	)
 
 
-func _test_exact_overlap_and_wall(assertions: Variant) -> void:
+func test_exact_overlap_is_deterministic_and_wall_clamp_allows_temporary_overlap(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
@@ -359,7 +318,7 @@ func _test_exact_overlap_and_wall(assertions: Variant) -> void:
 	)
 
 
-func _test_swarm_passthrough(assertions: Variant) -> void:
+func test_fixed_direction_swarm_crosses_the_player_without_soft_separation(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
@@ -397,7 +356,7 @@ func _test_swarm_passthrough(assertions: Variant) -> void:
 	)
 
 
-func _test_maximum_damage_and_projectile_consumption(assertions: Variant) -> void:
+func test_contact_and_projectiles_apply_only_the_strongest_candidate_every_tick(assertions: Variant, _context: Dictionary) -> void:
 	var simulation: CombatSimulation = _simulation(assertions, 14_007)
 	if simulation == null:
 		return
@@ -421,7 +380,7 @@ func _test_maximum_damage_and_projectile_consumption(assertions: Variant) -> voi
 	assertions.expect_float(153.0, simulation.state.current_hp, "contact resumes as the next tick's maximum candidate")
 
 
-func _test_level_up_protection_and_projectile_consumption(assertions: Variant) -> void:
+func test_level_up_resume_protection_consumes_projectiles_without_damage(assertions: Variant, _context: Dictionary) -> void:
 	var simulation: CombatSimulation = _simulation(assertions, 14_008)
 	if simulation == null:
 		return
@@ -450,7 +409,7 @@ func _test_level_up_protection_and_projectile_consumption(assertions: Variant) -
 	assertions.expect_true(simulation._player_hit_this_tick, "eligible collision emits a player-hit event")
 
 
-func _test_player_hit_feedback_and_audio_cap(assertions: Variant) -> void:
+func test_player_hit_feedback_is_emitted_each_damage_tick_with_audio_cap(assertions: Variant, _context: Dictionary) -> void:
 	var simulation: CombatSimulation = _simulation(assertions, 14_009)
 	if simulation == null:
 		return
@@ -474,7 +433,7 @@ func _test_player_hit_feedback_and_audio_cap(assertions: Variant) -> void:
 	assertions.expect_equal(52, simulation._audio_cue_admission.suppressed_count, "remaining per-tick hit cues are audio-suppressed")
 
 
-func _test_stable_tie_break(assertions: Variant) -> void:
+func test_equal_damage_candidate_ties_use_stable_source_entity_pool_order(assertions: Variant, _context: Dictionary) -> void:
 	var simulation: CombatSimulation = _simulation(assertions, 14_010)
 	if simulation == null:
 		return

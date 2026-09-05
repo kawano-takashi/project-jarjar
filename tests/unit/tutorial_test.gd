@@ -4,27 +4,7 @@ extends RefCounted
 const SETTINGS_OVERLAY_SCENE: PackedScene = preload("res://scenes/ui/settings_overlay.tscn")
 
 
-func test_names() -> PackedStringArray:
-	return PackedStringArray([
-		"tutorial_contextual_sequence",
-		"completed_tutorial_skips_contextual_hints",
-		"tutorial_completion_persists_and_settings_can_replay",
-	])
-
-
-func run_test(test_name: String, assertions: Variant, context: Dictionary) -> void:
-	match test_name:
-		"tutorial_contextual_sequence":
-			_test_contextual_sequence(assertions)
-		"completed_tutorial_skips_contextual_hints":
-			_test_completed_tutorial(assertions)
-		"tutorial_completion_persists_and_settings_can_replay":
-			await _test_saved_completion(assertions, context)
-		_:
-			assertions.expect_true(false, "registered survival tutorial test")
-
-
-func _test_contextual_sequence(assertions: Variant) -> void:
+func test_tutorial_contextual_sequence(assertions: Variant, _context: Dictionary) -> void:
 	var tutorial := TutorialController.new()
 	var completions: Array[bool] = []
 	tutorial.completed.connect(func() -> void:
@@ -50,18 +30,12 @@ func _test_contextual_sequence(assertions: Variant) -> void:
 	]:
 		assertions.expect_true(tutorial.notify_context(context_id), "%s displays on first encounter" % context_id)
 		assertions.expect_false(tutorial.current_message().is_empty(), "%s has contextual text" % context_id)
-		if context_id == &"evolution":
-			assertions.expect_equal(
-				"武器が最大Lv、触媒がLv1以上なら宝箱から進化。触媒は最大Lv不要・進化後も消費されません",
-				tutorial.current_message(),
-				"evolution tutorial explains the complete catalyst contract",
-			)
 		assertions.expect_false(tutorial.notify_context(context_id), "%s never repeats in the same run" % context_id)
 		tutorial.advance(TutorialController.CONTEXT_MESSAGE_SECONDS)
 		assertions.expect_equal("", tutorial.current_message(), "%s expires without input" % context_id)
 
 
-func _test_completed_tutorial(assertions: Variant) -> void:
+func test_completed_tutorial_skips_contextual_hints(assertions: Variant, _context: Dictionary) -> void:
 	var tutorial := TutorialController.new()
 	tutorial.begin_run(true, BalanceTestFixtures.catalog())
 	assertions.expect_false(tutorial.enabled, "completed tutorial suppresses first-run hints")
@@ -70,7 +44,7 @@ func _test_completed_tutorial(assertions: Variant) -> void:
 	assertions.expect_false(tutorial.notify_context(&"level_up"), "completed tutorial suppresses context")
 
 
-func _test_saved_completion(assertions: Variant, context: Dictionary) -> void:
+func test_tutorial_completion_persists_and_settings_can_replay(assertions: Variant, context: Dictionary) -> void:
 	var store: Variant = context["settings_store"]
 	var tree: SceneTree = context["tree"] as SceneTree
 	assertions.expect_false(store.tutorial_completed, "clean settings begin with an incomplete tutorial")

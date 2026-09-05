@@ -1,49 +1,7 @@
 extends RefCounted
 
 
-func test_names() -> PackedStringArray:
-	return [
-		"balance_saved_resource_uses_normal_loading_path",
-		"balance_custom_player_enemy_xp_and_hud",
-		"balance_unequal_timeline_events_and_boss",
-		"balance_relative_weights_and_zero_candidates",
-		"balance_variable_growth_and_multiple_stat_descriptions",
-		"balance_invalid_values_report_source_field_and_rule",
-		"balance_external_resources_are_isolated_between_runs",
-		"balance_arena_and_scrollable_variable_ui",
-		"balance_boss_telegraph_and_volley_follow_definition",
-		"balance_stationary_projectile_values_remain_finite",
-		"balance_evolution_definition_controls_pair_and_lineage",
-	]
-
-
-func run_test(name: String, assertions: Variant, context: Dictionary) -> void:
-	match name:
-		"balance_saved_resource_uses_normal_loading_path":
-			_test_saved_resource(assertions, context)
-		"balance_custom_player_enemy_xp_and_hud":
-			_test_custom_values(assertions)
-		"balance_unequal_timeline_events_and_boss":
-			_test_timeline(assertions)
-		"balance_relative_weights_and_zero_candidates":
-			_test_weights(assertions)
-		"balance_variable_growth_and_multiple_stat_descriptions":
-			_test_growth(assertions)
-		"balance_invalid_values_report_source_field_and_rule":
-			_test_validation(assertions)
-		"balance_external_resources_are_isolated_between_runs":
-			_test_isolation(assertions)
-		"balance_arena_and_scrollable_variable_ui":
-			await _test_ui(assertions, context["tree"] as SceneTree)
-		"balance_boss_telegraph_and_volley_follow_definition":
-			_test_boss(assertions)
-		"balance_stationary_projectile_values_remain_finite":
-			_test_stationary_projectile(assertions)
-		"balance_evolution_definition_controls_pair_and_lineage":
-			_test_evolution_source(assertions)
-
-
-func _test_saved_resource(a: Variant, context: Dictionary) -> void:
+func test_balance_saved_resource_uses_normal_loading_path(a: Variant, context: Dictionary) -> void:
 	var content: SurvivalContentManifest = BalanceTestFixtures.manifest()
 	content.player.base_max_hp = 61.75
 	content.segments[0].target_active = 23
@@ -62,7 +20,7 @@ func _test_saved_resource(a: Variant, context: Dictionary) -> void:
 	a.expect_true(invalid.error_text.contains("target_active=-1"), "normal load error identifies invalid field and actual value")
 
 
-func _test_custom_values(a: Variant) -> void:
+func test_balance_custom_player_enemy_xp_and_hud(a: Variant, _context: Dictionary) -> void:
 	var content: SurvivalContentManifest = BalanceTestFixtures.manifest()
 	content.player.base_max_hp = 73.25
 	content.player.move_speed = 6.0
@@ -114,7 +72,7 @@ func _test_custom_values(a: Variant) -> void:
 	a.expect_equal(0, empty.enemy_system.resolve_normal_spawns(Vector2.ZERO, 1).size(), "zero target emits no enemies")
 
 
-func _test_timeline(a: Variant) -> void:
+func test_balance_unequal_timeline_events_and_boss(a: Variant, _context: Dictionary) -> void:
 	var content: SurvivalContentManifest = BalanceTestFixtures.manifest()
 	var segments: Array[EnemySegmentDefinition] = []
 	for duration: int in [5, 7, 3]:
@@ -166,7 +124,7 @@ func _test_timeline(a: Variant) -> void:
 	a.expect_equal(1, simulation.state.swarm_event_skipped_busy_count, "busy attempt is separately recorded")
 
 
-func _test_weights(a: Variant) -> void:
+func test_balance_relative_weights_and_zero_candidates(a: Variant, _context: Dictionary) -> void:
 	a.expect_false(WeightedSelector.chance_succeeds_with_value(0.0, 0.0), "probability zero never succeeds, including a zero draw")
 	a.expect_true(WeightedSelector.chance_succeeds_with_value(1.0, 1.0), "probability one always succeeds, including Godot's inclusive endpoint")
 	a.expect_true(WeightedSelector.chance_succeeds_with_value(0.25, 0.24), "probability uses the expected fractional interval")
@@ -200,7 +158,7 @@ func _test_weights(a: Variant) -> void:
 	a.expect_equal(GameTypes.ChestOutcomeKind.FULL_HEAL, ChestRewardService.create_outcome(state, catalog).kind, "chest skips the owned zero-weight weapon")
 
 
-func _test_growth(a: Variant) -> void:
+func test_balance_variable_growth_and_multiple_stat_descriptions(a: Variant, _context: Dictionary) -> void:
 	var content: SurvivalContentManifest = BalanceTestFixtures.manifest()
 	var first: WeaponDefinition = _find_weapon(content, content.progression.starter_weapon_id)
 	var second: WeaponDefinition = _find_weapon(content, &"resonance_wave")
@@ -245,7 +203,7 @@ func _test_growth(a: Variant) -> void:
 	a.expect_equal(0, ProgressionService.remaining_upgrade_capacity(state, catalog), "maximum levels follow independent array lengths")
 
 
-func _test_validation(a: Variant) -> void:
+func test_balance_invalid_values_report_source_field_and_rule(a: Variant, _context: Dictionary) -> void:
 	for case: String in ["hp", "speed", "target", "weights", "chance", "offset", "duration", "duplicate", "missing", "shape", "unchanged", "outer", "signed"]:
 		var content: SurvivalContentManifest = BalanceTestFixtures.manifest()
 		var field: String = ""
@@ -303,7 +261,7 @@ func _test_validation(a: Variant) -> void:
 	a.expect_true(path_catalog.error_text.contains("res://data/balance/segments/invalid_test_fixture.tres: target_active=-1"), "error locates the actual Resource path")
 
 
-func _test_isolation(a: Variant) -> void:
+func test_balance_external_resources_are_isolated_between_runs(a: Variant, _context: Dictionary) -> void:
 	var canonical: SurvivalContentManifest = BalanceTestFixtures.catalog().manifest()
 	var before: String = JSON.stringify(_values(canonical))
 	var content: SurvivalContentManifest = BalanceTestFixtures.manifest()
@@ -324,7 +282,8 @@ func _test_isolation(a: Variant) -> void:
 	a.expect_equal(before, JSON.stringify(_values(canonical)), "detached fixture changes never mutate cached external Resources")
 
 
-func _test_ui(a: Variant, tree: SceneTree) -> void:
+func test_balance_arena_and_scrollable_variable_ui(a: Variant, context: Dictionary) -> void:
+	var tree: SceneTree = context["tree"]
 	var content: SurvivalContentManifest = BalanceTestFixtures.manifest()
 	content.arena.size = Vector2(50.0, 28.0)
 	content.arena.node_site_positions = PackedVector2Array([Vector2(-10, 0), Vector2(10, 0), Vector2(0, 5)])
@@ -378,7 +337,7 @@ func _test_ui(a: Variant, tree: SceneTree) -> void:
 	await tree.process_frame
 
 
-func _test_boss(a: Variant) -> void:
+func test_balance_boss_telegraph_and_volley_follow_definition(a: Variant, _context: Dictionary) -> void:
 	var content: SurvivalContentManifest = BalanceTestFixtures.manifest()
 	var catalog: DefinitionCatalog = _catalog(content, a)
 	var definition: EnemyDefinition = catalog.enemy_for_type(GameTypes.EnemyType.BOSS)
@@ -399,7 +358,7 @@ func _test_boss(a: Variant) -> void:
 	a.expect_equal(13, simulation.projectile_pool.active_count(), "actual volley uses same configured count")
 
 
-func _test_stationary_projectile(a: Variant) -> void:
+func test_balance_stationary_projectile_values_remain_finite(a: Variant, _context: Dictionary) -> void:
 	var content: SurvivalContentManifest = BalanceTestFixtures.manifest()
 	var arc: WeaponDefinition = _find_weapon(content, &"arc_crystal")
 	_set_levels(arc, 2)
@@ -419,7 +378,7 @@ func _test_stationary_projectile(a: Variant) -> void:
 	a.expect_equal(Vector2.ZERO, projectile.velocity, "zero speed is not replaced by a hidden minimum")
 
 
-func _test_evolution_source(a: Variant) -> void:
+func test_balance_evolution_definition_controls_pair_and_lineage(a: Variant, _context: Dictionary) -> void:
 	var content: SurvivalContentManifest = BalanceTestFixtures.manifest()
 	content.progression.max_evolutions_per_run = 1
 	var catalog: DefinitionCatalog = _catalog(content, a)

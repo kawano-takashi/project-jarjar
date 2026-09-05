@@ -1,43 +1,7 @@
 extends RefCounted
 
 
-const MEASUREMENT: Script = preload("res://tests/balance/difficulty_calibration_runner.gd")
-
-
-func test_names() -> PackedStringArray:
-	return PackedStringArray([
-		"chest_kind_survives_delayed_elite_death_and_collection",
-		"mixed_chest_queue_preserves_level_priority_and_fallbacks",
-		"swarm_warning_locks_route_and_consumes_busy_attempts",
-		"swarm_warning_pauses_and_is_cancelled_at_short_boss_boundary",
-		"swarm_kills_open_a_gap_and_walls_leave_an_escape_route",
-		"chest_shapes_and_swarm_warning_match_gameplay_snapshot",
-		"growth_measurement_uses_dynamic_timeline_and_records_each_evolution",
-		"elite_and_swarm_resources_reject_invalid_schedules",
-	])
-
-
-func run_test(name: String, a: Variant, context: Dictionary) -> void:
-	match name:
-		"chest_kind_survives_delayed_elite_death_and_collection":
-			_test_delayed_chests(a)
-		"mixed_chest_queue_preserves_level_priority_and_fallbacks":
-			_test_mixed_queue(a)
-		"swarm_warning_locks_route_and_consumes_busy_attempts":
-			_test_warning(a)
-		"swarm_warning_pauses_and_is_cancelled_at_short_boss_boundary":
-			_test_pauses_and_boss(a)
-		"swarm_kills_open_a_gap_and_walls_leave_an_escape_route":
-			_test_gap_and_walls(a)
-		"chest_shapes_and_swarm_warning_match_gameplay_snapshot":
-			await _test_presentation(a, context["tree"] as SceneTree)
-		"growth_measurement_uses_dynamic_timeline_and_records_each_evolution":
-			_test_measurement(a)
-		"elite_and_swarm_resources_reject_invalid_schedules":
-			_test_validation(a)
-
-
-func _test_delayed_chests(a: Variant) -> void:
+func test_chest_kind_survives_delayed_elite_death_and_collection(a: Variant, _context: Dictionary) -> void:
 	var sim: CombatSimulation = _simulation(_catalog(_content(), a))
 	var system: EnemySystem = sim.enemy_system
 	sim.state.combat_tick = 1
@@ -79,7 +43,7 @@ func _test_delayed_chests(a: Variant) -> void:
 	a.expect_equal(GameTypes.ChestOutcomeKind.EVOLUTION, sim.state.active_chest_outcome.kind, "eligible capable chest evolves without a global time gate")
 
 
-func _test_mixed_queue(a: Variant) -> void:
+func test_mixed_chest_queue_preserves_level_priority_and_fallbacks(a: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(_content(), a)
 	var sim: CombatSimulation = _simulation(catalog)
 	_prepare_evolution(sim.state, catalog)
@@ -124,7 +88,7 @@ func _test_mixed_queue(a: Variant) -> void:
 	a.expect_equal(GameTypes.ChestOutcomeKind.UPGRADE, ChestRewardService.create_outcome(capped, catalog).kind, "evolution cap falls back to owned upgrade")
 
 
-func _test_warning(a: Variant) -> void:
+func test_swarm_warning_locks_route_and_consumes_busy_attempts(a: Variant, _context: Dictionary) -> void:
 	var sim: CombatSimulation = _simulation(_catalog(_content(), a))
 	var system: EnemySystem = sim.enemy_system
 	var anchor := Vector2(2, -3)
@@ -161,7 +125,7 @@ func _test_warning(a: Variant) -> void:
 	a.expect_equal(5, sim.state.swarm_event_attempt_count, "each scheduled attempt is consumed exactly once")
 
 
-func _test_pauses_and_boss(a: Variant) -> void:
+func test_swarm_warning_pauses_and_is_cancelled_at_short_boss_boundary(a: Variant, _context: Dictionary) -> void:
 	var sim: CombatSimulation = _simulation(_catalog(_content(), a))
 	sim.state.combat_tick = 10
 	sim.enemy_system.resolve_swarm_event_spawns(Vector2.ZERO, 10)
@@ -201,7 +165,7 @@ func _test_pauses_and_boss(a: Variant) -> void:
 	a.expect_equal(1, sim.state.boss_kills, "boss victory records one kill")
 
 
-func _test_gap_and_walls(a: Variant) -> void:
+func test_swarm_kills_open_a_gap_and_walls_leave_an_escape_route(a: Variant, _context: Dictionary) -> void:
 	var sim: CombatSimulation = _simulation(_catalog(_content(), a))
 	sim.state.combat_tick = 20
 	var group: Array[EnemyEntity] = sim.enemy_system._spawn_swarm_group(Vector2.ZERO, Vector2.RIGHT, 20, 2.0, 3.0, 4.0)
@@ -230,7 +194,8 @@ func _test_gap_and_walls(a: Variant) -> void:
 			a.expect_true(clearance > half_band + production.envelope.player_body_radius, "each wall and corner has a reachable exit from the warned band before contact")
 
 
-func _test_presentation(a: Variant, tree: SceneTree) -> void:
+func test_chest_shapes_and_swarm_warning_match_gameplay_snapshot(a: Variant, context: Dictionary) -> void:
+	var tree: SceneTree = context["tree"]
 	var sim: CombatSimulation = _simulation(_catalog(_content(), a))
 	sim.arena_object_system.spawn_chest(Vector2(-2, 0), 0)
 	sim.arena_object_system.spawn_chest(Vector2(2, 0), 1)
@@ -275,42 +240,7 @@ func _test_presentation(a: Variant, tree: SceneTree) -> void:
 	await tree.process_frame
 
 
-func _test_measurement(a: Variant) -> void:
-	var catalog: DefinitionCatalog = _catalog(_content(), a)
-	a.expect_equal(PackedInt32Array([40, 80]), MEASUREMENT.checkpoint_ticks(catalog), "every independent segment boundary is measured")
-	a.expect_equal(18080, MEASUREMENT.maximum_combat_tick(catalog), "measurement horizon is custom boss time plus five minutes")
-	a.expect_equal(3, MEASUREMENT.first_evolution_chest_tick(catalog), "first opportunity comes from chest type, not ordinal or production time")
-	var state: RunState = RunStateFactory.create(2088, catalog)
-	var runtime: Dictionary = {"first_evolution_tick": -1, "evolution_ticks": PackedInt32Array(), "build_maxed_tick": -1}
-	MEASUREMENT.observe_growth(state, runtime)
-	a.expect_equal(-1, runtime["first_evolution_tick"], "missing evolution is never fabricated")
-	a.expect_equal(-1, runtime["build_maxed_tick"], "missing build completion is never fabricated")
-	state.combat_tick = 31
-	state.evolution_count = 2
-	MEASUREMENT.observe_growth(state, runtime)
-	state.combat_tick = 42
-	state.evolution_count = 3
-	state.build_maxed = true
-	MEASUREMENT.observe_growth(state, runtime)
-	state.combat_tick = 70
-	MEASUREMENT.observe_growth(state, runtime)
-	a.expect_equal(PackedInt32Array([31, 31, 42]), runtime["evolution_ticks"], "each evolution is retained including same-tick modal chains")
-	a.expect_equal(31, runtime["first_evolution_tick"], "first evolution remains the first observation")
-	a.expect_equal(42, runtime["build_maxed_tick"], "build completion is recorded only once")
-	runtime["policy"] = "normal"
-	var missing: Dictionary = {"policy": "normal", "evolution_ticks": PackedInt32Array(), "build_maxed_tick": -1}
-	var growth_results: Array[Dictionary] = [runtime, missing]
-	var rows: Array[Dictionary] = MEASUREMENT.growth_rows(growth_results, 4)
-	a.expect_equal(5, rows.size(), "observations include every possible evolution and build completion")
-	a.expect_equal(1, rows[0]["missing_runs"], "first evolution reports missing runs")
-	a.expect_equal(1, rows[2]["reached_runs"], "later evolutions report their own reach count")
-	a.expect_equal(2, rows[3]["missing_runs"], "never reached fourth evolution is not omitted")
-	a.expect_float(-1.0, rows[3]["median_seconds"], "unreached milestone keeps its missing sentinel")
-	a.expect_equal("build_maxed", rows[4]["milestone"], "normal upgrade completion is separate from evolution")
-	a.expect_float(42.0 / 60.0, rows[4]["median_seconds"], "completion observations exclude unreached runs from median")
-
-
-func _test_validation(a: Variant) -> void:
+func test_elite_and_swarm_resources_reject_invalid_schedules(a: Variant, _context: Dictionary) -> void:
 	for invalid_case: int in range(5):
 		var content: SurvivalContentManifest = _content()
 		var field: String

@@ -1,33 +1,7 @@
 extends RefCounted
 
 
-func test_names() -> PackedStringArray:
-	return PackedStringArray([
-		"combat_envelope_and_exterior_grid",
-		"enemy_entry_contract_and_pool_default",
-		"player_relative_spawn_frame_is_translation_invariant",
-		"outside_entry_and_normal_far_despawn_contracts",
-		"boss_charge_cadence_and_latches",
-	])
-
-
-func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
-	match test_name:
-		"combat_envelope_and_exterior_grid":
-			_test_envelope_and_grid(assertions)
-		"enemy_entry_contract_and_pool_default":
-			_test_entry_contract(assertions)
-		"player_relative_spawn_frame_is_translation_invariant":
-			_test_spawn_contracts(assertions)
-		"outside_entry_and_normal_far_despawn_contracts":
-			_test_outside_entry_and_far_despawn(assertions)
-		"boss_charge_cadence_and_latches":
-			_test_boss_charge(assertions)
-		_:
-			assertions.expect_true(false, "registered enemy-spatial test")
-
-
-func _test_envelope_and_grid(assertions: Variant) -> void:
+func test_combat_envelope_and_exterior_grid(assertions: Variant, _context: Dictionary) -> void:
 	var grid := BalanceTestFixtures.grid()
 	assertions.expect_equal(Vector2(-16.0, -16.0), grid.arena_min, "grid begins at the thirty-two-meter arena corner")
 	assertions.expect_equal(Vector2(16.0, 16.0), grid.arena_max, "grid ends at the thirty-two-meter arena corner")
@@ -47,52 +21,12 @@ func _test_envelope_and_grid(assertions: Variant) -> void:
 		)
 
 
-func _test_entry_contract(assertions: Variant) -> void:
+func test_enemy_entry_contract_and_pool_default(assertions: Variant, _context: Dictionary) -> void:
 	for entry_ticks: int in [0, 17, 21]:
 		_assert_entry_contract(assertions, entry_ticks)
 
 
-func _assert_entry_contract(assertions: Variant, entry_ticks: int) -> void:
-	var catalog: DefinitionCatalog = _catalog(assertions)
-	if catalog == null:
-		return
-	var state: RunState = RunStateFactory.create(8101, catalog)
-	var store := EnemyStore.new()
-	var definition: EnemyDefinition = catalog.enemy(&"pursuer")
-	var materializing: EnemyEntity = store.try_spawn(
-		state,
-		GameTypes.EnemyType.PURSUER,
-		definition,
-		Vector2.ZERO,
-		1.0,
-		1.0,
-		100,
-		entry_ticks,
-	)
-	assertions.expect_equal(1, store.active_count(), "materializing enemy occupies an active pool slot")
-	var activation_tick: int = 100 + entry_ticks
-	assertions.expect_equal(entry_ticks > 0, materializing.is_materializing(100), "only a positive entry delay begins inactive")
-	if entry_ticks > 0:
-		assertions.expect_false(materializing.is_targetable(activation_tick - 1), "enemy remains inactive until the configured delay elapses")
-	assertions.expect_true(materializing.is_targetable(activation_tick), "enemy activates exactly after the configured delay")
-	assertions.expect_float(0.0 if entry_ticks > 0 else 1.0, materializing.materialization_progress(100), "entry progress reflects the configured delay")
-	assertions.expect_float(1.0, materializing.materialization_progress(activation_tick), "entry progress completes at activation")
-	materializing.hit_flash_until_tick = 125
-	assertions.expect_true(materializing.is_hit_flashing(124), "hit flash is active before its exclusive deadline")
-	assertions.expect_false(materializing.is_hit_flashing(125), "hit flash ends on its exclusive deadline")
-	var immediate: EnemyEntity = store.try_spawn(
-		state,
-		GameTypes.EnemyType.PURSUER,
-		definition,
-		Vector2.RIGHT,
-		1.0,
-		1.0,
-		100,
-	)
-	assertions.expect_true(immediate.is_targetable(100), "direct fixture spawn activates immediately by default")
-
-
-func _test_spawn_contracts(assertions: Variant) -> void:
+func test_player_relative_spawn_frame_is_translation_invariant(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
@@ -188,8 +122,7 @@ func _test_spawn_contracts(assertions: Variant) -> void:
 	)
 
 
-
-func _test_outside_entry_and_far_despawn(assertions: Variant) -> void:
+func test_outside_entry_and_normal_far_despawn_contracts(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
@@ -464,7 +397,7 @@ func _test_outside_entry_and_far_despawn(assertions: Variant) -> void:
 	)
 
 
-func _test_boss_charge(assertions: Variant) -> void:
+func test_boss_charge_cadence_and_latches(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
@@ -562,6 +495,46 @@ func _test_boss_charge(assertions: Variant) -> void:
 	system.advance_snapshot(boss_ids, Vector2(6.0, 0.0), state.combat_tick)
 	system.resolve_ready_enemy_special_actions(boss_ids, Vector2.ZERO, state.combat_tick, projectile_pool)
 	assertions.expect_equal(16, projectile_pool.active_count(), "stop-scaled charge fires after sixty combat updates")
+
+
+func _assert_entry_contract(assertions: Variant, entry_ticks: int) -> void:
+	var catalog: DefinitionCatalog = _catalog(assertions)
+	if catalog == null:
+		return
+	var state: RunState = RunStateFactory.create(8101, catalog)
+	var store := EnemyStore.new()
+	var definition: EnemyDefinition = catalog.enemy(&"pursuer")
+	var materializing: EnemyEntity = store.try_spawn(
+		state,
+		GameTypes.EnemyType.PURSUER,
+		definition,
+		Vector2.ZERO,
+		1.0,
+		1.0,
+		100,
+		entry_ticks,
+	)
+	assertions.expect_equal(1, store.active_count(), "materializing enemy occupies an active pool slot")
+	var activation_tick: int = 100 + entry_ticks
+	assertions.expect_equal(entry_ticks > 0, materializing.is_materializing(100), "only a positive entry delay begins inactive")
+	if entry_ticks > 0:
+		assertions.expect_false(materializing.is_targetable(activation_tick - 1), "enemy remains inactive until the configured delay elapses")
+	assertions.expect_true(materializing.is_targetable(activation_tick), "enemy activates exactly after the configured delay")
+	assertions.expect_float(0.0 if entry_ticks > 0 else 1.0, materializing.materialization_progress(100), "entry progress reflects the configured delay")
+	assertions.expect_float(1.0, materializing.materialization_progress(activation_tick), "entry progress completes at activation")
+	materializing.hit_flash_until_tick = 125
+	assertions.expect_true(materializing.is_hit_flashing(124), "hit flash is active before its exclusive deadline")
+	assertions.expect_false(materializing.is_hit_flashing(125), "hit flash ends on its exclusive deadline")
+	var immediate: EnemyEntity = store.try_spawn(
+		state,
+		GameTypes.EnemyType.PURSUER,
+		definition,
+		Vector2.RIGHT,
+		1.0,
+		1.0,
+		100,
+	)
+	assertions.expect_true(immediate.is_targetable(100), "direct fixture spawn activates immediately by default")
 
 
 func _screen_coordinates(relative_position: Vector2) -> Vector2:

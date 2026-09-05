@@ -1,18 +1,8 @@
 extends RefCounted
 
 
-func test_names() -> PackedStringArray:
-	return PackedStringArray(["modal_focus_coordinator_lifo_and_restore_contract"])
-
-
-func run_test(test_name: String, assertions: Variant, context: Dictionary) -> void:
-	if test_name != "modal_focus_coordinator_lifo_and_restore_contract":
-		assertions.expect_true(false, "registered modal focus coordinator test")
-		return
-	await _exercise_coordinator(assertions, context["tree"] as SceneTree)
-
-
-func _exercise_coordinator(assertions: Variant, tree: SceneTree) -> void:
+func test_modal_focus_coordinator_lifo_and_restore_contract(assertions: Variant, context: Dictionary) -> void:
+	var tree: SceneTree = context["tree"]
 	var host := Control.new()
 	host.name = "ModalCoordinatorTestHost"
 	host.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

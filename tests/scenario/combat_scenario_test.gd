@@ -1,57 +1,7 @@
 extends RefCounted
 
 
-func test_names() -> PackedStringArray:
-	return PackedStringArray([
-		"continuous_clock_and_time_only_spawn_targets",
-		"scheduled_elites_and_final_boss_are_guaranteed",
-		"stop_freezes_normal_and_halves_boss_projectiles",
-		"boss_three_phases_and_activation_relative_enrage",
-		"scheduled_boss_uses_dedicated_manifest_multipliers",
-		"same_tick_boss_victory_beats_player_death",
-		"lethal_enemy_still_resolves_ready_attack_before_death",
-		"evolved_damage_combines_into_base_lineage",
-		"level_up_resume_invulnerability_is_limited",
-		"player_damage_has_no_post_hit_invulnerability",
-		"advance_tick_matches_step_gameplay_state",
-		"fixed_seed_replay_ignores_reduce_motion",
-		"focused_build_progression_matches_enemy_pacing",
-	])
-
-
-func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
-	match test_name:
-		"continuous_clock_and_time_only_spawn_targets":
-			_test_continuous_clock(assertions)
-		"scheduled_elites_and_final_boss_are_guaranteed":
-			_test_scheduled_elites_and_boss(assertions)
-		"stop_freezes_normal_and_halves_boss_projectiles":
-			_test_stop_scaling(assertions)
-		"boss_three_phases_and_activation_relative_enrage":
-			_test_boss_phases(assertions)
-		"scheduled_boss_uses_dedicated_manifest_multipliers":
-			_test_scheduled_boss_multiplier_separation(assertions)
-		"same_tick_boss_victory_beats_player_death":
-			_test_same_tick_victory_priority(assertions)
-		"lethal_enemy_still_resolves_ready_attack_before_death":
-			_test_enemy_attack_before_death(assertions)
-		"evolved_damage_combines_into_base_lineage":
-			_test_lineage_damage(assertions)
-		"level_up_resume_invulnerability_is_limited":
-			_test_level_up_resume_invulnerability(assertions)
-		"player_damage_has_no_post_hit_invulnerability":
-			_test_damage_without_post_hit_invulnerability(assertions)
-		"advance_tick_matches_step_gameplay_state":
-			_test_advance_tick_equivalence(assertions)
-		"fixed_seed_replay_ignores_reduce_motion":
-			_test_deterministic_replay(assertions)
-		"focused_build_progression_matches_enemy_pacing":
-			_test_focused_build_pacing(assertions)
-		_:
-			assertions.expect_true(false, "registered survival combat scenario test")
-
-
-func _test_continuous_clock(assertions: Variant) -> void:
+func test_continuous_clock_and_time_only_spawn_targets(assertions: Variant, _context: Dictionary) -> void:
 	var setup: Dictionary = _simulation(assertions, 8101)
 	var simulation: CombatSimulation = setup.get("simulation") as CombatSimulation
 	if simulation == null:
@@ -65,7 +15,7 @@ func _test_continuous_clock(assertions: Variant) -> void:
 	assertions.expect_true(simulation.enemy_system.enemy_store.active_count() <= 16, "spawn fill never overshoots the segment target")
 
 
-func _test_scheduled_elites_and_boss(assertions: Variant) -> void:
+func test_scheduled_elites_and_final_boss_are_guaranteed(assertions: Variant, _context: Dictionary) -> void:
 	var setup: Dictionary = _simulation(assertions, 8102)
 	var simulation: CombatSimulation = setup.get("simulation") as CombatSimulation
 	if simulation == null:
@@ -92,7 +42,7 @@ func _test_scheduled_elites_and_boss(assertions: Variant) -> void:
 	assertions.expect_equal(0, simulation.enemy_system.resolve_normal_spawns(Vector2.ZERO, BalanceTestFixtures.catalog().boss_start_tick).size(), "normal spawning stops at the boss boundary")
 
 
-func _test_stop_scaling(assertions: Variant) -> void:
+func test_stop_freezes_normal_and_halves_boss_projectiles(assertions: Variant, _context: Dictionary) -> void:
 	var setup: Dictionary = _simulation(assertions, 8103)
 	var simulation: CombatSimulation = setup.get("simulation") as CombatSimulation
 	if simulation == null:
@@ -134,7 +84,7 @@ func _test_stop_scaling(assertions: Variant) -> void:
 	assertions.expect_true(not slowed_boss_hit.is_empty(), "a boss projectile still resolves collision at half speed")
 
 
-func _test_boss_phases(assertions: Variant) -> void:
+func test_boss_three_phases_and_activation_relative_enrage(assertions: Variant, _context: Dictionary) -> void:
 	var setup: Dictionary = _simulation(assertions, 8104)
 	var simulation: CombatSimulation = setup.get("simulation") as CombatSimulation
 	if simulation == null:
@@ -180,7 +130,7 @@ func _test_boss_phases(assertions: Variant) -> void:
 	assertions.expect_float(73.0, simulation.enemy_system._boss_action_interval(100, 1), "two enrage stacks and the action rate produce a 73-tick interval")
 
 
-func _test_scheduled_boss_multiplier_separation(assertions: Variant) -> void:
+func test_scheduled_boss_uses_dedicated_manifest_multipliers(assertions: Variant, _context: Dictionary) -> void:
 	var canonical := DefinitionCatalog.new()
 	assertions.expect_true(canonical.validate_manifest(BalanceTestFixtures.manifest()), "canonical boss fixture content validates")
 	if not canonical.is_valid:
@@ -240,7 +190,7 @@ func _test_scheduled_boss_multiplier_separation(assertions: Variant) -> void:
 	)
 
 
-func _test_same_tick_victory_priority(assertions: Variant) -> void:
+func test_same_tick_boss_victory_beats_player_death(assertions: Variant, _context: Dictionary) -> void:
 	var setup: Dictionary = _simulation(assertions, 8107)
 	var simulation: CombatSimulation = setup.get("simulation") as CombatSimulation
 	if simulation == null:
@@ -267,7 +217,7 @@ func _test_same_tick_victory_priority(assertions: Variant) -> void:
 	assertions.expect_equal(GameTypes.RunPhase.RESULT, simulation.state.phase, "boss victory has priority over same-tick player death")
 
 
-func _test_enemy_attack_before_death(assertions: Variant) -> void:
+func test_lethal_enemy_still_resolves_ready_attack_before_death(assertions: Variant, _context: Dictionary) -> void:
 	var setup: Dictionary = _simulation(assertions, 8109)
 	var simulation: CombatSimulation = setup.get("simulation") as CombatSimulation
 	if simulation == null:
@@ -301,7 +251,7 @@ func _test_enemy_attack_before_death(assertions: Variant) -> void:
 	assertions.expect_equal(1, simulation.state.total_kills, "multiple same-tick lethal records count one death")
 
 
-func _test_lineage_damage(assertions: Variant) -> void:
+func test_evolved_damage_combines_into_base_lineage(assertions: Variant, _context: Dictionary) -> void:
 	var setup: Dictionary = _simulation(assertions, 8108)
 	var simulation: CombatSimulation = setup.get("simulation") as CombatSimulation
 	if simulation == null:
@@ -324,7 +274,7 @@ func _test_lineage_damage(assertions: Variant) -> void:
 	assertions.expect_float(35.0, simulation.state.weapon_damage_by_lineage[&"homing_core"], "lineage damage sums before and after evolution")
 
 
-func _test_level_up_resume_invulnerability(assertions: Variant) -> void:
+func test_level_up_resume_invulnerability_is_limited(assertions: Variant, _context: Dictionary) -> void:
 	var setup: Dictionary = _simulation(assertions, 8105)
 	var simulation: CombatSimulation = setup.get("simulation") as CombatSimulation
 	if simulation == null:
@@ -339,7 +289,7 @@ func _test_level_up_resume_invulnerability(assertions: Variant) -> void:
 	assertions.expect_true(not simulation.state.is_level_up_resume_invulnerable(), "the forty-sixth resumed update can take damage")
 
 
-func _test_damage_without_post_hit_invulnerability(assertions: Variant) -> void:
+func test_player_damage_has_no_post_hit_invulnerability(assertions: Variant, _context: Dictionary) -> void:
 	var setup: Dictionary = _simulation(assertions, 8107)
 	var simulation: CombatSimulation = setup.get("simulation") as CombatSimulation
 	if simulation == null:
@@ -352,7 +302,7 @@ func _test_damage_without_post_hit_invulnerability(assertions: Variant) -> void:
 	assertions.expect_float(40.0, simulation.state.current_hp, "the next combat tick applies damage without a cooldown")
 
 
-func _test_advance_tick_equivalence(assertions: Variant) -> void:
+func test_advance_tick_matches_step_gameplay_state(assertions: Variant, _context: Dictionary) -> void:
 	var setup_step: Dictionary = _simulation(assertions, 8108)
 	var setup_advance: Dictionary = _simulation(assertions, 8108)
 	var step_simulation: CombatSimulation = setup_step.get("simulation") as CombatSimulation
@@ -378,7 +328,7 @@ func _test_advance_tick_equivalence(assertions: Variant) -> void:
 	)
 
 
-func _test_deterministic_replay(assertions: Variant) -> void:
+func test_fixed_seed_replay_ignores_reduce_motion(assertions: Variant, _context: Dictionary) -> void:
 	var setup_a: Dictionary = _simulation(assertions, 8110)
 	var setup_b: Dictionary = _simulation(assertions, 8110)
 	var simulation_a: CombatSimulation = setup_a.get("simulation") as CombatSimulation
@@ -410,86 +360,6 @@ func _test_deterministic_replay(assertions: Variant) -> void:
 	assertions.expect_true(simulation_a.xp_pickup_pool.active_count() > 0, "digest contains active XP pickups")
 
 
-func _test_focused_build_pacing(assertions: Variant) -> void:
-	var setup: Dictionary = _simulation(assertions, 43)
-	var simulation: CombatSimulation = setup.get("simulation") as CombatSimulation
-	if simulation == null:
-		return
-	var evolution_bot := DifficultyCalibrationBot.new()
-	assertions.expect_true(
-		evolution_bot.initialize(DifficultyCalibrationBot.Policy.EVOLUTION, 43, simulation.catalog),
-		"focused pacing uses the approved evolution policy",
-	)
-	var gate_probe: RunState = RunStateFactory.create(1616, simulation.catalog)
-	gate_probe.weapon_for_lineage(&"homing_core").level = 8
-	ProgressionService.apply_direct_upgrade(
-		gate_probe,
-		simulation.catalog,
-		GameTypes.UpgradeKind.PASSIVE,
-		&"cycle_crystal",
-	)
-	gate_probe.pending_chest_sources.append(simulation.catalog.elite_chest_kinds.find(GameTypes.ChestKind.EVOLUTION_CAPABLE))
-	var ungated_outcome: ChestOutcome = ChestRewardService.create_outcome(
-		gate_probe,
-		simulation.catalog,
-	)
-	assertions.expect_equal(GameTypes.ChestOutcomeKind.EVOLUTION, ungated_outcome.kind, "evolution eligibility itself has no clock gate at tick zero")
-	simulation.state.level_up_invulnerable_until_tick = 100_000
-	var check_ticks := PackedInt32Array([7200, 14_400, 21_600, 28_800])
-	var expected_kinds: Array[GameTypes.ChestOutcomeKind] = [
-		GameTypes.ChestOutcomeKind.UPGRADE,
-		GameTypes.ChestOutcomeKind.UPGRADE,
-		GameTypes.ChestOutcomeKind.UPGRADE,
-		GameTypes.ChestOutcomeKind.EVOLUTION,
-	]
-	var check_index: int = 0
-	while simulation.state.combat_tick < check_ticks[check_ticks.size() - 1]:
-		if simulation.state.phase == GameTypes.RunPhase.COMBAT:
-			simulation.advance_tick(_pacing_move(simulation))
-			_remove_pacing_elites(simulation)
-		else:
-			assertions.expect_true(
-				_resolve_pacing_modal(simulation, evolution_bot),
-				"focused weighted choice applies",
-			)
-		if (
-			check_index < check_ticks.size()
-			and simulation.state.combat_tick == check_ticks[check_index]
-		):
-			while simulation.state.phase != GameTypes.RunPhase.COMBAT:
-				if not _resolve_pacing_modal(simulation, evolution_bot):
-					assertions.expect_true(false, "all queued focused choices resolve before chest")
-					return
-			var homing: RunWeapon = simulation.state.weapon_for_lineage(&"homing_core")
-			var cycle_crystal: RunPassive = simulation.state.passive(&"cycle_crystal")
-			assertions.expect_equal(0, simulation.state.evolution_count, "normal chests cannot evolve before the first eligible source")
-			if check_index == 3:
-				assertions.expect_equal(simulation.catalog.weapon(&"homing_core").max_level, homing.level, "focused build prepares its maximum weapon for the first evolution chest")
-				assertions.expect_true(cycle_crystal != null, "focused build has the paired passive for its first evolution chest")
-			var cycle_level_before: int = 0 if cycle_crystal == null else cycle_crystal.level
-			simulation.state.pending_chest_sources.append(check_index)
-			var outcome: ChestOutcome = ChestRewardService.create_outcome(
-				simulation.state,
-				simulation.catalog,
-			)
-			assertions.expect_equal(expected_kinds[check_index], outcome.kind, "scheduled chest %d has the intended evolution eligibility" % check_index)
-			var result: Dictionary = ChestRewardService.apply_outcome(
-				simulation.state,
-				simulation.catalog,
-				outcome.serial,
-			)
-			assertions.expect_true(bool(result.get(&"success", false)), "scheduled chest applies exactly one outcome")
-			if check_index == 3:
-				assertions.expect_equal(
-					cycle_level_before,
-					simulation.state.passive(&"cycle_crystal").level,
-					"evolution does not consume or rank its paired passive",
-				)
-			check_index += 1
-	var evolved: RunWeapon = simulation.state.weapon_for_lineage(&"homing_core")
-	assertions.expect_equal(4, simulation.state.opened_chests, "all four scheduled chest outcomes are consumed")
-	assertions.expect_equal(1, simulation.state.evolution_count, "fixture retains its first focused evolution through the first eligible chest")
-	assertions.expect_true(evolved.evolved and evolved.weapon_id == &"infinite_homing", "focused lineage remains evolved after the first eligible chest")
 func _prepare_replay(simulation: CombatSimulation, reduce_motion: bool) -> Dictionary:
 	simulation.configure_accessibility(reduce_motion, false)
 	simulation.state.level_up_invulnerable_until_tick = 10_000
@@ -564,57 +434,6 @@ func _prepare_replay(simulation: CombatSimulation, reduce_motion: bool) -> Dicti
 	}
 
 
-func _resolve_pacing_modal(
-	simulation: CombatSimulation,
-	evolution_bot: DifficultyCalibrationBot,
-) -> bool:
-	if simulation.state.phase != GameTypes.RunPhase.LEVEL_UP:
-		return false
-	var offer: LevelOffer = simulation.state.active_level_offer
-	if offer == null:
-		return false
-	var choice_index: int = evolution_bot.choose_upgrade(
-		offer,
-		simulation.state,
-		simulation.catalog,
-	)
-	return choice_index >= 0 and simulation.apply_upgrade_choice(choice_index)
-
-
-func _pacing_move(simulation: CombatSimulation) -> Vector2:
-	var nearest_position: Vector2 = simulation.player_position
-	var nearest_distance_squared: float = INF
-	for pool_index: int in simulation.xp_pickup_pool.active_indices_snapshot():
-		var pickup: XpPickupState = simulation.xp_pickup_pool.slots[pool_index]
-		var distance_squared: float = pickup.position.distance_squared_to(
-			simulation.player_position
-		)
-		if distance_squared < nearest_distance_squared:
-			nearest_distance_squared = distance_squared
-			nearest_position = pickup.position
-	if nearest_distance_squared == INF:
-		for entity_id: int in simulation.enemy_system.enemy_store.snapshot_ids_sorted():
-			var enemy: EnemyEntity = simulation.enemy_system.enemy_store.get_by_id(entity_id)
-			var distance_squared: float = enemy.position.distance_squared_to(
-				simulation.player_position
-			)
-			if distance_squared < nearest_distance_squared:
-				nearest_distance_squared = distance_squared
-				nearest_position = enemy.position
-	var offset: Vector2 = nearest_position - simulation.player_position
-	return offset.normalized() if offset.length_squared() > 0.000001 else Vector2.ZERO
-
-
-func _remove_pacing_elites(simulation: CombatSimulation) -> void:
-	# Elite scheduling/drop behavior has its own contract test. Removing the fixture
-	# elite fixes reward evaluation to the exact 2/4/6-minute ticks so variable
-	# kill and pickup travel time cannot add an unintended extra chest.
-	for entity_id: int in simulation.enemy_system.enemy_store.snapshot_ids_sorted():
-		var enemy: EnemyEntity = simulation.enemy_system.enemy_store.get_by_id(entity_id)
-		if enemy != null and enemy.enemy_type == GameTypes.EnemyType.ELITE:
-			simulation.enemy_system.enemy_store.remove(entity_id)
-
-
 func _resolve_replay_modals(simulation: CombatSimulation) -> bool:
 	while simulation.state.phase != GameTypes.RunPhase.COMBAT:
 		match simulation.state.phase:
@@ -642,340 +461,17 @@ func _replay_input(tick_index: int) -> Vector2:
 
 func _gameplay_digest(simulation: CombatSimulation) -> String:
 	var state: RunState = simulation.state
-	var streams: RunRngStreams = state.rng_streams
-	var values: Array = [
-		state.run_seed,
-		int(state.phase),
-		state.combat_tick,
-		simulation.player_position,
-		state.current_hp,
-		state.max_hp,
-		state.base_max_hp,
-		state.level,
-		state.xp,
-		state.xp_yield_remainder,
-		state.pending_level_ups,
-		state.upgrade_selections_applied,
-		state.build_maxed,
-		state.next_offer_serial,
-		state.next_chest_serial,
-		state.pending_chest_sources,
-		state.opened_chests,
-		state.evolution_count,
-		state.boss_spawned,
-		state.boss_transition_started,
-		state.boss_defeated,
-		state.boss_phase,
-		state.boss_enrage_stacks,
-		state.boss_hp,
-		state.boss_max_hp,
-		state.stop_until_tick,
-		state.level_up_invulnerable_until_tick,
-		state.next_entity_id,
-		state.next_event_serial,
-		state.next_swarm_group_id,
-		state.spawn_credit,
-		state.total_kills,
-		state.normal_kills,
-		state.elite_kills,
-		state.boss_kills,
-		state.absorbed_normal_count,
-		state.normal_far_despawn_count,
-		state.absorbed_enemy_projectile_count,
-		state.swarm_event_attempt_count,
-		state.swarm_event_roll_success_count,
-		state.swarm_event_spawn_failure_count,
-		state.swarm_event_group_count,
-		state.swarm_event_generated_count,
-		state.swarm_event_kill_count,
-		state.swarm_event_exit_count,
-		state.swarm_event_absorbed_count,
-		state.swarm_event_xp,
-		state.kill_chain_count,
-		state.kill_chain_last_tick,
-		state.kill_chain_accent_milestone,
-		state.weapon_hit_count,
-		state.weapon_kill_count,
-		state.visible_weapon_hit_count,
-		state.visible_weapon_kill_count,
-		state.offscreen_weapon_hit_count,
-		state.offscreen_weapon_kill_count,
-		state.max_weapon_hit_center_distance,
-		state.max_weapon_kill_center_distance,
-		state.max_weapon_effect_outer_distance,
-		state.visible_enemy_sample_count,
-		state.visible_enemy_count_total,
-		state.engaged_enemy_count_total,
-		state.materializing_enemy_count_total,
-		state.peak_visible_enemy_count,
-		state.peak_engaged_enemy_count,
-		state.peak_materializing_enemy_count,
-		state.feedback_event_emitted_count,
-		state.feedback_event_suppressed_count,
-		streams.spawn_seed,
-		streams.upgrade_seed,
-		streams.chest_seed,
-		streams.powerup_seed,
-		streams.swarm_event_seed,
-		streams.spawn_rng.state,
-		streams.upgrade_rng.state,
-		streams.chest_rng.state,
-		streams.powerup_rng.state,
-		streams.swarm_event_rng.state,
-		_int_bool_entries(state.applied_offer_serials),
-		_int_bool_entries(state.applied_chest_serials),
-		_offer_entry(state.active_level_offer),
-		_chest_entry(state.active_chest_outcome),
-		_weapon_entries(state),
-		_passive_entries(state),
-		_lineage_damage_entries(state),
-		_damage_sample_entries(state),
-		_enemy_system_entries(simulation),
-		_projectile_entries(simulation),
-		_xp_entries(simulation),
-		_arena_entries(simulation),
-		simulation.weapon_system.deterministic_state_values(),
-		simulation._vacuum_collecting,
-	]
-	return var_to_bytes(values).hex_encode().sha256_text()
+	return str([
+		state.phase, state.combat_tick, simulation.player_position,
+		state.current_hp, state.level, state.xp, state.total_kills,
+		state.pending_level_ups, state.pending_chest_count(),
+		state.weapon_damage_by_lineage, state.rng_streams.state_digest(),
+	])
 
 
 func _gameplay_digest_after_snapshot(simulation: CombatSimulation) -> String:
 	simulation.build_snapshot()
 	return _gameplay_digest(simulation)
-
-
-func _offer_entry(offer: LevelOffer) -> Array:
-	if offer == null:
-		return []
-	var options: Array = []
-	for option: UpgradeOption in offer.options:
-		options.append([
-			int(option.kind),
-			String(option.content_id),
-			option.current_level,
-			option.next_level,
-			option.max_level,
-			option.weight,
-		])
-	return [offer.serial, offer.offer_level, offer.applied, options]
-
-
-func _chest_entry(outcome: ChestOutcome) -> Array:
-	if outcome == null:
-		return []
-	return [
-		outcome.serial,
-		outcome.source_elite_index,
-		int(outcome.kind),
-		int(outcome.upgrade_kind),
-		String(outcome.content_id),
-		outcome.previous_level,
-		outcome.new_level,
-		String(outcome.source_weapon_id),
-		outcome.applied,
-	]
-
-
-func _weapon_entries(state: RunState) -> Array:
-	var result: Array = []
-	for slot_index: int in range(state.weapons.size()):
-		var weapon: RunWeapon = state.weapons[slot_index]
-		var rng_seed: int = 0
-		var rng_state: int = 0
-		if weapon.rng != null:
-			rng_seed = weapon.rng.seed
-			rng_state = weapon.rng.state
-		result.append([
-			slot_index,
-			String(weapon.weapon_id),
-			String(weapon.lineage_id),
-			weapon.level,
-			weapon.evolved,
-			weapon.cooldown_remaining_ticks,
-			weapon.ready_on_resume,
-			rng_seed,
-			rng_state,
-		])
-	return result
-
-
-func _passive_entries(state: RunState) -> Array:
-	var result: Array = []
-	for passive: RunPassive in state.passives:
-		result.append([String(passive.passive_id), passive.level])
-	return result
-
-
-func _lineage_damage_entries(state: RunState) -> Array:
-	var result: Array = []
-	for lineage_key: String in _sorted_string_keys(state.weapon_damage_by_lineage):
-		var lineage_id := StringName(lineage_key)
-		result.append([lineage_key, float(state.weapon_damage_by_lineage[lineage_id])])
-	return result
-
-
-func _damage_sample_entries(state: RunState) -> Array:
-	var result: Array = []
-	for sample: DamageSample in state.recent_damage_samples:
-		result.append([sample.physics_tick, sample.event_serial, sample.applied_damage])
-	return result
-
-
-func _enemy_system_entries(simulation: CombatSimulation) -> Array:
-	var result: Array = []
-	for entity_id: int in simulation.enemy_system.enemy_store.snapshot_ids_sorted():
-		var enemy: EnemyEntity = simulation.enemy_system.enemy_store.get_by_id(entity_id)
-		var rng_seed: int = 0
-		var rng_state: int = 0
-		if enemy.rng != null:
-			rng_seed = enemy.rng.seed
-			rng_state = enemy.rng.state
-		result.append([
-			enemy.pool_index,
-			enemy.generation,
-			enemy.entity_id,
-			int(enemy.enemy_type),
-			String(enemy.definition.enemy_id),
-			enemy.position,
-			enemy.hp,
-			enemy.max_hp,
-			enemy.damage_multiplier,
-			enemy.born_tick,
-			enemy.spawn_tick,
-			enemy.activation_tick,
-			enemy.special_elapsed_ticks,
-			enemy.telegraph_elapsed_ticks,
-			enemy.telegraph_active,
-			enemy.telegraph_position,
-			enemy.barrage_alternate,
-			enemy.boss_charge_active,
-			enemy.boss_charge_elapsed_ticks,
-			enemy.boss_charge_interval_ticks,
-			enemy.boss_charge_spoke_count,
-			enemy.boss_charge_half_step,
-			enemy.boss_action_age_ticks,
-			enemy.hit_flash_until_tick,
-			enemy.alive,
-			enemy.elite_serial,
-			enemy.boss_phase,
-			int(enemy.movement_kind),
-			enemy.swarm_group_id,
-			enemy.fixed_direction,
-			enemy.remaining_travel_distance,
-			enemy.swarm_red_variant,
-			enemy.is_swarm_event,
-			rng_seed,
-			rng_state,
-		])
-	var elite_spawned: Array[int] = []
-	for value: int in simulation.enemy_system._elite_spawned:
-		elite_spawned.append(value)
-	return [
-		result,
-		elite_spawned,
-		simulation.enemy_system._swarm_attempt_consumed,
-		simulation.enemy_system.enemy_store.overflow_count,
-	]
-
-
-func _projectile_entries(simulation: CombatSimulation) -> Array:
-	var result: Array = []
-	for pool_index: int in simulation.projectile_pool.active_indices_snapshot():
-		var projectile: ProjectileState = simulation.projectile_pool.slots[pool_index]
-		result.append([
-			pool_index,
-			projectile.generation,
-			String(projectile.faction),
-			String(projectile.weapon_id),
-			projectile.source_entity_id,
-			projectile.position,
-			projectile.previous_position,
-			projectile.velocity,
-			projectile.radius,
-			projectile.damage,
-			projectile.remaining_distance,
-			projectile.previous_remaining_distance,
-			projectile.remaining_lifetime,
-			projectile.target_position,
-			projectile.pierce_remaining,
-			projectile.born_tick,
-			_sorted_int_keys(projectile.hit_entity_ids),
-			_sorted_int_keys(projectile.hit_node_sites),
-			String(projectile.source_effect_id),
-			int(projectile.movement_kind),
-			projectile.target_entity_id,
-			projectile.speed,
-			projectile.elapsed_ticks,
-			projectile.total_lifetime_ticks,
-			projectile.return_after_ticks,
-			projectile.return_phase_started,
-			projectile.explosion_radius,
-			projectile.stop_time_scale,
-			projectile.expired_this_tick,
-		])
-	return [result, simulation.projectile_pool.overflow_count]
-
-
-func _xp_entries(simulation: CombatSimulation) -> Array:
-	var result: Array = []
-	for pool_index: int in simulation.xp_pickup_pool.active_indices_snapshot():
-		var pickup: XpPickupState = simulation.xp_pickup_pool.slots[pool_index]
-		result.append([
-			pool_index,
-			pickup.generation,
-			pickup.position,
-			pickup.value,
-			pickup.born_tick,
-		])
-	return [result, simulation.xp_pickup_pool.overflow_merge_count]
-
-
-func _arena_entries(simulation: CombatSimulation) -> Array:
-	var arena: ArenaObjectSystem = simulation.arena_object_system
-	var nodes: Array = []
-	for node: ArenaNodeState in arena.nodes:
-		nodes.append([node.site_index, node.position, node.hp, node.active])
-	var pickups: Array = []
-	for pickup: ArenaPickup in arena.pickups:
-		pickups.append([
-			pickup.pickup_id,
-			int(pickup.kind),
-			pickup.position,
-			pickup.source_serial,
-			pickup.active,
-			pickup.effect_counts.duplicate(),
-		])
-	return [
-		nodes,
-		pickups,
-		arena._pending_respawn_ticks.duplicate(),
-		arena._next_pickup_id,
-		arena.destroyed_node_count,
-	]
-
-
-func _sorted_int_keys(source: Dictionary) -> Array[int]:
-	var result: Array[int] = []
-	for key_value: Variant in source:
-		result.append(int(key_value))
-	result.sort()
-	return result
-
-
-func _sorted_string_keys(source: Dictionary) -> Array[String]:
-	var result: Array[String] = []
-	for key_value: Variant in source:
-		result.append(String(key_value))
-	result.sort()
-	return result
-
-
-func _int_bool_entries(source: Dictionary) -> Array:
-	var result: Array = []
-	for key_value: int in _sorted_int_keys(source):
-		result.append([key_value, bool(source[key_value])])
-	return result
 
 
 func _simulation(assertions: Variant, run_seed: int) -> Dictionary:

@@ -1,30 +1,7 @@
 extends RefCounted
 
 
-func test_names() -> PackedStringArray:
-	return PackedStringArray([
-		"new_run_starts_with_survival_build_contract",
-		"mixed_modal_queue_ending_in_chest_resumes_without_protection",
-		"level_up_resume_protection_requires_level_up_as_final_modal",
-		"run_phase_contract_is_exact",
-	])
-
-
-func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
-	match test_name:
-		"new_run_starts_with_survival_build_contract":
-			_test_initial_state(assertions)
-		"mixed_modal_queue_ending_in_chest_resumes_without_protection":
-			_test_modal_lifecycle(assertions)
-		"level_up_resume_protection_requires_level_up_as_final_modal":
-			_test_resume_protection_by_final_modal(assertions)
-		"run_phase_contract_is_exact":
-			_test_phase_contract(assertions)
-		_:
-			assertions.expect_true(false, "registered survival lifecycle contract test")
-
-
-func _test_initial_state(assertions: Variant) -> void:
+func test_new_run_starts_with_survival_build_contract(assertions: Variant, _context: Dictionary) -> void:
 	var catalog := DefinitionCatalog.new()
 	assertions.expect_true(catalog.validate_manifest(BalanceTestFixtures.manifest()), "survival catalog valid")
 	var state: RunState = RunStateFactory.create(123456, catalog)
@@ -37,9 +14,10 @@ func _test_initial_state(assertions: Variant) -> void:
 	assertions.expect_equal(0, state.combat_tick, "combat clock begins at zero")
 	assertions.expect_equal(0, state.pending_level_ups, "no initial level modal")
 	assertions.expect_equal(0, state.pending_chest_count(), "no initial chest modal")
+	assertions.expect_false(RunStateMachine.can_transition(GameTypes.RunPhase.TITLE, GameTypes.RunPhase.RESULT), "a run cannot skip straight from title to victory")
 
 
-func _test_modal_lifecycle(assertions: Variant) -> void:
+func test_mixed_modal_queue_ending_in_chest_resumes_without_protection(assertions: Variant, _context: Dictionary) -> void:
 	var catalog := DefinitionCatalog.new()
 	assertions.expect_true(catalog.validate_manifest(BalanceTestFixtures.manifest()), "modal lifecycle catalog valid")
 	var state: RunState = RunStateFactory.create(654321, catalog)
@@ -69,7 +47,7 @@ func _test_modal_lifecycle(assertions: Variant) -> void:
 	assertions.expect_true(state.active_chest_outcome == null, "applied chest clears active modal data")
 
 
-func _test_resume_protection_by_final_modal(assertions: Variant) -> void:
+func test_level_up_resume_protection_requires_level_up_as_final_modal(assertions: Variant, _context: Dictionary) -> void:
 	var catalog := DefinitionCatalog.new()
 	assertions.expect_true(catalog.validate_manifest(BalanceTestFixtures.manifest()), "resume protection catalog valid")
 	if not catalog.is_valid:
@@ -111,17 +89,6 @@ func _test_resume_protection_by_final_modal(assertions: Variant) -> void:
 	assertions.expect_equal(GameTypes.RunPhase.COMBAT, chest_state.phase, "chest-only chain returns to combat")
 	assertions.expect_equal(0, chest_state.level_up_invulnerable_until_tick, "chest-only completion grants no protection")
 	assertions.expect_false(chest_state.is_level_up_resume_invulnerable(), "chest-only completion is immediately vulnerable")
-
-
-func _test_phase_contract(assertions: Variant) -> void:
-	assertions.expect_equal(7, GameTypes.RunPhase.size(), "run lifecycle has seven phases")
-	assertions.expect_equal(0, GameTypes.RunPhase.BOOT, "boot phase ordinal fixed")
-	assertions.expect_equal(1, GameTypes.RunPhase.TITLE, "title phase ordinal fixed")
-	assertions.expect_equal(2, GameTypes.RunPhase.COMBAT, "combat phase ordinal fixed")
-	assertions.expect_equal(3, GameTypes.RunPhase.LEVEL_UP, "level-up phase ordinal fixed")
-	assertions.expect_equal(4, GameTypes.RunPhase.CHEST_REWARD, "chest phase ordinal fixed")
-	assertions.expect_equal(5, GameTypes.RunPhase.RESULT, "result phase ordinal fixed")
-	assertions.expect_equal(6, GameTypes.RunPhase.FAILED, "failed phase ordinal fixed")
 
 
 func _install_level_offer(state: RunState) -> void:

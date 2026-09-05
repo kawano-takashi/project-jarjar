@@ -4,29 +4,16 @@ extends RefCounted
 const SettingsScript = preload("res://src/core/settings_store.gd")
 
 
-func test_names() -> PackedStringArray:
-	return PackedStringArray([
-		"runner_settings_are_isolated_and_removed",
-		"runner_settings_are_removed_when_owner_is_freed",
-	])
+func test_runner_settings_are_removed_when_owner_is_freed(assertions: Variant, _context: Dictionary) -> void:
+	var settings := SettingsScript.new()
+	assertions.expect_equal(OK, settings.initialize_for_runner(), "temporary settings initialized")
+	var temporary_root := settings.active_settings_path.get_base_dir().get_base_dir()
+	settings.free()
+	assertions.expect_false(temporary_root.is_empty(), "temporary root was allocated")
+	assertions.expect_false(DirAccess.dir_exists_absolute(temporary_root), "owner destruction removes settings even without explicit completion")
 
 
-func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
-	match test_name:
-		"runner_settings_are_isolated_and_removed":
-			_test_isolation(assertions)
-		"runner_settings_are_removed_when_owner_is_freed":
-			var settings := SettingsScript.new()
-			assertions.expect_equal(OK, settings.initialize_for_runner(), "temporary settings initialized")
-			var temporary_root := settings.active_settings_path.get_base_dir().get_base_dir()
-			settings.free()
-			assertions.expect_false(temporary_root.is_empty(), "temporary root was allocated")
-			assertions.expect_false(DirAccess.dir_exists_absolute(temporary_root), "owner destruction removes settings even without explicit completion")
-		_:
-			assertions.expect_true(false, "registered settings isolation test")
-
-
-func _test_isolation(assertions: Variant) -> void:
+func test_runner_settings_are_isolated_and_removed(assertions: Variant, _context: Dictionary) -> void:
 	var first := SettingsScript.new()
 	var second := SettingsScript.new()
 	var first_error := first.initialize_for_runner()

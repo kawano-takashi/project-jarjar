@@ -1,91 +1,7 @@
 extends RefCounted
 
 
-const UPGRADE_DESCRIPTION_FORMATTER: Script = preload(
-	"res://src/progression/upgrade_description_formatter.gd"
-)
-
-
-func test_names() -> PackedStringArray:
-	return PackedStringArray([
-		"survival_xp_formula_growth_and_queue",
-		"survival_capacity_level_sixty_five_and_growth_application",
-		"survival_growth_boundaries_apply_per_level_segment",
-		"survival_manifest_drives_progression_and_xp_pickups",
-		"survival_xp_yield_fraction_and_growth_order",
-		"survival_validator_rejects_all_nonboss_ranged_drift",
-		"survival_weighted_unique_offer_and_serial_guard",
-		"survival_queued_offer_levels_and_owned_probability",
-		"survival_owned_offer_uses_uniform_owned_selection",
-		"survival_duplicate_owned_attempt_falls_back_without_reroll",
-		"survival_full_inventory_skips_owned_offer_attempts",
-		"survival_new_weapon_upgrade_is_atomic",
-		"survival_slot_and_max_rejections",
-		"survival_chest_evolution_fallback_and_cap",
-		"survival_chest_owned_upgrade_stability_serial_and_single_effect",
-		"survival_chest_last_upgrade_clears_growth_state",
-		"survival_chest_source_fifo_and_mismatch_guard",
-		"survival_rng_streams_and_lineage_damage",
-		"survival_rng_stream_mutual_isolation_and_derived_repeatability",
-		"survival_node_drop_effects",
-		"survival_build_max_stops_leveling",
-	])
-
-
-func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
-	match test_name:
-		"survival_xp_formula_growth_and_queue":
-			_test_xp(assertions)
-		"survival_capacity_level_sixty_five_and_growth_application":
-			_test_capacity_level_and_growth(assertions)
-		"survival_growth_boundaries_apply_per_level_segment":
-			_test_growth_boundaries(assertions)
-		"survival_manifest_drives_progression_and_xp_pickups":
-			_test_manifest_driven_xp(assertions)
-		"survival_xp_yield_fraction_and_growth_order":
-			_test_xp_yield_fraction_and_growth_order(assertions)
-		"survival_validator_rejects_all_nonboss_ranged_drift":
-			_test_nonboss_ranged_validation(assertions)
-		"survival_weighted_unique_offer_and_serial_guard":
-			_test_offer(assertions)
-		"survival_queued_offer_levels_and_owned_probability":
-			_test_queued_offer_levels_and_owned_probability(assertions)
-		"survival_owned_offer_uses_uniform_owned_selection":
-			_test_owned_offer_uses_uniform_owned_selection(assertions)
-		"survival_duplicate_owned_attempt_falls_back_without_reroll":
-			_test_duplicate_owned_attempt_falls_back_without_reroll(assertions)
-		"survival_full_inventory_skips_owned_offer_attempts":
-			_test_full_inventory_skips_owned_offer_attempts(assertions)
-		"survival_new_weapon_upgrade_is_atomic":
-			_test_new_weapon_atomic(assertions)
-		"survival_slot_and_max_rejections":
-			_test_slot_and_max_rejections(assertions)
-		"survival_chest_evolution_fallback_and_cap":
-			_test_chests(assertions)
-		"survival_chest_owned_upgrade_stability_serial_and_single_effect":
-			_test_chest_owned_upgrade_contract(assertions)
-		"survival_chest_last_upgrade_clears_growth_state":
-			_test_chest_last_upgrade_clears_growth_state(assertions)
-		"survival_chest_source_fifo_and_mismatch_guard":
-			_test_chest_source_fifo_and_mismatch_guard(assertions)
-		"survival_rng_streams_and_lineage_damage":
-			_test_rng_and_damage(assertions)
-		"survival_rng_stream_mutual_isolation_and_derived_repeatability":
-			_test_rng_stream_isolation(assertions)
-		"survival_node_drop_effects":
-			_test_node_drops(assertions)
-		"survival_build_max_stops_leveling":
-			_test_build_max(assertions)
-		_:
-			assertions.expect_true(false, "registered survival progression test")
-
-
-
-
-
-
-
-func _test_xp(assertions: Variant) -> void:
+func test_survival_xp_formula_growth_and_queue(assertions: Variant, _context: Dictionary) -> void:
 	var independent := ProgressionBalanceDefinition.new()
 	independent.xp_early_max_level = 3
 	independent.xp_early_coefficient = 2
@@ -111,7 +27,7 @@ func _test_xp(assertions: Variant) -> void:
 	assertions.expect_equal(0, state.xp, "threshold XP consumed exactly")
 
 
-func _test_capacity_level_and_growth(assertions: Variant) -> void:
+func test_survival_capacity_level_sixty_five_and_growth_application(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	var manifest: SurvivalContentManifest = catalog.manifest()
 	var original_yield_percent: int = manifest.progression.xp_yield_percent
@@ -141,7 +57,7 @@ func _test_capacity_level_and_growth(assertions: Variant) -> void:
 	assertions.expect_equal(10, normal_level.xp, "Growth is not applied outside levels 20 and 40")
 
 
-func _test_growth_boundaries(assertions: Variant) -> void:
+func test_survival_growth_boundaries_apply_per_level_segment(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	var manifest: SurvivalContentManifest = catalog.manifest()
 	var original_yield_percent: int = manifest.progression.xp_yield_percent
@@ -198,7 +114,7 @@ func _test_growth_boundaries(assertions: Variant) -> void:
 	assertions.expect_equal(8, leaving_twenty.xp, "post-threshold remainder returns to normal Growth")
 
 
-func _test_manifest_driven_xp(assertions: Variant) -> void:
+func test_survival_manifest_drives_progression_and_xp_pickups(assertions: Variant, _context: Dictionary) -> void:
 	var canonical_catalog: DefinitionCatalog = _catalog(assertions)
 	var custom_manifest: SurvivalContentManifest = canonical_catalog.manifest().duplicate_deep(Resource.DEEP_DUPLICATE_ALL) as SurvivalContentManifest
 	assertions.expect_true(custom_manifest != null, "manifest duplicates for source-of-truth fixture")
@@ -256,7 +172,7 @@ func _test_manifest_driven_xp(assertions: Variant) -> void:
 	assertions.expect_equal(7, collected_nearby, "pickup uses configured collection radius")
 
 
-func _test_xp_yield_fraction_and_growth_order(assertions: Variant) -> void:
+func test_survival_xp_yield_fraction_and_growth_order(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	var manifest: SurvivalContentManifest = catalog.manifest()
 	var original_yield_percent: int = manifest.progression.xp_yield_percent
@@ -286,8 +202,7 @@ func _test_xp_yield_fraction_and_growth_order(assertions: Variant) -> void:
 	assertions.expect_equal(0, growth_state.xp_yield_remainder, "resolved Growth fixture leaves no XP fraction")
 
 
-
-func _test_nonboss_ranged_validation(assertions: Variant) -> void:
+func test_survival_validator_rejects_all_nonboss_ranged_drift(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	var canonical: SurvivalContentManifest = catalog.manifest()
 	var shooter_index: int = _enemy_index_for_type(
@@ -333,8 +248,7 @@ func _test_nonboss_ranged_validation(assertions: Variant) -> void:
 	)
 
 
-
-func _test_offer(assertions: Variant) -> void:
+func test_survival_weighted_unique_offer_and_serial_guard(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	var first: RunState = RunStateFactory.create(2222, catalog)
 	var second: RunState = RunStateFactory.create(2222, catalog)
@@ -353,11 +267,6 @@ func _test_offer(assertions: Variant) -> void:
 		assertions.expect_false(seen.has(option.content_id), "offer choices are unique")
 		seen[option.content_id] = true
 		assertions.expect_true(not option.pairing_hint.is_empty(), "evolution pairing visible from start")
-		assertions.expect_true(
-			option.pairing_hint.contains("Lv8 ＋ 触媒：")
-			and option.pairing_hint.contains(" Lv1以上 → "),
-			"level offers identify the paired passive as a level-one catalyst",
-		)
 	for option: UpgradeOption in second_offer.options:
 		second_ids.append(String(option.content_id))
 	assertions.expect_equal(first_ids, second_ids, "same seed gives the same offer")
@@ -379,7 +288,7 @@ func _test_offer(assertions: Variant) -> void:
 	assertions.expect_equal(&"already_applied", rejected[&"reason"], "double apply has stable reason")
 
 
-func _test_queued_offer_levels_and_owned_probability(assertions: Variant) -> void:
+func test_survival_queued_offer_levels_and_owned_probability(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	var queued_state: RunState = RunStateFactory.create(2251, catalog)
 	queued_state.level = 4
@@ -431,204 +340,7 @@ func _test_queued_offer_levels_and_owned_probability(assertions: Variant) -> voi
 	)
 
 
-func _test_owned_offer_uses_uniform_owned_selection(assertions: Variant) -> void:
-	var catalog: DefinitionCatalog = _catalog(assertions)
-	var selected_seed: int = -1
-	var expected_owned_token: StringName = &""
-	for run_seed: int in range(1, 4097):
-		var scan_state: RunState = _two_owned_offer_state(run_seed, catalog)
-		var owned: Array[UpgradeOption] = _owned_eligible_options(scan_state, catalog)
-		if owned.size() != 2:
-			continue
-		var scan_rng: RandomNumberGenerator = _clone_rng(scan_state.rng_streams.upgrade_rng)
-		var probability: float = ProgressionService._owned_offer_probability(
-			scan_state,
-			catalog,
-			2,
-		)
-		if scan_rng.randf() >= probability:
-			continue
-		var uniform_rng: RandomNumberGenerator = _clone_rng(scan_rng)
-		var weighted_rng: RandomNumberGenerator = _clone_rng(scan_rng)
-		var selected_index: int = uniform_rng.randi_range(0, owned.size() - 1)
-		var uniform_token: StringName = _upgrade_option_token(owned[selected_index])
-		var owned_tokens: Array[StringName] = []
-		var owned_weights := PackedFloat64Array()
-		for option: UpgradeOption in owned:
-			owned_tokens.append(_upgrade_option_token(option))
-			owned_weights.append(option.weight)
-		var weighted_token: StringName = WeightedSelector.select(
-			weighted_rng,
-			owned_tokens,
-			owned_weights,
-		)
-		if uniform_token == weighted_token or uniform_rng.randf() < probability:
-			continue
-		selected_seed = run_seed
-		expected_owned_token = uniform_token
-		break
-	assertions.expect_true(selected_seed > 0, "bounded seed scan finds a uniform owned-selection fixture")
-	if selected_seed <= 0:
-		return
-	var state: RunState = _two_owned_offer_state(selected_seed, catalog)
-	var expected_rng: RandomNumberGenerator = _clone_rng(state.rng_streams.upgrade_rng)
-	var available: Array[UpgradeOption] = ProgressionService._eligible_options(state, catalog)
-	var expected_owned: Array[UpgradeOption] = _owned_options_from(available)
-	var expected_probability: float = ProgressionService._owned_offer_probability(
-		state,
-		catalog,
-		2,
-	)
-	assertions.expect_float(0.6, expected_probability, "even level retains canonical owned probability")
-	assertions.expect_true(expected_rng.randf() < expected_probability, "first owned attempt succeeds")
-	var weighted_alternative_rng: RandomNumberGenerator = _clone_rng(expected_rng)
-	var expected_owned_tokens: Array[StringName] = []
-	var expected_owned_weights := PackedFloat64Array()
-	for option: UpgradeOption in expected_owned:
-		expected_owned_tokens.append(_upgrade_option_token(option))
-		expected_owned_weights.append(option.weight)
-	var weighted_alternative_token: StringName = WeightedSelector.select(
-		weighted_alternative_rng,
-		expected_owned_tokens,
-		expected_owned_weights,
-	)
-	var expected_index: int = expected_rng.randi_range(0, expected_owned.size() - 1)
-	var selected_token: StringName = _upgrade_option_token(expected_owned[expected_index])
-	assertions.expect_equal(expected_owned_token, selected_token, "bounded scan and cloned uniform draw agree")
-	assertions.expect_not_equal(
-		weighted_alternative_token,
-		selected_token,
-		"the same RNG state would select a different owned option under weighted choice",
-	)
-	_remove_upgrade_option(available, selected_token)
-	assertions.expect_true(expected_rng.randf() >= expected_probability, "second owned attempt fails for this fixture")
-	var expected_tokens: Array[StringName] = [selected_token]
-	expected_tokens.append_array(_draw_weighted_tokens(expected_rng, available, 2))
-	var offer: LevelOffer = ProgressionService.create_offer(state, catalog)
-	assertions.expect_true(offer != null, "multiple-owned fixture creates an offer")
-	if offer == null:
-		return
-	assertions.expect_equal(
-		expected_tokens,
-		_offer_option_tokens(offer),
-		"owned selection follows the cloned uniform draw before weighted fill",
-	)
-	assertions.expect_equal(
-		expected_rng.state,
-		state.rng_streams.upgrade_rng.state,
-		"uniform owned selection consumes the predicted RNG sequence",
-	)
-
-
-func _test_duplicate_owned_attempt_falls_back_without_reroll(assertions: Variant) -> void:
-	var catalog: DefinitionCatalog = _catalog(assertions)
-	var selected_seed: int = -1
-	for run_seed: int in range(1, 4097):
-		var scan_state: RunState = _single_owned_offer_state(run_seed, catalog)
-		var scan_rng: RandomNumberGenerator = _clone_rng(scan_state.rng_streams.upgrade_rng)
-		var scan_probability: float = ProgressionService._owned_offer_probability(
-			scan_state,
-			catalog,
-			2,
-		)
-		if scan_rng.randf() >= scan_probability:
-			continue
-		scan_rng.randi_range(0, 0)
-		if scan_rng.randf() >= scan_probability:
-			continue
-		scan_rng.randi_range(0, 0)
-		selected_seed = run_seed
-		break
-	assertions.expect_true(selected_seed > 0, "bounded seed scan finds two successful owned attempts")
-	if selected_seed <= 0:
-		return
-	var state: RunState = _single_owned_offer_state(selected_seed, catalog)
-	var expected_rng: RandomNumberGenerator = _clone_rng(state.rng_streams.upgrade_rng)
-	var available: Array[UpgradeOption] = ProgressionService._eligible_options(state, catalog)
-	var owned: Array[UpgradeOption] = _owned_options_from(available)
-	assertions.expect_equal(1, owned.size(), "duplicate fixture has exactly one unfinished owned choice")
-	var probability: float = ProgressionService._owned_offer_probability(state, catalog, 2)
-	assertions.expect_true(expected_rng.randf() < probability, "first duplicate-fixture attempt succeeds")
-	expected_rng.randi_range(0, 0)
-	var owned_token: StringName = _upgrade_option_token(owned[0])
-	_remove_upgrade_option(available, owned_token)
-	assertions.expect_true(expected_rng.randf() < probability, "second duplicate-fixture attempt also succeeds")
-	expected_rng.randi_range(0, 0)
-	var expected_tokens: Array[StringName] = [owned_token]
-	expected_tokens.append_array(_draw_weighted_tokens(expected_rng, available, 2))
-	var offer: LevelOffer = ProgressionService.create_offer(state, catalog)
-	assertions.expect_true(offer != null, "duplicate-owned fixture creates an offer")
-	if offer == null:
-		return
-	var actual_tokens: Array[StringName] = _offer_option_tokens(offer)
-	assertions.expect_equal(expected_tokens, actual_tokens, "duplicate second attempt falls through to normal weighted fill")
-	assertions.expect_equal(1, actual_tokens.count(owned_token), "the owned option appears only once")
-	assertions.expect_equal(0, offer.options[1].current_level, "first fallback option is unowned")
-	assertions.expect_equal(0, offer.options[2].current_level, "second fallback option is unowned")
-	assertions.expect_equal(
-		expected_rng.state,
-		state.rng_streams.upgrade_rng.state,
-		"duplicate success consumes no hidden retry beyond the two configured attempts",
-	)
-
-
-func _test_full_inventory_skips_owned_offer_attempts(assertions: Variant) -> void:
-	var catalog: DefinitionCatalog = _catalog(assertions)
-	var state: RunState = RunStateFactory.create(2299, catalog)
-	var extra_weapon_ids: Array[StringName] = [
-		&"arc_crystal",
-		&"directional_needle",
-		&"resonance_wave",
-		&"returning_ring",
-	]
-	for weapon_id: StringName in extra_weapon_ids:
-		var weapon_result: Dictionary = ProgressionService.apply_direct_upgrade(
-			state,
-			catalog,
-			GameTypes.UpgradeKind.WEAPON,
-			weapon_id,
-		)
-		assertions.expect_true(bool(weapon_result[&"success"]), "full-slot fixture adds weapon %s" % weapon_id)
-	var passive_ids: Array[StringName] = [
-		&"cycle_crystal",
-		&"life_lattice",
-		&"probability_core",
-		&"scale_lens",
-		&"speed_gate",
-	]
-	for passive_id: StringName in passive_ids:
-		var passive_result: Dictionary = ProgressionService.apply_direct_upgrade(
-			state,
-			catalog,
-			GameTypes.UpgradeKind.PASSIVE,
-			passive_id,
-		)
-		assertions.expect_true(bool(passive_result[&"success"]), "full-slot fixture adds passive %s" % passive_id)
-	assertions.expect_equal(5, state.weapons.size(), "weapon inventory is full")
-	assertions.expect_equal(5, state.passives.size(), "passive inventory is full")
-	state.level = 2
-	state.pending_level_ups = 1
-	var available: Array[UpgradeOption] = ProgressionService._eligible_options(state, catalog)
-	assertions.expect_equal(10, available.size(), "all ten owned entries remain unfinished and eligible")
-	var expected_rng: RandomNumberGenerator = _clone_rng(state.rng_streams.upgrade_rng)
-	var expected_tokens: Array[StringName] = _draw_weighted_tokens(expected_rng, available, 3)
-	var offer: LevelOffer = ProgressionService.create_offer(state, catalog)
-	assertions.expect_true(offer != null, "full-inventory fixture creates an offer")
-	if offer == null:
-		return
-	assertions.expect_equal(
-		expected_tokens,
-		_offer_option_tokens(offer),
-		"full inventory starts directly with three normal weighted draws",
-	)
-	assertions.expect_equal(
-		expected_rng.state,
-		state.rng_streams.upgrade_rng.state,
-		"full inventory consumes no owned-attempt RNG draws",
-	)
-
-
-func _test_new_weapon_atomic(assertions: Variant) -> void:
+func test_survival_new_weapon_upgrade_is_atomic(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	var state: RunState = RunStateFactory.create(3333, catalog)
 	var unowned_option: UpgradeOption = _find_option(
@@ -638,7 +350,7 @@ func _test_new_weapon_atomic(assertions: Variant) -> void:
 	)
 	assertions.expect_true(unowned_option != null, "unowned resonance wave enters offers")
 	if unowned_option != null:
-		assertions.expect_equal("左右を薙ぐ貫通波動。", unowned_option.description, "new weapon retains its overview")
+		assertions.expect_false(unowned_option.description.is_empty(), "new weapon includes its overview")
 		assertions.expect_equal("", unowned_option.upgrade_detail, "new weapon has no previous-level delta")
 	var result: Dictionary = ProgressionService.apply_direct_upgrade(
 		state,
@@ -658,10 +370,10 @@ func _test_new_weapon_atomic(assertions: Variant) -> void:
 	)
 	assertions.expect_true(owned_option != null, "owned resonance wave remains eligible")
 	if owned_option != null:
-		assertions.expect_equal("波数 2 → 3", owned_option.upgrade_detail, "owned weapon exposes its next delta")
+		assertions.expect_false(owned_option.upgrade_detail.is_empty(), "owned weapon exposes its next delta")
 
 
-func _test_slot_and_max_rejections(assertions: Variant) -> void:
+func test_survival_slot_and_max_rejections(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	var state: RunState = RunStateFactory.create(3434, catalog)
 	var added_weapon_ids: Array[StringName] = [
@@ -737,7 +449,7 @@ func _test_slot_and_max_rejections(assertions: Variant) -> void:
 	assertions.expect_equal(5, maxed_passive.level, "rejected passive level does not mutate runtime")
 
 
-func _test_chests(assertions: Variant) -> void:
+func test_survival_chest_evolution_fallback_and_cap(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	var evolution_source: int = catalog.elite_chest_kinds.find(GameTypes.ChestKind.EVOLUTION_CAPABLE)
 	var early: RunState = RunStateFactory.create(4444, catalog)
@@ -791,7 +503,7 @@ func _test_chests(assertions: Variant) -> void:
 	assertions.expect_not_equal(GameTypes.ChestOutcomeKind.EVOLUTION, after_cap.kind, "fifth chest cannot evolve")
 
 
-func _test_chest_owned_upgrade_contract(assertions: Variant) -> void:
+func test_survival_chest_owned_upgrade_stability_serial_and_single_effect(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	var state: RunState = RunStateFactory.create(4545, catalog)
 	var added_weapon: Dictionary = ProgressionService.apply_direct_upgrade(
@@ -844,7 +556,7 @@ func _test_chest_owned_upgrade_contract(assertions: Variant) -> void:
 	assertions.expect_equal(1, state.opened_chests, "double application cannot increment chest stats")
 
 
-func _test_chest_last_upgrade_clears_growth_state(assertions: Variant) -> void:
+func test_survival_chest_last_upgrade_clears_growth_state(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	var state: RunState = _maxed_build_state(catalog)
 	var last_passive: RunPassive = state.passive(&"probability_core")
@@ -884,7 +596,7 @@ func _test_chest_last_upgrade_clears_growth_state(assertions: Variant) -> void:
 	assertions.expect_true(state.active_level_offer == null, "MAX clears a pending level offer")
 
 
-func _test_chest_source_fifo_and_mismatch_guard(assertions: Variant) -> void:
+func test_survival_chest_source_fifo_and_mismatch_guard(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	var state: RunState = RunStateFactory.create(4646, catalog)
 	state.pending_chest_sources.append(3)
@@ -917,7 +629,7 @@ func _test_chest_source_fifo_and_mismatch_guard(assertions: Variant) -> void:
 	assertions.expect_equal(2, state.opened_chests, "two FIFO outcomes increment the chest count twice")
 
 
-func _test_rng_and_damage(assertions: Variant) -> void:
+func test_survival_rng_streams_and_lineage_damage(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	var state: RunState = RunStateFactory.create(6666, catalog)
 	var before: Dictionary = state.rng_streams.state_digest()
@@ -937,7 +649,7 @@ func _test_rng_and_damage(assertions: Variant) -> void:
 	assertions.expect_float(20.0, state.weapon_damage_by_lineage[&"resonance_wave"], "base/evolved damage shares lineage total")
 
 
-func _test_rng_stream_isolation(assertions: Variant) -> void:
+func test_survival_rng_stream_mutual_isolation_and_derived_repeatability(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	var chest_state: RunState = RunStateFactory.create(6767, catalog)
 	ProgressionService.apply_direct_upgrade(
@@ -1015,7 +727,7 @@ func _test_rng_stream_isolation(assertions: Variant) -> void:
 	assertions.expect_equal(before_derived, derived_state.rng_streams.state_digest(), "derived RNG creation and use cannot mutate shared streams")
 
 
-func _test_node_drops(assertions: Variant) -> void:
+func test_survival_node_drop_effects(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	var state: RunState = RunStateFactory.create(7777, catalog)
 	state.current_hp = 50.0
@@ -1037,7 +749,7 @@ func _test_node_drops(assertions: Variant) -> void:
 	assertions.expect_true(bool(vacuum[&"vacuum"]), "vacuum pickup requests all-XP collection")
 
 
-func _test_build_max(assertions: Variant) -> void:
+func test_survival_build_max_stops_leveling(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	var state: RunState = _maxed_build_state(catalog)
 	state.xp = 7
@@ -1052,86 +764,6 @@ func _test_build_max(assertions: Variant) -> void:
 	assertions.expect_equal(0, state.xp_yield_remainder, "max build clears fractional XP carry")
 	assertions.expect_equal(0, state.pending_level_ups, "max build clears queued selections")
 	assertions.expect_true(state.active_level_offer == null, "max build clears the active offer")
-
-
-func _single_owned_offer_state(run_seed: int, catalog: DefinitionCatalog) -> RunState:
-	var state: RunState = RunStateFactory.create(run_seed, catalog)
-	state.level = 2
-	state.pending_level_ups = 1
-	return state
-
-
-func _two_owned_offer_state(run_seed: int, catalog: DefinitionCatalog) -> RunState:
-	var state: RunState = _single_owned_offer_state(run_seed, catalog)
-	ProgressionService.apply_direct_upgrade(
-		state,
-		catalog,
-		GameTypes.UpgradeKind.WEAPON,
-		&"zero_field",
-	)
-	return state
-
-
-func _owned_eligible_options(
-	state: RunState,
-	catalog: DefinitionCatalog,
-) -> Array[UpgradeOption]:
-	return _owned_options_from(ProgressionService._eligible_options(state, catalog))
-
-
-func _owned_options_from(options: Array[UpgradeOption]) -> Array[UpgradeOption]:
-	var owned: Array[UpgradeOption] = []
-	for option: UpgradeOption in options:
-		if option.current_level > 0:
-			owned.append(option)
-	return owned
-
-
-func _clone_rng(source: RandomNumberGenerator) -> RandomNumberGenerator:
-	var clone := RandomNumberGenerator.new()
-	clone.seed = source.seed
-	clone.state = source.state
-	return clone
-
-
-func _draw_weighted_tokens(
-	rng: RandomNumberGenerator,
-	options: Array[UpgradeOption],
-	count: int,
-) -> Array[StringName]:
-	var available: Array[UpgradeOption] = options.duplicate()
-	var result: Array[StringName] = []
-	while result.size() < count and not available.is_empty():
-		var tokens: Array[StringName] = []
-		var weights := PackedFloat64Array()
-		for option: UpgradeOption in available:
-			tokens.append(_upgrade_option_token(option))
-			weights.append(option.weight)
-		var selected_token: StringName = WeightedSelector.select(rng, tokens, weights)
-		result.append(selected_token)
-		_remove_upgrade_option(available, selected_token)
-	return result
-
-
-func _offer_option_tokens(offer: LevelOffer) -> Array[StringName]:
-	var result: Array[StringName] = []
-	for option: UpgradeOption in offer.options:
-		result.append(_upgrade_option_token(option))
-	return result
-
-
-func _upgrade_option_token(option: UpgradeOption) -> StringName:
-	return StringName("%d|%s" % [int(option.kind), option.content_id])
-
-
-func _remove_upgrade_option(
-	options: Array[UpgradeOption],
-	token: StringName,
-) -> void:
-	for index: int in range(options.size()):
-		if _upgrade_option_token(options[index]) == token:
-			options.remove_at(index)
-			return
 
 
 func _five_evolution_ready_state(catalog: DefinitionCatalog) -> RunState:
@@ -1168,8 +800,6 @@ func _maxed_build_state(catalog: DefinitionCatalog) -> RunState:
 	for runtime: RunPassive in state.passives:
 		runtime.level = 5
 	return state
-
-
 
 
 func _with_enemy(

@@ -1,80 +1,7 @@
 extends RefCounted
 
 
-func test_names() -> PackedStringArray:
-	return PackedStringArray([
-		"normal_swarmer_outpaces_the_player",
-		"swarm_scheduler_is_isolated_repeatable_and_atomic",
-		"swarm_formation_crosses_player_relative_frame_and_uses_two_visuals",
-		"swarm_contact_damage_and_kill_accounting_are_separate",
-		"swarm_push_is_capped_clamped_and_paused",
-		"boss_transition_absorbs_swarm_without_rewards",
-	])
-
-
-func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
-	match test_name:
-		"normal_swarmer_outpaces_the_player":
-			_test_normal_swarmer_speed(assertions)
-		"swarm_scheduler_is_isolated_repeatable_and_atomic":
-			_test_scheduler_and_atomic_spawn(assertions)
-		"swarm_formation_crosses_player_relative_frame_and_uses_two_visuals":
-			_test_formation_motion_and_visuals(assertions)
-		"swarm_contact_damage_and_kill_accounting_are_separate":
-			_test_contact_and_death_accounting(assertions)
-		"swarm_push_is_capped_clamped_and_paused":
-			_test_push_and_pause(assertions)
-		"boss_transition_absorbs_swarm_without_rewards":
-			_test_boss_transition_absorption(assertions)
-		_:
-			assertions.expect_true(false, "registered swarm test")
-
-
-
-func _test_normal_swarmer_speed(assertions: Variant) -> void:
-	for speeds: Vector2 in [Vector2(4.05, 5.184), Vector2(2.0, 3.0)]:
-		_assert_normal_swarmer_speed(assertions, speeds.x, speeds.y)
-
-
-func _assert_normal_swarmer_speed(assertions: Variant, player_speed: float, swarmer_speed: float) -> void:
-	var catalog: DefinitionCatalog = _catalog(assertions)
-	if catalog == null:
-		return
-	# The pursuit test supplies its own faster-enemy encounter.
-	catalog.manifest().player.move_speed = player_speed
-	catalog.enemy(&"swarmer").move_speed = swarmer_speed
-	assertions.expect_true(catalog.validate_manifest(catalog.manifest()), "pursuit fixture validates: %s" % catalog.error_text)
-	if not catalog.is_valid:
-		return
-	var state: RunState = RunStateFactory.create(8002, catalog)
-	var system := EnemySystem.new()
-	system.initialize(state, catalog)
-	var swarmer: EnemyEntity = system.enemy_store.try_spawn(
-		state,
-		GameTypes.EnemyType.SWARMER,
-		catalog.enemy(&"swarmer"),
-		Vector2(-5.0, 0.0),
-		1.0,
-		1.0,
-		0,
-	)
-	var ids: Array[int] = [swarmer.entity_id]
-	var moving_player := Vector2(5.0, 0.0)
-	var initial_gap: float = moving_player.distance_to(swarmer.position)
-	for tick: int in range(1, 61):
-		moving_player += Vector2.RIGHT * catalog.manifest().player.move_speed / float(RunState.TICKS_PER_SECOND)
-		state.combat_tick = tick
-		system.advance_snapshot(ids, moving_player, tick)
-	assertions.expect_true(
-		swarmer.position.distance_to(moving_player) < initial_gap,
-		"normal swarmer closes distance on a player moving directly away",
-	)
-	assertions.expect_float(swarmer_speed, swarmer.position.x + 5.0, "normal swarmer travels its configured distance in one second")
-	assertions.expect_float(player_speed, moving_player.x - 5.0, "player travels its configured distance in one second")
-	assertions.expect_equal(EnemyEntity.MovementKind.SEEK_PLAYER, swarmer.movement_kind, "normal swarmer keeps direct pursuit")
-
-
-func _test_scheduler_and_atomic_spawn(assertions: Variant) -> void:
+func test_swarm_scheduler_is_isolated_repeatable_and_atomic(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
@@ -216,7 +143,7 @@ func _test_scheduler_and_atomic_spawn(assertions: Variant) -> void:
 	assertions.expect_equal(0, overflow_system.enemy_store.orphan_count(), "atomic rejection leaves no pool orphan")
 
 
-func _test_formation_motion_and_visuals(assertions: Variant) -> void:
+func test_swarm_formation_crosses_player_relative_frame_and_uses_two_visuals(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
@@ -322,7 +249,7 @@ func _test_formation_motion_and_visuals(assertions: Variant) -> void:
 	assertions.expect_equal(0, simulation.arena_object_system.pickups.size(), "crossing exit creates no drop")
 
 
-func _test_contact_and_death_accounting(assertions: Variant) -> void:
+func test_swarm_contact_damage_and_kill_accounting_are_separate(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
@@ -389,7 +316,7 @@ func _test_contact_and_death_accounting(assertions: Variant) -> void:
 	assertions.expect_equal(0, simulation.arena_object_system.pickups.size(), "event kill creates no chest or power-up drop")
 
 
-func _test_push_and_pause(assertions: Variant) -> void:
+func test_swarm_push_is_capped_clamped_and_paused(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
@@ -509,7 +436,7 @@ func _test_push_and_pause(assertions: Variant) -> void:
 	assertions.expect_equal(modal_position, modal_group[0].position, "modal pause freezes event movement")
 
 
-func _test_boss_transition_absorption(assertions: Variant) -> void:
+func test_boss_transition_absorbs_swarm_without_rewards(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
