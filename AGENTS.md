@@ -27,11 +27,9 @@ godot --headless --path . --script res://tests/test_runner.gd -- --test=runner_s
 
 ## 作業上の制約
 
-- GDScript変更前に[godot-gdscript-guard](.codex/skills/godot-gdscript-guard/SKILL.md)を読み、検証手順に従う。GDScriptをPythonとして扱わない。
 - 実装仕様はコードとテストを正とする。進捗・変更履歴・検証記録の別文書を維持しない。
 - `build/`、`.godot/`、`.codex/`、`work/`をコミットしない。
 - fetch・pull・push・rebase・amend・tag作成は、ユーザーの明示指示がある場合だけ行う。
-- 配布物はGodot標準exportで生成する。`build/windows/ProjectJARJAR.exe`・`ProjectJARJAR.console.exe`・`ProjectJARJAR.pck`を手動で差し替えない。
 - リポジトリ内に`tools/`やExport Templatesを再作成しない。
 
 ## バランスに関わる変更
@@ -44,22 +42,3 @@ godot --headless --path . --script res://tests/test_runner.gd -- --test=runner_s
 - 公開項目には意味・単位・有効範囲・成立条件をドキュメントコメントとInspectorヒントで示す。時間は整数tick、1秒＝60tick。
 - 仕様策定中は数値調整を行わない。バランス調整は本人の試遊へ渡す直前に一度だけ実施し、成功を確認できなくても反復調整せず、結果・本人の感想を報告して次の判断を待つ。
 - バランス変更の完了報告には、変更項目・変更前後の実効値・理由・実行した検証・未確認事項を記載する。
-
-## 配布と試遊
-
-- バランスの良し悪しと次の調整は、まず本人が遊んだ感想で判断する。他の人の感想は必要に応じて集め、固定の参加人数・run回数・合格率は設けない。
-- 回答・感想は会話で受け取り、人間の参加・回答・計測値を生成・補完しない。専用の試遊コマンド・記録文書・参加者ID管理を維持しない。
-- exportは、会話内でユーザーが最終調整完了を明示した後に進める。
-- ScoopのGodotはself-contained構成を維持する。`export_presets.cfg`の`custom_template/debug`と`custom_template/release`は空に保ち、Godot実行ファイルと同じ場所の`editor_data/export_templates/4.7.2.stable/`に配置した公式テンプレートを標準探索で使う。他platform用templateの同居は許可する。
-- 以下は同じGodot実行ファイルで全回帰とexportを行う。全回帰が成功した場合だけexportする。
-
-```powershell
-$jarjarGodot = (Resolve-Path -LiteralPath (Get-Command godot.exe -CommandType Application -ErrorAction Stop).Source).Path
-$jarjarGodotRoot = 'C:\Users\konop\scoop\apps\godot\current'
-if (-not (Test-Path -LiteralPath "$jarjarGodotRoot\._sc_")) { throw "Godot self-contained marker is missing." }
-& $jarjarGodot --headless --path . --script res://tests/test_runner.gd
-if ($LASTEXITCODE -ne 0) { throw "Export cancelled: GDScript tests failed ($LASTEXITCODE)." }
-New-Item -ItemType Directory -Force -Path .\build\windows -ErrorAction Stop | Out-Null
-& $jarjarGodot --headless --path . --export-release "Windows Desktop" .\build\windows\ProjectJARJAR.exe
-if ($LASTEXITCODE -ne 0) { throw "Godot export failed: $LASTEXITCODE" }
-```
