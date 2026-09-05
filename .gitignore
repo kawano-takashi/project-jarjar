@@ -1,7 +1,6 @@
 .codex/
 .godot/
 build/
-artifacts/
 work/
 *.log
 .godot/export_credentials.cfg
