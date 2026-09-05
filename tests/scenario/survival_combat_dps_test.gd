@@ -79,11 +79,6 @@ func _test_role_normalization(assertions: Variant) -> void:
 				moving_evolved_score,
 			],
 		)
-	assertions.expect_equal(
-		1,
-		catalog.weapon(&"infinite_homing").cooldown_ticks_at(1),
-		"infinite homing retains its one-tick cadence",
-	)
 
 
 func _measure_dps(
@@ -99,7 +94,7 @@ func _measure_dps(
 	)
 	state.weapons.clear()
 	state.passives.clear()
-	state.combat_tick = BalanceTestFixtures.catalog().boss_start_tick
+	state.combat_tick = catalog.boss_start_tick
 	state.boss_spawned = true
 	state.boss_transition_started = true
 	state.build_maxed = true

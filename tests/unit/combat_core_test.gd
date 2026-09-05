@@ -20,7 +20,7 @@ func test_names() -> PackedStringArray:
 		"mass_projectile_requires_an_in_range_target",
 		"directional_projectile_preserves_last_nonzero_move_direction",
 		"returning_ring_uses_explicit_outbound_range_and_hits_on_return",
-		"infinite_homing_one_tick_cadence_stays_within_pool",
+		"infinite_homing_configured_cadence_stays_within_pool",
 		"orbital_active_window_uses_duration_and_has_real_gaps",
 	])
 
@@ -61,7 +61,7 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 			_test_directional_move_targeting(assertions)
 		"returning_ring_uses_explicit_outbound_range_and_hits_on_return":
 			_test_returning_ring_rehit(assertions)
-		"infinite_homing_one_tick_cadence_stays_within_pool":
+		"infinite_homing_configured_cadence_stays_within_pool":
 			_test_infinite_homing_pool(assertions)
 		"orbital_active_window_uses_duration_and_has_real_gaps":
 			_test_orbital_active_window(assertions)
@@ -957,12 +957,22 @@ func _test_returning_ring_rehit(assertions: Variant) -> void:
 
 
 func _test_infinite_homing_pool(assertions: Variant) -> void:
+	for cooldown_ticks: int in [1, 7]:
+		_assert_infinite_homing_cadence(assertions, cooldown_ticks)
+
+
+func _assert_infinite_homing_cadence(assertions: Variant, cooldown_ticks: int) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
+	# Stress one-tick fire and verify a longer interval using detached inputs.
+	var definition: WeaponDefinition = catalog.weapon(&"infinite_homing")
+	definition.cooldown_ticks_by_level = PackedInt32Array([cooldown_ticks])
+	assertions.expect_true(catalog.validate_manifest(catalog.manifest()), "homing cadence fixture validates: %s" % catalog.error_text)
+	if not catalog.is_valid:
+		return
 	var state: RunState = RunStateFactory.create(7303, catalog)
 	state.weapons.clear()
-	var definition: WeaponDefinition = catalog.weapon(&"infinite_homing")
 	state.weapons.append(RunWeapon.create(
 		definition.weapon_id,
 		catalog.lineage_for_weapon(definition.weapon_id),
@@ -1012,14 +1022,18 @@ func _test_infinite_homing_pool(assertions: Variant) -> void:
 				Vector2.ZERO,
 				current_tick,
 			)
-		generated_count += simulation.weapon_system.advance_and_fire(
+		var attacks: Array[Dictionary] = simulation.weapon_system.advance_and_fire(
 			Vector2.ZERO,
 			simulation.enemy_system.enemy_store,
 			simulation.enemy_system.uniform_grid,
 			current_tick,
-		).size()
-	assertions.expect_equal(600, generated_count, "infinite homing emits on every simulation tick")
-	assertions.expect_equal(0, simulation.projectile_pool.overflow_count, "one-tick homing cadence does not overflow the projectile pool")
+		)
+		var expected_count: int = 1 if (current_tick - 1) % cooldown_ticks == 0 else 0
+		assertions.expect_equal(expected_count, attacks.size(), "homing cooldown %d emits at the configured tick %d" % [cooldown_ticks, current_tick])
+		generated_count += attacks.size()
+	var expected_total: int = 1 + floori(599.0 / float(cooldown_ticks))
+	assertions.expect_equal(expected_total, generated_count, "homing emits throughout the configured cadence")
+	assertions.expect_equal(0, simulation.projectile_pool.overflow_count, "configured homing cadence does not overflow the projectile pool")
 	assertions.expect_true(simulation.projectile_pool.active_count() < ProjectilePool.CAPACITY, "expired homing projectiles recycle active slots")
 
 

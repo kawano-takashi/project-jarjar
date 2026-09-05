@@ -48,6 +48,11 @@ func _test_envelope_and_grid(assertions: Variant) -> void:
 
 
 func _test_entry_contract(assertions: Variant) -> void:
+	for entry_ticks: int in [0, 17, 21]:
+		_assert_entry_contract(assertions, entry_ticks)
+
+
+func _assert_entry_contract(assertions: Variant, entry_ticks: int) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
@@ -62,14 +67,16 @@ func _test_entry_contract(assertions: Variant) -> void:
 		1.0,
 		1.0,
 		100,
-		BalanceTestFixtures.catalog().envelope.normal_entry_ticks,
+		entry_ticks,
 	)
 	assertions.expect_equal(1, store.active_count(), "materializing enemy occupies an active pool slot")
-	assertions.expect_true(materializing.is_materializing(100), "entry begins inactive on its spawn tick")
-	assertions.expect_false(materializing.is_targetable(120), "normal remains inactive through tick twenty")
-	assertions.expect_true(materializing.is_targetable(121), "normal activates exactly after twenty-one ticks")
-	assertions.expect_float(0.0, materializing.materialization_progress(100), "entry progress starts at zero")
-	assertions.expect_float(1.0, materializing.materialization_progress(121), "entry progress completes at activation")
+	var activation_tick: int = 100 + entry_ticks
+	assertions.expect_equal(entry_ticks > 0, materializing.is_materializing(100), "only a positive entry delay begins inactive")
+	if entry_ticks > 0:
+		assertions.expect_false(materializing.is_targetable(activation_tick - 1), "enemy remains inactive until the configured delay elapses")
+	assertions.expect_true(materializing.is_targetable(activation_tick), "enemy activates exactly after the configured delay")
+	assertions.expect_float(0.0 if entry_ticks > 0 else 1.0, materializing.materialization_progress(100), "entry progress reflects the configured delay")
+	assertions.expect_float(1.0, materializing.materialization_progress(activation_tick), "entry progress completes at activation")
 	materializing.hit_flash_until_tick = 125
 	assertions.expect_true(materializing.is_hit_flashing(124), "hit flash is active before its exclusive deadline")
 	assertions.expect_false(materializing.is_hit_flashing(125), "hit flash ends on its exclusive deadline")

@@ -11,7 +11,6 @@ const ENEMY_IDS: Array[StringName] = [
 ]
 const CONTACT_FIXTURE_MAX_TICKS: int = 600
 const CONTACT_FIXTURE_SEED: int = 12_120
-const CONTACT_FIXTURE_SEGMENT_INDEX: int = 1
 const ESCAPE_DIRECTION_COUNT: int = 32
 
 
@@ -45,7 +44,7 @@ func _test_sixty_tick_distances(assertions: Variant) -> void:
 	for _tick: int in range(RunState.TICKS_PER_SECOND):
 		player_simulation._move_player(Vector2.RIGHT)
 	assertions.expect_float(
-		BalanceTestFixtures.catalog().manifest().player.move_speed,
+		catalog.manifest().player.move_speed,
 		player_simulation.player_position.x,
 		"player travels its configured distance in sixty ticks",
 	)
@@ -102,7 +101,7 @@ func _test_world_direction_speed(assertions: Variant) -> void:
 		for _tick: int in range(RunState.TICKS_PER_SECOND):
 			player_simulation._move_player(direction)
 		assertions.expect_float(
-			BalanceTestFixtures.catalog().manifest().player.move_speed,
+			catalog.manifest().player.move_speed,
 			player_simulation.player_position.length(),
 			"player %s movement has equal world-space speed" % direction_labels[index],
 		)
@@ -135,39 +134,26 @@ func _test_world_direction_speed(assertions: Variant) -> void:
 	for _tick: int in range(RunState.TICKS_PER_SECOND):
 		analog_simulation._move_player(Vector2(0.3, 0.4))
 	assertions.expect_float(
-		BalanceTestFixtures.catalog().manifest().player.move_speed * 0.5,
+		catalog.manifest().player.move_speed * 0.5,
 		analog_simulation.player_position.length(),
 		"sub-unit analog input preserves magnitude without normalization",
 	)
 
 
 func _test_level_one_weapon_contact_fixture(assertions: Variant) -> void:
-	var catalog: DefinitionCatalog = _catalog(assertions)
+	var catalog: DefinitionCatalog = _contact_fixture_catalog(assertions)
 	if catalog == null:
 		return
-	var segment: EnemySegmentDefinition = catalog.segment(CONTACT_FIXTURE_SEGMENT_INDEX)
+	var segment: EnemySegmentDefinition = catalog.segment(0)
 	var swarmer_definition: EnemyDefinition = catalog.enemy(&"swarmer")
-	assertions.expect_true(segment != null, "the 1:00-2:00 segment exists")
-	assertions.expect_true(swarmer_definition != null, "the normal swarmer definition exists")
-	if segment == null or swarmer_definition == null:
-		return
 	var effective_hp: float = swarmer_definition.base_hp * segment.hp_multiplier
-	assertions.expect_float(0.215, segment.hp_multiplier, "fixture uses the actual 1:00-2:00 HP multiplier")
-	assertions.expect_float(1.935, effective_hp, "fixture swarmer has the actual 1:00-2:00 HP")
-	assertions.expect_float(5.184, swarmer_definition.move_speed, "fixture swarmer uses speed")
-	assertions.expect_float(0.26, swarmer_definition.body_radius, "fixture preserves the normal swarmer body radius")
-	assertions.expect_float(4.0, swarmer_definition.contact_damage, "fixture preserves normal contact damage")
-	assertions.expect_float(10.0, BalanceTestFixtures.catalog().envelope.spawn_inner_half_extent, "fixture starts at the minimum spawn distance")
-	assertions.expect_equal(21, BalanceTestFixtures.catalog().envelope.normal_entry_ticks, "fixture uses the standard normal-enemy entry wait")
 
 	var weapon_ids: Array[StringName] = catalog.basic_weapon_ids()
-	assertions.expect_equal(8, weapon_ids.size(), "fixture covers every basic weapon")
+	assertions.expect_false(weapon_ids.is_empty(), "contact fixture exercises the basic weapons")
 	for weapon_id: StringName in weapon_ids:
 		var result: Dictionary = _run_level_one_contact_fixture(
 			catalog,
 			weapon_id,
-			segment,
-			swarmer_definition,
 		)
 		var label: String = str(weapon_id)
 		assertions.expect_true(bool(result.get("spawned", false)), "%s fixture spawns exactly one normal swarmer" % label)
@@ -181,10 +167,10 @@ func _test_level_one_weapon_contact_fixture(assertions: Variant) -> void:
 			int(result["starting_cooldown_ticks"]),
 			"%s starts with its full level-one base cooldown" % label,
 		)
-		assertions.expect_equal(21, int(result["entry_ticks"]), "%s swarmer waits the standard twenty-one ticks" % label)
-		assertions.expect_float(10.0, float(result["spawn_distance"]), "%s swarmer starts ten metres away" % label)
-		assertions.expect_float(effective_hp, float(result["effective_hp"]), "%s swarmer uses effective HP 1.935" % label)
-		assertions.expect_float(5.184, float(result["move_speed"]), "%s swarmer keeps speed" % label)
+		assertions.expect_equal(catalog.envelope.normal_entry_ticks, int(result["entry_ticks"]), "%s uses the fixture entry delay" % label)
+		assertions.expect_float(catalog.envelope.spawn_inner_half_extent, float(result["spawn_distance"]), "%s uses the fixture spawn distance" % label)
+		assertions.expect_float(effective_hp, float(result["effective_hp"]), "%s combines the fixture enemy HP and segment multiplier" % label)
+		assertions.expect_float(swarmer_definition.move_speed, float(result["move_speed"]), "%s uses the fixture enemy speed" % label)
 		assertions.expect_equal(1, int(result["peak_enemy_count"]), "%s fixture never introduces another enemy" % label)
 		assertions.expect_true(int(result["ticks_elapsed"]) <= CONTACT_FIXTURE_MAX_TICKS, "%s resolves within six hundred ticks" % label)
 		assertions.expect_equal(1, int(result["weapon_kills"]), "%s records a weapon kill" % label)
@@ -198,18 +184,7 @@ func _test_level_one_weapon_contact_fixture(assertions: Variant) -> void:
 func _run_level_one_contact_fixture(
 	catalog: DefinitionCatalog,
 	weapon_id: StringName,
-	segment: EnemySegmentDefinition,
-	swarmer_definition: EnemyDefinition,
 ) -> Dictionary:
-	# A fixed fixture clock keeps orbital phase independent of the production run length.
-	var fixture_content: SurvivalContentManifest = catalog.manifest().duplicate_deep(Resource.DEEP_DUPLICATE_ALL) as SurvivalContentManifest
-	fixture_content.segments = [fixture_content.segments[0]]
-	fixture_content.segments[0].duration_ticks = 36_000
-	fixture_content.segments[0].elite_spawns = []
-	fixture_content.segments[0].swarm_schedules = []
-	catalog = DefinitionCatalog.new()
-	if not catalog.validate_manifest(fixture_content):
-		return {"spawned": false}
 	var state: RunState = RunStateFactory.create(
 		SeedService.derive(CONTACT_FIXTURE_SEED, weapon_id),
 		catalog,
@@ -237,20 +212,15 @@ func _run_level_one_contact_fixture(
 	simulation.enemy_system._elite_spawned.fill(1)
 	var enemy: EnemyEntity = simulation.spawn_fixture_enemy(
 		GameTypes.EnemyType.SWARMER,
-		Vector2.RIGHT * BalanceTestFixtures.catalog().envelope.spawn_inner_half_extent,
+		Vector2.RIGHT * catalog.envelope.spawn_inner_half_extent,
 		state.combat_tick,
-		false,
+		true,
 		false,
 	)
 	if enemy == null:
 		return {"spawned": false}
-	var fixture_definition: EnemyDefinition = swarmer_definition.duplicate_deep(Resource.DEEP_DUPLICATE_ALL) as EnemyDefinition
-	enemy.definition = fixture_definition
-	enemy.max_hp = fixture_definition.base_hp * segment.hp_multiplier
-	enemy.hp = enemy.max_hp
-	enemy.damage_multiplier = (
-		segment.damage_multiplier * catalog.manifest().combat.normal_enemy_damage_scale
-	)
+	var enemy_initial_hp: float = enemy.hp
+	var enemy_move_speed: float = enemy.definition.move_speed
 	var enemy_id: int = enemy.entity_id
 	var entry_ticks: int = enemy.activation_tick - enemy.spawn_tick
 	var spawn_distance: float = simulation.player_position.distance_to(enemy.position)
@@ -273,15 +243,17 @@ func _run_level_one_contact_fixture(
 		)
 		var next_tick: int = state.combat_tick + 1
 		var projected_player: Vector2 = _project_fixture_player(
+			catalog,
 			simulation.player_position,
 			move_input,
 		)
 		var projected_enemy: Vector2 = _project_fixture_enemy(
+			catalog,
 			live_enemy,
 			projected_player,
 			next_tick,
 		)
-		var contact_radius: float = BalanceTestFixtures.catalog().envelope.player_body_radius + live_enemy.body_radius()
+		var contact_radius: float = catalog.envelope.player_body_radius + live_enemy.body_radius()
 		if projected_player.distance_squared_to(projected_enemy) <= contact_radius * contact_radius:
 			geometric_contacts += 1
 		simulation.advance_tick(move_input)
@@ -301,8 +273,8 @@ func _run_level_one_contact_fixture(
 		"starting_cooldown_ticks": starting_cooldown_ticks,
 		"entry_ticks": entry_ticks,
 		"spawn_distance": spawn_distance,
-		"effective_hp": fixture_definition.base_hp * segment.hp_multiplier,
-		"move_speed": fixture_definition.move_speed,
+		"effective_hp": enemy_initial_hp,
+		"move_speed": enemy_move_speed,
 		"peak_enemy_count": peak_enemy_count,
 		"ticks_elapsed": state.combat_tick - starting_tick,
 		"weapon_kills": state.weapon_kill_count,
@@ -336,14 +308,15 @@ func _contact_fixture_move_input(
 		return escape_direction
 	aim_direction = aim_direction.normalized()
 	var aimed_player: Vector2 = _project_fixture_player(
+		simulation.catalog,
 		simulation.player_position,
 		aim_direction,
 	)
-	var aimed_enemy: Vector2 = _project_fixture_enemy(enemy, aimed_player, next_tick)
+	var aimed_enemy: Vector2 = _project_fixture_enemy(simulation.catalog, enemy, aimed_player, next_tick)
 	if weapon_definition.behavior == GameTypes.WeaponBehavior.MELEE_WAVE:
 		return aim_direction
 	if aimed_player.distance_squared_to(aimed_enemy) <= (
-		BalanceTestFixtures.catalog().envelope.target_center_radius * BalanceTestFixtures.catalog().envelope.target_center_radius
+		simulation.catalog.envelope.target_center_radius * simulation.catalog.envelope.target_center_radius
 	):
 		return aim_direction
 	return escape_direction
@@ -362,25 +335,26 @@ func _wall_aware_escape_direction(
 			TAU * float(direction_index) / float(ESCAPE_DIRECTION_COUNT)
 		)
 		var next_player: Vector2 = _project_fixture_player(
+			simulation.catalog,
 			simulation.player_position,
 			direction,
 		)
-		var intended_step: float = BalanceTestFixtures.catalog().manifest().player.move_speed / float(RunState.TICKS_PER_SECOND)
+		var intended_step: float = simulation.catalog.manifest().player.move_speed / float(RunState.TICKS_PER_SECOND)
 		if not is_equal_approx(
 			simulation.player_position.distance_to(next_player),
 			intended_step,
 		):
 			continue
-		var next_enemy: Vector2 = _project_fixture_enemy(enemy, next_player, next_tick)
+		var next_enemy: Vector2 = _project_fixture_enemy(simulation.catalog, enemy, next_player, next_tick)
 		var distance_squared: float = next_player.distance_squared_to(next_enemy)
 		var interior_clearance: float = minf(
 			minf(
-				next_player.x - BalanceTestFixtures.catalog().envelope.player_center_min.x,
-				BalanceTestFixtures.catalog().envelope.player_center_max.x - next_player.x,
+				next_player.x - simulation.catalog.envelope.player_center_min.x,
+				simulation.catalog.envelope.player_center_max.x - next_player.x,
 			),
 			minf(
-				next_player.y - BalanceTestFixtures.catalog().envelope.player_center_min.y,
-				BalanceTestFixtures.catalog().envelope.player_center_max.y - next_player.y,
+				next_player.y - simulation.catalog.envelope.player_center_min.y,
+				simulation.catalog.envelope.player_center_max.y - next_player.y,
 			),
 		)
 		if (
@@ -398,21 +372,22 @@ func _wall_aware_escape_direction(
 	return (Vector2.ZERO - simulation.player_position).normalized()
 
 
-func _project_fixture_player(position: Vector2, move_input: Vector2) -> Vector2:
+func _project_fixture_player(catalog: DefinitionCatalog, position: Vector2, move_input: Vector2) -> Vector2:
 	var normalized_input: Vector2 = move_input
 	if normalized_input.length_squared() > 1.0:
 		normalized_input = normalized_input.normalized()
 	var next_position: Vector2 = (
 		position
-		+ normalized_input * BalanceTestFixtures.catalog().manifest().player.move_speed / float(RunState.TICKS_PER_SECOND)
+		+ normalized_input * catalog.manifest().player.move_speed / float(RunState.TICKS_PER_SECOND)
 	)
 	return Vector2(
-		clampf(next_position.x, BalanceTestFixtures.catalog().envelope.player_center_min.x, BalanceTestFixtures.catalog().envelope.player_center_max.x),
-		clampf(next_position.y, BalanceTestFixtures.catalog().envelope.player_center_min.y, BalanceTestFixtures.catalog().envelope.player_center_max.y),
+		clampf(next_position.x, catalog.envelope.player_center_min.x, catalog.envelope.player_center_max.x),
+		clampf(next_position.y, catalog.envelope.player_center_min.y, catalog.envelope.player_center_max.y),
 	)
 
 
 func _project_fixture_enemy(
+	catalog: DefinitionCatalog,
 	enemy: EnemyEntity,
 	player_position: Vector2,
 	next_tick: int,
@@ -427,13 +402,44 @@ func _project_fixture_enemy(
 			* enemy.definition.move_speed
 			/ float(RunState.TICKS_PER_SECOND)
 		)
-	var center_limit: float = BalanceTestFixtures.catalog().envelope.enemy_center_limit(enemy.body_radius()).x
+	var center_limit: float = catalog.envelope.enemy_center_limit(enemy.body_radius()).x
 	if absf(enemy.position.x) <= center_limit and absf(enemy.position.y) <= center_limit:
 		next_position = Vector2(
 			clampf(next_position.x, -center_limit, center_limit),
 			clampf(next_position.y, -center_limit, center_limit),
 		)
 	return next_position
+
+
+func _contact_fixture_catalog(assertions: Variant) -> DefinitionCatalog:
+	var content: SurvivalContentManifest = BalanceTestFixtures.manifest()
+	# Keep the encounter's inputs explicit while testing every current basic weapon.
+	# These values configure detached Resources; they are not assertions about production data.
+	content.player.base_max_hp = 100.0
+	content.player.move_speed = 4.05
+	content.player.body_radius = 0.45
+	content.arena.size = Vector2(32.0, 32.0)
+	content.spawn.inner_half_extent = 10.0
+	content.spawn.outer_half_extent = 12.0
+	content.spawn.normal_despawn_half_extent = 18.0
+	content.spawn.normal_entry_ticks = 21
+	var segment := EnemySegmentDefinition.new()
+	# Keep orbital phase independent of the production run length.
+	segment.duration_ticks = 36_000
+	segment.target_active = 0
+	segment.hp_multiplier = 0.215
+	segment.damage_multiplier = 0.2
+	segment.spawn_weights = PackedFloat32Array([0, 1, 0, 0, 0, 0])
+	content.segments = [segment]
+	for definition: EnemyDefinition in content.enemies:
+		if definition.enemy_type == GameTypes.EnemyType.SWARMER:
+			definition.base_hp = 9.0
+			definition.move_speed = 5.184
+			definition.body_radius = 0.26
+			definition.contact_damage = 4.0
+	var catalog := DefinitionCatalog.new()
+	assertions.expect_true(catalog.validate_manifest(content), "contact fixture validates: %s" % catalog.error_text)
+	return catalog if catalog.is_valid else null
 
 
 func _catalog(assertions: Variant) -> DefinitionCatalog:

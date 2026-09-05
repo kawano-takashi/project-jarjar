@@ -32,8 +32,19 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 
 
 func _test_normal_swarmer_speed(assertions: Variant) -> void:
+	for speeds: Vector2 in [Vector2(4.05, 5.184), Vector2(2.0, 3.0)]:
+		_assert_normal_swarmer_speed(assertions, speeds.x, speeds.y)
+
+
+func _assert_normal_swarmer_speed(assertions: Variant, player_speed: float, swarmer_speed: float) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
+		return
+	# The pursuit test supplies its own faster-enemy encounter.
+	catalog.manifest().player.move_speed = player_speed
+	catalog.enemy(&"swarmer").move_speed = swarmer_speed
+	assertions.expect_true(catalog.validate_manifest(catalog.manifest()), "pursuit fixture validates: %s" % catalog.error_text)
+	if not catalog.is_valid:
 		return
 	var state: RunState = RunStateFactory.create(8002, catalog)
 	var system := EnemySystem.new()
@@ -51,15 +62,15 @@ func _test_normal_swarmer_speed(assertions: Variant) -> void:
 	var moving_player := Vector2(5.0, 0.0)
 	var initial_gap: float = moving_player.distance_to(swarmer.position)
 	for tick: int in range(1, 61):
-		moving_player += Vector2.RIGHT * BalanceTestFixtures.catalog().manifest().player.move_speed / 60.0
+		moving_player += Vector2.RIGHT * catalog.manifest().player.move_speed / float(RunState.TICKS_PER_SECOND)
 		state.combat_tick = tick
 		system.advance_snapshot(ids, moving_player, tick)
 	assertions.expect_true(
 		swarmer.position.distance_to(moving_player) < initial_gap,
 		"normal swarmer closes distance on a player moving directly away",
 	)
-	assertions.expect_float(5.184, swarmer.position.x + 5.0, "normal swarmer travels 5.184 metres in one second")
-	assertions.expect_float(4.05, moving_player.x - 5.0, "player travels 4.05 metres in one second")
+	assertions.expect_float(swarmer_speed, swarmer.position.x + 5.0, "normal swarmer travels its configured distance in one second")
+	assertions.expect_float(player_speed, moving_player.x - 5.0, "player travels its configured distance in one second")
 	assertions.expect_equal(EnemyEntity.MovementKind.SEEK_PLAYER, swarmer.movement_kind, "normal swarmer keeps direct pursuit")
 
 
