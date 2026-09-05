@@ -44,10 +44,11 @@ var combat_simulation: CombatSimulation = null
 
 
 func _enter_tree() -> void:
+	var arguments := _get_launch_arguments()
 	_launch = (
-		LaunchArgumentsScript.parse_debug(OS.get_cmdline_user_args())
+		LaunchArgumentsScript.parse_debug(arguments)
 		if OS.is_debug_build()
-		else LaunchArgumentsScript.parse_release(OS.get_cmdline_user_args())
+		else LaunchArgumentsScript.parse_release(arguments)
 	)
 	if not bool(_launch.get("valid", false)):
 		_reject_arguments(str(_launch.get("rejected_name", "missing")))
@@ -76,6 +77,10 @@ func _enter_tree() -> void:
 		_quit_deferred(2)
 		return
 	_launch_valid = true
+
+
+func _get_launch_arguments() -> PackedStringArray:
+	return OS.get_cmdline_user_args()
 
 
 func _initialize_settings_for_launch(settings_store: Variant) -> Error:

@@ -7,6 +7,11 @@ const MAIN_SCENE: PackedScene = preload("res://scenes/main.tscn")
 class AppUnderTest extends "res://src/app/game_app.gd":
 
 
+	# Launch the game normally even when the runner receives test options.
+	func _get_launch_arguments() -> PackedStringArray:
+		return PackedStringArray()
+
+
 	# Reuse the runner's isolated settings through the existing initialization hook.
 	func _initialize_settings_for_launch(settings_store: Variant) -> Error:
 		return OK if settings_store.runner_safe_mode else ERR_UNAUTHORIZED

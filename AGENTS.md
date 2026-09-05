@@ -7,29 +7,18 @@ Godot 4.7.2-stable Standard / GDScript / Compatibility renderer / Windows x86_64
 - 通常のコード・Resource変更では、リポジトリのルートで以下の全回帰を実行する。
 
 ```powershell
-$env:JARJAR_GODOT = (Resolve-Path -LiteralPath (Get-Command godot.exe -CommandType Application -ErrorAction Stop).Source).Path
-$jarjarVersion = ((& $env:JARJAR_GODOT --version 2>&1) -join "`n").Trim()
-if ($LASTEXITCODE -ne 0 -or -not $jarjarVersion.StartsWith("4.7.2.stable.official.")) { throw "Godot 4.7.2-stable Standard is required." }
-Remove-Item Env:JARJAR_TEST_FILTER, Env:JARJAR_TEST_VERBOSE -ErrorAction SilentlyContinue
-& $env:JARJAR_GODOT --headless --path . --script res://tests/test_runner.gd
-if ($LASTEXITCODE -ne 0) { throw "GDScript tests failed: $LASTEXITCODE" }
+godot --headless --path . --script res://tests/test_runner.gd
 ```
 
+- 環境変数の設定・解除は不要。ランナーがGodot 4.7.2-stable Standardを確認する。成功は終了コード0、テスト失敗や実行条件の不備は非0となる。後続処理へ進む前に `$LASTEXITCODE` を確認する。
 - 自動テストは主要操作（開始・戦闘・強化・宝箱・勝敗・再開・設定保存）と重要なゲームルールの破綻を検出する。追加は新しい重要ルールか具体的な不具合の再発防止に絞り、同じ保証を重複させない。
 - 実装の書き方・過去に削除した機能名・表示文言の完全一致を固定する検査、内部処理を再実装する検査、難易度やDPS比率の合否判定を追加しない。見た目・音の印象・難易度・爽快感は試遊で判断する。
 - `tests/**/*_test.gd` は `RefCounted` を継承し、`test_名前(assertions, context)` を定義する。関数を自動発見するため登録簿は不要。ディレクトリや実行順に依存させない。
 - ランナーは生成物などの除外先を除き、`.gd`・`.gdshader`・`.tscn`・`.tres`をロード検査する。絞り込み時もロード検査と全テストの発見を行う。
-- 失敗調査時だけ `JARJAR_TEST_FILTER` に関数名の `test_` を除いた名前を完全一致で指定し、`JARJAR_TEST_VERBOSE=1` で詳細を表示する。全回帰の代わりにはしない。
+- 失敗調査時だけ `--test=<名前>` に関数名の `test_` を除いた名前を完全一致で指定する。指定したテストだけを実行し、該当なしは失敗とする。`--verbose` は詳細表示で、どちらも `--` の後に渡す。全回帰の代わりにはしない。
 
 ```powershell
-$env:JARJAR_TEST_FILTER = "runner_settings_are_isolated_and_removed"
-$env:JARJAR_TEST_VERBOSE = "1"
-try {
-    & $env:JARJAR_GODOT --headless --path . --script res://tests/test_runner.gd
-    if ($LASTEXITCODE -ne 0) { throw "GDScript tests failed: $LASTEXITCODE" }
-} finally {
-    Remove-Item Env:JARJAR_TEST_FILTER, Env:JARJAR_TEST_VERBOSE -ErrorAction SilentlyContinue
-}
+godot --headless --path . --script res://tests/test_runner.gd -- --test=runner_settings_are_isolated_and_removed --verbose
 ```
 
 - 検証結果は標準出力へ表示する。ログ・CSV・検証一覧のファイル保存や出力リダイレクトを行わない。通常テストは集計と失敗だけを表示する。
@@ -62,15 +51,15 @@ try {
 - 回答・感想は会話で受け取り、人間の参加・回答・計測値を生成・補完しない。専用の試遊コマンド・記録文書・参加者ID管理を維持しない。
 - exportは、会話内でユーザーが最終調整完了を明示した後に進める。
 - ScoopのGodotはself-contained構成を維持する。`export_presets.cfg`の`custom_template/debug`と`custom_template/release`は空に保ち、Godot実行ファイルと同じ場所の`editor_data/export_templates/4.7.2.stable/`に配置した公式テンプレートを標準探索で使う。他platform用templateの同居は許可する。
-- 以下は「日常の検証」でGodotを特定した同じPowerShellで実行する。全回帰が成功した場合だけexportする。
+- 以下は同じGodot実行ファイルで全回帰とexportを行う。全回帰が成功した場合だけexportする。
 
 ```powershell
+$jarjarGodot = (Resolve-Path -LiteralPath (Get-Command godot.exe -CommandType Application -ErrorAction Stop).Source).Path
 $jarjarGodotRoot = 'C:\Users\konop\scoop\apps\godot\current'
 if (-not (Test-Path -LiteralPath "$jarjarGodotRoot\._sc_")) { throw "Godot self-contained marker is missing." }
-Remove-Item Env:JARJAR_TEST_FILTER, Env:JARJAR_TEST_VERBOSE -ErrorAction SilentlyContinue
-& $env:JARJAR_GODOT --headless --path . --script res://tests/test_runner.gd
+& $jarjarGodot --headless --path . --script res://tests/test_runner.gd
 if ($LASTEXITCODE -ne 0) { throw "Export cancelled: GDScript tests failed ($LASTEXITCODE)." }
 New-Item -ItemType Directory -Force -Path .\build\windows -ErrorAction Stop | Out-Null
-& $env:JARJAR_GODOT --headless --path . --export-release "Windows Desktop" .\build\windows\ProjectJARJAR.exe
+& $jarjarGodot --headless --path . --export-release "Windows Desktop" .\build\windows\ProjectJARJAR.exe
 if ($LASTEXITCODE -ne 0) { throw "Godot export failed: $LASTEXITCODE" }
 ```

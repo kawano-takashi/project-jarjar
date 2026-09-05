@@ -171,7 +171,7 @@ func _finish_capture() -> void:
 			float(metrics["memory_growth_ratio"]), int(metrics["sample_count"]),
 		]
 	)
-	if OS.get_environment("JARJAR_TEST_VERBOSE") == "1":
+	if OS.is_stdout_verbose():
 		print("PERFORMANCE_DETAILS %s" % JSON.stringify(summary))
 	print("PERFORMANCE_OK" if exit_code == 0 else "PERFORMANCE_FAILED reasons=%s" % last_error_message)
 	completed.emit(exit_code, summary)

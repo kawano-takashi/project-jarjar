@@ -51,12 +51,23 @@ func _process(_delta: float) -> bool:
 
 func _run() -> void:
 	var started_ms := Time.get_ticks_msec()
-	var verbose_value := OS.get_environment("JARJAR_TEST_VERBOSE")
-	if not OS.get_cmdline_user_args().is_empty() or verbose_value not in ["", "0", "1"]:
-		_abort("use JARJAR_TEST_FILTER and JARJAR_TEST_VERBOSE=0 or 1")
+	var version := Engine.get_version_info()
+	if version["hex"] != 0x040702 or version["status"] != "stable" or version["build"] != "official":
+		_abort("Godot 4.7.2-stable Standard is required (running %s)" % version["string"])
 		return
-	var verbose := verbose_value == "1"
-	var test_filter := OS.get_environment("JARJAR_TEST_FILTER")
+	var verbose := false
+	var test_filter := ""
+	for argument in OS.get_cmdline_user_args():
+		if argument == "--verbose" and not verbose:
+			verbose = true
+		elif argument.begins_with("--test=") and test_filter.is_empty():
+			test_filter = argument.trim_prefix("--test=")
+			if test_filter.is_empty():
+				_abort("--test requires a test name")
+				return
+		else:
+			_abort("invalid or duplicate argument: %s; use -- [--test=<name>] [--verbose]" % argument)
+			return
 	var settings: Variant = root.get_node_or_null("SettingsStore")
 	if settings == null or settings.initialize_for_runner() != OK:
 		_abort("temporary settings initialization failed")
