@@ -2,7 +2,6 @@ extends SceneTree
 
 
 const TEST_TIMEOUT_MS: int = 600000
-const TEST_SETTINGS_ROOT: String = "res://artifacts/gdscript-tests/settings"
 const TEST_FILTER_ENV: String = "JARJAR_TEST_FILTER"
 const TEST_VERBOSE_ENV: String = "JARJAR_TEST_VERBOSE"
 const PREFLIGHT_EXTENSIONS: Array[String] = ["gd", "gdshader", "tscn", "tres"]
@@ -29,8 +28,7 @@ func _initialize() -> void:
 func _process(_delta: float) -> bool:
 	if _started and not _finished and Time.get_ticks_msec() >= _deadline_ms:
 		print("RUNNER_TIMEOUT")
-		_finished = true
-		quit(2)
+		_finish(2)
 		return false
 	if _started:
 		return false
@@ -56,16 +54,16 @@ func _run() -> void:
 		_bootstrap_failed("autoload")
 		return
 
-	var test_user_root := ProjectSettings.globalize_path(TEST_SETTINGS_ROOT).replace("\\", "/").simplify_path()
-	var bootstrap_path := test_user_root.path_join("runner/settings.cfg")
-	var initialize_error: Error = settings_store.initialize_for_runner(bootstrap_path)
+	var initialize_error: Error = settings_store.initialize_for_runner()
 	if initialize_error != OK:
 		_bootstrap_failed("initialize code=%d" % initialize_error)
 		return
+	var bootstrap_path: String = settings_store.active_settings_path
+	var test_user_root := bootstrap_path.get_base_dir().get_base_dir()
 	if (
 		not settings_store.initialized
 		or not settings_store.runner_safe_mode
-		or settings_store.active_settings_path != bootstrap_path
+		or bootstrap_path.is_empty()
 	):
 		_bootstrap_failed("state")
 		return
@@ -83,7 +81,8 @@ func _run() -> void:
 	if not _preflight_resources(resource_paths):
 		_bootstrap_failed("source-preflight")
 		return
-	print("SOURCE_PREFLIGHT_OK resources=%d" % resource_paths.size())
+	if verbose_assertions:
+		print("SOURCE_PREFLIGHT_OK resources=%d" % resource_paths.size())
 
 	var discovery := _discover_tests(test_script_paths)
 	if not discovery["valid"]:
@@ -160,12 +159,14 @@ func _run() -> void:
 			print("TEST name=%s expected=PASS actual=FAIL elapsed_ms=%d" % [test_name, elapsed_ms])
 		else:
 			passed += 1
-			print("TEST name=%s expected=PASS actual=PASS elapsed_ms=%d" % [test_name, elapsed_ms])
+			if verbose_assertions:
+				print("TEST name=%s expected=PASS actual=PASS elapsed_ms=%d" % [test_name, elapsed_ms])
 
 	var total_elapsed_ms := Time.get_ticks_msec() - suite_started_ms
-	print("TEST_SUMMARY passed=%d failed=%d elapsed_ms=%d" % [passed, failed, total_elapsed_ms])
-	_finished = true
-	quit(0 if failed == 0 else 1)
+	var exit_code := _finish(0 if failed == 0 else 1)
+	print("TEST_SUMMARY passed=%d failed=%d resources=%d elapsed_ms=%d exit_code=%d" % [
+		passed, failed, resource_paths.size(), total_elapsed_ms, exit_code,
+	])
 
 
 func _collect_project_paths(
@@ -262,14 +263,25 @@ func _read_runtime_options() -> Dictionary:
 
 func _bootstrap_failed(reason: String) -> void:
 	print("RUNNER_BOOTSTRAP_FAILED reason=%s" % reason)
-	_finished = true
-	quit(2)
+	_finish(2)
 
 
 func _reject(argument_name: String) -> void:
 	print("RUNNER_ARGUMENT_REJECTED name=%s" % argument_name)
+	_finish(2)
+
+
+func _finish(exit_code: int) -> int:
 	_finished = true
-	quit(2)
+	var settings_store: Variant = root.get_node_or_null("SettingsStore")
+	if settings_store != null and settings_store.runner_safe_mode:
+		var temporary_path := str(settings_store.active_settings_path).get_base_dir().get_base_dir()
+		var cleanup_error: Error = settings_store.finish_runner()
+		if cleanup_error != OK:
+			print("RUNNER_CLEANUP_FAILED path=%s code=%d" % [temporary_path, cleanup_error])
+			exit_code = 2
+	quit(exit_code)
+	return exit_code
 
 
 func _option_name(argument: String) -> String:

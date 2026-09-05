@@ -9,94 +9,6 @@ const WIDE_RUN_SEEDS: Array[int] = [7, 13, 31, 47, 73, 101, 137, 179]
 const POLICIES: Array[int] = [0, 1, 2]
 const MAX_MODAL_CHAIN: int = 128
 const RUNNER_TIMEOUT_MS: int = 1_200_000
-const OUTPUT_ROOT: String = "res://artifacts/balance"
-const RUNS_FILENAME: String = "difficulty-runs.csv"
-const CHECKPOINTS_FILENAME: String = "difficulty-checkpoints.csv"
-const SEGMENTS_FILENAME: String = "difficulty-segments.csv"
-const GROWTH_FILENAME: String = "difficulty-growth.csv"
-const SUMMARY_FILENAME: String = "difficulty-summary.txt"
-const GROWTH_COLUMNS: Array[String] = [
-	"policy", "milestone", "reached_runs", "missing_runs", "median_seconds",
-]
-const RUN_COLUMNS: Array[String] = [
-	"policy",
-	"seed",
-	"outcome",
-	"terminal_tick",
-	"terminal_seconds",
-	"boss_reached",
-	"boss_cleared",
-	"death_before_two_minutes",
-	"first_evolution_tick",
-	"first_evolution_chest_tick",
-	"evolution_ticks",
-	"build_maxed_tick",
-	"first_evolution_minutes",
-	"final_hp",
-	"final_max_hp",
-	"minimum_hp_ratio",
-	"final_level",
-	"final_xp",
-	"total_kills",
-	"pursuer_kills",
-	"swarmer_kills",
-	"bulwark_kills",
-	"shooter_kills",
-	"elite_kills",
-	"opened_chests",
-	"evolution_count",
-	"damage_tick_count",
-	"net_damage_taken",
-	"boss_hp",
-	"boss_max_hp",
-	"boss_spawn_tick",
-	"boss_defeat_tick",
-	"boss_fight_seconds",
-	"elite_spawn_ticks",
-	"elite_kill_ticks",
-	"weapon_hits",
-	"weapon_kills",
-	"visible_weapon_hits",
-	"visible_weapon_kills",
-	"offscreen_weapon_hits",
-	"offscreen_weapon_kills",
-	"max_hit_center_distance",
-	"max_kill_center_distance",
-	"max_effect_outer_distance",
-	"peak_visible_enemies",
-	"mean_visible_enemies",
-	"peak_engaged_enemies",
-	"mean_engaged_enemies",
-	"peak_materializing_enemies",
-	"mean_materializing_enemies",
-	"absorbed_normal_count",
-	"normal_far_despawns",
-	"absorbed_enemy_projectile_count",
-	"swarm_event_attempts",
-	"swarm_event_roll_successes",
-	"swarm_event_spawn_failures",
-	"swarm_event_skipped_busy",
-	"swarm_event_groups",
-	"swarm_event_generated",
-	"swarm_event_kills",
-	"swarm_event_exits",
-	"swarm_event_absorbed",
-	"swarm_event_xp",
-	"feedback_emitted",
-	"feedback_suppressed",
-	"vfx_admitted",
-	"vfx_suppressed",
-	"important_vfx_dropped",
-	"audio_admitted",
-	"audio_suppressed",
-	"enemy_pool_overflow",
-	"projectile_pool_overflow",
-	"vfx_pool_overflow",
-	"xp_overflow_merges",
-	"pool_overflow_count",
-	"pool_orphan_count",
-	"digest",
-]
 const VISIBLE_METRIC_KEYS: Array[String] = [
 	"weapon_hits",
 	"weapon_kills",
@@ -133,39 +45,6 @@ const VISIBLE_METRIC_KEYS: Array[String] = [
 	"important_vfx_dropped",
 	"audio_admitted",
 	"audio_suppressed",
-]
-const CHECKPOINT_COLUMNS: Array[String] = [
-	"policy",
-	"seed",
-	"checkpoint_tick",
-	"observed_tick",
-	"alive",
-	"hp",
-	"max_hp",
-	"hp_ratio",
-	"level",
-	"xp",
-	"total_kills",
-	"elite_kills",
-	"opened_chests",
-	"evolution_count",
-	"active_enemies",
-	"active_projectiles",
-	"active_xp",
-	"boss_reached",
-	"boss_hp",
-	"boss_max_hp",
-]
-const SEGMENT_COLUMNS: Array[String] = [
-	"policy",
-	"seed",
-	"segment_index",
-	"completed",
-	"sample_count",
-	"mean_active_normal",
-	"mean_engaged_normal",
-	"normal_kills",
-	"normal_xp",
 ]
 
 var _runner_started_ms: int = 0
@@ -209,49 +88,48 @@ func _run() -> void:
 			run_result.erase("infrastructure_error")
 			run_rows.append(run_result)
 			_append_segment_rows(run_result, segment_rows)
-			print(
-				"DIFFICULTY_RUN policy=%s seed=%d outcome=%s tick=%d level=%d kills=%d evolution_tick=%d"
-				% [
-					str(run_result["policy"]),
-					run_seed,
-					str(run_result["outcome"]),
-					int(run_result["terminal_tick"]),
-					int(run_result["final_level"]),
-					int(run_result["total_kills"]),
-					int(run_result["first_evolution_tick"]),
-				]
-			)
+			if OS.get_environment("JARJAR_TEST_VERBOSE") == "1":
+				print(
+					"DIFFICULTY_RUN policy=%s seed=%d outcome=%s tick=%d level=%d kills=%d evolution_tick=%d"
+					% [
+						str(run_result["policy"]),
+						run_seed,
+						str(run_result["outcome"]),
+						int(run_result["terminal_tick"]),
+						int(run_result["final_level"]),
+						int(run_result["total_kills"]),
+						int(run_result["first_evolution_tick"]),
+					]
+				)
 		if not infrastructure_error.is_empty():
 			break
 
 	var acceptance: Dictionary = AcceptanceScript.evaluate(run_rows, segment_rows, _wide_mode)
-	var write_error: String = _write_artifacts(
-		run_rows,
-		checkpoint_rows,
-		segment_rows,
-		acceptance,
-		infrastructure_error,
-		growth_rows(run_rows, catalog.manifest().progression.max_evolutions_per_run),
+	print(
+		"DIFFICULTY_SUMMARY gate=%s runs=%d early_deaths=%d boss_reached=%d boss_cleared=%d boss_fight_median_seconds=%.3f normal_by_9m=%d normal_mean_seconds=%.3f"
+		% [
+			"wide" if _wide_mode else "formal",
+			int(acceptance["run_count"]), int(acceptance["early_deaths"]),
+			int(acceptance["boss_reached"]), int(acceptance["boss_cleared"]),
+			float(acceptance["boss_fight_median_seconds"]),
+			int(acceptance["normal_evolved_by_nine"]), float(acceptance["normal_mean_evolution_seconds"]),
+		]
 	)
-	if not write_error.is_empty():
-		print("DIFFICULTY_CALIBRATION_ERROR reason=%s" % write_error)
-		quit(2)
-		return
+	_print_observations(growth_rows(run_rows, catalog.manifest().progression.max_evolutions_per_run))
+	if OS.get_environment("JARJAR_TEST_VERBOSE") == "1":
+		print("DIFFICULTY_DETAILS %s" % JSON.stringify(acceptance))
+		for row: Dictionary in run_rows:
+			print("DIFFICULTY_RUN_DETAILS %s" % JSON.stringify(row))
+		for row: Dictionary in checkpoint_rows:
+			print("DIFFICULTY_CHECKPOINT %s" % JSON.stringify(row))
+		for row: Dictionary in segment_rows:
+			print("DIFFICULTY_SEGMENT %s" % JSON.stringify(row))
 	if not infrastructure_error.is_empty():
 		print("DIFFICULTY_CALIBRATION_ERROR reason=%s" % infrastructure_error)
 		quit(2)
 		return
 	if bool(acceptance.get("passed", false)):
-		print(
-			"DIFFICULTY_CALIBRATION_OK runs=%d boss_reached=%d boss_cleared=%d normal_by_9m=%d normal_mean_seconds=%.3f"
-			% [
-				int(acceptance["run_count"]),
-				int(acceptance["boss_reached"]),
-				int(acceptance["boss_cleared"]),
-				int(acceptance["normal_evolved_by_nine"]),
-				float(acceptance["normal_mean_evolution_seconds"]),
-			]
-		)
+		print("DIFFICULTY_CALIBRATION_OK")
 		quit(0)
 		return
 	var reasons: PackedStringArray = acceptance.get("reasons", PackedStringArray())
@@ -646,138 +524,12 @@ func _digest(simulation: CombatSimulation, runtime: Dictionary) -> String:
 	return var_to_bytes(values).hex_encode().sha256_text()
 
 
-func _write_artifacts(
-	run_rows: Array[Dictionary],
-	checkpoint_rows: Array[Dictionary],
-	segment_rows: Array[Dictionary],
-	acceptance: Dictionary,
-	infrastructure_error: String,
-	growth_observations: Array[Dictionary],
-) -> String:
-	var gate_directory: String = "wide" if _wide_mode else "formal"
-	var output_directory: String = ProjectSettings.globalize_path(
-		OUTPUT_ROOT.path_join(gate_directory)
-	).replace("\\", "/").simplify_path()
-	var directory_error: Error = DirAccess.make_dir_recursive_absolute(output_directory)
-	if directory_error != OK:
-		return "artifact_directory code=%d" % directory_error
-	var runs_error: String = _write_csv(
-		output_directory.path_join(RUNS_FILENAME),
-		RUN_COLUMNS,
-		run_rows,
-	)
-	if not runs_error.is_empty():
-		return runs_error
-	var checkpoints_error: String = _write_csv(
-		output_directory.path_join(CHECKPOINTS_FILENAME),
-		CHECKPOINT_COLUMNS,
-		checkpoint_rows,
-	)
-	if not checkpoints_error.is_empty():
-		return checkpoints_error
-	var segments_error: String = _write_csv(
-		output_directory.path_join(SEGMENTS_FILENAME),
-		SEGMENT_COLUMNS,
-		segment_rows,
-	)
-	if not segments_error.is_empty():
-		return segments_error
-	var growth_error: String = _write_csv(
-		output_directory.path_join(GROWTH_FILENAME),
-		GROWTH_COLUMNS,
-		growth_observations,
-	)
-	if not growth_error.is_empty():
-		return growth_error
-	return _write_summary(
-		output_directory.path_join(SUMMARY_FILENAME),
-		acceptance,
-		infrastructure_error,
-	)
-
-
-func _write_csv(
-	path: String,
-	columns: Array[String],
-	rows: Array[Dictionary],
-) -> String:
-	var file := FileAccess.open(path, FileAccess.WRITE)
-	if file == null:
-		return "artifact_open path=%s code=%d" % [path, FileAccess.get_open_error()]
-	var lines: PackedStringArray = PackedStringArray()
-	lines.append(_csv_line(columns))
-	for row: Dictionary in rows:
-		var values: Array[String] = []
-		for column: String in columns:
-			values.append(_format_value(row.get(column, "")))
-		lines.append(_csv_line(values))
-	var stored: bool = file.store_string("\n".join(lines) + "\n")
-	file.close()
-	return "" if stored else "artifact_write path=%s" % path
-
-
-func _write_summary(
-	path: String,
-	acceptance: Dictionary,
-	infrastructure_error: String,
-) -> String:
-	var reasons: PackedStringArray = acceptance.get("reasons", PackedStringArray())
-	var lines: PackedStringArray = PackedStringArray([
-		"gate=%s" % ("wide" if _wide_mode else "formal"),
-		"run_count=%d" % int(acceptance.get("run_count", 0)),
-		"early_deaths=%d" % int(acceptance.get("early_deaths", 0)),
-		"boss_reached=%d" % int(acceptance.get("boss_reached", 0)),
-		"boss_cleared=%d" % int(acceptance.get("boss_cleared", 0)),
-		"evolved_before_first_chest=%d" % int(acceptance.get("evolved_before_first_chest", 0)),
-		"normal_run_count=%d" % int(acceptance.get("normal_run_count", 0)),
-		"normal_evolution_missing_runs=%d" % int(acceptance.get("normal_evolution_missing_runs", 0)),
-		"normal_build_maxed_runs=%d" % int(acceptance.get("normal_build_maxed_runs", 0)),
-		"normal_build_maxed_missing_runs=%d" % int(acceptance.get("normal_build_maxed_missing_runs", 0)),
-		"normal_build_maxed_median_seconds=%.6f" % float(acceptance.get("normal_build_maxed_median_seconds", -1.0)),
-		"normal_build_maxed_target_seconds=960..1080 (observation only)",
-		"normal_evolved_by_9m=%d" % int(acceptance.get("normal_evolved_by_nine", 0)),
-		"normal_first_evolution_mean_seconds=%.6f" % float(acceptance.get("normal_mean_evolution_seconds", -1.0)),
-		"normal_first_evolution_mean_minutes=%.6f" % float(acceptance.get("normal_mean_evolution_minutes", -1.0)),
-		"boss_fight_median_seconds=%.6f" % float(acceptance.get("boss_fight_median_seconds", -1.0)),
-		"elite_killed_within_sixty_ratio=%.6f" % float(acceptance.get("elite_killed_within_sixty_ratio", -1.0)),
-		"wave_pair_metrics=%s" % str(acceptance.get("wave_pair_metrics", [])),
-		"pool_overflow_runs=%d" % int(acceptance.get("overflow_runs", 0)),
-		"pool_orphan_runs=%d" % int(acceptance.get("orphan_runs", 0)),
-		"missing_visible_metric_runs=%d" % int(acceptance.get("missing_visible_metric_runs", 0)),
-		"no_weapon_combat_runs=%d" % int(acceptance.get("no_weapon_combat_runs", 0)),
-		"offscreen_weapon_hit_runs=%d" % int(acceptance.get("offscreen_weapon_hit_runs", 0)),
-		"offscreen_weapon_kill_runs=%d" % int(acceptance.get("offscreen_weapon_kill_runs", 0)),
-		"hit_distance_runs=%d" % int(acceptance.get("hit_distance_runs", 0)),
-		"kill_distance_runs=%d" % int(acceptance.get("kill_distance_runs", 0)),
-		"effect_outer_distance_runs=%d" % int(acceptance.get("effect_outer_distance_runs", 0)),
-		"feedback_suppressed_runs=%d" % int(acceptance.get("feedback_suppressed_runs", 0)),
-		"audio_admitted_total=%d" % int(acceptance.get("audio_admitted_total", 0)),
-		"audio_suppressed_total=%d" % int(acceptance.get("audio_suppressed_total", 0)),
-		"infrastructure_error=%s" % infrastructure_error,
-		"passed=%s" % str(bool(acceptance.get("passed", false)) and infrastructure_error.is_empty()).to_lower(),
-		"reasons=%s" % " | ".join(reasons),
-	])
-	var file := FileAccess.open(path, FileAccess.WRITE)
-	if file == null:
-		return "artifact_open path=%s code=%d" % [path, FileAccess.get_open_error()]
-	var stored: bool = file.store_string("\n".join(lines) + "\n")
-	file.close()
-	return "" if stored else "artifact_write path=%s" % path
-
-
-func _csv_line(values: Array[String]) -> String:
-	var escaped: PackedStringArray = PackedStringArray()
-	for value: String in values:
-		escaped.append('"%s"' % value.replace('"', '""'))
-	return ",".join(escaped)
-
-
-func _format_value(value: Variant) -> String:
-	if value is bool:
-		return str(value).to_lower()
-	if value is float:
-		return "%.9f" % float(value)
-	return str(value)
+func _print_observations(observations: Array[Dictionary]) -> void:
+	for row: Dictionary in observations:
+		print(
+			"DIFFICULTY_GROWTH policy=%s milestone=%s reached=%d missing=%d median_seconds=%.3f"
+			% [row["policy"], row["milestone"], row["reached_runs"], row["missing_runs"], row["median_seconds"]]
+		)
 
 
 static func checkpoint_ticks(catalog: DefinitionCatalog) -> PackedInt32Array:

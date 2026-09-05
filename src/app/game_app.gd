@@ -9,8 +9,6 @@ const TutorialControllerScript = preload("res://src/tutorial/tutorial_controller
 const TutorialOverlayScript = preload("res://src/tutorial/tutorial_overlay.gd")
 const AudioVoicePoolScript = preload("res://src/audio/audio_voice_pool.gd")
 const SurvivalFeedbackScript = preload("res://src/audio/survival_feedback.gd")
-const ReleasePackAuditorScript = preload("res://src/release/release_pack_auditor.gd")
-const ReleaseSmokeValidatorScript = preload("res://src/release/release_smoke_validator.gd")
 
 const TITLE_SCENE: PackedScene = preload("res://scenes/ui/title_screen.tscn")
 const ARENA_SCENE: PackedScene = preload("res://scenes/gameplay/arena_combat.tscn")
@@ -35,7 +33,6 @@ var _tutorial_controller: TutorialController = TutorialControllerScript.new()
 var _tutorial_overlay: TutorialOverlay = null
 var _audio_pool: AudioVoicePool = null
 var _feedback: SurvivalFeedback = null
-var _release_smoke_validator: RefCounted = null
 var _terminal_hold_phase: GameTypes.RunPhase = GameTypes.RunPhase.BOOT
 var _terminal_hold_ticks_remaining: int = 0
 var _terminal_transition_queued: bool = false
@@ -62,10 +59,6 @@ func _enter_tree() -> void:
 		_quit_deferred(1)
 		return
 
-	if _launch.get("mode", LaunchArgumentsScript.MODE_NORMAL) == LaunchArgumentsScript.MODE_RELEASE_PACK_AUDIT:
-		_run_release_pack_audit()
-		return
-
 	var initialize_error: Error = _initialize_settings_for_launch(settings_store)
 	if initialize_error != OK:
 		print("SETTINGS_INITIALIZATION_FAILED code=%d" % initialize_error)
@@ -90,7 +83,6 @@ func _initialize_settings_for_launch(settings_store: Variant) -> Error:
 	var initialize_error: Error = (
 		settings_store.initialize_ephemeral()
 		if mode in [
-			LaunchArgumentsScript.MODE_RELEASE_SMOKE,
 			LaunchArgumentsScript.MODE_SMOKE_QUIT,
 			LaunchArgumentsScript.MODE_QA_SCENARIO,
 			LaunchArgumentsScript.MODE_PERFORMANCE,
@@ -106,11 +98,7 @@ func _initialize_settings_for_launch(settings_store: Variant) -> Error:
 
 
 func _ready() -> void:
-	if (
-		not _launch_valid
-		or _launch.get("mode", LaunchArgumentsScript.MODE_NORMAL)
-		== LaunchArgumentsScript.MODE_RELEASE_PACK_AUDIT
-	):
+	if not _launch_valid:
 		return
 	_tutorial_controller.completed.connect(_on_tutorial_completed)
 	_tutorial_overlay = TutorialOverlayScript.new()
@@ -123,9 +111,6 @@ func _ready() -> void:
 	match _launch.get("mode", LaunchArgumentsScript.MODE_NORMAL):
 		LaunchArgumentsScript.MODE_QA_SCENARIO:
 			_start_qa_mode(str(_launch.get("qa_scenario", "")))
-		LaunchArgumentsScript.MODE_RELEASE_SMOKE:
-			_show_title()
-			_start_release_smoke()
 		LaunchArgumentsScript.MODE_PERFORMANCE:
 			_start_performance_mode()
 		_:
@@ -133,7 +118,6 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	_advance_release_smoke()
 	if (
 		run_state != null
 		and run_state.phase == GameTypes.RunPhase.COMBAT
@@ -591,89 +575,6 @@ func _raise_persistent_overlays() -> void:
 		move_child(_survival_overlay, get_child_count() - 1)
 
 
-func _run_release_pack_audit() -> void:
-	var result: Dictionary = ReleasePackAuditorScript.audit(
-		str(_launch.get("manifest_path", ""))
-	)
-	var exit_code: int = int(result.get("exit_code", 3))
-	if exit_code == 2:
-		print("RELEASE_ARGUMENT_REJECTED name=--release-pack-audit")
-	elif bool(result.get("success", false)):
-		print(str(result.get("message", "")))
-	else:
-		print("PACK_AUDIT_FAILED reason=%s" % str(result.get("reason", &"unknown")))
-	_quit_deferred(exit_code)
-
-
-func _start_release_smoke() -> void:
-	var settings_store: Variant = _settings_store()
-	_release_smoke_validator = ReleaseSmokeValidatorScript.new()
-	var result: Dictionary = _release_smoke_validator.call("begin", self, settings_store)
-	if not _release_smoke_step_succeeded(result):
-		return
-	if not start_new_run_with_seed(int(result.get("run_seed", 20260827))):
-		_fail_release_smoke(&"start_run_failed")
-		return
-	result = _release_smoke_validator.call("validate_started_and_prepare_timeout", self)
-	_release_smoke_step_succeeded(result)
-
-
-func _advance_release_smoke() -> void:
-	if _release_smoke_validator == null:
-		return
-	var stage: StringName = _release_smoke_validator.call("stage_name")
-	if (
-		stage == &"awaiting_first_failure"
-		and _logical_phase == GameTypes.RunPhase.FAILED
-		and _active_screen is FailedScreen
-	):
-		var first_result: Dictionary = _release_smoke_validator.call(
-			"validate_first_failure",
-			self,
-		)
-		if not _release_smoke_step_succeeded(first_result):
-			return
-		_retry_same_seed()
-		var retry_result: Dictionary = _release_smoke_validator.call(
-			"validate_retry_and_prepare_timeout",
-			self,
-		)
-		_release_smoke_step_succeeded(retry_result)
-	elif (
-		stage == &"awaiting_second_failure"
-		and _logical_phase == GameTypes.RunPhase.FAILED
-		and _active_screen is FailedScreen
-	):
-		var second_result: Dictionary = _release_smoke_validator.call(
-			"validate_second_failure",
-			self,
-		)
-		if not _release_smoke_step_succeeded(second_result):
-			return
-		_show_title()
-		var title_result: Dictionary = _release_smoke_validator.call(
-			"validate_title_and_finish",
-			self,
-		)
-		if _release_smoke_step_succeeded(title_result):
-			print("RELEASE_SMOKE_OK seed=20260827 failures=2")
-			_release_smoke_validator = null
-			get_tree().quit(0)
-
-
-func _release_smoke_step_succeeded(result: Dictionary) -> bool:
-	if bool(result.get("success", false)):
-		return true
-	_fail_release_smoke(StringName(result.get("reason", &"unknown")))
-	return false
-
-
-func _fail_release_smoke(reason: StringName) -> void:
-	print("RELEASE_SMOKE_FAILED reason=%s" % String(reason))
-	_release_smoke_validator = null
-	get_tree().quit(1)
-
-
 func _start_performance_mode() -> void:
 	if not start_new_run_with_seed(int(_launch.get("run_seed", 0))):
 		print("PERFORMANCE_FAILED reasons=start_run_failed")
@@ -687,19 +588,9 @@ func _start_performance_mode() -> void:
 	var runner: Node = runner_script.new()
 	runner.connect("completed", _on_performance_completed)
 	add_child(runner)
-	var output_directory: String = ProjectSettings.globalize_path(
-		"res://artifacts/performance"
-	)
-	if not DirAccess.dir_exists_absolute(output_directory):
-		var directory_error := DirAccess.make_dir_recursive_absolute(output_directory)
-		if directory_error != OK:
-			print("PERFORMANCE_FAILED reasons=output_directory code=%d" % directory_error)
-			get_tree().quit(1)
-			return
 	var initialize_error: Error = runner.call(
 		"initialize",
 		combat_simulation,
-		output_directory,
 	)
 	if initialize_error != OK:
 		print("PERFORMANCE_FAILED reasons=%s" % str(runner.get("last_error_message")))

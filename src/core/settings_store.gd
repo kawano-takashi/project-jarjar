@@ -3,8 +3,6 @@ extends Node
 
 const USER_SETTINGS_PATH := "user://settings.cfg"
 const SETTINGS_SECTION := "settings"
-const RUNNER_BOOTSTRAP_SUFFIX := "/runner/settings.cfg"
-const TEST_SETTINGS_ROOT := "res://artifacts/gdscript-tests/settings"
 
 const DEFAULT_SETTINGS: Dictionary = {
 	"master_volume": 1.0,
@@ -28,6 +26,7 @@ var tutorial_completed: bool = false
 
 var _runner_bootstrap_path: String = ""
 var _runner_test_user_root: String = ""
+var _runner_directory: DirAccess = null
 
 
 func _enter_tree() -> void:
@@ -58,29 +57,19 @@ func initialize_for_game(settings_path: String = USER_SETTINGS_PATH) -> Error:
 	return OK
 
 
-func initialize_for_runner(validated_settings_path: String) -> Error:
+func initialize_for_runner() -> Error:
 	if initialized:
 		return ERR_ALREADY_IN_USE
 
-	var resolved_path := _normalize_absolute_path(validated_settings_path)
-	if resolved_path.is_empty():
-		return ERR_INVALID_PARAMETER
-
-	var test_user_root := _find_test_user_root(resolved_path)
-	if test_user_root.is_empty():
-		return ERR_INVALID_PARAMETER
-	if not resolved_path.to_lower().ends_with(RUNNER_BOOTSTRAP_SUFFIX):
-		return ERR_INVALID_PARAMETER
-	if not _is_path_within(resolved_path, test_user_root):
-		return ERR_INVALID_PARAMETER
-
-	if FileAccess.file_exists(resolved_path):
-		var remove_error := DirAccess.remove_absolute(resolved_path)
-		if remove_error != OK:
-			return remove_error
+	_runner_directory = DirAccess.create_temp("jarjar-tests")
+	if _runner_directory == null:
+		return DirAccess.get_open_error()
+	var test_user_root := _runner_directory.get_current_dir().replace("\\", "/").simplify_path()
+	var resolved_path := test_user_root.path_join("runner/settings.cfg")
 	var load_result := _create_default_settings(resolved_path)
 	var load_error: Error = load_result["error"]
 	if load_error != OK:
+		_runner_directory = null
 		return load_error
 
 	_apply_values(load_result["values"])
@@ -90,6 +79,20 @@ func initialize_for_runner(validated_settings_path: String) -> Error:
 	runner_safe_mode = true
 	initialized = true
 	return OK
+
+
+func finish_runner() -> Error:
+	if not initialized or not runner_safe_mode:
+		return ERR_UNAUTHORIZED
+	var temporary_path := _runner_test_user_root
+	_runner_directory = null
+	_runner_bootstrap_path = ""
+	_runner_test_user_root = ""
+	active_settings_path = ""
+	runner_safe_mode = false
+	initialized = false
+	_apply_values(DEFAULT_SETTINGS)
+	return FAILED if DirAccess.dir_exists_absolute(temporary_path) else OK
 
 
 func initialize_ephemeral() -> Error:
@@ -270,24 +273,6 @@ func _normalize_absolute_path(path: String) -> String:
 	if normalized.get_file().to_lower() != "settings.cfg":
 		return ""
 	return normalized
-
-
-func _find_test_user_root(settings_path: String) -> String:
-	var repository_root := _repository_root()
-	if repository_root.is_empty():
-		return ""
-	var test_user_root := repository_root.path_join(TEST_SETTINGS_ROOT.trim_prefix("res://"))
-	return test_user_root if _is_path_within(settings_path, test_user_root) else ""
-
-
-func _repository_root() -> String:
-	var repository_root := ProjectSettings.globalize_path("res://").replace("\\", "/").simplify_path().trim_suffix("/")
-	var executable_directory := OS.get_executable_path().get_base_dir().replace("\\", "/").simplify_path()
-	if executable_directory.get_file().to_lower() == "windows":
-		var build_directory := executable_directory.get_base_dir()
-		if build_directory.get_file().to_lower() == "build":
-			repository_root = build_directory.get_base_dir()
-	return repository_root if repository_root.is_absolute_path() else ""
 
 
 func _is_path_within(path: String, root_path: String) -> bool:

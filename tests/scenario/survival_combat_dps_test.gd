@@ -51,14 +51,15 @@ func _test_role_normalization(assertions: Variant) -> void:
 			_measure_dps(catalog, evolution.evolved_weapon_id, role_fixture, 1, true),
 			role_fixture,
 		)
-		print("WEAPON_ROLE_SCORE lineage=%s stationary=%.4f/%.4f moving=%.4f/%.4f/%.4f" % [
-			base_id,
-			stationary_level_one_score,
-			stationary_maximum_level_score,
-			moving_level_one_score,
-			moving_maximum_level_score,
-			moving_evolved_score,
-		])
+		if OS.get_environment("JARJAR_TEST_VERBOSE") == "1":
+			print("WEAPON_ROLE_SCORE lineage=%s stationary=%.4f/%.4f moving=%.4f/%.4f/%.4f" % [
+				base_id,
+				stationary_level_one_score,
+				stationary_maximum_level_score,
+				moving_level_one_score,
+				moving_maximum_level_score,
+				moving_evolved_score,
+			])
 		assertions.expect_true(
 			stationary_level_one_score > 0.0,
 			"%s Lv1 resolves positive stationary-target damage" % base_id,

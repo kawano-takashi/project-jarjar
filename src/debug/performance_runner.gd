@@ -21,13 +21,6 @@ const EARLY_MEMORY_FIRST_SECOND: int = 30
 const EARLY_MEMORY_LAST_SECOND: int = 59
 const LATE_MEMORY_FIRST_SECOND: int = 90
 const LATE_MEMORY_LAST_SECOND: int = 119
-const CSV_FILENAME: String = "performance.csv"
-const SUMMARY_FILENAME: String = "performance-summary.txt"
-const CSV_HEADER: String = (
-	"frame_index,elapsed_usec,frame_time_usec,active_enemy,active_projectile,"
-	+ "active_vfx,active_xp,active_weapon,projectile_pool_used,vfx_pool_used,"
-	+ "xp_pool_used,static_memory_bytes"
-)
 
 var exit_code: int = -1
 var last_error_message: String = ""
@@ -37,16 +30,11 @@ var _start_scheduled: bool = false
 var _running: bool = false
 var _baseline_captured: bool = false
 var _simulation: CombatSimulation = null
-var _output_directory: String = ""
-var _csv_file: FileAccess = null
 var _start_ticks_usec: int = 0
 var _previous_frame_ticks_usec: int = 0
 var _frame_index: int = 0
 var _next_early_memory_second: int = EARLY_MEMORY_FIRST_SECOND
 var _next_late_memory_second: int = LATE_MEMORY_FIRST_SECOND
-var _csv_frame_times_usec := PackedInt64Array()
-var _csv_static_memory_bytes := PackedInt64Array()
-var _csv_count_overrides: Dictionary = {}
 var _measurement_frame_times_usec := PackedInt64Array()
 var _early_memory_samples := PackedInt64Array()
 var _late_memory_samples := PackedInt64Array()
@@ -61,24 +49,14 @@ var _first_count_violation: String = ""
 var _final_workload_metrics: Dictionary = {}
 
 
-func initialize(simulation: CombatSimulation, output_directory: String) -> Error:
+func initialize(simulation: CombatSimulation) -> Error:
 	if _initialized:
 		return ERR_ALREADY_IN_USE
 	if not _simulation_is_usable(simulation):
 		last_error_message = "simulation_not_initialized"
 		return ERR_INVALID_PARAMETER
 
-	var normalized_output := output_directory.replace("\\", "/").simplify_path()
-	if (
-		normalized_output.is_empty()
-		or not normalized_output.is_absolute_path()
-		or not DirAccess.dir_exists_absolute(normalized_output)
-	):
-		last_error_message = "output_directory_invalid_or_missing"
-		return ERR_INVALID_PARAMETER
-
 	_simulation = simulation
-	_output_directory = normalized_output.trim_suffix("/")
 	if _simulation.state.run_seed != RUN_SEED:
 		last_error_message = "performance_run_seed_not_%d" % RUN_SEED
 		_simulation = null
@@ -109,7 +87,6 @@ func debug_state() -> Dictionary:
 		"running": _running,
 		"baseline_captured": _baseline_captured,
 		"frame_index": _frame_index,
-		"csv_buffer_count": _csv_frame_times_usec.size(),
 		"measurement_sample_count": _measurement_frame_times_usec.size(),
 		"early_memory_sample_count": _early_memory_samples.size(),
 		"late_memory_sample_count": _late_memory_samples.size(),
@@ -135,19 +112,6 @@ func _start_capture() -> void:
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	Engine.max_fps = 0
 
-	var csv_path := _output_directory.path_join(CSV_FILENAME)
-	_csv_file = FileAccess.open(csv_path, FileAccess.WRITE)
-	if _csv_file == null:
-		last_error_message = "performance_csv_open_failed_%d" % FileAccess.get_open_error()
-		_finish_without_capture()
-		return
-	_csv_file.store_string(CSV_HEADER + "\n")
-	if _csv_file.get_error() != OK:
-		last_error_message = "performance_csv_header_write_failed"
-		_csv_file.close()
-		_csv_file = null
-		_finish_without_capture()
-		return
 	_running = true
 	RenderingServer.frame_post_draw.connect(_on_frame_post_draw)
 
@@ -172,12 +136,8 @@ func _on_frame_post_draw() -> void:
 	var frame_time_usec := now_usec - _previous_frame_ticks_usec
 	_previous_frame_ticks_usec = now_usec
 	var frame_values := _runtime_frame_values()
-	_record_csv_frame(frame_time_usec, frame_values)
-	_validate_frame_values(frame_values)
-	_collect_memory_samples(elapsed_usec, int(frame_values["static_memory_bytes"]))
-	if elapsed_usec > WARMUP_USEC and elapsed_usec <= RUN_DURATION_USEC:
-		_measurement_frame_times_usec.append(frame_time_usec)
-	_frame_index += 1
+
+	_record_frame_sample(elapsed_usec, frame_time_usec, frame_values)
 
 	if elapsed_usec > RUN_DURATION_USEC:
 		_finish_capture()
@@ -189,14 +149,6 @@ func _finish_capture() -> void:
 	_running = false
 	if RenderingServer.frame_post_draw.is_connected(_on_frame_post_draw):
 		RenderingServer.frame_post_draw.disconnect(_on_frame_post_draw)
-	if _csv_file != null:
-		if not _write_buffered_csv_rows():
-			_append_failure_once("performance_csv_buffer_or_write_failed")
-		_csv_file.flush()
-		if _csv_file.get_error() != OK:
-			_append_failure_once("performance_csv_write_failed")
-		_csv_file.close()
-		_csv_file = null
 
 	var metrics: Dictionary = MetricsScript.summarize(
 		_measurement_frame_times_usec,
@@ -210,44 +162,18 @@ func _finish_capture() -> void:
 	exit_code = 0 if _failure_reasons.is_empty() else 1
 	summary["passed"] = exit_code == 0
 	summary["exit_code"] = exit_code
-	if not _write_summary(summary):
-		exit_code = 1
-		summary["passed"] = false
-		summary["exit_code"] = exit_code
-		_append_failure_once("performance_summary_write_failed")
-		summary["failure_reasons"] = ";".join(_failure_reasons)
 	last_error_message = "" if exit_code == 0 else ";".join(_failure_reasons)
-	if exit_code == 0:
-		print(
-			"PERFORMANCE_OK average_fps=%.6f p95_usec=%d one_percent_low_fps=%.6f worst_usec=%d"
-			% [
-				float(metrics["average_fps"]),
-				int(metrics["p95_frame_time_usec"]),
-				float(metrics["one_percent_low_fps"]),
-				int(metrics["worst_frame_time_usec"]),
-			]
-		)
-	else:
-		print("PERFORMANCE_FAILED reasons=%s" % last_error_message)
-	completed.emit(exit_code, summary)
-
-
-func _finish_without_capture() -> void:
-	exit_code = 1
-	_append_failure_once(last_error_message)
-	var metrics: Dictionary = MetricsScript.summarize(
-		PackedInt64Array(),
-		PackedInt64Array(),
-		PackedInt64Array(),
+	print(
+		"PERFORMANCE_METRICS average_fps=%.6f p95_usec=%d one_percent_low_fps=%.6f worst_usec=%d memory_growth_ratio=%.6f samples=%d"
+		% [
+			float(metrics["average_fps"]), int(metrics["p95_frame_time_usec"]),
+			float(metrics["one_percent_low_fps"]), int(metrics["worst_frame_time_usec"]),
+			float(metrics["memory_growth_ratio"]), int(metrics["sample_count"]),
+		]
 	)
-	var summary := _build_summary(metrics)
-	summary["passed"] = false
-	summary["exit_code"] = exit_code
-	if not _write_summary(summary):
-		_append_failure_once("performance_summary_write_failed")
-		summary["failure_reasons"] = ";".join(_failure_reasons)
-	last_error_message = ";".join(_failure_reasons)
-	print("PERFORMANCE_FAILED reasons=%s" % ";".join(_failure_reasons))
+	if OS.get_environment("JARJAR_TEST_VERBOSE") == "1":
+		print("PERFORMANCE_DETAILS %s" % JSON.stringify(summary))
+	print("PERFORMANCE_OK" if exit_code == 0 else "PERFORMANCE_FAILED reasons=%s" % last_error_message)
 	completed.emit(exit_code, summary)
 
 
@@ -343,75 +269,12 @@ func _runtime_frame_values() -> Dictionary:
 	return counts
 
 
-func _record_csv_frame(frame_time_usec: int, values: Dictionary) -> void:
-	_csv_frame_times_usec.append(frame_time_usec)
-	_csv_static_memory_bytes.append(int(values["static_memory_bytes"]))
-	var active_enemy: int = int(values["active_enemy"])
-	var active_projectile: int = int(values["active_projectile"])
-	var active_vfx: int = int(values["active_vfx"])
-	var active_xp: int = int(values["active_xp"])
-	var active_weapon: int = int(values["active_weapon"])
-	if (
-		active_enemy != TARGET_ENEMY_COUNT
-		or active_projectile != TARGET_PROJECTILE_COUNT
-		or active_vfx != TARGET_VFX_COUNT
-		or active_xp != TARGET_XP_COUNT
-		or active_weapon != TARGET_WEAPON_COUNT
-	):
-		_csv_count_overrides[_frame_index] = PackedInt64Array([
-			active_enemy,
-			active_projectile,
-			active_vfx,
-			active_xp,
-			active_weapon,
-		])
-
-
-func _write_buffered_csv_rows() -> bool:
-	if (
-		_csv_file == null
-		or _csv_frame_times_usec.size() != _frame_index
-		or _csv_static_memory_bytes.size() != _frame_index
-	):
-		return false
-	var elapsed_usec: int = 0
-	for index: int in range(_frame_index):
-		var frame_time_usec: int = _csv_frame_times_usec[index]
-		elapsed_usec += frame_time_usec
-		var active_enemy: int = TARGET_ENEMY_COUNT
-		var active_projectile: int = TARGET_PROJECTILE_COUNT
-		var active_vfx: int = TARGET_VFX_COUNT
-		var active_xp: int = TARGET_XP_COUNT
-		var active_weapon: int = TARGET_WEAPON_COUNT
-		if _csv_count_overrides.has(index):
-			var counts: PackedInt64Array = _csv_count_overrides[index]
-			if counts.size() != 5:
-				return false
-			active_enemy = counts[0]
-			active_projectile = counts[1]
-			active_vfx = counts[2]
-			active_xp = counts[3]
-			active_weapon = counts[4]
-		_csv_file.store_string(
-			"%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n"
-			% [
-				index,
-				elapsed_usec,
-				frame_time_usec,
-				active_enemy,
-				active_projectile,
-				active_vfx,
-				active_xp,
-				active_weapon,
-				active_projectile,
-				active_vfx,
-				active_xp,
-				_csv_static_memory_bytes[index],
-			]
-		)
-		if _csv_file.get_error() != OK:
-			return false
-	return true
+func _record_frame_sample(elapsed_usec: int, frame_time_usec: int, values: Dictionary) -> void:
+	_validate_frame_values(values)
+	_collect_memory_samples(elapsed_usec, int(values["static_memory_bytes"]))
+	if elapsed_usec > WARMUP_USEC and elapsed_usec <= RUN_DURATION_USEC:
+		_measurement_frame_times_usec.append(frame_time_usec)
+	_frame_index += 1
 
 
 func _validate_runtime_state() -> void:
@@ -596,7 +459,7 @@ func _build_summary(metrics: Dictionary) -> Dictionary:
 		"run_seed": RUN_SEED,
 		"warmup_usec": WARMUP_USEC,
 		"run_duration_usec": RUN_DURATION_USEC,
-		"csv_frame_count": _frame_index,
+		"frame_count": _frame_index,
 		"measurement_sample_count": int(metrics.get("sample_count", 0)),
 		"total_frame_time_usec": int(metrics.get("total_frame_time_usec", 0)),
 		"average_fps": float(metrics.get("average_fps", 0.0)),
@@ -638,83 +501,6 @@ func _build_summary(metrics: Dictionary) -> Dictionary:
 		"failure_reasons": ";".join(_failure_reasons),
 		"host": _host_info.duplicate(true),
 	}
-
-
-func _write_summary(summary: Dictionary) -> bool:
-	var summary_path := _output_directory.path_join(SUMMARY_FILENAME)
-	var file := FileAccess.open(summary_path, FileAccess.WRITE)
-	if file == null:
-		return false
-	var host: Dictionary = summary.get("host", {})
-	var lines := PackedStringArray([
-		"passed=%s" % str(bool(summary.get("passed", false))).to_lower(),
-		"exit_code=%d" % int(summary.get("exit_code", 1)),
-		"profile=%s" % str(summary["profile"]),
-		"run_seed=%d" % int(summary["run_seed"]),
-		"rendering_method=%s" % str(host.get("rendering_method", "")),
-		"rendering_driver=%s" % str(host.get("rendering_driver", "")),
-		"window_size=%dx%d" % [int(host.get("window_width", 0)), int(host.get("window_height", 0))],
-		"viewport_size=%dx%d" % [int(host.get("viewport_width", 0)), int(host.get("viewport_height", 0))],
-		"vsync_mode=%d" % int(host.get("vsync_mode", -1)),
-		"warmup_usec=%d" % int(summary["warmup_usec"]),
-		"run_duration_usec=%d" % int(summary["run_duration_usec"]),
-		"csv_frame_count=%d" % int(summary["csv_frame_count"]),
-		"measurement_sample_count=%d" % int(summary["measurement_sample_count"]),
-		"total_frame_time_usec=%d" % int(summary["total_frame_time_usec"]),
-		"average_fps=%.6f" % float(summary["average_fps"]),
-		"p95_frame_time_usec=%d" % int(summary["p95_frame_time_usec"]),
-		"p95_frame_time_ms=%.6f" % (float(summary["p95_frame_time_usec"]) / 1000.0),
-		"p99_frame_time_usec=%d" % int(summary["p99_frame_time_usec"]),
-		"p99_frame_time_ms=%.6f" % (float(summary["p99_frame_time_usec"]) / 1000.0),
-		"one_percent_low_fps=%.6f" % float(summary["one_percent_low_fps"]),
-		"worst_frame_time_usec=%d" % int(summary["worst_frame_time_usec"]),
-		"worst_frame_time_ms=%.6f" % (float(summary["worst_frame_time_usec"]) / 1000.0),
-		"early_memory_sample_count=%d" % int(summary["early_memory_sample_count"]),
-		"late_memory_sample_count=%d" % int(summary["late_memory_sample_count"]),
-		"early_memory_median_bytes=%.1f" % float(summary["early_memory_median_bytes"]),
-		"late_memory_median_bytes=%.1f" % float(summary["late_memory_median_bytes"]),
-		"memory_growth_ratio=%.9f" % float(summary["memory_growth_ratio"]),
-		"active_enemy_final=%d" % int(summary["active_enemy_final"]),
-		"active_projectile_final=%d" % int(summary["active_projectile_final"]),
-		"active_vfx_final=%d" % int(summary["active_vfx_final"]),
-		"active_xp_final=%d" % int(summary["active_xp_final"]),
-		"active_weapon_final=%d" % int(summary["active_weapon_final"]),
-		"active_count_violation_frames=%d" % int(summary["active_count_violation_frames"]),
-		"first_count_violation=%s" % str(summary["first_count_violation"]),
-		"enemy_pool_overflow=%d" % int(summary["enemy_pool_overflow"]),
-		"projectile_pool_overflow=%d" % int(summary["projectile_pool_overflow"]),
-		"vfx_pool_overflow=%d" % int(summary["vfx_pool_overflow"]),
-		"xp_pool_overflow_merges=%d" % int(summary["xp_pool_overflow_merges"]),
-		"active_workload=%s" % str(bool(summary["active_workload"])).to_lower(),
-		"exact_counts=%s" % str(bool(summary["exact_counts"])).to_lower(),
-		"workload_ticks=%d" % int(summary["workload_ticks"]),
-		"grid_updates=%d" % int(summary["grid_updates"]),
-		"projectile_collision_resolutions=%d" % int(summary["projectile_collision_resolutions"]),
-		"weapon_attacks=%d" % int(summary["weapon_attacks"]),
-		"enemy_pool_reuse=%d" % int(summary["enemy_pool_reuse"]),
-		"projectile_pool_reuse=%d" % int(summary["projectile_pool_reuse"]),
-		"vfx_pool_reuse=%d" % int(summary["vfx_pool_reuse"]),
-		"xp_pool_reuse=%d" % int(summary["xp_pool_reuse"]),
-		"pool_orphan_count=%d" % int(summary["pool_orphan_count"]),
-		"pool_overflow_violation_frames=%d" % int(summary["pool_overflow_violation_frames"]),
-		"maximum_orphan_node_count=%d" % int(summary["maximum_orphan_node_count"]),
-		"orphan_node_violation_frames=%d" % int(summary["orphan_node_violation_frames"]),
-		"static_memory_invalid_frames=%d" % int(summary["static_memory_invalid_frames"]),
-		"windows_version=%s" % str(host.get("windows_version", "")),
-		"windows_version_alias=%s" % str(host.get("windows_version_alias", "")),
-		"cpu_name=%s" % str(host.get("cpu_name", "")),
-		"logical_core_count=%d" % int(host.get("logical_core_count", 0)),
-		"gpu_name=%s" % str(host.get("gpu_name", "")),
-		"ram_capacity_bytes=%d" % int(host.get("ram_capacity_bytes", -1)),
-		"godot_version=%s" % str(host.get("godot_version", "")),
-		"godot_version_hash=%s" % str(host.get("godot_version_hash", "")),
-		"failure_reasons=%s" % str(summary.get("failure_reasons", "")),
-	])
-	file.store_string("\n".join(lines) + "\n")
-	file.flush()
-	var write_succeeded := file.get_error() == OK
-	file.close()
-	return write_succeeded
 
 
 func _append_failure_once(reason: String) -> void:

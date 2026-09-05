@@ -70,10 +70,6 @@ const REMOVED_ICON_PATHS: PackedStringArray = [
 	"res://assets/ui/inventory_icons/weapon_sword.png",
 ]
 
-const REMOVED_TOKEN_POLICY_ALLOWLIST: PackedStringArray = [
-	"res://src/release/release_pack_auditor.gd",
-]
-
 const REMOVED_MUSIC_TOKENS: PackedStringArray = [
 	"music_volume",
 	"bgm",
@@ -110,6 +106,7 @@ func test_names() -> PackedStringArray:
 		"production_has_no_removed_equipment_loot_or_score_system",
 		"production_and_project_settings_have_no_music_or_bgm",
 		"launch_balance_and_engine_contracts",
+		"release_launch_accepts_only_normal_game",
 	])
 
 
@@ -121,8 +118,30 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 			_test_no_music_or_bgm(assertions)
 		"launch_balance_and_engine_contracts":
 			_test_launch_balance(assertions)
+		"release_launch_accepts_only_normal_game":
+			_test_release_launch(assertions)
 		_:
 			assertions.expect_true(false, "registered project contract test")
+
+
+func _test_release_launch(assertions: Variant) -> void:
+	var launch := LaunchArguments.parse_release(PackedStringArray())
+	assertions.expect_true(launch["valid"], "release starts normally without custom arguments")
+	assertions.expect_equal(LaunchArguments.MODE_NORMAL, launch.get("mode"), "release starts the game")
+	assertions.expect_equal("user://settings.cfg", launch.get("settings_path"), "normal launch uses player settings")
+	for arguments: PackedStringArray in [
+		PackedStringArray(["--smoke-run"]),
+		PackedStringArray(["--release-pack-audit"]),
+		PackedStringArray(["--qa-scenario=result"]),
+		PackedStringArray(["--smoke-quit=1"]),
+		PackedStringArray(["--performance=full_hd_500_2000", "--run-seed=5002000"]),
+		PackedStringArray(["--run-seed=1"]),
+		PackedStringArray(["--unknown"]),
+	]:
+		assertions.expect_false(
+			LaunchArguments.parse_release(arguments)["valid"],
+			"release rejects test, debug, and unknown arguments: %s" % str(arguments),
+		)
 
 
 func _test_no_removed_references(assertions: Variant) -> void:
@@ -132,8 +151,6 @@ func _test_no_removed_references(assertions: Variant) -> void:
 	_collect_text_files("res://data", files)
 	var hits := PackedStringArray()
 	for path: String in files:
-		if path in REMOVED_TOKEN_POLICY_ALLOWLIST:
-			continue
 		var file := FileAccess.open(path, FileAccess.READ)
 		if file == null:
 			continue
@@ -162,35 +179,6 @@ func _test_no_removed_references(assertions: Variant) -> void:
 		)
 	for icon_path: String in REMOVED_ICON_PATHS:
 		assertions.expect_false(FileAccess.file_exists(icon_path), "removed inventory icon absent: %s" % icon_path)
-	var audited_prefixes: Array[String] = [
-		"res://data/definitions/",
-		"res://tools/",
-		"res://build/",
-		"res://artifacts/",
-		"res://work/",
-		"res://.codex/",
-		"res://assets/ui/inventory_icons/",
-		"res://data/balance/affixes/",
-		"res://data/balance/rarities/",
-		"res://data/balance/waves/",
-		"res://src/inventory/",
-		"res://src/loot/",
-		"res://src/definitions/rarity_definition.",
-		"res://src/definitions/affix_definition.",
-		"res://src/definitions/wave_definition.",
-		"res://src/definitions/score_definition.",
-		"res://data/balance/weapons/wood_stick.tres",
-		"res://data/balance/weapons/bow.tres",
-		"res://data/balance/weapons/staff.tres",
-		"res://data/balance/weapons/sword.tres",
-		"res://src/ui/inventory_",
-		"res://scenes/ui/reward_reveal_",
-	]
-	for prefix: String in audited_prefixes:
-		assertions.expect_true(
-			ReleasePackAuditor.FORBIDDEN_PREFIXES.has(prefix),
-			"release pack auditor also forbids: %s" % prefix,
-		)
 
 
 func _test_no_music_or_bgm(assertions: Variant) -> void:

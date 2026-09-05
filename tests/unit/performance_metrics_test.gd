@@ -9,21 +9,21 @@ func test_names() -> PackedStringArray:
 	return PackedStringArray([
 		"performance_nearest_rank_and_memory_median",
 		"performance_summary_thresholds",
-		"performance_csv_buffer_contract",
+		"performance_sampling_and_failure_diagnostics",
 		"performance_fixture_contract",
 	])
 
 
-func run_test(test_name: String, assertions: Variant, context: Dictionary) -> void:
+func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
 	match test_name:
 		"performance_nearest_rank_and_memory_median":
 			_test_nearest_rank_and_memory_median(assertions)
 		"performance_summary_thresholds":
 			_test_summary_thresholds(assertions)
-		"performance_csv_buffer_contract":
-			_test_csv_buffer_contract(assertions)
+		"performance_sampling_and_failure_diagnostics":
+			_test_sampling_and_failure_diagnostics(assertions)
 		"performance_fixture_contract":
-			_test_fixture_contract(assertions, context)
+			_test_fixture_contract(assertions)
 		_:
 			assertions.expect_true(false, "registered test name")
 
@@ -100,7 +100,7 @@ func _test_summary_thresholds(assertions: Variant) -> void:
 	assertions.expect_true(empty_failures.has("late_memory_sample_count_not_30"), "late memory requires 30 samples")
 
 
-func _test_csv_buffer_contract(assertions: Variant) -> void:
+func _test_sampling_and_failure_diagnostics(assertions: Variant) -> void:
 	var runner: Variant = RunnerScript.new()
 	var values := {
 		"active_enemy": 500,
@@ -112,51 +112,36 @@ func _test_csv_buffer_contract(assertions: Variant) -> void:
 		"vfx_pool_used": 800,
 		"xp_pool_used": 1_024,
 		"static_memory_bytes": 80_000_000,
+		"enemy_pool_overflow": 0,
+		"projectile_pool_overflow": 0,
+		"vfx_pool_overflow": 0,
+		"xp_pool_overflow_merges": 0,
+		"orphan_node_count": 0,
 	}
-	runner.call("_record_csv_frame", 1_234, values)
-	assertions.expect_equal(
-		1,
-		int(runner.debug_state()["csv_buffer_count"]),
-		"performance CSV frame is buffered without disk I/O",
-	)
-	assertions.expect_equal(
-		PackedInt64Array([1_234]),
-		runner.get("_csv_frame_times_usec"),
-		"performance CSV buffer preserves frame time",
-	)
-	assertions.expect_equal(
-		PackedInt64Array([80_000_000]),
-		runner.get("_csv_static_memory_bytes"),
-		"performance CSV buffer preserves raw static memory",
-	)
-	assertions.expect_equal(
-		{},
-		runner.get("_csv_count_overrides"),
-		"exact fixture counts require no sparse override",
-	)
-	runner.set("_frame_index", 1)
+	runner.call("_record_frame_sample", RunnerScript.WARMUP_USEC, 999, values)
+	runner.call("_record_frame_sample", RunnerScript.WARMUP_USEC + 1, 1_100, values)
+	runner.call("_record_frame_sample", RunnerScript.RUN_DURATION_USEC, 1_200, values)
+	runner.call("_record_frame_sample", RunnerScript.RUN_DURATION_USEC + 1, 999, values)
+	assertions.expect_equal(4, runner.debug_state()["frame_index"], "all observed frames are counted")
+	assertions.expect_equal(PackedInt64Array([1_100, 1_200]), runner.get("_measurement_frame_times_usec"), "only frames inside the measurement interval feed FPS and percentiles")
+	assertions.expect_equal(30, runner.debug_state()["early_memory_sample_count"], "early memory window retains 30 observations")
+	assertions.expect_equal(30, runner.debug_state()["late_memory_sample_count"], "late memory window retains 30 observations")
+	assertions.expect_equal(0, runner.get("_count_violation_frames"), "valid fixture counts do not fail")
 	values["active_enemy"] = 499
-	values["active_projectile"] = 1_199
-	values["active_vfx"] = 799
-	values["active_xp"] = 1_023
-	values["active_weapon"] = 4
-	runner.call("_record_csv_frame", 2_345, values)
-	var overrides: Dictionary = runner.get("_csv_count_overrides")
-	assertions.expect_equal(
-		PackedInt64Array([499, 1_199, 799, 1_023, 4]),
-		overrides.get(1, PackedInt64Array()),
-		"count deviations are retained for exact CSV reconstruction",
-	)
+	values["enemy_pool_overflow"] = 1
+	values["orphan_node_count"] = 2
+	values["static_memory_bytes"] = 0
+	runner.call("_record_frame_sample", RunnerScript.RUN_DURATION_USEC + 2, 1_300, values)
+	assertions.expect_equal(1, runner.get("_count_violation_frames"), "count failures remain detectable without frame logs")
+	assertions.expect_equal("499/1200/800/1024/5", runner.get("_first_count_violation"), "first invalid counts remain available for diagnosis")
+	assertions.expect_equal(1, runner.get("_pool_overflow_violation_frames"), "overflow remains detectable")
+	assertions.expect_equal(1, runner.get("_orphan_node_violation_frames"), "orphan frames remain detectable")
+	assertions.expect_equal(2, runner.get("_maximum_orphan_node_count"), "peak orphan count remains available")
+	assertions.expect_equal(1, runner.get("_static_memory_invalid_frames"), "invalid memory samples remain detectable")
 	runner.free()
 
 
-func _test_fixture_contract(assertions: Variant, context: Dictionary) -> void:
-	var output_directory := str(context.get("test_user_root", ""))
-	assertions.expect_true(
-		output_directory.is_absolute_path()
-		and DirAccess.dir_exists_absolute(output_directory),
-		"performance test output directory exists",
-	)
+func _test_fixture_contract(assertions: Variant) -> void:
 	var catalog := DefinitionCatalog.new()
 	assertions.expect_true(catalog.validate_manifest(BalanceTestFixtures.manifest()), "performance fixture catalog valid")
 	if not catalog.is_valid:
@@ -164,7 +149,7 @@ func _test_fixture_contract(assertions: Variant, context: Dictionary) -> void:
 
 	var simulation := _new_simulation(RunnerScript.RUN_SEED, catalog)
 	var runner: Variant = RunnerScript.new()
-	var initialize_error: Error = runner.initialize(simulation, output_directory)
+	var initialize_error: Error = runner.initialize(simulation)
 	assertions.expect_equal(OK, initialize_error, "performance runner accepts initialized seed 5002000 simulation")
 	assertions.expect_equal(500, simulation.enemy_system.enemy_store.active_count(), "performance fixture enemy count")
 	assertions.expect_equal(1_200, simulation.projectile_pool.active_count(), "performance fixture projectile count")
@@ -237,7 +222,7 @@ func _test_fixture_contract(assertions: Variant, context: Dictionary) -> void:
 	var wrong_seed_runner: Variant = RunnerScript.new()
 	assertions.expect_equal(
 		ERR_INVALID_DATA,
-		wrong_seed_runner.initialize(wrong_seed_simulation, output_directory),
+		wrong_seed_runner.initialize(wrong_seed_simulation),
 		"performance runner rejects a different run seed",
 	)
 	assertions.expect_equal(
@@ -252,7 +237,7 @@ func _test_fixture_contract(assertions: Variant, context: Dictionary) -> void:
 	var partial_runner: Variant = RunnerScript.new()
 	assertions.expect_equal(
 		ERR_INVALID_DATA,
-		partial_runner.initialize(partial_simulation, output_directory),
+		partial_runner.initialize(partial_simulation),
 		"performance runner rejects partial pre-existing load",
 	)
 	assertions.expect_equal(

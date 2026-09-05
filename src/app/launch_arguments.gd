@@ -6,8 +6,6 @@ const MODE_NORMAL: StringName = &"normal"
 const MODE_SMOKE_QUIT: StringName = &"smoke_quit"
 const MODE_QA_SCENARIO: StringName = &"qa_scenario"
 const MODE_PERFORMANCE: StringName = &"performance"
-const MODE_RELEASE_SMOKE: StringName = &"release_smoke"
-const MODE_RELEASE_PACK_AUDIT: StringName = &"release_pack_audit"
 const QA_SCENARIOS: Array[String] = [
 	"weapon_resonance_wave",
 	"weapon_homing_core",
@@ -72,18 +70,7 @@ static func parse_debug(arguments: PackedStringArray) -> Dictionary:
 static func parse_release(arguments: PackedStringArray) -> Dictionary:
 	if arguments.is_empty():
 		return _accepted(MODE_NORMAL, "user://settings.cfg")
-	if arguments.size() != 1:
-		return _rejected(_first_option_name(arguments))
-	if arguments[0] == "--smoke-run":
-		return _accepted(MODE_RELEASE_SMOKE, "")
-	if arguments[0].begins_with("--release-pack-audit="):
-		var manifest_path := arguments[0].trim_prefix("--release-pack-audit=").replace("\\", "/").simplify_path()
-		if manifest_path.is_empty() or not manifest_path.is_absolute_path():
-			return _rejected("--release-pack-audit")
-		var result := _accepted(MODE_RELEASE_PACK_AUDIT, "")
-		result["manifest_path"] = manifest_path
-		return result
-	return _rejected(_option_name(arguments[0]))
+	return _rejected(_first_option_name(arguments))
 
 
 static func _parse_named_values(arguments: PackedStringArray, allowed: Array[String]) -> Dictionary:

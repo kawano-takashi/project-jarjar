@@ -31,12 +31,12 @@ Compatibility rendererを使用します。
 
 PATH上のGodot 4.7.2-stable Standardで `project.godot` を開いてください。
 実装仕様と数値は `src/`、`data/`、`tests/` を参照してください。
+自動検証は通常のGDScriptテスト、配布物の生成はGodot標準exportを使います。
 
 - [ビルド・テスト・作業上の制約](AGENTS.md)
 - [20分の進行・成長・群れの設計意図](docs/balance-intent.md)
-- [プレイテストの成功基準・手順・結果](docs/playtest.md)
 
 通常戦はmanifestから読み込む20区間のResourceで構成し、区間の整数tickの合計からボス出現時刻を求めます。
 難易度の測定器は各区間末とボス出現後5分までを対象とし、各進化の時刻・通常強化完了時刻・未到達件数を出力します。
-`difficulty-runs.csv` にrunごとの時刻、`difficulty-growth.csv` に方針・進化段階ごとの到達数と中央値を記録します。
-測定は調整の参考資料です。性能試験・Release検証・QA・人間のプレイテストは、最終調整完了の明示後に既存手順で実施します。
+結果は画面に表示し、ログやCSVは保存しません。詳しい測定結果が必要な場合は `JARJAR_TEST_VERBOSE=1` を指定します。
+測定は必要に応じて使う調整の参考資料です。配布物の生成と人間による評価は、最終調整完了の明示後に行います。回答や感想は会話で受け取ります。
