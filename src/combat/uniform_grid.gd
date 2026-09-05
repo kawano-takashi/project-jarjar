@@ -5,8 +5,8 @@ extends RefCounted
 const CELL_SIZE: float = 2.0
 const ARENA_MIN: Vector2 = CombatEnvelope.ARENA_MIN
 const ARENA_MAX: Vector2 = CombatEnvelope.ARENA_MAX
-const COLUMN_COUNT: int = 15
-const ROW_COUNT: int = 15
+const COLUMN_COUNT: int = 16
+const ROW_COUNT: int = 16
 const CELL_COUNT: int = COLUMN_COUNT * ROW_COUNT
 
 var _cells: Array[Array] = []

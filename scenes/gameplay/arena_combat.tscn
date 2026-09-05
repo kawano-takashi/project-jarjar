@@ -18,7 +18,7 @@ roughness = 0.9
 
 [sub_resource type="BoxMesh" id="FloorMesh"]
 material = SubResource("FloorMaterial")
-size = Vector3(30, 0.1, 30)
+size = Vector3(32, 0.1, 32)
 
 [sub_resource type="StandardMaterial3D" id="GridMaterial"]
 albedo_color = Color(0.2, 0.43, 0.4, 0.44)
@@ -46,11 +46,11 @@ roughness = 0.55
 
 [sub_resource type="BoxMesh" id="BoundaryHorizontalMesh"]
 material = SubResource("BoundaryMaterial")
-size = Vector3(30.5, 0.28, 0.24)
+size = Vector3(32.5, 0.28, 0.24)
 
 [sub_resource type="BoxMesh" id="BoundaryVerticalMesh"]
 material = SubResource("BoundaryMaterial")
-size = Vector3(0.24, 0.28, 30)
+size = Vector3(0.24, 0.28, 32)
 
 [sub_resource type="StandardMaterial3D" id="PlayerMaterial"]
 albedo_color = Color(0.3, 0.78, 0.96, 1)
@@ -620,19 +620,19 @@ cast_shadow = 0
 multimesh = SubResource("GridMultiMesh")
 
 [node name="BoundaryNorth" type="MeshInstance3D" parent="."]
-position = Vector3(0, 0.14, -15)
+position = Vector3(0, 0.14, -16)
 mesh = SubResource("BoundaryHorizontalMesh")
 
 [node name="BoundarySouth" type="MeshInstance3D" parent="."]
-position = Vector3(0, 0.14, 15)
+position = Vector3(0, 0.14, 16)
 mesh = SubResource("BoundaryHorizontalMesh")
 
 [node name="BoundaryWest" type="MeshInstance3D" parent="."]
-position = Vector3(-15, 0.14, 0)
+position = Vector3(-16, 0.14, 0)
 mesh = SubResource("BoundaryVerticalMesh")
 
 [node name="BoundaryEast" type="MeshInstance3D" parent="."]
-position = Vector3(15, 0.14, 0)
+position = Vector3(16, 0.14, 0)
 mesh = SubResource("BoundaryVerticalMesh")
 
 [node name="PlayerMesh" type="MeshInstance3D" parent="."]

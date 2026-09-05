@@ -58,7 +58,7 @@
 
 [resource]
 script = ExtResource("1_manifest")
-arena_size = Vector2(30, 30)
+arena_size = Vector2(32, 32)
 xp_early_max_level = 19
 xp_early_coefficient = 10
 xp_early_offset = -5

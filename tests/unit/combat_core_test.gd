@@ -5,7 +5,7 @@ func test_names() -> PackedStringArray:
 	return PackedStringArray([
 		"survival_pool_active_free_index_contract",
 		"xp_pool_overflow_merges_without_loss",
-		"thirty_meter_grid_boundaries",
+		"thirty_two_meter_grid_boundaries",
 		"segment_tick_boundaries",
 		"arena_nodes_hold_four_active_and_respawn",
 		"all_weapon_behaviors_generate_attacks",
@@ -32,7 +32,7 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 			_test_pool_active_free_indices(assertions)
 		"xp_pool_overflow_merges_without_loss":
 			_test_xp_overflow_merge(assertions)
-		"thirty_meter_grid_boundaries":
+		"thirty_two_meter_grid_boundaries":
 			_test_grid_boundaries(assertions)
 		"segment_tick_boundaries":
 			_test_segment_boundaries(assertions)
@@ -137,11 +137,11 @@ func _test_xp_overflow_merge(assertions: Variant) -> void:
 
 func _test_grid_boundaries(assertions: Variant) -> void:
 	var grid := UniformGrid.new()
-	assertions.expect_equal(Vector2(-15.0, -15.0), UniformGrid.ARENA_MIN, "grid begins at the 30m arena corner")
-	assertions.expect_equal(Vector2(15.0, 15.0), UniformGrid.ARENA_MAX, "grid ends at the 30m arena corner")
+	assertions.expect_equal(Vector2(-16.0, -16.0), UniformGrid.ARENA_MIN, "grid begins at the 32m arena corner")
+	assertions.expect_equal(Vector2(16.0, 16.0), UniformGrid.ARENA_MAX, "grid ends at the 32m arena corner")
 	assertions.expect_equal(Vector2i.ZERO, grid.cell_indices_for_position(Vector2(-100.0, -100.0)), "outside negative positions clamp to first cell")
-	assertions.expect_equal(Vector2i(14, 14), grid.cell_indices_for_position(Vector2(100.0, 100.0)), "outside positive positions clamp to last cell")
-	assertions.expect_equal(225, UniformGrid.CELL_COUNT, "2m cells cover the complete 30 by 30 arena")
+	assertions.expect_equal(Vector2i(15, 15), grid.cell_indices_for_position(Vector2(100.0, 100.0)), "outside positive positions clamp to last cell")
+	assertions.expect_equal(256, UniformGrid.CELL_COUNT, "2m cells cover the complete 32 by 32 arena")
 
 
 func _test_segment_boundaries(assertions: Variant) -> void:

@@ -23,7 +23,7 @@ func _test_manifest_globals(assertions: Variant) -> void:
 	if not catalog.is_valid:
 		return
 	var manifest: SurvivalContentManifest = catalog.manifest()
-	assertions.expect_equal(Vector2(30.0, 30.0), manifest.arena_size, "finite 30x30 arena")
+	assertions.expect_equal(Vector2(32.0, 32.0), manifest.arena_size, "finite 32x32 arena")
 	assertions.expect_equal(60, manifest.ticks_per_second, "fixed 60Hz domain clock")
 	assertions.expect_equal(36000, manifest.boss_start_tick, "boss starts at ten minutes")
 	assertions.expect_equal(19, manifest.xp_early_max_level, "early XP band ends at level nineteen")

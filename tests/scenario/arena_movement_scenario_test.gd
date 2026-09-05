@@ -8,7 +8,7 @@ const SCREEN_DIRECTION_DOT_MINIMUM: float = 0.9999
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
 		"camera_relative_movement_matches_view",
-		"survival_arena_is_thirty_by_thirty_with_exterior",
+		"survival_arena_is_thirty_two_by_thirty_two_with_exterior",
 		"gameplay_movement_input_bindings",
 	])
 
@@ -17,7 +17,7 @@ func run_test(test_name: String, assertions: Variant, context: Dictionary) -> vo
 	match test_name:
 		"camera_relative_movement_matches_view":
 			await _test_camera_relative_movement(assertions, context["tree"] as SceneTree)
-		"survival_arena_is_thirty_by_thirty_with_exterior":
+		"survival_arena_is_thirty_two_by_thirty_two_with_exterior":
 			await _test_arena_dimensions(assertions, context["tree"] as SceneTree)
 		"gameplay_movement_input_bindings":
 			_test_input_bindings(assertions)
@@ -56,11 +56,11 @@ func _test_arena_dimensions(assertions: Variant, tree: SceneTree) -> void:
 	var floor_mesh_instance: MeshInstance3D = arena.get_node("Floor") as MeshInstance3D
 	var floor_mesh: BoxMesh = floor_mesh_instance.mesh as BoxMesh
 	assertions.expect_equal(Vector3(80.0, 0.08, 80.0), exterior_mesh.size, "dark non-colliding exterior is eighty meters square")
-	assertions.expect_equal(Vector3(30.0, 0.1, 30.0), floor_mesh.size, "combat floor is thirty meters square")
-	assertions.expect_float(-15.0, (arena.get_node("BoundaryNorth") as MeshInstance3D).position.z, "north boundary is at minus fifteen")
-	assertions.expect_float(15.0, (arena.get_node("BoundarySouth") as MeshInstance3D).position.z, "south boundary is at plus fifteen")
-	assertions.expect_float(-15.0, (arena.get_node("BoundaryWest") as MeshInstance3D).position.x, "west boundary is at minus fifteen")
-	assertions.expect_float(15.0, (arena.get_node("BoundaryEast") as MeshInstance3D).position.x, "east boundary is at plus fifteen")
+	assertions.expect_equal(Vector3(32.0, 0.1, 32.0), floor_mesh.size, "combat floor is thirty-two meters square")
+	assertions.expect_float(-16.0, (arena.get_node("BoundaryNorth") as MeshInstance3D).position.z, "north boundary is at minus sixteen")
+	assertions.expect_float(16.0, (arena.get_node("BoundarySouth") as MeshInstance3D).position.z, "south boundary is at plus sixteen")
+	assertions.expect_float(-16.0, (arena.get_node("BoundaryWest") as MeshInstance3D).position.x, "west boundary is at minus sixteen")
+	assertions.expect_float(16.0, (arena.get_node("BoundaryEast") as MeshInstance3D).position.x, "east boundary is at plus sixteen")
 	var grid: MultiMesh = (arena.get_node("%GridLines") as MultiMeshInstance3D).multimesh
 	assertions.expect_equal(26, grid.instance_count, "thirteen lines per axis form the 2.5-meter grid")
 	var camera: Camera3D = arena.get_node("%ArenaCamera") as Camera3D

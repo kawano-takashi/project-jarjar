@@ -28,8 +28,8 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 
 
 func _test_envelope_and_grid(assertions: Variant) -> void:
-	assertions.expect_float(15.0, CombatEnvelope.ARENA_HALF_EXTENT, "arena half extent is fifteen meters")
-	assertions.expect_float(14.55, CombatEnvelope.PLAYER_CENTER_LIMIT, "player center retains its body-radius margin")
+	assertions.expect_float(16.0, CombatEnvelope.ARENA_HALF_EXTENT, "arena half extent is sixteen meters")
+	assertions.expect_float(15.55, CombatEnvelope.PLAYER_CENTER_LIMIT, "player center retains its body-radius margin")
 	assertions.expect_float(8.0, CombatEnvelope.TARGET_CENTER_RADIUS, "weapon acquisition center is capped at eight meters")
 	assertions.expect_float(9.0, CombatEnvelope.EFFECT_OUTER_RADIUS, "weapon effect outer edge is capped at nine meters")
 	assertions.expect_float(10.0, CombatEnvelope.DAMAGE_CENTER_RADIUS, "damage center stays in the ten-meter safe envelope")
@@ -43,10 +43,10 @@ func _test_envelope_and_grid(assertions: Variant) -> void:
 	assertions.expect_float(18.0, CombatEnvelope.CAMERA_SIZE, "camera uses the fixed eighteen-meter size")
 	assertions.expect_float(0.12, CombatEnvelope.CAMERA_FOLLOW_TAU_SECONDS, "camera follow smoothing uses the locked tau")
 	var grid := UniformGrid.new()
-	assertions.expect_equal(Vector2(-15.0, -15.0), UniformGrid.ARENA_MIN, "grid begins at the thirty-meter arena corner")
-	assertions.expect_equal(Vector2(15.0, 15.0), UniformGrid.ARENA_MAX, "grid ends at the thirty-meter arena corner")
-	assertions.expect_equal(Vector2i(14, 14), grid.cell_indices_for_position(Vector2(100.0, 100.0)), "positive overflow clamps to the final cell")
-	assertions.expect_equal(225, UniformGrid.CELL_COUNT, "two-meter cells cover the complete thirty-meter arena")
+	assertions.expect_equal(Vector2(-16.0, -16.0), UniformGrid.ARENA_MIN, "grid begins at the thirty-two-meter arena corner")
+	assertions.expect_equal(Vector2(16.0, 16.0), UniformGrid.ARENA_MAX, "grid ends at the thirty-two-meter arena corner")
+	assertions.expect_equal(Vector2i(15, 15), grid.cell_indices_for_position(Vector2(100.0, 100.0)), "positive overflow clamps to the final cell")
+	assertions.expect_equal(256, UniformGrid.CELL_COUNT, "two-meter cells cover the complete thirty-two-meter arena")
 	grid.insert(41, Vector2(18.0, 0.0))
 	assertions.expect_equal(
 		[41],
@@ -269,19 +269,19 @@ func _test_outside_entry_and_far_despawn(assertions: Variant) -> void:
 	entry_system.initialize(entry_state, catalog)
 	var entering: EnemyEntity = entry_system._spawn_enemy(
 		GameTypes.EnemyType.PURSUER,
-		Vector2(16.0, 0.0),
+		Vector2(17.0, 0.0),
 		0,
 	)
 	var entering_id: int = entering.entity_id
 	assertions.expect_equal(
-		Vector2(16.0, 0.0),
+		Vector2(17.0, 0.0),
 		entering.position,
 		"production normal spawn remains outside the arena",
 	)
 	entry_state.combat_tick = 20
 	entry_system.advance_snapshot([entering_id], Vector2.ZERO, 20)
 	assertions.expect_equal(
-		Vector2(16.0, 0.0),
+		Vector2(17.0, 0.0),
 		entering.position,
 		"outside normal waits through the final materialization tick",
 	)
@@ -296,7 +296,7 @@ func _test_outside_entry_and_far_despawn(assertions: Variant) -> void:
 	entry_state.combat_tick = 21
 	entry_system.advance_snapshot([entering_id], Vector2.ZERO, 21)
 	assertions.expect_true(
-		entering.position.x < 16.0 and entering.position.x > 15.0,
+		entering.position.x < 17.0 and entering.position.x > 16.0,
 		"active outside normal begins continuous pursuit without teleporting",
 	)
 	assertions.expect_equal(
@@ -336,7 +336,7 @@ func _test_outside_entry_and_far_despawn(assertions: Variant) -> void:
 		entry_state,
 		GameTypes.EnemyType.PURSUER,
 		catalog.enemy(&"pursuer"),
-		Vector2(15.0, 0.0),
+		Vector2(16.0, 0.0),
 		1.0,
 		1.0,
 		69,
@@ -366,7 +366,7 @@ func _test_outside_entry_and_far_despawn(assertions: Variant) -> void:
 	weapon_simulation.initialize(weapon_state, catalog)
 	var outside_target: EnemyEntity = weapon_simulation.spawn_fixture_enemy(
 		GameTypes.EnemyType.BULWARK,
-		Vector2(15.2, 0.0),
+		Vector2(16.2, 0.0),
 		-1,
 		false,
 		true,

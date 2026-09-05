@@ -460,14 +460,14 @@ func _configure_static_grid() -> void:
 		return
 	var line_index: int = 0
 	for grid_index: int in range(GRID_LINE_COUNT_PER_AXIS):
-		var coordinate: float = -GRID_HALF_EXTENT_M + float(grid_index) * GRID_SPACING_M
+		var coordinate: float = float(grid_index - 6) * GRID_SPACING_M
 		multimesh.set_instance_transform(line_index, Transform3D(
-			Basis.IDENTITY.scaled(Vector3(30.0, 1.0, 1.0)),
+			Basis.IDENTITY.scaled(Vector3(GRID_HALF_EXTENT_M * 2.0, 1.0, 1.0)),
 			Vector3(0.0, 0.006, coordinate),
 		))
 		line_index += 1
 		multimesh.set_instance_transform(line_index, Transform3D(
-			Basis.IDENTITY.scaled(Vector3(1.0, 1.0, 30.0)),
+			Basis.IDENTITY.scaled(Vector3(1.0, 1.0, GRID_HALF_EXTENT_M * 2.0)),
 			Vector3(coordinate, 0.006, 0.0),
 		))
 		line_index += 1

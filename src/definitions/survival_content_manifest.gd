@@ -25,7 +25,7 @@ const DEFAULT_BOSS_DAMAGE_MULTIPLIER: float = 2.28
 const DEFAULT_BOSS_ACTION_RATE_MULTIPLIER: float = 1.0
 
 @export var ticks_per_second: int = 60
-@export var arena_size: Vector2 = Vector2(30.0, 30.0)
+@export var arena_size: Vector2 = Vector2(32.0, 32.0)
 @export var boss_start_tick: int = 36000
 @export var xp_early_max_level: int = DEFAULT_XP_EARLY_MAX_LEVEL
 @export var xp_early_coefficient: int = DEFAULT_XP_EARLY_COEFFICIENT

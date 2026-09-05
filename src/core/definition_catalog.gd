@@ -221,8 +221,8 @@ func _index_content() -> void:
 func _validate_globals() -> void:
 	if _manifest.ticks_per_second != 60:
 		_add_error("ticks_per_second must be 60")
-	if not _manifest.arena_size.is_equal_approx(Vector2(30.0, 30.0)):
-		_add_error("arena_size must be 30x30")
+	if not _manifest.arena_size.is_equal_approx(Vector2(32.0, 32.0)):
+		_add_error("arena_size must be 32x32")
 	if _manifest.boss_start_tick != 36000:
 		_add_error("boss_start_tick must be 36000")
 	_validate_xp_contract()
