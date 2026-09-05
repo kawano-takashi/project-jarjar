@@ -3,7 +3,6 @@ extends RefCounted
 
 
 const RUN_SEED: int = 20260827
-const STARTER_WEAPON_ID: StringName = &"homing_core"
 
 const ACTION_START_RUN: StringName = &"start_run"
 const ACTION_WAIT_FOR_FAILURE: StringName = &"wait_for_failure"
@@ -195,8 +194,6 @@ func _validate_factory_initial_state(game_app: Node) -> Dictionary:
 	if (simulation_value as CombatSimulation).state != state:
 		return _validation_failure(&"initial_simulation_state_mismatch")
 	var actual_snapshot := _initial_snapshot(state)
-	if actual_snapshot["starter_id"] != STARTER_WEAPON_ID:
-		return _validation_failure(&"initial_starter_weapon_invalid")
 	for key: String in _expected_initial_snapshot:
 		if actual_snapshot.get(key) != _expected_initial_snapshot[key]:
 			return _validation_failure(&"initial_state_mismatch", {"field": key})

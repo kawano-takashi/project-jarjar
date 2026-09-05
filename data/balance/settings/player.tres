@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="PlayerBalanceDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/player_balance_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+base_max_hp = 100.0
+move_speed = 4.05
+body_radius = 0.45
+level_up_resume_invulnerability_ticks = 45
+kill_chain_window_ticks = 90

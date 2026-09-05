@@ -1,6 +1,9 @@
 class_name DifficultyCalibrationBot
 extends RefCounted
 
+var _balance: SurvivalContentManifest = null
+var _envelope: CombatEnvelope = null
+
 ## 難易度検証を自動化するための、決定論的な操作ボットです。
 ##
 ## 画面内の敵・弾・攻撃予告・取得物を観測し、複数の移動候補について
@@ -36,8 +39,6 @@ const SAFETY_MARGIN: float = 0.20
 const VIEW_HALF_WIDTH: float = 16.0
 const VIEW_HALF_DEPTH: float = 10.9869713097598
 # シミュレーション本体と同じプレイヤー半径・速度を参照する。
-const PLAYER_RADIUS: float = CombatEnvelope.PLAYER_BODY_RADIUS
-const PLAYER_SPEED: float = CombatSimulation.PLAYER_SPEED
 const SECONDS_PER_TICK: float = 1.0 / float(RunState.TICKS_PER_SECOND)
 const PREDICTION_SECONDS: float = (
 	float(PREDICTION_HORIZON_TICKS) / float(RunState.TICKS_PER_SECOND)
@@ -159,7 +160,9 @@ var _last_avoidance_debug: Dictionary = {
 ##
 ## 方針が範囲外なら `false` を返します。同じ `run_seed` を渡した場合は、
 ## 巡回方向・候補順・同点時の選択規則も同じになります。
-func initialize(p_policy: int, run_seed: int) -> bool:
+func initialize(p_policy: int, run_seed: int, catalog: DefinitionCatalog) -> bool:
+	_balance = catalog.manifest()
+	_envelope = catalog.envelope
 	if p_policy < Policy.CAUTIOUS or p_policy > Policy.EVOLUTION:
 		return false
 	policy = p_policy
@@ -486,7 +489,7 @@ func _collect_visible_threats(
 			"travel_seconds": travel_seconds,
 			"seek_player": enemy.movement_kind == EnemyEntity.MovementKind.SEEK_PLAYER,
 			"stop_scale": (
-				0.5 if enemy.enemy_type == GameTypes.EnemyType.BOSS else 0.0
+				_balance.combat.boss_stop_time_scale if enemy.enemy_type == GameTypes.EnemyType.BOSS else 0.0
 			),
 			"suppress_damage_during_full_stop": true,
 			"mandatory": false,
@@ -500,7 +503,7 @@ func _collect_visible_threats(
 			group_members.append(threat)
 		# 地面予告は静止円として扱い、表示中は常にダメージ領域とみなす。
 		if enemy.telegraph_active:
-			var telegraph_radius: float = maxf(0.0, enemy.definition.area_radius)
+			var telegraph_radius: float = 0.0
 			if _circle_intersects_view(
 				player_position,
 				enemy.telegraph_position,
@@ -671,7 +674,7 @@ func _enemy_damage(simulation: CombatSimulation, enemy: EnemyEntity) -> float:
 		var manifest: SurvivalContentManifest = simulation.catalog.manifest()
 		if manifest != null:
 			damage *= 1.0 + (
-				manifest.boss_attack_bonus_per_stack
+				manifest.combat.boss_attack_bonus_per_stack
 				* float(simulation.state.boss_enrage_stacks)
 			)
 	return damage
@@ -693,7 +696,7 @@ func _boss_warning_spokes(
 	var origin: Vector2 = boss.position + boss_velocity * _scaled_future_seconds(
 		simulation.state,
 		fire_delay,
-		0.5,
+		_balance.combat.boss_stop_time_scale,
 	)
 	var spoke_count: int = maxi(1, boss.boss_charge_spoke_count)
 	var angle_step: float = TAU / float(spoke_count)
@@ -706,7 +709,7 @@ func _boss_warning_spokes(
 	var manifest: SurvivalContentManifest = simulation.catalog.manifest()
 	if manifest != null:
 		damage *= 1.0 + (
-			manifest.boss_attack_bonus_per_stack
+			manifest.combat.boss_attack_bonus_per_stack
 			* float(simulation.state.boss_enrage_stacks)
 		)
 	# 全スポークを独立した円形弾として登録する。
@@ -730,7 +733,7 @@ func _boss_warning_spokes(
 			"damage": damage,
 			"first_active_tick": fire_delay + 1,
 			"travel_seconds": lifetime_seconds,
-			"stop_scale": 0.5,
+			"stop_scale": _balance.combat.boss_stop_time_scale,
 			"suppress_damage_during_full_stop": true,
 			"mandatory": true,
 		})
@@ -741,12 +744,12 @@ func _boss_warning_spokes(
 # 予測範囲内に発射されない場合は `-1` を返します。
 func _boss_fire_delay_ticks(state: RunState, boss: EnemyEntity) -> int:
 	var elapsed: float = boss.boss_charge_elapsed_ticks
-	# 停止期間中はチャージ進行を 0.5 Tick 相当として積算する。
+	# 停止期間中は設定された時間倍率でチャージ進行を積算する。
 	for future_tick: int in range(1, PREDICTION_HORIZON_TICKS + 1):
 		var absolute_tick: int = state.combat_tick + future_tick
-		var time_scale: float = 0.5 if absolute_tick < state.stop_until_tick else 1.0
+		var time_scale: float = _balance.combat.boss_stop_time_scale if absolute_tick < state.stop_until_tick else 1.0
 		elapsed += time_scale
-		if elapsed + TIME_EPSILON >= float(CombatEnvelope.BOSS_CHARGE_TICKS):
+		if elapsed + TIME_EPSILON >= float(boss.definition.telegraph_ticks):
 			return future_tick
 	return -1
 
@@ -893,13 +896,13 @@ func _estimated_threat_ttc(threat: Dictionary, player_position: Vector2) -> floa
 	var clearance: float = maxf(
 		0.0,
 		player_position.distance_to(threat.get("position", player_position))
-		- PLAYER_RADIUS
+		- _balance.player.body_radius
 		- radius
 		- SAFETY_MARGIN,
 	)
 	var velocity: Vector2 = threat.get("fallback_velocity", Vector2.ZERO)
 	# 双方が互いへ最速接近する上限速度を使い、危険を過小評価しない。
-	var closing_speed: float = PLAYER_SPEED + velocity.length()
+	var closing_speed: float = _balance.player.move_speed + velocity.length()
 	var active_delay: int = maxi(0, int(threat.get("first_active_tick", 1)) - 1)
 	return (
 		float(active_delay)
@@ -1031,7 +1034,7 @@ func _build_directional_density(
 		var radius: float = float(threat.get("radius", 0.0))
 		var clearance: float = maxf(
 			0.05,
-			offset.length() - PLAYER_RADIUS - radius - SAFETY_MARGIN,
+			offset.length() - _balance.player.body_radius - radius - SAFETY_MARGIN,
 		)
 		var damage_scale: float = 1.0 + minf(4.0, float(threat.get("damage", 0.0)) * 0.05)
 		var delay_scale: float = 1.0 / float(maxi(1, int(threat.get("first_active_tick", 1))))
@@ -1281,19 +1284,19 @@ func _player_motion_segments(
 	player_position: Vector2,
 	direction: Vector2,
 ) -> Array[Dictionary]:
-	var velocity: Vector2 = direction.limit_length(1.0) * PLAYER_SPEED
+	var velocity: Vector2 = direction.limit_length(1.0) * _balance.player.move_speed
 	# X/Y それぞれについて、アリーナ境界へ到達する時刻を求める。
 	var x_stop: float = _axis_stop_time(
 		player_position.x,
 		velocity.x,
-		CombatSimulation.ARENA_MIN.x,
-		CombatSimulation.ARENA_MAX.x,
+		_envelope.player_center_min.x,
+		_envelope.player_center_max.x,
 	)
 	var y_stop: float = _axis_stop_time(
 		player_position.y,
 		velocity.y,
-		CombatSimulation.ARENA_MIN.y,
-		CombatSimulation.ARENA_MAX.y,
+		_envelope.player_center_min.y,
+		_envelope.player_center_max.y,
 	)
 	# どちらかの軸が停止する時刻で、経路を区分する。
 	var breakpoints: Array[float] = [0.0, PREDICTION_SECONDS]
@@ -1307,13 +1310,13 @@ func _player_motion_segments(
 		var segment_position := Vector2(
 			clampf(
 				player_position.x + velocity.x * minf(segment_start, x_stop),
-				CombatSimulation.ARENA_MIN.x,
-				CombatSimulation.ARENA_MAX.x,
+				_envelope.player_center_min.x,
+				_envelope.player_center_max.x,
 			),
 			clampf(
 				player_position.y + velocity.y * minf(segment_start, y_stop),
-				CombatSimulation.ARENA_MIN.y,
-				CombatSimulation.ARENA_MAX.y,
+				_envelope.player_center_min.y,
+				_envelope.player_center_max.y,
 			),
 		)
 		var segment_velocity := Vector2(
@@ -1428,10 +1431,10 @@ func _evaluate_seek_contact(
 	var intervals: Array[Vector2] = []
 	var enemy_position: Vector2 = threat.get("position", Vector2.ZERO)
 	var safety_radius: float = (
-		PLAYER_RADIUS + float(threat.get("radius", 0.0)) + SAFETY_MARGIN
+		_balance.player.body_radius + float(threat.get("radius", 0.0)) + SAFETY_MARGIN
 	)
 	var body_contact_radius: float = (
-		PLAYER_RADIUS + float(threat.get("radius", 0.0))
+		_balance.player.body_radius + float(threat.get("radius", 0.0))
 	)
 	var path_exists_at_horizon: bool = false
 	# 各区間の開始時点で敵からプレイヤーへの方向を再計算する。
@@ -1546,7 +1549,7 @@ func _circle_contact_interval_for_segments(
 		threat_segment.get("velocity", Vector2.ZERO)
 		- player_segment.get("velocity", Vector2.ZERO)
 	)
-	var radius: float = PLAYER_RADIUS + threat_radius + SAFETY_MARGIN
+	var radius: float = _balance.player.body_radius + threat_radius + SAFETY_MARGIN
 	var local: Vector2 = _circle_contact_interval(
 		relative_position,
 		relative_velocity,
@@ -1607,7 +1610,7 @@ func _swarm_contact_interval(
 	)
 	var forward: Vector2 = threat.get("forward", Vector2.RIGHT)
 	var side: Vector2 = threat.get("side", Vector2.DOWN)
-	var expanded_radius: float = PLAYER_RADIUS + SAFETY_MARGIN
+	var expanded_radius: float = _balance.player.body_radius + SAFETY_MARGIN
 	# 群れの進行方向を基準とするローカル座標へ射影する。
 	var local_position := Vector2(relative_position.dot(forward), relative_position.dot(side))
 	var local_velocity := Vector2(relative_velocity.dot(forward), relative_velocity.dot(side))
@@ -1763,10 +1766,10 @@ func _threat_end_clearance(
 				float(threat.get("max_side", 0.0)),
 			),
 		)
-		return local.distance_to(closest) - PLAYER_RADIUS - SAFETY_MARGIN
+		return local.distance_to(closest) - _balance.player.body_radius - SAFETY_MARGIN
 	return (
 		player_position.distance_to(threat_translation)
-		- PLAYER_RADIUS
+		- _balance.player.body_radius
 		- float(threat.get("radius", 0.0))
 		- SAFETY_MARGIN
 	)
@@ -1980,10 +1983,10 @@ func _patrol_direction(player_position: Vector2) -> Vector2:
 # 壁から `WALL_MARGIN` 未満へ近づいたとき、内側へ押し戻す補正ベクトルを作ります。
 func _wall_correction(player_position: Vector2) -> Vector2:
 	var correction: Vector2 = Vector2.ZERO
-	var left_distance: float = player_position.x - CombatSimulation.ARENA_MIN.x
-	var right_distance: float = CombatSimulation.ARENA_MAX.x - player_position.x
-	var top_distance: float = player_position.y - CombatSimulation.ARENA_MIN.y
-	var bottom_distance: float = CombatSimulation.ARENA_MAX.y - player_position.y
+	var left_distance: float = player_position.x - _envelope.player_center_min.x
+	var right_distance: float = _envelope.player_center_max.x - player_position.x
+	var top_distance: float = player_position.y - _envelope.player_center_min.y
+	var bottom_distance: float = _envelope.player_center_max.y - player_position.y
 	# 壁へ近いほど 0〜1 の大きな内向き成分を加える。
 	if left_distance < WALL_MARGIN:
 		correction.x += (WALL_MARGIN - left_distance) / WALL_MARGIN
@@ -2090,8 +2093,9 @@ func _normal_focus_choice(
 	if definition == null:
 		return -1
 	# 対応パッシブを未取得なら先に確保し、その後で武器レベルを上げる。
-	if state.passive(definition.paired_passive_id) == null:
-		var passive_index: int = _find_option(offer, definition.paired_passive_id)
+	var evolution: EvolutionDefinition = catalog.evolution_for_weapon(definition.weapon_id)
+	if evolution != null and state.passive(evolution.passive_id) == null:
+		var passive_index: int = _find_option(offer, evolution.passive_id)
 		if passive_index >= 0:
 			return passive_index
 	if focused_weapon.level < definition.max_level:
@@ -2106,18 +2110,12 @@ func _counterpart_is_owned(
 	catalog: DefinitionCatalog,
 ) -> bool:
 	if option.kind == GameTypes.UpgradeKind.WEAPON:
-		var weapon_definition: WeaponDefinition = catalog.weapon(option.content_id)
-		return (
-			weapon_definition != null
-			and not weapon_definition.paired_passive_id.is_empty()
-			and state.passive(weapon_definition.paired_passive_id) != null
-		)
-	var passive_definition: PassiveDefinition = catalog.passive(option.content_id)
-	return (
-		passive_definition != null
-		and not passive_definition.paired_weapon_id.is_empty()
-		and state.weapon_for_lineage(passive_definition.paired_weapon_id) != null
-	)
+		var evolution: EvolutionDefinition = catalog.evolution_for_weapon(option.content_id)
+		return evolution != null and state.passive(evolution.passive_id) != null
+	for evolution: EvolutionDefinition in catalog.evolutions.values():
+		if evolution.passive_id == option.content_id and state.weapon_for_lineage(evolution.base_weapon_id) != null:
+			return true
+	return false
 
 
 #endregion

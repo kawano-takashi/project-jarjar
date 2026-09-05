@@ -30,30 +30,51 @@ class WeaponLevelDelta:
 		new_value = p_new_value
 
 
+## 武器ID。空文字不可、manifest内で重複不可。
 @export var weapon_id: StringName = &""
+## 表示名。空文字不可。数値説明は実際の設定から生成。
 @export var display_name: String = ""
+## 武器の動作を説明する文章。数値の重複記載は避ける。
 @export_multiline var description: String = ""
-@export var lineage_id: StringName = &""
+## 攻撃処理の種類。WeaponBehaviorの列挙から選択。
 @export var behavior: GameTypes.WeaponBehavior = GameTypes.WeaponBehavior.MELEE_WAVE
+## 進化専用武器ならtrue。レベル配列長は1、抽選重みは0、進化定義の参照が必須。
 @export var is_evolved: bool = false
-@export var max_level: int = 0
-@export var selection_weight: float = 0.0
-@export var paired_passive_id: StringName = &""
-@export var damage_by_level: PackedFloat32Array = PackedFloat32Array()
-@export var cooldown_ticks_by_level: PackedInt32Array = PackedInt32Array()
-@export var amount_by_level: PackedInt32Array = PackedInt32Array()
-@export var projectile_speed_by_level: PackedFloat32Array = PackedFloat32Array()
-@export var range_by_level: PackedFloat32Array = PackedFloat32Array()
-@export var projectile_radius_by_level: PackedFloat32Array = PackedFloat32Array()
-@export var effect_radius_by_level: PackedFloat32Array = PackedFloat32Array()
+var max_level: int:
+	get:
+		return damage_by_level.size()
+## 通常の選択肢抽選の相対重み。有限かつ0以上、同種の合計は正。所有優先と宝箱は正重みの候補から均等に選び、0は抽選対象外。
+@export_range(0, 100, 0.001, "or_greater") var selection_weight: float = 0.0
+## 各レベルのdamage。HP/命中、有限かつ正。Lv1から順に格納、全レベル配列の長さはdamage_by_levelと一致。隣接レベルは最低1項目を変更。
+@export_range(0, 100, 0.001, "or_greater") var damage_by_level: PackedFloat32Array = PackedFloat32Array()
+## 各レベルのcooldown_ticks。整数tick（60/秒）、有限かつ正。Lv1から順に格納、全レベル配列の長さはdamage_by_levelと一致。隣接レベルは最低1項目を変更。
+@export_range(0, 100, 1, "or_greater", "suffix:tick") var cooldown_ticks_by_level: PackedInt32Array = PackedInt32Array()
+## 各レベルのamount。個、有限かつ正。Lv1から順に格納、全レベル配列の長さはdamage_by_levelと一致。隣接レベルは最低1項目を変更。
+@export_range(0, 100, 1, "or_greater") var amount_by_level: PackedInt32Array = PackedInt32Array()
+## 各レベルのprojectile_speed。m/秒、有限かつ0以上。Lv1から順に格納、全レベル配列の長さはdamage_by_levelと一致。隣接レベルは最低1項目を変更。
+@export_range(0, 100, 0.001, "or_greater", "suffix:m/s") var projectile_speed_by_level: PackedFloat32Array = PackedFloat32Array()
+## 各レベルのrange。m、有限かつ0以上。Lv1から順に格納、全レベル配列の長さはdamage_by_levelと一致。隣接レベルは最低1項目を変更。周回武器のrangeは正。
+@export_range(0, 100, 0.001, "or_greater", "suffix:m") var range_by_level: PackedFloat32Array = PackedFloat32Array()
+## 各レベルのprojectile_radius。m、有限かつ0以上。Lv1から順に格納、全レベル配列の長さはdamage_by_levelと一致。隣接レベルは最低1項目を変更。
+@export_range(0, 100, 0.001, "or_greater", "suffix:m") var projectile_radius_by_level: PackedFloat32Array = PackedFloat32Array()
+## 各レベルのeffect_radius。m、有限かつ0以上。Lv1から順に格納、全レベル配列の長さはdamage_by_levelと一致。隣接レベルは最低1項目を変更。
+@export_range(0, 100, 0.001, "or_greater", "suffix:m") var effect_radius_by_level: PackedFloat32Array = PackedFloat32Array()
+## trueならrangeにarea補正倍率を掛ける。falseなら表の値を使う。最大強化時もcombatの効果外縁以内。
 @export var range_scales_with_area: bool = false
+## trueならprojectile_radiusにarea補正倍率を掛ける。falseなら表の値を使う。最大強化時もcombatの効果外縁以内。
 @export var projectile_radius_scales_with_area: bool = false
+## trueならeffect_radiusにarea補正倍率を掛ける。falseなら表の値を使う。最大強化時もcombatの効果外縁以内。
 @export var effect_radius_scales_with_area: bool = false
-@export var duration_ticks_by_level: PackedInt32Array = PackedInt32Array()
-@export var pierce_by_level: PackedInt32Array = PackedInt32Array()
-@export var critical_chance: float = 0.0
-@export var critical_multiplier: float = 1.0
-@export var life_steal_ratio: float = 0.0
+## 各レベルのduration_ticks。整数tick（60/秒）、有限かつ0以上。Lv1から順に格納、全レベル配列の長さはdamage_by_levelと一致。隣接レベルは最低1項目を変更。
+@export_range(0, 100, 1, "or_greater", "suffix:tick") var duration_ticks_by_level: PackedInt32Array = PackedInt32Array()
+## 各レベルのpierce。追加貫通数、有限かつ0以上。Lv1から順に格納、全レベル配列の長さはdamage_by_levelと一致。隣接レベルは最低1項目を変更。
+@export_range(0, 100, 1, "or_greater") var pierce_by_level: PackedInt32Array = PackedInt32Array()
+## 1命中ごとのクリティカル確率。有限な0〜1。
+@export_range(0.0, 1.0, 0.001) var critical_chance: float = 0.0
+## クリティカル時の威力倍率。有限かつ1以上。
+@export_range(0, 100, 0.001, "or_greater") var critical_multiplier: float = 0.0
+## 与ダメージから回復するHPの割合。有限な0〜1。
+@export_range(0.0, 1.0, 0.001) var life_steal_ratio: float = 0.0
 
 
 func damage_at(level: int) -> float:
@@ -82,24 +103,6 @@ func projectile_radius_at(level: int) -> float:
 
 func effect_radius_at(level: int) -> float:
 	return _float_at(effect_radius_by_level, level)
-
-
-func effective_range_at(level: int, area_multiplier: float) -> float:
-	return range_at(level) * _area_scale(area_multiplier, range_scales_with_area)
-
-
-func effective_projectile_radius_at(level: int, area_multiplier: float) -> float:
-	return (
-		projectile_radius_at(level)
-		* _area_scale(area_multiplier, projectile_radius_scales_with_area)
-	)
-
-
-func effective_effect_radius_at(level: int, area_multiplier: float) -> float:
-	return (
-		effect_radius_at(level)
-		* _area_scale(area_multiplier, effect_radius_scales_with_area)
-	)
 
 
 func duration_ticks_at(level: int) -> int:
@@ -178,7 +181,7 @@ func _append_float_delta(
 	previous_value: float,
 	new_value: float,
 ) -> void:
-	if not is_equal_approx(previous_value, new_value):
+	if previous_value != new_value:
 		result.append(WeaponLevelDelta.new(stat_id, previous_value, new_value))
 
 
@@ -204,7 +207,3 @@ func _int_at(values: PackedInt32Array, level: int) -> int:
 		return 0
 	var index: int = clampi(level - 1, 0, values.size() - 1)
 	return values[index]
-
-
-func _area_scale(area_multiplier: float, enabled: bool) -> float:
-	return maxf(0.0, area_multiplier) if enabled else 1.0

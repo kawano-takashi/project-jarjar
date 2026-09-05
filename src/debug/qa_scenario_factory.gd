@@ -80,9 +80,9 @@ static func _prepare_weapon_state(
 	state.weapons.clear()
 	var runtime := RunWeapon.create(
 		definition.weapon_id,
-		definition.lineage_id,
+		catalog.lineage_for_weapon(definition.weapon_id),
 		false,
-		state.rng_streams.create_weapon_rng(definition.lineage_id, 0),
+		state.rng_streams.create_weapon_rng(catalog.lineage_for_weapon(definition.weapon_id), 0),
 	)
 	runtime.level = definition.max_level
 	runtime.ready_on_resume = true
@@ -113,7 +113,7 @@ static func _prepare_level_up_state(
 ) -> bool:
 	state.pending_level_ups = 1
 	var offer: LevelOffer = ProgressionService.create_offer(state, catalog)
-	if offer == null or offer.options.size() != catalog.manifest().level_offer_count:
+	if offer == null or offer.options.size() != catalog.manifest().progression.level_offer_count:
 		return false
 	state.phase = GameTypes.RunPhase.LEVEL_UP
 	return true
@@ -146,7 +146,7 @@ static func _prepare_boss_phase_three(
 	state: RunState,
 	simulation: CombatSimulation,
 ) -> bool:
-	state.combat_tick = state.BOSS_START_TICK + 1800 * 3
+	state.combat_tick = state.boss_start_tick + 1800 * 3
 	var boss: EnemyEntity = simulation.spawn_fixture_enemy(
 		GameTypes.EnemyType.BOSS,
 		Vector2(8.0, 0.0),
@@ -169,7 +169,7 @@ static func _prepare_result_state(
 	state: RunState,
 	catalog: DefinitionCatalog,
 ) -> void:
-	state.combat_tick = state.BOSS_START_TICK + 733
+	state.combat_tick = state.boss_start_tick + 733
 	state.level = 42
 	state.total_kills = 912
 	state.normal_kills = 907

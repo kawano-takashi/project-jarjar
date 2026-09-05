@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="PassiveDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/passive_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+passive_id = &"duration_ring"
+display_name = "持続環"
+selection_weight = 100.0
+stat_id = &"duration_pct"
+amount_per_level = 10.0
+
+max_level = 5

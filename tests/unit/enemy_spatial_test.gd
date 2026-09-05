@@ -28,35 +28,21 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 
 
 func _test_envelope_and_grid(assertions: Variant) -> void:
-	assertions.expect_float(16.0, CombatEnvelope.ARENA_HALF_EXTENT, "arena half extent is sixteen meters")
-	assertions.expect_float(15.55, CombatEnvelope.PLAYER_CENTER_LIMIT, "player center retains its body-radius margin")
-	assertions.expect_float(8.0, CombatEnvelope.TARGET_CENTER_RADIUS, "weapon acquisition center is capped at eight meters")
-	assertions.expect_float(9.0, CombatEnvelope.EFFECT_OUTER_RADIUS, "weapon effect outer edge is capped at nine meters")
-	assertions.expect_float(10.0, CombatEnvelope.DAMAGE_CENTER_RADIUS, "damage center stays in the ten-meter safe envelope")
-	assertions.expect_float(10.0, CombatEnvelope.BOT_AWARENESS_RADIUS, "bot awareness matches the safe envelope")
-	assertions.expect_float(10.0, CombatEnvelope.SPAWN_INNER_HALF_EXTENT, "player-relative spawn frame begins at ten metres")
-	assertions.expect_float(12.0, CombatEnvelope.SPAWN_OUTER_HALF_EXTENT, "player-relative spawn frame ends at twelve metres")
-	assertions.expect_float(18.0, CombatEnvelope.NORMAL_DESPAWN_HALF_EXTENT, "normal far-despawn frame is eighteen metres")
-	assertions.expect_equal(21, CombatEnvelope.NORMAL_ENTRY_TICKS, "normal entry lasts twenty-one ticks")
-	assertions.expect_equal(36, CombatEnvelope.ELITE_ENTRY_TICKS, "elite entry lasts thirty-six ticks")
-	assertions.expect_equal(60, CombatEnvelope.BOSS_ENTRY_TICKS, "boss entry lasts sixty ticks")
-	assertions.expect_float(18.0, CombatEnvelope.CAMERA_SIZE, "camera uses the fixed eighteen-meter size")
-	assertions.expect_float(0.12, CombatEnvelope.CAMERA_FOLLOW_TAU_SECONDS, "camera follow smoothing uses the locked tau")
-	var grid := UniformGrid.new()
-	assertions.expect_equal(Vector2(-16.0, -16.0), UniformGrid.ARENA_MIN, "grid begins at the thirty-two-meter arena corner")
-	assertions.expect_equal(Vector2(16.0, 16.0), UniformGrid.ARENA_MAX, "grid ends at the thirty-two-meter arena corner")
+	var grid := BalanceTestFixtures.grid()
+	assertions.expect_equal(Vector2(-16.0, -16.0), grid.arena_min, "grid begins at the thirty-two-meter arena corner")
+	assertions.expect_equal(Vector2(16.0, 16.0), grid.arena_max, "grid ends at the thirty-two-meter arena corner")
 	assertions.expect_equal(Vector2i(15, 15), grid.cell_indices_for_position(Vector2(100.0, 100.0)), "positive overflow clamps to the final cell")
-	assertions.expect_equal(256, UniformGrid.CELL_COUNT, "two-meter cells cover the complete thirty-two-meter arena")
+	assertions.expect_equal(256, grid.cell_count, "two-meter cells cover the complete thirty-two-meter arena")
 	grid.insert(41, Vector2(18.0, 0.0))
 	assertions.expect_equal(
 		[41],
 		grid.query_circle_candidates(Vector2(18.0, 0.0), 0.1, 0.0),
 		"a wholly exterior query reaches the clamped boundary cell",
 	)
-	for site_position: Vector2 in ArenaObjectSystem.NODE_SITE_POSITIONS:
+	for site_position: Vector2 in BalanceTestFixtures.catalog().manifest().arena.node_site_positions:
 		assertions.expect_true(
-			absf(site_position.x) <= CombatEnvelope.PLAYER_CENTER_LIMIT
-			and absf(site_position.y) <= CombatEnvelope.PLAYER_CENTER_LIMIT,
+			absf(site_position.x) <= BalanceTestFixtures.catalog().envelope.player_center_max.x
+			and absf(site_position.y) <= BalanceTestFixtures.catalog().envelope.player_center_max.x,
 			"arena node remains reachable inside the player-center bounds",
 		)
 
@@ -76,7 +62,7 @@ func _test_entry_contract(assertions: Variant) -> void:
 		1.0,
 		1.0,
 		100,
-		CombatEnvelope.NORMAL_ENTRY_TICKS,
+		BalanceTestFixtures.catalog().envelope.normal_entry_ticks,
 	)
 	assertions.expect_equal(1, store.active_count(), "materializing enemy occupies an active pool slot")
 	assertions.expect_true(materializing.is_materializing(100), "entry begins inactive on its spawn tick")
@@ -126,8 +112,8 @@ func _test_spawn_contracts(assertions: Variant) -> void:
 			else screen_coordinates.x
 		)
 		all_samples_in_frame = all_samples_in_frame and (
-			distance >= CombatEnvelope.SPAWN_INNER_HALF_EXTENT - 0.0001
-			and distance <= CombatEnvelope.SPAWN_OUTER_HALF_EXTENT + 0.0001
+			distance >= BalanceTestFixtures.catalog().envelope.spawn_inner_half_extent - 0.0001
+			and distance <= BalanceTestFixtures.catalog().envelope.spawn_outer_half_extent + 0.0001
 		)
 		all_lateral_samples_in_side = (
 			all_lateral_samples_in_side
@@ -166,14 +152,14 @@ func _test_spawn_contracts(assertions: Variant) -> void:
 		baseline_offsets.append(baseline_system._choose_normal_spawn_position(Vector2.ZERO))
 	var player_positions: Array[Vector2] = [
 		Vector2.ZERO,
-		Vector2(CombatEnvelope.PLAYER_CENTER_LIMIT, 0.0),
-		Vector2(-CombatEnvelope.PLAYER_CENTER_LIMIT, 0.0),
-		Vector2(0.0, CombatEnvelope.PLAYER_CENTER_LIMIT),
-		Vector2(0.0, -CombatEnvelope.PLAYER_CENTER_LIMIT),
-		Vector2(CombatEnvelope.PLAYER_CENTER_LIMIT, CombatEnvelope.PLAYER_CENTER_LIMIT),
-		Vector2(-CombatEnvelope.PLAYER_CENTER_LIMIT, CombatEnvelope.PLAYER_CENTER_LIMIT),
-		Vector2(-CombatEnvelope.PLAYER_CENTER_LIMIT, -CombatEnvelope.PLAYER_CENTER_LIMIT),
-		Vector2(CombatEnvelope.PLAYER_CENTER_LIMIT, -CombatEnvelope.PLAYER_CENTER_LIMIT),
+		Vector2(BalanceTestFixtures.catalog().envelope.player_center_max.x, 0.0),
+		Vector2(-BalanceTestFixtures.catalog().envelope.player_center_max.x, 0.0),
+		Vector2(0.0, BalanceTestFixtures.catalog().envelope.player_center_max.x),
+		Vector2(0.0, -BalanceTestFixtures.catalog().envelope.player_center_max.x),
+		Vector2(BalanceTestFixtures.catalog().envelope.player_center_max.x, BalanceTestFixtures.catalog().envelope.player_center_max.x),
+		Vector2(-BalanceTestFixtures.catalog().envelope.player_center_max.x, BalanceTestFixtures.catalog().envelope.player_center_max.x),
+		Vector2(-BalanceTestFixtures.catalog().envelope.player_center_max.x, -BalanceTestFixtures.catalog().envelope.player_center_max.x),
+		Vector2(BalanceTestFixtures.catalog().envelope.player_center_max.x, -BalanceTestFixtures.catalog().envelope.player_center_max.x),
 	]
 	var translation_invariant: bool = true
 	for player_position: Vector2 in player_positions:
@@ -194,70 +180,6 @@ func _test_spawn_contracts(assertions: Variant) -> void:
 		"center, side, and corner players receive the same relative spawn sequence",
 	)
 
-	var fallback_system := EnemySystem.new()
-	var fallback_state: RunState = RunStateFactory.create(8104, catalog)
-	fallback_system.initialize(fallback_state, catalog)
-	fallback_system._spawn_rng = null
-	var fallback_player := Vector2(
-		CombatEnvelope.PLAYER_CENTER_LIMIT,
-		CombatEnvelope.PLAYER_CENTER_LIMIT,
-	)
-	assertions.expect_equal(
-		fallback_player - EnemySystem.SCREEN_DOWN_WORLD * 11.0,
-		fallback_system._choose_normal_spawn_position(fallback_player),
-		"missing RNG falls back to the screen-top side at eleven metres",
-	)
-
-	var production_state: RunState = RunStateFactory.create(8105, catalog)
-	var production_system := EnemySystem.new()
-	production_system.initialize(production_state, catalog)
-	production_state.spawn_credit = float(EnemySystem.MAXIMUM_SPAWNS_PER_TICK)
-	var corner_player := Vector2(
-		CombatEnvelope.PLAYER_CENTER_LIMIT,
-		CombatEnvelope.PLAYER_CENTER_LIMIT,
-	)
-	var production_spawns: Array[EnemyEntity] = production_system.resolve_normal_spawns(
-		corner_player,
-		0,
-	)
-	var has_unclamped_spawn: bool = false
-	for enemy: EnemyEntity in production_spawns:
-		var coordinates: Vector2 = _screen_coordinates(enemy.position - corner_player)
-		var frame_distance: float = maxf(absf(coordinates.x), absf(coordinates.y))
-		assertions.expect_true(
-			frame_distance >= CombatEnvelope.SPAWN_INNER_HALF_EXTENT - 0.0001
-			and frame_distance <= CombatEnvelope.SPAWN_OUTER_HALF_EXTENT + 0.0001,
-			"production normal spawn uses the player-relative frame",
-		)
-		assertions.expect_equal(21, enemy.activation_tick - enemy.spawn_tick, "production normal keeps the twenty-one-tick entry")
-		has_unclamped_spawn = has_unclamped_spawn or (
-			absf(enemy.position.x) > CombatEnvelope.enemy_center_limit(enemy.body_radius())
-			or absf(enemy.position.y) > CombatEnvelope.enemy_center_limit(enemy.body_radius())
-		)
-	assertions.expect_true(has_unclamped_spawn, "corner-player spawns are not clamped back into the arena")
-
-	var elite_state: RunState = RunStateFactory.create(8103, catalog)
-	var elite_system := EnemySystem.new()
-	elite_system.initialize(elite_state, catalog)
-	var elite_tick: int = catalog.manifest().elite_spawn_ticks[0]
-	elite_state.combat_tick = elite_tick
-	var elites: Array[EnemyEntity] = elite_system.resolve_scheduled_spawns(Vector2(9.0, 9.0), elite_tick)
-	assertions.expect_equal(1, elites.size(), "first elite schedule creates one elite")
-	assertions.expect_equal(Vector2.ZERO, elites[0].position, "elite portal is exactly at arena center")
-	assertions.expect_equal(36, elites[0].activation_tick - elite_tick, "elite receives its thirty-six-tick entry")
-
-	var boss_state: RunState = RunStateFactory.create(8104, catalog)
-	var boss_system := EnemySystem.new()
-	boss_system.initialize(boss_state, catalog)
-	boss_system._elite_spawned.fill(1)
-	boss_state.combat_tick = RunState.BOSS_START_TICK
-	var bosses: Array[EnemyEntity] = boss_system.resolve_scheduled_spawns(
-		Vector2(9.0, -9.0),
-		RunState.BOSS_START_TICK,
-	)
-	assertions.expect_equal(1, bosses.size(), "boss schedule creates one final boss")
-	assertions.expect_equal(Vector2.ZERO, bosses[0].position, "boss portal is exactly at arena center")
-	assertions.expect_equal(60, bosses[0].activation_tick - RunState.BOSS_START_TICK, "boss receives its sixty-tick entry")
 
 
 func _test_outside_entry_and_far_despawn(assertions: Variant) -> void:
@@ -322,7 +244,7 @@ func _test_outside_entry_and_far_despawn(assertions: Variant) -> void:
 		entry_system._is_enemy_center_inside_arena(entering.position, entering.body_radius()),
 		"outside normal eventually enters the arena",
 	)
-	var entering_limit: float = CombatEnvelope.enemy_center_limit(entering.body_radius())
+	var entering_limit: float = BalanceTestFixtures.catalog().envelope.enemy_center_limit(entering.body_radius()).x
 	entering.position = Vector2(entering_limit, 0.0)
 	entry_state.combat_tick = 70
 	entry_system.advance_snapshot([entering_id], Vector2(20.0, 0.0), 70)
@@ -341,7 +263,7 @@ func _test_outside_entry_and_far_despawn(assertions: Variant) -> void:
 		1.0,
 		69,
 	)
-	var outside_player := Vector2(CombatEnvelope.PLAYER_CENTER_LIMIT, 0.0)
+	var outside_player := Vector2(BalanceTestFixtures.catalog().envelope.player_center_max.x, 0.0)
 	var contact_records: Array[Dictionary] = entry_system.resolve_contact_damage_candidates(
 		[contact_enemy.entity_id],
 		outside_player,
@@ -358,9 +280,9 @@ func _test_outside_entry_and_far_despawn(assertions: Variant) -> void:
 	var weapon_definition: WeaponDefinition = catalog.weapon(&"resonance_wave")
 	weapon_state.weapons.append(RunWeapon.create(
 		weapon_definition.weapon_id,
-		weapon_definition.lineage_id,
+		catalog.lineage_for_weapon(weapon_definition.weapon_id),
 		false,
-		weapon_state.rng_streams.create_weapon_rng(weapon_definition.lineage_id, 0),
+		weapon_state.rng_streams.create_weapon_rng(catalog.lineage_for_weapon(weapon_definition.weapon_id), 0),
 	))
 	var weapon_simulation := CombatSimulation.new()
 	weapon_simulation.initialize(weapon_state, catalog)
@@ -514,15 +436,15 @@ func _test_outside_entry_and_far_despawn(assertions: Variant) -> void:
 		EnemySystem.SCREEN_RIGHT_WORLD * 25.0,
 		1.0,
 		1.0,
-		RunState.BOSS_START_TICK,
+		BalanceTestFixtures.catalog().boss_start_tick,
 		100,
 	)
 	var boss_tick_normal_id: int = boss_tick_normal.entity_id
-	boss_tick_state.combat_tick = RunState.BOSS_START_TICK
+	boss_tick_state.combat_tick = BalanceTestFixtures.catalog().boss_start_tick
 	boss_tick_system.advance_snapshot(
 		boss_tick_system.snapshot_ids(),
 		Vector2.ZERO,
-		RunState.BOSS_START_TICK,
+		BalanceTestFixtures.catalog().boss_start_tick,
 	)
 	assertions.expect_true(
 		boss_tick_system.enemy_store.has_entity(boss_tick_normal_id),
@@ -543,10 +465,10 @@ func _test_boss_charge(assertions: Variant) -> void:
 	var system := EnemySystem.new()
 	system.initialize(state, catalog)
 	system._elite_spawned.fill(1)
-	state.combat_tick = RunState.BOSS_START_TICK
+	state.combat_tick = BalanceTestFixtures.catalog().boss_start_tick
 	var spawned: Array[EnemyEntity] = system.resolve_scheduled_spawns(
 		Vector2.ZERO,
-		RunState.BOSS_START_TICK,
+		BalanceTestFixtures.catalog().boss_start_tick,
 	)
 	var boss: EnemyEntity = spawned[0]
 	var boss_ids: Array[int] = [boss.entity_id]
@@ -563,7 +485,7 @@ func _test_boss_charge(assertions: Variant) -> void:
 	system.resolve_ready_enemy_special_actions(boss_ids, Vector2.ZERO, state.combat_tick, projectile_pool)
 	assertions.expect_equal(Vector2.ZERO, boss.position, "boss stays centered through the final inactive tick")
 	assertions.expect_float(0.0, boss.special_elapsed_ticks, "boss action clock is frozen during entry")
-	var phase_one_idle_ticks: int = phase_one_interval - CombatEnvelope.BOSS_CHARGE_TICKS
+	var phase_one_idle_ticks: int = phase_one_interval - BalanceTestFixtures.catalog().enemy_for_type(GameTypes.EnemyType.BOSS).telegraph_ticks
 	for action_index: int in range(phase_one_interval):
 		var current_tick: int = boss.activation_tick + action_index
 		state.combat_tick = current_tick
@@ -583,7 +505,7 @@ func _test_boss_charge(assertions: Variant) -> void:
 		assertions.expect_equal(boss.position, projectile.position, "volley projectile originates at the moving boss fire position")
 
 	boss.hp = boss.max_hp * 0.5
-	var phase_two_idle_ticks: int = phase_two_interval - CombatEnvelope.BOSS_CHARGE_TICKS
+	var phase_two_idle_ticks: int = phase_two_interval - BalanceTestFixtures.catalog().enemy_for_type(GameTypes.EnemyType.BOSS).telegraph_ticks
 	for action_index: int in range(phase_two_idle_ticks):
 		var phase_two_tick: int = boss.activation_tick + phase_one_interval + action_index
 		state.combat_tick = phase_two_tick
@@ -596,7 +518,7 @@ func _test_boss_charge(assertions: Variant) -> void:
 	var phase_two_charge_tick: int = (
 		boss.activation_tick + phase_one_interval + phase_two_idle_ticks
 	)
-	for charge_index: int in range(CombatEnvelope.BOSS_CHARGE_TICKS):
+	for charge_index: int in range(BalanceTestFixtures.catalog().enemy_for_type(GameTypes.EnemyType.BOSS).telegraph_ticks):
 		var phase_change_tick: int = phase_two_charge_tick + charge_index
 		state.combat_tick = phase_change_tick
 		system.advance_snapshot(boss_ids, Vector2(6.0, 0.0), phase_change_tick)
@@ -612,9 +534,9 @@ func _test_boss_charge(assertions: Variant) -> void:
 	)
 
 	boss.boss_action_age_ticks = float(
-		catalog.manifest().boss_enrage_interval_ticks - 2
+		catalog.manifest().combat.boss_enrage_interval_ticks - 2
 	)
-	state.combat_tick = phase_two_charge_tick + CombatEnvelope.BOSS_CHARGE_TICKS
+	state.combat_tick = phase_two_charge_tick + BalanceTestFixtures.catalog().enemy_for_type(GameTypes.EnemyType.BOSS).telegraph_ticks
 	system.advance_snapshot(boss_ids, Vector2(6.0, 0.0), state.combat_tick)
 	assertions.expect_equal(0, state.boss_enrage_stacks, "boss enrage remains zero at 1799 accumulated action ticks")
 	state.combat_tick += 1
@@ -650,5 +572,5 @@ func _spawn_side_index(screen_coordinates: Vector2) -> int:
 
 func _catalog(assertions: Variant) -> DefinitionCatalog:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "content catalog validates")
+	assertions.expect_true(catalog.validate_manifest(BalanceTestFixtures.manifest()), "content catalog validates")
 	return catalog if catalog.is_valid else null

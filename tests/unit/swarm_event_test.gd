@@ -3,7 +3,6 @@ extends RefCounted
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"swarm_definition_and_drift_rejection",
 		"normal_swarmer_outpaces_the_player",
 		"swarm_scheduler_is_isolated_repeatable_and_atomic",
 		"swarm_formation_crosses_player_relative_frame_and_uses_two_visuals",
@@ -15,8 +14,6 @@ func test_names() -> PackedStringArray:
 
 func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
 	match test_name:
-		"swarm_definition_and_drift_rejection":
-			_test_definition_and_drift(assertions)
 		"normal_swarmer_outpaces_the_player":
 			_test_normal_swarmer_speed(assertions)
 		"swarm_scheduler_is_isolated_repeatable_and_atomic":
@@ -32,79 +29,6 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 		_:
 			assertions.expect_true(false, "registered swarm test")
 
-
-func _test_definition_and_drift(assertions: Variant) -> void:
-	var catalog: DefinitionCatalog = _catalog(assertions)
-	if catalog == null:
-		return
-	var manifest: SurvivalContentManifest = catalog.manifest()
-	var event_definition: SwarmEventDefinition = manifest.swarm_event
-	var unit: EnemyDefinition = event_definition.unit_definition
-	assertions.expect_equal(6, GameTypes.EnemyType.size(), "swarm adds no seventh EnemyType")
-	assertions.expect_equal(6, catalog.enemies.size(), "event unit stays outside the normal enemy catalog")
-	assertions.expect_float(5.184, catalog.enemy(&"swarmer").move_speed, "normal swarmer is faster than the player")
-	assertions.expect_float(9.0, catalog.enemy(&"swarmer").base_hp, "normal swarmer HP is unchanged")
-	assertions.expect_float(4.0, catalog.enemy(&"swarmer").contact_damage, "normal swarmer damage is unchanged")
-	assertions.expect_equal(1, catalog.enemy(&"swarmer").xp_value, "normal swarmer XP is unchanged")
-	assertions.expect_equal(&"bat_swarm", event_definition.event_id, "event identity is fixed")
-	assertions.expect_float(1.0, unit.base_hp, "event member base HP")
-	assertions.expect_float(1.0, unit.contact_damage, "event member contact damage")
-	assertions.expect_equal(1, unit.xp_value, "event member raw XP")
-	assertions.expect_float(0.26, unit.body_radius, "event member radius")
-	assertions.expect_float(2.59, unit.move_speed, "event member crossing speed")
-	assertions.expect_equal(50, event_definition.member_count, "event creates fifty members")
-	assertions.expect_equal(10, event_definition.lateral_count, "formation has ten lateral columns")
-	assertions.expect_equal(5, event_definition.depth_count, "formation has five depth rows")
-	assertions.expect_float(10.0, CombatEnvelope.SPAWN_INNER_HALF_EXTENT, "shared spawn frame begins ten metres away")
-	assertions.expect_float(12.0, CombatEnvelope.SPAWN_OUTER_HALF_EXTENT, "shared spawn frame ends twelve metres away")
-	assertions.expect_float(2.0 / 3.0, event_definition.lateral_pitch, "formation lateral pitch")
-	assertions.expect_float(0.7, event_definition.depth_pitch, "formation depth pitch")
-	var expected_ticks := PackedInt32Array([
-		7500, 7800, 8100,
-		11100, 11400,
-		14700, 15000,
-		21900, 22200,
-		25500, 25800, 26100, 26400, 26700, 27000,
-		29700, 30600, 31500,
-		33300, 34200, 35100,
-	])
-	var expected_chances := PackedFloat32Array([
-		1.0, 1.0, 1.0,
-		0.1, 0.1,
-		0.1, 0.1,
-		0.1, 0.1,
-		0.8, 0.8, 0.8, 0.8, 0.8, 0.8,
-		0.8, 0.8, 0.8,
-		0.7, 0.7, 0.7,
-	])
-	var state: RunState = RunStateFactory.create(8001, catalog)
-	var system := EnemySystem.new()
-	system.initialize(state, catalog)
-	assertions.expect_equal(expected_ticks, system._swarm_attempt_ticks, "all twenty-one attempt ticks are exact")
-	assertions.expect_equal(expected_chances, system._swarm_attempt_chances, "all attempt probabilities are exact")
-
-	var speed_drift: SurvivalContentManifest = manifest.duplicate(true) as SurvivalContentManifest
-	var speed_event: SwarmEventDefinition = event_definition.duplicate(true) as SwarmEventDefinition
-	var speed_unit: EnemyDefinition = unit.duplicate(true) as EnemyDefinition
-	speed_unit.move_speed = 2.58
-	speed_event.unit_definition = speed_unit
-	speed_drift.swarm_event = speed_event
-	assertions.expect_false(
-		DefinitionCatalog.new().validate_manifest(speed_drift),
-		"validator rejects event member drift",
-	)
-	var schedule_drift: SurvivalContentManifest = manifest.duplicate(true) as SurvivalContentManifest
-	var schedule_event: SwarmEventDefinition = event_definition.duplicate(true) as SwarmEventDefinition
-	var schedules: Array[SwarmEventScheduleDefinition] = []
-	for schedule: SwarmEventScheduleDefinition in event_definition.schedules:
-		schedules.append(schedule.duplicate(true) as SwarmEventScheduleDefinition)
-	schedules[6].spawn_chance = 0.69
-	schedule_event.schedules = schedules
-	schedule_drift.swarm_event = schedule_event
-	assertions.expect_false(
-		DefinitionCatalog.new().validate_manifest(schedule_drift),
-		"validator rejects schedule probability drift",
-	)
 
 
 func _test_normal_swarmer_speed(assertions: Variant) -> void:
@@ -127,7 +51,7 @@ func _test_normal_swarmer_speed(assertions: Variant) -> void:
 	var moving_player := Vector2(5.0, 0.0)
 	var initial_gap: float = moving_player.distance_to(swarmer.position)
 	for tick: int in range(1, 61):
-		moving_player += Vector2.RIGHT * CombatSimulation.PLAYER_SPEED / 60.0
+		moving_player += Vector2.RIGHT * BalanceTestFixtures.catalog().manifest().player.move_speed / 60.0
 		state.combat_tick = tick
 		system.advance_snapshot(ids, moving_player, tick)
 	assertions.expect_true(
@@ -176,8 +100,8 @@ func _test_scheduler_and_atomic_spawn(assertions: Variant) -> void:
 		first_group[0].position - Vector2(2.0, -1.0)
 	).dot(first_direction)
 	assertions.expect_true(
-		first_spawn_distance >= CombatEnvelope.SPAWN_INNER_HALF_EXTENT
-		and first_spawn_distance <= CombatEnvelope.SPAWN_OUTER_HALF_EXTENT,
+		first_spawn_distance >= BalanceTestFixtures.catalog().envelope.spawn_inner_half_extent
+		and first_spawn_distance <= BalanceTestFixtures.catalog().envelope.spawn_outer_half_extent,
 		"successful attempt samples the shared ten-to-twelve-metre spawn frame",
 	)
 	var front_row_center := Vector2.ZERO
@@ -212,8 +136,8 @@ func _test_scheduler_and_atomic_spawn(assertions: Variant) -> void:
 		side_counts[side_index] += 1
 		var sampled_distance: float = first_system._sample_spawn_distance(sampling_rng)
 		all_distances_in_frame = all_distances_in_frame and (
-			sampled_distance >= CombatEnvelope.SPAWN_INNER_HALF_EXTENT
-			and sampled_distance <= CombatEnvelope.SPAWN_OUTER_HALF_EXTENT
+			sampled_distance >= BalanceTestFixtures.catalog().envelope.spawn_inner_half_extent
+			and sampled_distance <= BalanceTestFixtures.catalog().envelope.spawn_outer_half_extent
 		)
 	assertions.expect_true(
 		all_distances_in_frame,
@@ -234,7 +158,7 @@ func _test_scheduler_and_atomic_spawn(assertions: Variant) -> void:
 	assertions.expect_equal(16, normal_spawns.size(), "normal spawn management also continues during STOP")
 	assertions.expect_equal(66, first_system.enemy_store.active_count(), "normal wave and fifty-member event coexist")
 	assertions.expect_float(0.0, first_state.spawn_credit, "only normal spawns consume credit")
-	assertions.expect_true(176 + 50 + RunState.ELITE_COUNT < EnemyStore.CAPACITY, "approved peak normal target, one swarm, and all elites fit the pool")
+	assertions.expect_true(catalog.segment(9).target_active + catalog.manifest().swarm_event.member_count + catalog.elite_spawn_ticks.size() < EnemyStore.CAPACITY, "approved peak normal target, one swarm, and all elites fit the pool")
 
 	var changed_state: RunState = RunStateFactory.create(8004, catalog)
 	var baseline_state: RunState = RunStateFactory.create(8004, catalog)
@@ -317,8 +241,8 @@ func _test_formation_motion_and_visuals(assertions: Variant) -> void:
 		minimum_lateral = minf(minimum_lateral, lateral)
 		maximum_lateral = maxf(maximum_lateral, lateral)
 		has_outside_member = has_outside_member or (
-			absf(enemy.position.x) > CombatEnvelope.enemy_center_limit(enemy.body_radius())
-			or absf(enemy.position.y) > CombatEnvelope.enemy_center_limit(enemy.body_radius())
+			absf(enemy.position.x) > BalanceTestFixtures.catalog().envelope.enemy_center_limit(enemy.body_radius()).x
+			or absf(enemy.position.y) > BalanceTestFixtures.catalog().envelope.enemy_center_limit(enemy.body_radius()).x
 		)
 		assertions.expect_equal(1, enemy.swarm_group_id, "all members share one group id")
 		assertions.expect_equal(EnemyEntity.MovementKind.FIXED_DIRECTION, enemy.movement_kind, "every member uses fixed movement")
@@ -508,7 +432,7 @@ func _test_push_and_pause(assertions: Variant) -> void:
 	var boundary_system := EnemySystem.new()
 	boundary_system.initialize(boundary_state, catalog)
 	var target_definition: EnemyDefinition = catalog.enemy(&"pursuer")
-	var center_limit: float = CombatEnvelope.enemy_center_limit(target_definition.body_radius)
+	var center_limit: float = BalanceTestFixtures.catalog().envelope.enemy_center_limit(target_definition.body_radius).x
 	var boundary_target: EnemyEntity = boundary_system.enemy_store.try_spawn(
 		boundary_state,
 		GameTypes.EnemyType.PURSUER,
@@ -575,7 +499,7 @@ func _test_boss_transition_absorption(assertions: Variant) -> void:
 	var state: RunState = RunStateFactory.create(8012, catalog)
 	var simulation := CombatSimulation.new()
 	simulation.initialize(state, catalog)
-	state.combat_tick = catalog.manifest().boss_start_tick - 1
+	state.combat_tick = catalog.boss_start_tick - 1
 	simulation.enemy_system._elite_spawned.fill(1)
 	var group: Array[EnemyEntity] = simulation.enemy_system._spawn_swarm_group(
 		Vector2.ZERO,
@@ -628,5 +552,5 @@ func _active_swarm_count(system: EnemySystem) -> int:
 
 func _catalog(assertions: Variant) -> DefinitionCatalog:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "catalog validates: %s" % catalog.error_text)
+	assertions.expect_true(catalog.validate_manifest(BalanceTestFixtures.manifest()), "catalog validates: %s" % catalog.error_text)
 	return catalog if catalog.is_valid else null

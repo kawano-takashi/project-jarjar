@@ -24,26 +24,27 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 
 func _test_role_normalization(assertions: Variant) -> void:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "DPS fixture content validates")
+	assertions.expect_true(catalog.validate_manifest(BalanceTestFixtures.manifest()), "DPS fixture content validates")
 	if not catalog.is_valid:
 		return
 	for base_id: StringName in catalog.basic_weapon_ids():
 		var evolution: EvolutionDefinition = catalog.evolution_for_weapon(base_id)
+		var maximum_level: int = catalog.weapon(base_id).max_level
 		var role_fixture: FixtureKind = _role_fixture(base_id)
 		var stationary_level_one_score: float = _normalized_role_score(
 			_measure_dps(catalog, base_id, role_fixture, 1, false),
 			role_fixture,
 		)
-		var stationary_level_eight_score: float = _normalized_role_score(
-			_measure_dps(catalog, base_id, role_fixture, 8, false),
+		var stationary_maximum_level_score: float = _normalized_role_score(
+			_measure_dps(catalog, base_id, role_fixture, maximum_level, false),
 			role_fixture,
 		)
 		var moving_level_one_score: float = _normalized_role_score(
 			_measure_dps(catalog, base_id, role_fixture, 1, true),
 			role_fixture,
 		)
-		var moving_level_eight_score: float = _normalized_role_score(
-			_measure_dps(catalog, base_id, role_fixture, 8, true),
+		var moving_maximum_level_score: float = _normalized_role_score(
+			_measure_dps(catalog, base_id, role_fixture, maximum_level, true),
 			role_fixture,
 		)
 		var moving_evolved_score: float = _normalized_role_score(
@@ -53,9 +54,9 @@ func _test_role_normalization(assertions: Variant) -> void:
 		print("WEAPON_ROLE_SCORE lineage=%s stationary=%.4f/%.4f moving=%.4f/%.4f/%.4f" % [
 			base_id,
 			stationary_level_one_score,
-			stationary_level_eight_score,
+			stationary_maximum_level_score,
 			moving_level_one_score,
-			moving_level_eight_score,
+			moving_maximum_level_score,
 			moving_evolved_score,
 		])
 		assertions.expect_true(
@@ -63,18 +64,18 @@ func _test_role_normalization(assertions: Variant) -> void:
 			"%s Lv1 resolves positive stationary-target damage" % base_id,
 		)
 		assertions.expect_true(
-			stationary_level_eight_score >= stationary_level_one_score,
-			"%s Lv8 stationary-target damage does not regress" % base_id,
+			stationary_maximum_level_score >= stationary_level_one_score,
+			"%s maximum-level stationary-target damage does not regress" % base_id,
 		)
 		assertions.expect_true(
-			moving_level_one_score > 0.0 and moving_level_eight_score > 0.0,
+			moving_level_one_score > 0.0 and moving_maximum_level_score > 0.0,
 			"%s base levels resolve positive moving-target damage" % base_id,
 		)
 		assertions.expect_true(
-			moving_evolved_score >= moving_level_eight_score * ROLE_EVOLUTION_RATIO,
-			"%s evolution reaches at least 1.5x its moving-target Lv8 role score (%.2f -> %.2f)" % [
+			moving_evolved_score >= moving_maximum_level_score * ROLE_EVOLUTION_RATIO,
+			"%s evolution reaches at least 1.5x its moving-target maximum-level role score (%.2f -> %.2f)" % [
 				base_id,
-				moving_level_eight_score,
+				moving_maximum_level_score,
 				moving_evolved_score,
 			],
 		)
@@ -98,23 +99,23 @@ func _measure_dps(
 	)
 	state.weapons.clear()
 	state.passives.clear()
-	state.combat_tick = RunState.BOSS_START_TICK
+	state.combat_tick = BalanceTestFixtures.catalog().boss_start_tick
 	state.boss_spawned = true
 	state.boss_transition_started = true
 	state.build_maxed = true
 	var definition: WeaponDefinition = catalog.weapon(weapon_id)
 	var runtime: RunWeapon = RunWeapon.create(
 		definition.weapon_id,
-		definition.lineage_id,
+		catalog.lineage_for_weapon(definition.weapon_id),
 		definition.is_evolved,
-		state.rng_streams.create_weapon_rng(definition.lineage_id, 0),
+		state.rng_streams.create_weapon_rng(catalog.lineage_for_weapon(definition.weapon_id), 0),
 	)
 	runtime.level = requested_level
 	state.weapons.append(runtime)
 	var simulation := CombatSimulation.new()
 	simulation.initialize(state, catalog)
 	simulation.enemy_system._elite_spawned.fill(1)
-	for position: Vector2 in _fixture_positions(definition, requested_level, fixture_kind):
+	for position: Vector2 in _fixture_positions(catalog, definition, requested_level, fixture_kind):
 		var enemy_type: GameTypes.EnemyType = (
 			GameTypes.EnemyType.BOSS
 			if fixture_kind == FixtureKind.BOSS
@@ -125,12 +126,12 @@ func _measure_dps(
 			position,
 			state.combat_tick - 1,
 		)
-		var fixture_definition: EnemyDefinition = enemy.definition.duplicate()
+		var fixture_definition: EnemyDefinition = enemy.definition.duplicate_deep(Resource.DEEP_DUPLICATE_ALL)
 		fixture_definition.contact_damage = 0.0
 		fixture_definition.special_interval_ticks = 0
 		if not moving_targets:
 			fixture_definition.move_speed = 0.0
-		elif definition.lineage_id == &"orbital_array":
+		elif catalog.lineage_for_weapon(definition.weapon_id) == &"orbital_array":
 			# The orbit role is measured against a slow stream crossing the orbit,
 			# rather than enemies that reach the player's center and stay there.
 			fixture_definition.move_speed = ORBITAL_FIXTURE_MOVE_SPEED
@@ -144,12 +145,13 @@ func _measure_dps(
 	for _tick_index: int in range(MEASURE_TICKS):
 		simulation.advance_tick(Vector2.ZERO)
 	return (
-		float(state.weapon_damage_by_lineage.get(definition.lineage_id, 0.0))
+		float(state.weapon_damage_by_lineage.get(catalog.lineage_for_weapon(definition.weapon_id), 0.0))
 		/ (float(MEASURE_TICKS) / float(RunState.TICKS_PER_SECOND))
 	)
 
 
 func _fixture_positions(
+	catalog: DefinitionCatalog,
 	definition: WeaponDefinition,
 	level: int,
 	fixture_kind: FixtureKind,
@@ -159,7 +161,7 @@ func _fixture_positions(
 	if fixture_kind == FixtureKind.BOSS:
 		return [Vector2(2.5, 0.0)]
 	var result: Array[Vector2] = []
-	match definition.lineage_id:
+	match catalog.lineage_for_weapon(definition.weapon_id):
 		&"resonance_wave":
 			var wave_range: float = definition.range_at(level)
 			for index: int in range(12):

@@ -109,7 +109,7 @@ func _test_survival_modals(assertions: Variant, tree: SceneTree) -> void:
 	)
 	assertions.expect_false(weapon_option_text.contains("weight"), "internal offer weight is hidden")
 	assertions.expect_false(weapon_option_text.contains("進化ペア: 進化"), "pairing hint has one prefix")
-	var choice_zero := overlay.get_node("Root/LevelUpModal/Center/Panel/Content/Choices/LevelChoice0") as Button
+	var choice_zero := overlay.get_node("Root/LevelUpModal/Center/Panel/Content/ChoiceScroll/Choices/LevelChoice0") as Button
 	assertions.expect_equal("共鳴波", choice_zero.accessibility_name, "accessibility name remains the display name")
 	assertions.expect_true(
 		choice_zero.get_combined_minimum_size().y <= choice_zero.size.y,
@@ -120,7 +120,7 @@ func _test_survival_modals(assertions: Variant, tree: SceneTree) -> void:
 		level_panel.size.x <= 1920.0 and level_panel.size.y <= 1080.0,
 		"the catalyst cards remain inside the 1920x1080 design viewport",
 	)
-	var choice_two := overlay.get_node("Root/LevelUpModal/Center/Panel/Content/Choices/LevelChoice2") as Button
+	var choice_two := overlay.get_node("Root/LevelUpModal/Center/Panel/Content/ChoiceScroll/Choices/LevelChoice2") as Button
 	choice_two.pressed.emit()
 	assertions.expect_equal(PackedInt32Array([2]), selected, "choice buttons emit their indexed selection")
 
@@ -134,7 +134,7 @@ func _test_survival_modals(assertions: Variant, tree: SceneTree) -> void:
 	var chest_state: Dictionary = overlay.debug_state()
 	assertions.expect_true(chest_state["chest_visible"], "chest result modal is visible")
 	assertions.expect_equal("EVOLUTION", chest_state["chest_heading"], "evolution outcome is explicit")
-	var chest_action := overlay.get_node("Root/ChestModal/Center/Panel/Content/ChestContinue") as Control
+	var chest_action := overlay.get_node("Root/ChestModal/Center/Panel/Scroll/Content/ChestContinue") as Control
 	_exercise_chest_input(assertions, overlay, chest_action, _key_event(KEY_ENTER), chest_continues, 1)
 	_exercise_chest_input(assertions, overlay, chest_action, _key_event(KEY_KP_ENTER), chest_continues, 2)
 	_exercise_chest_input(assertions, overlay, chest_action, _joy_event(JOY_BUTTON_A), chest_continues, 3)
@@ -145,7 +145,7 @@ func _test_survival_modals(assertions: Variant, tree: SceneTree) -> void:
 	assertions.expect_equal(4, chest_continues.size(), "only Enter, keypad Enter, A, and left click skip")
 	overlay.hide_automatic_modal()
 	assertions.expect_true(overlay.open_pause(), "manual pause opens outside automatic modals")
-	var title_button := overlay.get_node("Root/PauseModal/Center/Panel/Content/PauseTitle") as Button
+	var title_button := overlay.get_node("Root/PauseModal/Center/Panel/Scroll/Content/PauseTitle") as Button
 	title_button.pressed.emit()
 	assertions.expect_true(overlay.debug_state()["confirmation_visible"], "title return requires confirmation")
 	assertions.expect_equal(0, title_requests.size(), "opening confirmation does not leave the run")
@@ -159,7 +159,7 @@ func _test_survival_modals(assertions: Variant, tree: SceneTree) -> void:
 
 func _test_evolution_guide(assertions: Variant, tree: SceneTree) -> void:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "evolution guide catalog valid")
+	assertions.expect_true(catalog.validate_manifest(BalanceTestFixtures.manifest()), "evolution guide catalog valid")
 	var overlay: SurvivalOverlay = SURVIVAL_OVERLAY_SCENE.instantiate() as SurvivalOverlay
 	overlay.initialize(catalog)
 	tree.root.add_child(overlay)
@@ -181,10 +181,10 @@ func _test_evolution_guide(assertions: Variant, tree: SceneTree) -> void:
 		]
 		assertions.expect_true(guide_lines.has(expected_line), "guide lists %s" % expected_line)
 	var guide_condition := overlay.get_node(
-		"Root/PauseModal/Center/Panel/Content/GuideCondition"
+		"Root/PauseModal/Center/Panel/Scroll/Content/GuideCondition"
 	) as Label
 	assertions.expect_equal(
-		"進化条件：武器Lv8 ＋ 触媒Lv1以上 ＋ 宝箱。触媒は最大Lv不要・進化後も消費されません",
+		"進化条件：武器の最大Lv ＋ 触媒Lv1以上 ＋ 宝箱。触媒は最大Lv不要・進化後も消費されません",
 		guide_condition.text,
 		"pause guidance explains catalyst level and retention",
 	)
@@ -195,7 +195,7 @@ func _test_evolution_guide(assertions: Variant, tree: SceneTree) -> void:
 	var pause_panel := overlay.get_node("Root/PauseModal/Center/Panel") as Control
 	var pause_root := overlay.get_node("Root") as Control
 	var evolution_guide := overlay.get_node(
-		"Root/PauseModal/Center/Panel/Content/EvolutionGuide"
+		"Root/PauseModal/Center/Panel/Scroll/Content/EvolutionGuide"
 	) as Label
 	assertions.expect_true(
 		pause_panel.size.x <= 1920.0 and pause_panel.size.y <= 1080.0,
@@ -230,9 +230,9 @@ func _test_level_up_real_inputs(assertions: Variant, tree: SceneTree) -> void:
 	)
 	overlay.show_level_offer(_level_offer(101, "FIRST"))
 	await tree.process_frame
-	var choice_zero := overlay.get_node("Root/LevelUpModal/Center/Panel/Content/Choices/LevelChoice0") as Button
-	var choice_one := overlay.get_node("Root/LevelUpModal/Center/Panel/Content/Choices/LevelChoice1") as Button
-	var choice_two := overlay.get_node("Root/LevelUpModal/Center/Panel/Content/Choices/LevelChoice2") as Button
+	var choice_zero := overlay.get_node("Root/LevelUpModal/Center/Panel/Content/ChoiceScroll/Choices/LevelChoice0") as Button
+	var choice_one := overlay.get_node("Root/LevelUpModal/Center/Panel/Content/ChoiceScroll/Choices/LevelChoice1") as Button
+	var choice_two := overlay.get_node("Root/LevelUpModal/Center/Panel/Content/ChoiceScroll/Choices/LevelChoice2") as Button
 	assertions.expect_equal(choice_zero, tree.root.gui_get_focus_owner(), "first modal focuses the first choice")
 
 	_push_key(tree.root, KEY_RIGHT)
@@ -243,6 +243,8 @@ func _test_level_up_real_inputs(assertions: Variant, tree: SceneTree) -> void:
 	assertions.expect_equal(102, overlay.active_offer_serial(), "next queued modal remains active after Enter release")
 	assertions.expect_equal(choice_zero, tree.root.gui_get_focus_owner(), "consecutive modal restores first-choice focus")
 
+	(overlay.get_node("%ChoiceScroll") as ScrollContainer).ensure_control_visible(choice_two)
+	await tree.process_frame
 	_push_mouse_click(tree.root, choice_two.get_global_rect().get_center())
 	await tree.process_frame
 	assertions.expect_equal(PackedInt32Array([1, 2]), selections, "mouse click chooses exactly once across a modal transition")
@@ -266,6 +268,8 @@ func _test_combat_hud(assertions: Variant, tree: SceneTree) -> void:
 	tree.root.add_child(hud)
 	await tree.process_frame
 	hud.update_from_values({
+		"weapon_slot_count": 5,
+		"passive_slot_count": 5,
 		"time_seconds": 600.0,
 		"level": 42,
 		"total_kills": 1234,
@@ -298,7 +302,7 @@ func _test_combat_hud(assertions: Variant, tree: SceneTree) -> void:
 
 func _test_summary(assertions: Variant, tree: SceneTree) -> void:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "summary catalog valid")
+	assertions.expect_true(catalog.validate_manifest(BalanceTestFixtures.manifest()), "summary catalog valid")
 	var state: RunState = RunStateFactory.create(20260827, catalog)
 	state.phase = GameTypes.RunPhase.RESULT
 	state.combat_tick = 36000
@@ -324,7 +328,7 @@ func _test_summary(assertions: Variant, tree: SceneTree) -> void:
 
 func _test_boss_result_states(assertions: Variant, tree: SceneTree) -> void:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "boss result catalog valid")
+	assertions.expect_true(catalog.validate_manifest(BalanceTestFixtures.manifest()), "boss result catalog valid")
 	var defeated_state: RunState = RunStateFactory.create(1001, catalog)
 	defeated_state.phase = GameTypes.RunPhase.RESULT
 	defeated_state.boss_spawned = true

@@ -292,14 +292,14 @@ func _test_camera_hard_contract(assertions: Variant, tree: SceneTree) -> void:
 				assertions,
 				camera,
 				viewport_sizes[aspect_index],
-				CombatEnvelope.DAMAGE_CENTER_RADIUS,
+				BalanceTestFixtures.catalog().envelope.damage_center_radius,
 				"%s radius-10 enemy centers" % aspect_names[aspect_index],
 			)
 			_assert_projected_disc_inside(
 				assertions,
 				camera,
 				viewport_sizes[aspect_index],
-				CombatEnvelope.EFFECT_OUTER_RADIUS,
+				BalanceTestFixtures.catalog().envelope.effect_outer_radius,
 				"%s radius-9 effect outer edge" % aspect_names[aspect_index],
 			)
 		assertions.expect_equal(
@@ -327,11 +327,11 @@ func _test_camera_hard_contract(assertions: Variant, tree: SceneTree) -> void:
 		var player_position := Vector2(-5.0, 0.0)
 		arena.present_snapshot(CombatSnapshot.new(player_position), FIXED_DELTA_SECONDS)
 		for forward_tick: int in range(120):
-			player_position.x += CombatSimulation.PLAYER_SPEED * FIXED_DELTA_SECONDS
+			player_position.x += BalanceTestFixtures.catalog().manifest().player.move_speed * FIXED_DELTA_SECONDS
 			arena.present_snapshot(CombatSnapshot.new(player_position), FIXED_DELTA_SECONDS)
 		var maximum_reversal_lag: float = 0.0
 		for reverse_tick: int in range(120):
-			player_position.x -= CombatSimulation.PLAYER_SPEED * FIXED_DELTA_SECONDS
+			player_position.x -= BalanceTestFixtures.catalog().manifest().player.move_speed * FIXED_DELTA_SECONDS
 			arena.present_snapshot(CombatSnapshot.new(player_position), FIXED_DELTA_SECONDS)
 			var camera_target: Vector3 = camera.position - ArenaPresenter.CAMERA_OFFSET
 			maximum_reversal_lag = maxf(
@@ -429,6 +429,8 @@ func _test_accessible_evolved_cues(assertions: Variant, tree: SceneTree) -> void
 
 	var hud: CombatHud = arena.get_node("%CombatHUD") as CombatHud
 	hud.update_from_values({
+		"weapon_slot_count": 5,
+		"passive_slot_count": 5,
 		"weapons": [{"display_name": "進化武器", "level": 8, "evolved": true}],
 	})
 	var hud_state: Dictionary = hud.debug_state()
@@ -452,7 +454,7 @@ func _test_accessible_evolved_cues(assertions: Variant, tree: SceneTree) -> void
 		"evolved instant white cores respect the Reduce Flashes cap",
 	)
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "evolved instant VFX fixture loads content")
+	assertions.expect_true(catalog.validate_manifest(BalanceTestFixtures.manifest()), "evolved instant VFX fixture loads content")
 	if catalog.is_valid:
 		var state: RunState = RunStateFactory.create(9915, catalog)
 		var simulation := CombatSimulation.new()
@@ -536,6 +538,8 @@ func _test_kill_chain_snapshot_authority(assertions: Variant, tree: SceneTree) -
 	assertions.expect_true(hud != null, "combat HUD exists for kill-chain regression")
 	if hud != null:
 		hud.update_from_values({
+		"weapon_slot_count": 5,
+		"passive_slot_count": 5,
 			"combat_tick": 600,
 			"total_kills": 30,
 			"kill_chain_count": 10,

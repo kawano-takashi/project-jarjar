@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="EnemySegmentDefinition" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/enemy_segment_definition.gd" id="1"]
+
+[ext_resource type="Script" path="res://src/definitions/swarm_event_schedule_definition.gd" id="schedule_type"]
+[ext_resource type="Resource" path="res://data/balance/swarm_events/minute_08.tres" id="schedule_0"]
+
+[resource]
+script = ExtResource("1")
+target_active = 97
+hp_multiplier = 1.75
+damage_multiplier = 0.64
+spawn_weights = PackedFloat32Array(0.15, 0.15, 0.45, 0.25, 0, 0)
+
+duration_ticks = 3600
+elite_offsets_ticks = PackedInt32Array(0)
+swarm_schedules = Array[ExtResource("schedule_type")]([ExtResource("schedule_0")])

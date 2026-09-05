@@ -8,18 +8,12 @@ const UPGRADE_DESCRIPTION_FORMATTER: Script = preload(
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"survival_all_content_fixed_contract",
-		"survival_weapon_level_deltas_are_single_and_fixed",
-		"survival_close_range_outer_edges_match_endpoints",
-		"survival_validator_rejects_weapon_level_delta_drift",
 		"survival_xp_formula_growth_and_queue",
 		"survival_capacity_level_sixty_five_and_growth_application",
 		"survival_growth_boundaries_apply_per_level_segment",
 		"survival_manifest_drives_progression_and_xp_pickups",
 		"survival_xp_yield_fraction_and_growth_order",
-		"survival_validator_rejects_fixed_boss_enrage_drift",
 		"survival_validator_rejects_all_nonboss_ranged_drift",
-		"survival_segment_tuning_bounds_and_steps",
 		"survival_weighted_unique_offer_and_serial_guard",
 		"survival_queued_offer_levels_and_owned_probability",
 		"survival_owned_offer_uses_uniform_owned_selection",
@@ -40,14 +34,6 @@ func test_names() -> PackedStringArray:
 
 func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
 	match test_name:
-		"survival_all_content_fixed_contract":
-			_test_all_content_fixed_contract(assertions)
-		"survival_weapon_level_deltas_are_single_and_fixed":
-			_test_weapon_level_deltas(assertions)
-		"survival_close_range_outer_edges_match_endpoints":
-			_test_close_range_outer_edges(assertions)
-		"survival_validator_rejects_weapon_level_delta_drift":
-			_test_validator_rejects_weapon_level_delta_drift(assertions)
 		"survival_xp_formula_growth_and_queue":
 			_test_xp(assertions)
 		"survival_capacity_level_sixty_five_and_growth_application":
@@ -58,12 +44,8 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 			_test_manifest_driven_xp(assertions)
 		"survival_xp_yield_fraction_and_growth_order":
 			_test_xp_yield_fraction_and_growth_order(assertions)
-		"survival_validator_rejects_fixed_boss_enrage_drift":
-			_test_boss_enrage_validation(assertions)
 		"survival_validator_rejects_all_nonboss_ranged_drift":
 			_test_nonboss_ranged_validation(assertions)
-		"survival_segment_tuning_bounds_and_steps":
-			_test_segment_tuning_contract(assertions)
 		"survival_weighted_unique_offer_and_serial_guard":
 			_test_offer(assertions)
 		"survival_queued_offer_levels_and_owned_probability":
@@ -98,447 +80,32 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 			assertions.expect_true(false, "registered survival progression test")
 
 
-func _test_all_content_fixed_contract(assertions: Variant) -> void:
-	var catalog: DefinitionCatalog = _catalog(assertions)
-	var expected_base_ids: Array[StringName] = [
-		&"arc_crystal",
-		&"directional_needle",
-		&"homing_core",
-		&"mass_projectile",
-		&"orbital_array",
-		&"resonance_wave",
-		&"returning_ring",
-		&"zero_field",
-	]
-	var expected_evolved_ids: Array[StringName] = [
-		&"absorption_field",
-		&"collapse_projectile",
-		&"critical_ring",
-		&"eternal_orbit",
-		&"infinite_homing",
-		&"infinite_needles",
-		&"spiral_crystal",
-		&"vital_resonance",
-	]
-	var expected_passive_ids: Array[StringName] = [
-		&"amplifier_core",
-		&"cycle_crystal",
-		&"duration_ring",
-		&"life_lattice",
-		&"probability_core",
-		&"repair_core",
-		&"scale_lens",
-		&"speed_gate",
-	]
-	assertions.expect_equal(expected_base_ids, catalog.basic_weapon_ids(), "all eight base weapon IDs are fixed")
-	assertions.expect_equal(expected_evolved_ids, catalog.evolved_weapon_ids(), "all eight evolved weapon IDs are fixed")
-	assertions.expect_equal(expected_passive_ids, catalog.passive_ids(), "all eight passive IDs are fixed")
-	assertions.expect_equal(8, catalog.evolutions.size(), "eight evolution mappings")
-	assertions.expect_equal(10, catalog.segments.size(), "ten one-minute segments")
-	assertions.expect_equal(&"homing_core", catalog.manifest().starter_weapon_id, "nearest-target weapon is the starter")
-	assertions.expect_equal(
-		catalog.manifest().starter_weapon_id,
-		ReleaseSmokeValidator.STARTER_WEAPON_ID,
-		"release smoke uses the same starter contract",
-	)
-	assertions.expect_equal(2, catalog.manifest().owned_offer_attempt_count, "owned offer uses two attempts")
-	assertions.expect_float(0.3, catalog.manifest().owned_offer_luck_coefficient, "owned offer luck coefficient")
-	assertions.expect_equal(90, catalog.manifest().xp_yield_percent, "tuned XP yield supports the denser arena")
-	assertions.expect_float(
-		0.40,
-		catalog.manifest().normal_enemy_damage_scale,
-		"keeps dense contact pressure survivable",
-	)
-	assertions.expect_equal(
-		50,
-		catalog.enemy_for_type(GameTypes.EnemyType.ELITE).xp_value,
-		"calibrated elite XP supports the intended evolution pacing",
-	)
-	assertions.expect_float(
-		650.0,
-		catalog.enemy_for_type(GameTypes.EnemyType.ELITE).base_hp,
-		"preserves the calibrated elite HP",
-	)
-	var expected_segment_targets: Array[int] = [16, 46, 32, 68, 49, 140, 92, 132, 97, 176]
-	var expected_segment_hp: Array[float] = [
-		0.15, 0.215, 1.325, 0.24, 0.74, 0.35, 1.85, 0.78, 1.75, 1.40,
-	]
-	var expected_segment_damage: Array[float] = [
-		0.18, 0.20, 0.22, 0.25, 0.29, 0.34, 0.42, 0.50, 0.64, 1.50,
-	]
-	for segment_index: int in range(10):
-		var segment: EnemySegmentDefinition = catalog.segment(segment_index)
-		assertions.expect_equal(
-			expected_segment_targets[segment_index],
-			segment.target_active,
-			"segment %d calibrated active-enemy pressure" % (segment_index + 1),
-		)
-		assertions.expect_float(
-			expected_segment_hp[segment_index],
-			segment.hp_multiplier,
-			"segment %d calibrated HP pressure" % (segment_index + 1),
-		)
-		assertions.expect_float(
-			expected_segment_damage[segment_index],
-			segment.damage_multiplier,
-			"segment %d calibrated contact pressure" % (segment_index + 1),
-		)
-	var expected_weapon_ranges: Dictionary = {
-		&"resonance_wave": PackedFloat32Array([2.2, 2.2, 2.2, 3.4, 3.4, 3.4, 3.4, 3.4]),
-		&"vital_resonance": PackedFloat32Array([4.4]),
-		&"homing_core": PackedFloat32Array([5.5, 5.5, 5.5, 5.5, 5.5, 5.5, 5.5, 5.5]),
-		&"infinite_homing": PackedFloat32Array([8.0]),
-		&"directional_needle": PackedFloat32Array([6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0]),
-		&"infinite_needles": PackedFloat32Array([8.0]),
-		&"arc_crystal": PackedFloat32Array([4.5, 4.5, 4.5, 4.5, 4.5, 4.5, 4.5, 4.5]),
-		&"spiral_crystal": PackedFloat32Array([8.0]),
-		&"returning_ring": PackedFloat32Array([5.5, 5.5, 5.5, 5.5, 5.5, 5.5, 5.5, 5.5]),
-		&"critical_ring": PackedFloat32Array([8.0]),
-		&"orbital_array": PackedFloat32Array([1.5, 1.5, 1.5, 1.5, 2.5, 2.5, 2.5, 2.5]),
-		&"eternal_orbit": PackedFloat32Array([3.3]),
-		&"mass_projectile": PackedFloat32Array([5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0]),
-		&"collapse_projectile": PackedFloat32Array([5.5]),
-		&"zero_field": PackedFloat32Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-		&"absorption_field": PackedFloat32Array([0.0]),
-	}
-	for weapon_id: StringName in expected_weapon_ranges:
-		assertions.expect_equal(
-			expected_weapon_ranges[weapon_id],
-			catalog.weapon(weapon_id).range_by_level,
-			"%s single-stat range table" % weapon_id,
-		)
-	assertions.expect_equal(
-		PackedFloat32Array([0.22, 0.22, 0.22, 0.22, 0.22, 0.22, 0.22, 0.22]),
-		catalog.weapon(&"arc_crystal").projectile_radius_by_level,
-		"base arc uses a compact physical projectile radius",
-	)
-	assertions.expect_equal(
-		PackedFloat32Array([1.5, 1.5, 2.0, 2.0, 2.0, 2.0, 2.0, 2.5]),
-		catalog.weapon(&"arc_crystal").effect_radius_by_level,
-		"base arc stores its explosion radius explicitly",
-	)
-	assertions.expect_equal(
-		PackedFloat32Array([0.55]),
-		catalog.weapon(&"spiral_crystal").projectile_radius_by_level,
-		"evolved spiral uses the approved physical radius",
-	)
-	var initial_state: RunState = RunStateFactory.create(1000, catalog)
-	assertions.expect_equal(1, initial_state.weapons.size(), "a run starts with exactly one weapon")
-	assertions.expect_true(initial_state.weapon(&"homing_core") != null, "starter runtime owns homing core")
-	assertions.expect_true(initial_state.weapon(&"resonance_wave") == null, "resonance wave returns to normal offers")
-	for spec: Dictionary in _fixed_content_specs():
-		var base_id := StringName(spec[&"base_id"])
-		var evolved_id := StringName(spec[&"evolved_id"])
-		var passive_id := StringName(spec[&"passive_id"])
-		var base: WeaponDefinition = catalog.weapon(base_id)
-		var evolved: WeaponDefinition = catalog.weapon(evolved_id)
-		var passive: PassiveDefinition = catalog.passive(passive_id)
-		var evolution: EvolutionDefinition = catalog.evolution_for_weapon(base_id)
-		assertions.expect_true(base != null, "%s base definition exists" % base_id)
-		assertions.expect_true(evolved != null, "%s evolved definition exists" % evolved_id)
-		assertions.expect_true(passive != null, "%s passive definition exists" % passive_id)
-		assertions.expect_true(evolution != null, "%s evolution mapping exists" % base_id)
-		if base == null or evolved == null or passive == null or evolution == null:
-			continue
-		assertions.expect_equal(String(spec[&"base_name"]), base.display_name, "%s Japanese name" % base_id)
-		assertions.expect_float(float(spec[&"base_weight"]), base.selection_weight, "%s selection weight" % base_id)
-		assertions.expect_equal(8, base.max_level, "%s max level" % base_id)
-		assertions.expect_false(base.is_evolved, "%s remains a base weapon" % base_id)
-		assertions.expect_equal(base_id, base.lineage_id, "%s base lineage" % base_id)
-		assertions.expect_equal(passive_id, base.paired_passive_id, "%s paired passive" % base_id)
-		assertions.expect_equal(int(spec[&"behavior"]), int(base.behavior), "%s behavior" % base_id)
-		assertions.expect_equal(String(spec[&"evolved_name"]), evolved.display_name, "%s Japanese name" % evolved_id)
-		assertions.expect_float(0.0, evolved.selection_weight, "%s never appears in level offers" % evolved_id)
-		assertions.expect_equal(1, evolved.max_level, "%s max level" % evolved_id)
-		assertions.expect_true(evolved.is_evolved, "%s is evolved" % evolved_id)
-		assertions.expect_equal(base_id, evolved.lineage_id, "%s lineage" % evolved_id)
-		assertions.expect_equal(passive_id, evolved.paired_passive_id, "%s paired passive" % evolved_id)
-		assertions.expect_equal(int(spec[&"behavior"]), int(evolved.behavior), "%s behavior" % evolved_id)
-		assertions.expect_equal(String(spec[&"passive_name"]), passive.display_name, "%s Japanese name" % passive_id)
-		assertions.expect_float(float(spec[&"passive_weight"]), passive.selection_weight, "%s selection weight" % passive_id)
-		assertions.expect_equal(5, passive.max_level, "%s max level" % passive_id)
-		assertions.expect_equal(StringName(spec[&"stat_id"]), passive.stat_id, "%s effect stat" % passive_id)
-		assertions.expect_float(float(spec[&"amount"]), passive.amount_per_level, "%s effect per level" % passive_id)
-		assertions.expect_equal(base_id, passive.paired_weapon_id, "%s paired weapon" % passive_id)
-		assertions.expect_equal(base_id, evolution.base_weapon_id, "%s evolution base" % base_id)
-		assertions.expect_equal(passive_id, evolution.passive_id, "%s evolution passive" % base_id)
-		assertions.expect_equal(evolved_id, evolution.evolved_weapon_id, "%s evolution target" % base_id)
-		assertions.expect_equal(
-			"進化: %s Lv8 ＋ 触媒：%s Lv1以上 → %s" % [
-				base.display_name,
-				passive.display_name,
-				evolved.display_name,
-			],
-			ProgressionService._pairing_hint(catalog, base_id),
-			"%s pairing hint exposes the level-one catalyst contract" % base_id,
-		)
 
 
-func _test_weapon_level_deltas(assertions: Variant) -> void:
-	var catalog: DefinitionCatalog = _catalog(assertions)
-	var expected_details: Dictionary = {
-		&"resonance_wave": PackedStringArray([
-			"波数 2 → 3",
-			"威力 9 → 18",
-			"薙ぎ範囲 2.2m → 3.4m",
-			"波数 3 → 4",
-			"威力 18 → 27",
-			"発動間隔 1.3秒 → 1.03秒",
-			"波数 4 → 5",
-		]),
-		&"homing_core": PackedStringArray([
-			"弾数 1 → 2",
-			"威力 18.5 → 26.5",
-			"弾数 2 → 3",
-			"発動間隔 1.2秒 → 0.8秒",
-			"弾数 3 → 4",
-			"威力 26.5 → 34.65",
-			"弾数 4 → 5",
-		]),
-		&"directional_needle": PackedStringArray([
-			"弾数 1 → 2",
-			"発動間隔 0.6秒 → 0.5秒",
-			"弾数 2 → 3",
-			"貫通数 7 → 11",
-			"弾数 3 → 4",
-			"発動間隔 0.5秒 → 0.4秒",
-			"弾数 4 → 5",
-		]),
-		&"arc_crystal": PackedStringArray([
-			"威力 14 → 23",
-			"爆発半径 1.5m → 2m",
-			"結晶数 1 → 2",
-			"発動間隔 1.83秒 → 1.42秒",
-			"威力 23 → 32",
-			"結晶数 2 → 3",
-			"爆発半径 2m → 2.5m",
-		]),
-		&"returning_ring": PackedStringArray([
-			"威力 12.75 → 27",
-			"貫通数 2 → 4",
-			"環数 1 → 2",
-			"発動間隔 1.5秒 → 1.1秒",
-			"威力 27 → 41.7",
-			"環数 2 → 3",
-			"貫通数 4 → 6",
-		]),
-		&"orbital_array": PackedStringArray([
-			"軌道体数 1 → 2",
-			"威力 16.9 → 25.5",
-			"軌道体数 2 → 3",
-			"周回半径 1.5m → 2.5m",
-			"軌道体数 3 → 4",
-			"再展開間隔 4秒 → 1.67秒",
-			"軌道体数 4 → 5",
-		]),
-		&"mass_projectile": PackedStringArray([
-			"威力 41.25 → 95",
-			"弾サイズ 0.8m → 1.4m",
-			"貫通数 0 → 3",
-			"威力 95 → 150",
-			"弾数 1 → 2",
-			"発動間隔 3秒 → 2秒",
-			"弾数 2 → 3",
-		]),
-		&"zero_field": PackedStringArray([
-			"威力 3.2 → 10",
-			"効果半径 2m → 2.5m",
-			"発動間隔 0.5秒 → 0.37秒",
-			"威力 10 → 16.5",
-			"効果半径 2.5m → 2.9m",
-			"威力 16.5 → 23",
-			"効果半径 2.9m → 3.4m",
-		]),
-	}
-	for weapon_id: StringName in expected_details:
-		var definition: WeaponDefinition = catalog.weapon(weapon_id)
-		var expected: PackedStringArray = expected_details[weapon_id]
-		for next_level: int in range(2, definition.max_level + 1):
-			var deltas: Array[WeaponDefinition.WeaponLevelDelta] = definition.level_deltas(next_level)
-			assertions.expect_equal(
-				1,
-				deltas.size(),
-				"%s Lv%d changes exactly one direct stat" % [weapon_id, next_level],
-			)
-			if deltas.size() != 1:
-				continue
-			var delta: WeaponDefinition.WeaponLevelDelta = deltas[0]
-			if delta.stat_id == WeaponDefinition.STAT_AMOUNT:
-				assertions.expect_float(
-					1.0,
-					delta.new_value - delta.previous_value,
-					"%s Lv%d amount increases by one" % [weapon_id, next_level],
-				)
-			assertions.expect_equal(
-				expected[next_level - 2],
-				UPGRADE_DESCRIPTION_FORMATTER.weapon_detail(definition, next_level),
-				"%s Lv%d exposes the approved base-value delta" % [weapon_id, next_level],
-			)
-	var expected_passive_details: Dictionary = {
-		&"life_lattice": "最大HP +20% → +40%",
-		&"cycle_crystal": "クールダウン -8% → -16%",
-		&"speed_gate": "弾速 +10% → +20%",
-		&"scale_lens": "攻撃範囲 +10% → +20%",
-		&"probability_core": "Luck +10% → +20%",
-		&"duration_ring": "持続時間 +10% → +20%",
-		&"amplifier_core": "威力 +10% → +20%",
-		&"repair_core": "HP回復 +0.2/秒 → +0.4/秒",
-	}
-	for passive_id: StringName in expected_passive_details:
-		assertions.expect_equal(
-			expected_passive_details[passive_id],
-			UPGRADE_DESCRIPTION_FORMATTER.passive_detail(
-				catalog.passive(passive_id),
-				1,
-				2,
-			),
-			"%s exposes one cumulative passive-stat delta" % passive_id,
-		)
 
-
-func _test_close_range_outer_edges(assertions: Variant) -> void:
-	var catalog: DefinitionCatalog = _catalog(assertions)
-	var expected_edges: Dictionary = {
-		&"resonance_wave": Vector2(2.2, 3.4),
-		&"orbital_array": Vector2(2.07, 3.07),
-		&"zero_field": Vector2(2.0, 3.4),
-	}
-	for lineage_id: StringName in expected_edges:
-		var definition: WeaponDefinition = catalog.weapon(lineage_id)
-		var evolution: EvolutionDefinition = catalog.evolution_for_weapon(lineage_id)
-		var evolved: WeaponDefinition = catalog.weapon(evolution.evolved_weapon_id)
-		var level_one_edge: float = _effective_outer_edge(definition, 1)
-		var level_eight_edge: float = _effective_outer_edge(definition, 8)
-		var evolved_edge: float = _effective_outer_edge(evolved, 1)
-		var endpoints: Vector2 = expected_edges[lineage_id]
-		assertions.expect_float(
-			endpoints.x,
-			level_one_edge,
-			"%s Lv1 outer edge remains approved" % lineage_id,
-		)
-		assertions.expect_float(
-			endpoints.y,
-			level_eight_edge,
-			"%s Lv8 outer edge matches the single-stat table" % lineage_id,
-		)
-		assertions.expect_true(
-			evolved_edge >= 4.2 and evolved_edge <= 4.8,
-			"%s evolved outer edge is 4.2..4.8m" % lineage_id,
-		)
-
-
-func _test_validator_rejects_weapon_level_delta_drift(assertions: Variant) -> void:
-	var loaded: Resource = ResourceLoader.load(DefinitionCatalog.MANIFEST_PATH)
-	var manifest: SurvivalContentManifest = loaded.duplicate(true) as SurvivalContentManifest
-	var weapon_definitions: Array[WeaponDefinition] = []
-	weapon_definitions.assign(manifest.weapons)
-	var resonance_index: int = -1
-	for index: int in range(weapon_definitions.size()):
-		if weapon_definitions[index].weapon_id == &"resonance_wave":
-			resonance_index = index
-			break
-	assertions.expect_true(resonance_index >= 0, "validator fixture finds resonance wave")
-	if resonance_index < 0:
-		return
-
-	var zero_delta_manifest: SurvivalContentManifest = manifest.duplicate(true) as SurvivalContentManifest
-	var zero_delta_weapons: Array[WeaponDefinition] = []
-	zero_delta_weapons.assign(zero_delta_manifest.weapons)
-	var zero_delta_weapon: WeaponDefinition = zero_delta_weapons[resonance_index].duplicate(true) as WeaponDefinition
-	var zero_delta_amounts: PackedInt32Array = zero_delta_weapon.amount_by_level.duplicate()
-	zero_delta_amounts[1] = zero_delta_amounts[0]
-	zero_delta_weapon.amount_by_level = zero_delta_amounts
-	zero_delta_weapons[resonance_index] = zero_delta_weapon
-	zero_delta_manifest.weapons = zero_delta_weapons
-	var zero_delta_catalog := DefinitionCatalog.new()
-	assertions.expect_false(
-		zero_delta_catalog.validate_manifest(zero_delta_manifest),
-		"validator rejects a base weapon level with no changed stat",
-	)
-	assertions.expect_true(
-		zero_delta_catalog.error_text.contains("resonance_wave level 2 changed 0"),
-		"zero-delta rejection identifies the weapon and level",
-	)
-
-	var multi_delta_manifest: SurvivalContentManifest = manifest.duplicate(true) as SurvivalContentManifest
-	var multi_delta_weapons: Array[WeaponDefinition] = []
-	multi_delta_weapons.assign(multi_delta_manifest.weapons)
-	var multi_delta_weapon: WeaponDefinition = multi_delta_weapons[resonance_index].duplicate(true) as WeaponDefinition
-	var multi_delta_damage: PackedFloat32Array = multi_delta_weapon.damage_by_level.duplicate()
-	multi_delta_damage[1] = multi_delta_damage[0] + 1.0
-	multi_delta_weapon.damage_by_level = multi_delta_damage
-	multi_delta_weapons[resonance_index] = multi_delta_weapon
-	multi_delta_manifest.weapons = multi_delta_weapons
-	var multi_delta_catalog := DefinitionCatalog.new()
-	assertions.expect_false(
-		multi_delta_catalog.validate_manifest(multi_delta_manifest),
-		"validator rejects a base weapon level with multiple changed stats",
-	)
-	assertions.expect_true(
-		multi_delta_catalog.error_text.contains("resonance_wave level 2 changed 2"),
-		"multi-delta rejection identifies the weapon and level",
-	)
-
-	var plus_two_manifest: SurvivalContentManifest = manifest.duplicate(true) as SurvivalContentManifest
-	var plus_two_weapons: Array[WeaponDefinition] = []
-	plus_two_weapons.assign(plus_two_manifest.weapons)
-	var plus_two_weapon: WeaponDefinition = plus_two_weapons[resonance_index].duplicate(true) as WeaponDefinition
-	var plus_two_amounts: PackedInt32Array = plus_two_weapon.amount_by_level.duplicate()
-	plus_two_amounts[1] = plus_two_amounts[0] + 2
-	plus_two_weapon.amount_by_level = plus_two_amounts
-	plus_two_weapons[resonance_index] = plus_two_weapon
-	plus_two_manifest.weapons = plus_two_weapons
-	var plus_two_catalog := DefinitionCatalog.new()
-	assertions.expect_false(
-		plus_two_catalog.validate_manifest(plus_two_manifest),
-		"validator rejects a base weapon amount increase greater than one",
-	)
-	assertions.expect_true(
-		plus_two_catalog.error_text.contains(
-			"base weapon amount level delta must be +1: resonance_wave level 2 changed 2 to 4"
-		),
-		"amount-delta rejection identifies the weapon, level, and values",
-	)
-
-
-func _effective_outer_edge(definition: WeaponDefinition, level: int) -> float:
-	match definition.behavior:
-		GameTypes.WeaponBehavior.MELEE_WAVE:
-			return definition.range_at(level)
-		GameTypes.WeaponBehavior.ORBITAL:
-			return definition.range_at(level) + definition.effect_radius_at(level)
-		GameTypes.WeaponBehavior.AURA:
-			return definition.effect_radius_at(level)
-		_:
-			return (
-				definition.range_at(level)
-				+ maxf(
-					definition.projectile_radius_at(level),
-					definition.effect_radius_at(level),
-				)
-			)
 
 
 func _test_xp(assertions: Variant) -> void:
-	assertions.expect_equal(5, ProgressionService.xp_required_for_level(1), "level one XP")
-	assertions.expect_equal(185, ProgressionService.xp_required_for_level(19), "level nineteen XP")
-	assertions.expect_equal(795, ProgressionService.xp_required_for_level(20), "level twenty compensated XP")
-	assertions.expect_equal(442, ProgressionService.xp_required_for_level(39), "level thirty-nine XP")
-	assertions.expect_equal(2855, ProgressionService.xp_required_for_level(40), "level forty compensated XP")
-	assertions.expect_equal(471, ProgressionService.xp_required_for_level(41), "level forty-one XP")
-	var cumulative: int = 0
-	for level: int in range(1, 65):
-		cumulative += ProgressionService.xp_required_for_level(level)
-	assertions.expect_equal(27350, cumulative, "level 65 cumulative XP")
-	assertions.expect_float(2.0, ProgressionService.xp_growth_multiplier(20), "level twenty growth compensation")
-	assertions.expect_float(2.0, ProgressionService.xp_growth_multiplier(40), "level forty growth compensation")
+	var independent := ProgressionBalanceDefinition.new()
+	independent.xp_early_max_level = 3
+	independent.xp_early_coefficient = 2
+	independent.xp_early_offset = 1
+	independent.xp_first_transition_requirement = 25
+	independent.xp_middle_max_level = 7
+	independent.xp_middle_coefficient = 5
+	independent.xp_middle_offset = -5
+	independent.xp_second_transition_requirement = 40
+	independent.xp_late_coefficient = 7
+	independent.xp_late_offset = -2
+	for example: Vector2i in [Vector2i(1, 3), Vector2i(3, 7), Vector2i(4, 25), Vector2i(5, 20), Vector2i(7, 30), Vector2i(8, 40), Vector2i(9, 61)]:
+		assertions.expect_equal(example.y, ProgressionService.xp_required_for_level(example.x, independent), "piecewise XP formula uses independent coefficients and offsets")
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	var manifest: SurvivalContentManifest = catalog.manifest()
-	var original_yield_percent: int = manifest.xp_yield_percent
-	manifest.xp_yield_percent = 100
+	var original_yield_percent: int = manifest.progression.xp_yield_percent
+	manifest.progression.xp_yield_percent = 100
 	var state: RunState = RunStateFactory.create(1001, catalog)
 	var queued: int = ProgressionService.add_xp(state, 20, catalog)
-	manifest.xp_yield_percent = original_yield_percent
+	manifest.progression.xp_yield_percent = original_yield_percent
 	assertions.expect_equal(2, queued, "one pickup may queue multiple levels")
 	assertions.expect_equal(3, state.level, "queued levels advance player level")
 	assertions.expect_equal(0, state.xp, "threshold XP consumed exactly")
@@ -547,8 +114,8 @@ func _test_xp(assertions: Variant) -> void:
 func _test_capacity_level_and_growth(assertions: Variant) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	var manifest: SurvivalContentManifest = catalog.manifest()
-	var original_yield_percent: int = manifest.xp_yield_percent
-	manifest.xp_yield_percent = 100
+	var original_yield_percent: int = manifest.progression.xp_yield_percent
+	manifest.progression.xp_yield_percent = 100
 	var state: RunState = RunStateFactory.create(1101, catalog)
 	assertions.expect_equal(64, ProgressionService.remaining_upgrade_capacity(state, catalog), "starter build has exactly 64 selections")
 	var queued: int = ProgressionService.add_xp(state, 27350, catalog)
@@ -569,7 +136,7 @@ func _test_capacity_level_and_growth(assertions: Variant) -> void:
 	var normal_level: RunState = RunStateFactory.create(1104, catalog)
 	normal_level.level = 21
 	var queued_at_normal_level: int = ProgressionService.add_xp(normal_level, 10, catalog)
-	manifest.xp_yield_percent = original_yield_percent
+	manifest.progression.xp_yield_percent = original_yield_percent
 	assertions.expect_equal(0, queued_at_normal_level, "small normal-level pickup does not cross threshold")
 	assertions.expect_equal(10, normal_level.xp, "Growth is not applied outside levels 20 and 40")
 
@@ -577,8 +144,8 @@ func _test_capacity_level_and_growth(assertions: Variant) -> void:
 func _test_growth_boundaries(assertions: Variant) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	var manifest: SurvivalContentManifest = catalog.manifest()
-	var original_yield_percent: int = manifest.xp_yield_percent
-	manifest.xp_yield_percent = 100
+	var original_yield_percent: int = manifest.progression.xp_yield_percent
+	manifest.progression.xp_yield_percent = 100
 	var into_twenty: RunState = RunStateFactory.create(1201, catalog)
 	into_twenty.level = 19
 	into_twenty.xp = 180
@@ -625,7 +192,7 @@ func _test_growth_boundaries(assertions: Variant) -> void:
 	leaving_twenty.level = 20
 	leaving_twenty.xp = 790
 	var leaving_twenty_queued: int = ProgressionService.add_xp(leaving_twenty, 10, catalog)
-	manifest.xp_yield_percent = original_yield_percent
+	manifest.progression.xp_yield_percent = original_yield_percent
 	assertions.expect_equal(1, leaving_twenty_queued, "Growth-assisted XP crosses the level twenty threshold")
 	assertions.expect_equal(21, leaving_twenty.level, "Growth compensation ends after leaving level twenty")
 	assertions.expect_equal(8, leaving_twenty.xp, "post-threshold remainder returns to normal Growth")
@@ -633,51 +200,41 @@ func _test_growth_boundaries(assertions: Variant) -> void:
 
 func _test_manifest_driven_xp(assertions: Variant) -> void:
 	var canonical_catalog: DefinitionCatalog = _catalog(assertions)
-	var custom_manifest: SurvivalContentManifest = canonical_catalog.manifest().duplicate(true) as SurvivalContentManifest
+	var custom_manifest: SurvivalContentManifest = canonical_catalog.manifest().duplicate_deep(Resource.DEEP_DUPLICATE_ALL) as SurvivalContentManifest
 	assertions.expect_true(custom_manifest != null, "manifest duplicates for source-of-truth fixture")
 	if custom_manifest == null:
 		return
-	custom_manifest.xp_early_coefficient = 11
-	custom_manifest.xp_growth_compensation_multiplier = 3.0
-	assertions.expect_equal(5, ProgressionService.xp_required_for_level(1), "static XP API retains approved compatibility")
+	custom_manifest.progression.xp_early_coefficient = 11
+	custom_manifest.progression.xp_growth_compensation_multiplier = 3.0
 	assertions.expect_equal(
 		6,
-		ProgressionService.xp_required_for_level_with_manifest(1, custom_manifest),
+		ProgressionService.xp_required_for_level(1, custom_manifest.progression),
 		"manifest-aware XP API uses configured coefficient",
 	)
 	assertions.expect_float(
 		3.0,
-		ProgressionService.xp_growth_multiplier_with_manifest(20, custom_manifest),
+		ProgressionService.xp_growth_multiplier(20, custom_manifest.progression),
 		"manifest-aware Growth API uses configured compensation",
 	)
 	var custom_catalog := DefinitionCatalog.new()
-	assertions.expect_false(custom_catalog.validate_manifest(custom_manifest), "non-approved fixture is rejected for production")
-	var early_state: RunState = RunStateFactory.create(1301, canonical_catalog)
-	var growth_state: RunState = RunStateFactory.create(1302, canonical_catalog)
+	custom_manifest.progression.xp_yield_percent = 100
+	assertions.expect_true(custom_catalog.validate_manifest(custom_manifest), "valid custom fixture follows normal validation")
+	var early_state: RunState = RunStateFactory.create(1301, custom_catalog)
+	var growth_state: RunState = RunStateFactory.create(1302, custom_catalog)
 	growth_state.level = 20
-	var canonical_manifest: SurvivalContentManifest = canonical_catalog.manifest()
-	var original_early_coefficient: int = canonical_manifest.xp_early_coefficient
-	var original_growth_multiplier: float = canonical_manifest.xp_growth_compensation_multiplier
-	var original_yield_percent: int = canonical_manifest.xp_yield_percent
-	canonical_manifest.xp_early_coefficient = 11
-	canonical_manifest.xp_growth_compensation_multiplier = 3.0
-	canonical_manifest.xp_yield_percent = 100
-	var early_queued: int = ProgressionService.add_xp(early_state, 5, canonical_catalog)
+	var early_queued: int = ProgressionService.add_xp(early_state, 5, custom_catalog)
 	assertions.expect_equal(0, early_queued, "add_xp reads the manifest XP coefficient")
 	assertions.expect_equal(5, early_state.xp, "custom level-one threshold remains unmet")
-	var growth_queued: int = ProgressionService.add_xp(growth_state, 10, canonical_catalog)
-	canonical_manifest.xp_early_coefficient = original_early_coefficient
-	canonical_manifest.xp_growth_compensation_multiplier = original_growth_multiplier
-	canonical_manifest.xp_yield_percent = original_yield_percent
+	var growth_queued: int = ProgressionService.add_xp(growth_state, 10, custom_catalog)
 	assertions.expect_equal(0, growth_queued, "custom Growth fixture remains below level twenty threshold")
 	assertions.expect_equal(30, growth_state.xp, "add_xp reads the manifest Growth multiplier")
-	var pickup_manifest := SurvivalContentManifest.new()
-	pickup_manifest.xp_pool_capacity = 2
-	pickup_manifest.xp_pickup_attract_radius = 1.25
-	pickup_manifest.xp_pickup_collect_radius = 0.1
-	pickup_manifest.xp_pickup_speed = 1.0
-	var pool := XpPickupPool.new()
-	pool.configure(pickup_manifest)
+	var pickup_manifest: SurvivalContentManifest = BalanceTestFixtures.manifest()
+	pickup_manifest.progression.xp_pool_capacity = 2
+	pickup_manifest.progression.xp_pickup_attract_radius = 1.25
+	pickup_manifest.progression.xp_pickup_collect_radius = 0.1
+	pickup_manifest.progression.xp_pickup_speed = 1.0
+	var pool := BalanceTestFixtures.xp_pool()
+	pool.configure(pickup_manifest.progression)
 	assertions.expect_equal(2, pool.capacity, "XP pool capacity comes from manifest")
 	assertions.expect_equal(2, pool.slots.size(), "XP pool storage follows manifest capacity")
 	assertions.expect_float(1.25, pool.attract_radius, "XP attraction radius comes from manifest")
@@ -702,8 +259,8 @@ func _test_manifest_driven_xp(assertions: Variant) -> void:
 func _test_xp_yield_fraction_and_growth_order(assertions: Variant) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	var manifest: SurvivalContentManifest = catalog.manifest()
-	var original_yield_percent: int = manifest.xp_yield_percent
-	manifest.xp_yield_percent = 95
+	var original_yield_percent: int = manifest.progression.xp_yield_percent
+	manifest.progression.xp_yield_percent = 95
 	var fractional_state: RunState = RunStateFactory.create(1351, catalog)
 	fractional_state.level = 10
 	for _pickup_index: int in range(20):
@@ -724,92 +281,10 @@ func _test_xp_yield_fraction_and_growth_order(assertions: Variant) -> void:
 	assertions.expect_equal(18, growth_state.xp, "95 percent scaling occurs before level-20 Growth doubles XP")
 	assertions.expect_equal(50, growth_state.xp_yield_remainder, "Growth does not multiply the scaling fraction")
 	ProgressionService.add_xp(growth_state, 10, catalog)
-	manifest.xp_yield_percent = original_yield_percent
+	manifest.progression.xp_yield_percent = original_yield_percent
 	assertions.expect_equal(38, growth_state.xp, "carried scaling fraction resolves before the next Growth application")
 	assertions.expect_equal(0, growth_state.xp_yield_remainder, "resolved Growth fixture leaves no XP fraction")
 
-
-func _test_boss_enrage_validation(assertions: Variant) -> void:
-	var catalog: DefinitionCatalog = _catalog(assertions)
-	var canonical: SurvivalContentManifest = catalog.manifest()
-	assertions.expect_float(1.6875, canonical.boss_hp_multiplier, "preserves the prior boss HP pending evaluation")
-	assertions.expect_float(0.114, canonical.boss_damage_multiplier, "calibrated boss damage matches the twelve-run gate")
-	assertions.expect_float(1.1, canonical.boss_action_rate_multiplier, "canonical boss action rate sustains the intended fight length")
-	assertions.expect_float(
-		0.40,
-		canonical.normal_enemy_damage_scale,
-		"canonical contact-only enemies use the common damage lever",
-	)
-	var normal_scale_lower: SurvivalContentManifest = canonical.duplicate(true) as SurvivalContentManifest
-	normal_scale_lower.normal_enemy_damage_scale = 0.25
-	assertions.expect_true(
-		DefinitionCatalog.new().validate_manifest(normal_scale_lower),
-		"validator accepts the authorized normal-enemy damage lower bound",
-	)
-	var normal_scale_off_step: SurvivalContentManifest = canonical.duplicate(true) as SurvivalContentManifest
-	normal_scale_off_step.normal_enemy_damage_scale = 0.57
-	assertions.expect_false(
-		DefinitionCatalog.new().validate_manifest(normal_scale_off_step),
-		"validator rejects normal-enemy damage outside five-percent steps",
-	)
-	var lower_bound: SurvivalContentManifest = canonical.duplicate(true) as SurvivalContentManifest
-	lower_bound.boss_hp_multiplier = SurvivalContentManifest.DEFAULT_BOSS_HP_MULTIPLIER * 0.25
-	lower_bound.boss_damage_multiplier = SurvivalContentManifest.DEFAULT_BOSS_DAMAGE_MULTIPLIER * 0.20
-	lower_bound.boss_action_rate_multiplier = SurvivalContentManifest.DEFAULT_BOSS_ACTION_RATE_MULTIPLIER * 0.20
-	var lower_bound_catalog := DefinitionCatalog.new()
-	assertions.expect_true(lower_bound_catalog.validate_manifest(lower_bound), "validator accepts the extended boss -80 percent bound")
-	var hp_lower_bound: SurvivalContentManifest = canonical.duplicate(true) as SurvivalContentManifest
-	hp_lower_bound.boss_hp_multiplier = (
-		SurvivalContentManifest.DEFAULT_BOSS_HP_MULTIPLIER * 0.15
-	)
-	assertions.expect_true(
-		DefinitionCatalog.new().validate_manifest(hp_lower_bound),
-		"validator accepts the extended boss-HP -85 percent bound",
-	)
-	var upper_bound: SurvivalContentManifest = canonical.duplicate(true) as SurvivalContentManifest
-	upper_bound.boss_hp_multiplier = SurvivalContentManifest.DEFAULT_BOSS_HP_MULTIPLIER * 1.10
-	upper_bound.boss_damage_multiplier = SurvivalContentManifest.DEFAULT_BOSS_DAMAGE_MULTIPLIER * 1.10
-	upper_bound.boss_action_rate_multiplier = SurvivalContentManifest.DEFAULT_BOSS_ACTION_RATE_MULTIPLIER * 1.10
-	var upper_bound_catalog := DefinitionCatalog.new()
-	assertions.expect_true(upper_bound_catalog.validate_manifest(upper_bound), "validator accepts the authorized boss +10 percent bound")
-	var off_step: SurvivalContentManifest = canonical.duplicate(true) as SurvivalContentManifest
-	off_step.boss_hp_multiplier = SurvivalContentManifest.DEFAULT_BOSS_HP_MULTIPLIER * 0.97
-	var off_step_catalog := DefinitionCatalog.new()
-	assertions.expect_false(off_step_catalog.validate_manifest(off_step), "validator rejects boss tuning outside five-percent steps")
-	assertions.expect_true(off_step_catalog.error_text.contains("boss HP multiplier"), "boss step rejection names the changed multiplier")
-	var below_bound: SurvivalContentManifest = canonical.duplicate(true) as SurvivalContentManifest
-	below_bound.boss_hp_multiplier = SurvivalContentManifest.DEFAULT_BOSS_HP_MULTIPLIER * 0.10
-	assertions.expect_false(
-		DefinitionCatalog.new().validate_manifest(below_bound),
-		"validator rejects a boss multiplier below the authorized lower bound",
-	)
-	var above_bound: SurvivalContentManifest = canonical.duplicate(true) as SurvivalContentManifest
-	above_bound.boss_damage_multiplier = SurvivalContentManifest.DEFAULT_BOSS_DAMAGE_MULTIPLIER * 1.15
-	assertions.expect_false(
-		DefinitionCatalog.new().validate_manifest(above_bound),
-		"validator rejects a boss multiplier above the authorized upper bound",
-	)
-	var non_finite: SurvivalContentManifest = canonical.duplicate(true) as SurvivalContentManifest
-	non_finite.boss_action_rate_multiplier = NAN
-	assertions.expect_false(
-		DefinitionCatalog.new().validate_manifest(non_finite),
-		"validator rejects a non-finite boss multiplier",
-	)
-	var attack_drift: SurvivalContentManifest = canonical.duplicate(true) as SurvivalContentManifest
-	attack_drift.boss_attack_bonus_per_stack = 0.11
-	var attack_catalog := DefinitionCatalog.new()
-	assertions.expect_false(attack_catalog.validate_manifest(attack_drift), "validator rejects boss attack drift")
-	assertions.expect_true(attack_catalog.error_text.contains("+10%"), "boss attack rejection is specific")
-	var interval_drift: SurvivalContentManifest = canonical.duplicate(true) as SurvivalContentManifest
-	interval_drift.boss_interval_reduction_per_stack = 0.11
-	var interval_catalog := DefinitionCatalog.new()
-	assertions.expect_false(interval_catalog.validate_manifest(interval_drift), "validator rejects boss interval drift")
-	assertions.expect_true(interval_catalog.error_text.contains("-10%"), "boss interval rejection is specific")
-	var cap_drift: SurvivalContentManifest = canonical.duplicate(true) as SurvivalContentManifest
-	cap_drift.boss_enrage_max_stacks = 11
-	var cap_catalog := DefinitionCatalog.new()
-	assertions.expect_false(cap_catalog.validate_manifest(cap_drift), "validator rejects boss enrage cap drift")
-	assertions.expect_true(cap_catalog.error_text.contains("10 stacks"), "boss cap rejection is specific")
 
 
 func _test_nonboss_ranged_validation(assertions: Variant) -> void:
@@ -827,7 +302,7 @@ func _test_nonboss_ranged_validation(assertions: Variant) -> void:
 	if shooter_index < 0 or elite_index < 0:
 		return
 	var negative_shooter: EnemyDefinition = (
-		canonical.enemies[shooter_index].duplicate(true) as EnemyDefinition
+		canonical.enemies[shooter_index].duplicate_deep(Resource.DEEP_DUPLICATE_ALL) as EnemyDefinition
 	)
 	negative_shooter.projectile_damage = -1.0
 	var negative_catalog := DefinitionCatalog.new()
@@ -842,9 +317,9 @@ func _test_nonboss_ranged_validation(assertions: Variant) -> void:
 		"negative ranged drift reports the contact-only contract",
 	)
 	var non_finite_elite: EnemyDefinition = (
-		canonical.enemies[elite_index].duplicate(true) as EnemyDefinition
+		canonical.enemies[elite_index].duplicate_deep(Resource.DEEP_DUPLICATE_ALL) as EnemyDefinition
 	)
-	non_finite_elite.preferred_distance_max = NAN
+	non_finite_elite.body_radius = NAN
 	var non_finite_catalog := DefinitionCatalog.new()
 	assertions.expect_false(
 		non_finite_catalog.validate_manifest(
@@ -853,38 +328,10 @@ func _test_nonboss_ranged_validation(assertions: Variant) -> void:
 		"validator rejects non-finite ranged drift on an elite",
 	)
 	assertions.expect_true(
-		non_finite_catalog.error_text.contains("contact-only"),
-		"non-finite ranged drift reports the contact-only contract",
+		non_finite_catalog.error_text.contains("body_radius") and non_finite_catalog.error_text.contains("finite"),
+		"non-finite physical radius reports its field and constraint",
 	)
 
-
-func _test_segment_tuning_contract(assertions: Variant) -> void:
-	var catalog: DefinitionCatalog = _catalog(assertions)
-	var canonical: SurvivalContentManifest = catalog.manifest()
-	var target_drift: EnemySegmentDefinition = canonical.segments[1].duplicate(true) as EnemySegmentDefinition
-	target_drift.target_active += 1
-	assertions.expect_false(
-		DefinitionCatalog.new().validate_manifest(_with_segment(canonical, 1, target_drift)),
-		"rejects target drift",
-	)
-	var hp_drift: EnemySegmentDefinition = canonical.segments[5].duplicate(true) as EnemySegmentDefinition
-	hp_drift.hp_multiplier += 0.01
-	assertions.expect_false(
-		DefinitionCatalog.new().validate_manifest(_with_segment(canonical, 5, hp_drift)),
-		"rejects HP drift",
-	)
-	var damage_drift: EnemySegmentDefinition = canonical.segments[7].duplicate(true) as EnemySegmentDefinition
-	damage_drift.damage_multiplier += 0.01
-	assertions.expect_false(
-		DefinitionCatalog.new().validate_manifest(_with_segment(canonical, 7, damage_drift)),
-		"rejects damage drift",
-	)
-	var weight_drift: EnemySegmentDefinition = canonical.segments[9].duplicate(true) as EnemySegmentDefinition
-	weight_drift.spawn_weights = PackedFloat32Array([0.30, 0.20, 0.25, 0.25, 0.0, 0.0])
-	assertions.expect_false(
-		DefinitionCatalog.new().validate_manifest(_with_segment(canonical, 9, weight_drift)),
-		"rejects spawn-weight drift even when weights sum to one",
-	)
 
 
 func _test_offer(assertions: Variant) -> void:
@@ -1401,7 +848,7 @@ func _test_chest_last_upgrade_clears_growth_state(assertions: Variant) -> void:
 	var state: RunState = _maxed_build_state(catalog)
 	var last_passive: RunPassive = state.passive(&"probability_core")
 	last_passive.level = 4
-	state.evolution_count = ChestRewardService.MAX_EVOLUTIONS_PER_RUN
+	state.evolution_count = catalog.manifest().progression.max_evolutions_per_run
 	state.xp = 3
 	state.xp_yield_remainder = 75
 	state.pending_level_ups = 2
@@ -1722,126 +1169,6 @@ func _maxed_build_state(catalog: DefinitionCatalog) -> RunState:
 	return state
 
 
-func _fixed_content_specs() -> Array[Dictionary]:
-	return [
-		{
-			&"base_id": &"resonance_wave",
-			&"base_name": "共鳴波",
-			&"base_weight": 100.0,
-			&"evolved_id": &"vital_resonance",
-			&"evolved_name": "生命共鳴",
-			&"passive_id": &"life_lattice",
-			&"passive_name": "生命格子",
-			&"passive_weight": 90.0,
-			&"stat_id": &"max_hp_pct",
-			&"amount": 20.0,
-			&"behavior": GameTypes.WeaponBehavior.MELEE_WAVE,
-		},
-		{
-			&"base_id": &"homing_core",
-			&"base_name": "追尾核",
-			&"base_weight": 100.0,
-			&"evolved_id": &"infinite_homing",
-			&"evolved_name": "無限追尾",
-			&"passive_id": &"cycle_crystal",
-			&"passive_name": "周期結晶",
-			&"passive_weight": 50.0,
-			&"stat_id": &"cooldown_pct",
-			&"amount": -8.0,
-			&"behavior": GameTypes.WeaponBehavior.HOMING_PROJECTILE,
-		},
-		{
-			&"base_id": &"directional_needle",
-			&"base_name": "方向針",
-			&"base_weight": 100.0,
-			&"evolved_id": &"infinite_needles",
-			&"evolved_name": "無限針列",
-			&"passive_id": &"speed_gate",
-			&"passive_name": "速度門",
-			&"passive_weight": 100.0,
-			&"stat_id": &"projectile_speed_pct",
-			&"amount": 10.0,
-			&"behavior": GameTypes.WeaponBehavior.DIRECTIONAL_PROJECTILE,
-		},
-		{
-			&"base_id": &"arc_crystal",
-			&"base_name": "弧晶",
-			&"base_weight": 100.0,
-			&"evolved_id": &"spiral_crystal",
-			&"evolved_name": "螺旋晶",
-			&"passive_id": &"scale_lens",
-			&"passive_name": "尺度レンズ",
-			&"passive_weight": 100.0,
-			&"stat_id": &"area_pct",
-			&"amount": 10.0,
-			&"behavior": GameTypes.WeaponBehavior.ARC_PROJECTILE,
-		},
-		{
-			&"base_id": &"returning_ring",
-			&"base_name": "反転環",
-			&"base_weight": 80.0,
-			&"evolved_id": &"critical_ring",
-			&"evolved_name": "臨界環",
-			&"passive_id": &"probability_core",
-			&"passive_name": "確率核",
-			&"passive_weight": 100.0,
-			&"stat_id": &"luck_pct",
-			&"amount": 10.0,
-			&"behavior": GameTypes.WeaponBehavior.RETURNING_RING,
-		},
-		{
-			&"base_id": &"orbital_array",
-			&"base_name": "軌道陣",
-			&"base_weight": 80.0,
-			&"evolved_id": &"eternal_orbit",
-			&"evolved_name": "永続軌道",
-			&"passive_id": &"duration_ring",
-			&"passive_name": "持続環",
-			&"passive_weight": 100.0,
-			&"stat_id": &"duration_pct",
-			&"amount": 10.0,
-			&"behavior": GameTypes.WeaponBehavior.ORBITAL,
-		},
-		{
-			&"base_id": &"mass_projectile",
-			&"base_name": "質量弾",
-			&"base_weight": 80.0,
-			&"evolved_id": &"collapse_projectile",
-			&"evolved_name": "崩壊弾",
-			&"passive_id": &"amplifier_core",
-			&"passive_name": "増幅核",
-			&"passive_weight": 100.0,
-			&"stat_id": &"might_pct",
-			&"amount": 10.0,
-			&"behavior": GameTypes.WeaponBehavior.MASS_PROJECTILE,
-		},
-		{
-			&"base_id": &"zero_field",
-			&"base_name": "零界",
-			&"base_weight": 70.0,
-			&"evolved_id": &"absorption_field",
-			&"evolved_name": "吸収界",
-			&"passive_id": &"repair_core",
-			&"passive_name": "修復核",
-			&"passive_weight": 90.0,
-			&"stat_id": &"recovery_per_second",
-			&"amount": 0.2,
-			&"behavior": GameTypes.WeaponBehavior.AURA,
-		},
-	]
-
-
-func _with_segment(
-	manifest: SurvivalContentManifest,
-	segment_index: int,
-	segment: EnemySegmentDefinition,
-) -> SurvivalContentManifest:
-	var copy: SurvivalContentManifest = manifest.duplicate(true) as SurvivalContentManifest
-	var segments: Array[EnemySegmentDefinition] = []
-	segments.assign(manifest.segments)
-	segments[segment_index] = segment
-	copy.segments = segments
-	return copy
 
 
 func _with_enemy(
@@ -1849,7 +1176,7 @@ func _with_enemy(
 	enemy_index: int,
 	enemy: EnemyDefinition,
 ) -> SurvivalContentManifest:
-	var copy: SurvivalContentManifest = manifest.duplicate(true) as SurvivalContentManifest
+	var copy: SurvivalContentManifest = manifest.duplicate_deep(Resource.DEEP_DUPLICATE_ALL) as SurvivalContentManifest
 	var enemy_definitions: Array[EnemyDefinition] = []
 	enemy_definitions.assign(manifest.enemies)
 	enemy_definitions[enemy_index] = enemy
@@ -1869,7 +1196,7 @@ func _enemy_index_for_type(
 
 func _catalog(assertions: Variant) -> DefinitionCatalog:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "survival catalog valid: %s" % catalog.error_text)
+	assertions.expect_true(catalog.validate_manifest(BalanceTestFixtures.manifest()), "survival catalog valid: %s" % catalog.error_text)
 	return catalog
 
 

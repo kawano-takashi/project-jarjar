@@ -118,44 +118,19 @@ theme_override_font_sizes/font_size = 19
 text = "方向キー／左スティックで選択　A／Enter／クリックで決定"
 horizontal_alignment = 1
 
-[node name="Choices" type="HBoxContainer" parent="Root/LevelUpModal/Center/Panel/Content"]
+[node name="ChoiceScroll" type="ScrollContainer" parent="Root/LevelUpModal/Center/Panel/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 430)
 layout_mode = 2
 size_flags_vertical = 3
-theme_override_constants/separation = 22
-alignment = 1
+horizontal_scroll_mode = 0
+follow_focus = true
 
-[node name="LevelChoice0" type="Button" parent="Root/LevelUpModal/Center/Panel/Content/Choices"]
+[node name="Choices" type="VBoxContainer" parent="Root/LevelUpModal/Center/Panel/Content/ChoiceScroll"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(390, 390)
 layout_mode = 2
 size_flags_horizontal = 3
-focus_mode = 2
-theme_override_font_sizes/font_size = 21
-theme_override_styles/focus = SubResource("ChoiceFocus")
-text = "CHOICE 1"
-autowrap_mode = 2
-
-[node name="LevelChoice1" type="Button" parent="Root/LevelUpModal/Center/Panel/Content/Choices"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(390, 390)
-layout_mode = 2
-size_flags_horizontal = 3
-focus_mode = 2
-theme_override_font_sizes/font_size = 21
-theme_override_styles/focus = SubResource("ChoiceFocus")
-text = "CHOICE 2"
-autowrap_mode = 2
-
-[node name="LevelChoice2" type="Button" parent="Root/LevelUpModal/Center/Panel/Content/Choices"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(390, 390)
-layout_mode = 2
-size_flags_horizontal = 3
-focus_mode = 2
-theme_override_font_sizes/font_size = 21
-theme_override_styles/focus = SubResource("ChoiceFocus")
-text = "CHOICE 3"
-autowrap_mode = 2
+theme_override_constants/separation = 18
 
 [node name="ChestModal" type="Control" parent="Root"]
 unique_name_in_owner = true
@@ -191,11 +166,18 @@ custom_minimum_size = Vector2(820, 420)
 layout_mode = 2
 theme_override_styles/panel = SubResource("ModalPanel")
 
-[node name="Content" type="VBoxContainer" parent="Root/ChestModal/Center/Panel"]
+[node name="Scroll" type="ScrollContainer" parent="Root/ChestModal/Center/Panel"]
+custom_minimum_size = Vector2(0, 390)
+layout_mode = 2
+horizontal_scroll_mode = 0
+follow_focus = true
+
+[node name="Content" type="VBoxContainer" parent="Root/ChestModal/Center/Panel/Scroll"]
+size_flags_horizontal = 3
 layout_mode = 2
 theme_override_constants/separation = 24
 
-[node name="ChestHeading" type="Label" parent="Root/ChestModal/Center/Panel/Content"]
+[node name="ChestHeading" type="Label" parent="Root/ChestModal/Center/Panel/Scroll/Content"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 0.75, 0.28, 1)
@@ -203,7 +185,7 @@ theme_override_font_sizes/font_size = 40
 text = "宝箱"
 horizontal_alignment = 1
 
-[node name="ChestResult" type="Label" parent="Root/ChestModal/Center/Panel/Content"]
+[node name="ChestResult" type="Label" parent="Root/ChestModal/Center/Panel/Scroll/Content"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
@@ -213,7 +195,7 @@ horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 2
 
-[node name="ChestContinue" type="PanelContainer" parent="Root/ChestModal/Center/Panel/Content"]
+[node name="ChestContinue" type="PanelContainer" parent="Root/ChestModal/Center/Panel/Scroll/Content"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 64)
 layout_mode = 2
@@ -221,7 +203,7 @@ focus_mode = 2
 theme_override_styles/panel = SubResource("ChestAction")
 script = ExtResource("4_chest_action")
 
-[node name="Label" type="Label" parent="Root/ChestModal/Center/Panel/Content/ChestContinue"]
+[node name="Label" type="Label" parent="Root/ChestModal/Center/Panel/Scroll/Content/ChestContinue"]
 layout_mode = 2
 mouse_filter = 2
 theme_override_font_sizes/font_size = 22
@@ -263,24 +245,31 @@ custom_minimum_size = Vector2(1080, 760)
 layout_mode = 2
 theme_override_styles/panel = SubResource("ModalPanel")
 
-[node name="Content" type="VBoxContainer" parent="Root/PauseModal/Center/Panel"]
+[node name="Scroll" type="ScrollContainer" parent="Root/PauseModal/Center/Panel"]
+custom_minimum_size = Vector2(0, 680)
+layout_mode = 2
+horizontal_scroll_mode = 0
+follow_focus = true
+
+[node name="Content" type="VBoxContainer" parent="Root/PauseModal/Center/Panel/Scroll"]
+size_flags_horizontal = 3
 layout_mode = 2
 theme_override_constants/separation = 20
 
-[node name="Heading" type="Label" parent="Root/PauseModal/Center/Panel/Content"]
+[node name="Heading" type="Label" parent="Root/PauseModal/Center/Panel/Scroll/Content"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 38
 text = "PAUSE"
 horizontal_alignment = 1
 
-[node name="BuildHeading" type="Label" parent="Root/PauseModal/Center/Panel/Content"]
+[node name="BuildHeading" type="Label" parent="Root/PauseModal/Center/Panel/Scroll/Content"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.42, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 23
 text = "現在のビルド"
 horizontal_alignment = 1
 
-[node name="PauseBuild" type="Label" parent="Root/PauseModal/Center/Panel/Content"]
+[node name="PauseBuild" type="Label" parent="Root/PauseModal/Center/Panel/Scroll/Content"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 112)
 layout_mode = 2
@@ -292,14 +281,14 @@ horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 2
 
-[node name="GuideHeading" type="Label" parent="Root/PauseModal/Center/Panel/Content"]
+[node name="GuideHeading" type="Label" parent="Root/PauseModal/Center/Panel/Scroll/Content"]
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 0.75, 0.28, 1)
 theme_override_font_sizes/font_size = 25
 text = "進化ガイド"
 horizontal_alignment = 1
 
-[node name="EvolutionGuide" type="Label" parent="Root/PauseModal/Center/Panel/Content"]
+[node name="EvolutionGuide" type="Label" parent="Root/PauseModal/Center/Panel/Scroll/Content"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 120)
 layout_mode = 2
@@ -312,14 +301,14 @@ horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 2
 
-[node name="GuideCondition" type="Label" parent="Root/PauseModal/Center/Panel/Content"]
+[node name="GuideCondition" type="Label" parent="Root/PauseModal/Center/Panel/Scroll/Content"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.66, 0.77, 0.8, 1)
 theme_override_font_sizes/font_size = 17
-text = "進化条件：武器Lv8 ＋ 触媒Lv1以上 ＋ 宝箱。触媒は最大Lv不要・進化後も消費されません"
+text = "進化条件：武器の最大Lv ＋ 触媒Lv1以上 ＋ 宝箱。触媒は最大Lv不要・進化後も消費されません"
 horizontal_alignment = 1
 
-[node name="PauseResume" type="Button" parent="Root/PauseModal/Center/Panel/Content"]
+[node name="PauseResume" type="Button" parent="Root/PauseModal/Center/Panel/Scroll/Content"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 68)
 layout_mode = 2
@@ -328,7 +317,7 @@ theme_override_font_sizes/font_size = 24
 theme_override_styles/focus = SubResource("ChoiceFocus")
 text = "再開　A／Enter"
 
-[node name="PauseSettings" type="Button" parent="Root/PauseModal/Center/Panel/Content"]
+[node name="PauseSettings" type="Button" parent="Root/PauseModal/Center/Panel/Scroll/Content"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 68)
 layout_mode = 2
@@ -337,7 +326,7 @@ theme_override_font_sizes/font_size = 24
 theme_override_styles/focus = SubResource("ChoiceFocus")
 text = "設定"
 
-[node name="PauseTitle" type="Button" parent="Root/PauseModal/Center/Panel/Content"]
+[node name="PauseTitle" type="Button" parent="Root/PauseModal/Center/Panel/Scroll/Content"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 68)
 layout_mode = 2

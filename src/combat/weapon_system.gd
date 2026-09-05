@@ -2,14 +2,9 @@ class_name WeaponSystem
 extends RefCounted
 
 
-const PLAYER_BODY_RADIUS: float = CombatEnvelope.PLAYER_BODY_RADIUS
-const MAX_ENEMY_BODY_RADIUS: float = 1.4
 const MIN_COOLDOWN_TICKS: int = 1
-const MELEE_ARC_DEGREES: float = 82.0
 const PROJECTILE_HEIGHT_M: float = 0.35
-const ORBITAL_DAMAGE_INTERVAL_TICKS: int = 15
 const HOMING_CORE_ID: StringName = &"homing_core"
-const HOMING_CORE_BURST_INTERVAL_TICKS: int = 6
 const AIM_DIRECTION_EPSILON_SQUARED: float = 0.000001
 
 
@@ -123,7 +118,7 @@ func effective_cooldown_ticks(
 ) -> int:
 	return maxi(
 		MIN_COOLDOWN_TICKS,
-		roundi(float(definition.cooldown_ticks_at(level)) * StatCalculator.cooldown_multiplier(stats)),
+		roundi(float(definition.cooldown_ticks_at(level)) * StatCalculator.cooldown_multiplier(stats, _catalog.manifest().combat)),
 	)
 
 
@@ -214,7 +209,7 @@ func resolve_ally_projectile(
 	var candidates: Array[int] = uniform_grid.query_segment_candidates(
 		projectile.previous_position,
 		projectile.position,
-		projectile.radius + MAX_ENEMY_BODY_RADIUS,
+		projectile.radius + _catalog.maximum_enemy_body_radius,
 	)
 	var intersections: Array[Dictionary] = []
 	for entity_id: int in candidates:
@@ -244,7 +239,7 @@ func resolve_ally_projectile(
 				projectile,
 				player_position,
 			)
-			if effect_outer_distance > CombatEnvelope.EFFECT_OUTER_RADIUS + 0.0001:
+			if effect_outer_distance > _catalog.envelope.effect_outer_radius + 0.0001:
 				_projectile_pool.release(projectile.pool_index, projectile.generation)
 				return records
 			resolution[&"arc_impact_position"] = projectile.position
@@ -261,7 +256,7 @@ func resolve_ally_projectile(
 			_projectile_pool.release(projectile.pool_index, projectile.generation)
 		elif (
 			_projectile_effect_outer_distance(projectile, player_position)
-			> CombatEnvelope.EFFECT_OUTER_RADIUS + 0.0001
+			> _catalog.envelope.effect_outer_radius + 0.0001
 		):
 			_projectile_pool.release(projectile.pool_index, projectile.generation)
 		return records
@@ -274,7 +269,7 @@ func resolve_ally_projectile(
 		var hit_outer_distance: float = (
 			player_position.distance_to(hit_position) + projectile.radius
 		)
-		if hit_outer_distance > CombatEnvelope.EFFECT_OUTER_RADIUS + 0.0001:
+		if hit_outer_distance > _catalog.envelope.effect_outer_radius + 0.0001:
 			continue
 		projectile.hit_entity_ids[entity_id] = true
 		records.append(_projectile_damage_record(
@@ -292,7 +287,7 @@ func resolve_ally_projectile(
 		and (
 			projectile.expired_this_tick
 			or _projectile_effect_outer_distance(projectile, player_position)
-			> CombatEnvelope.EFFECT_OUTER_RADIUS + 0.0001
+			> _catalog.envelope.effect_outer_radius + 0.0001
 		)
 	):
 		_projectile_pool.release(projectile.pool_index, projectile.generation)
@@ -321,7 +316,7 @@ func resolve_enemy_projectile(
 		projectile.previous_position,
 		projectile.position,
 		player_position,
-		projectile.radius + PLAYER_BODY_RADIUS,
+		projectile.radius + _catalog.envelope.player_body_radius,
 	)
 	if hit_t >= 0.0:
 		var record: Dictionary = {
@@ -348,10 +343,10 @@ func orbital_transforms(player_position: Vector2, current_tick: int) -> Array[Tr
 		if not orbital_is_active(runtime.lineage_id, current_tick):
 			continue
 		var visual_diameter: float = maxf(
-			0.1,
-			definition.effective_effect_radius_at(
+			0.0,
+			StatCalculator.weapon_effect_radius(definition,
 				runtime.level,
-				StatCalculator.area_multiplier(stats),
+				StatCalculator.area_multiplier(stats, _catalog.manifest().combat),
 			) * 2.0,
 		)
 		for position: Vector2 in _orbital_positions(
@@ -454,16 +449,16 @@ func _fire_melee_wave(
 	stats: Dictionary,
 ) -> Dictionary:
 	var range_m: float = minf(
-		CombatEnvelope.EFFECT_OUTER_RADIUS,
+		_catalog.envelope.effect_outer_radius,
 		maxf(
-			0.5,
-			definition.effective_range_at(
+			0.0,
+			StatCalculator.weapon_range(definition,
 				runtime.level,
-				StatCalculator.area_multiplier(stats),
+				StatCalculator.area_multiplier(stats, _catalog.manifest().combat),
 			),
 		),
 	)
-	var amount: int = maxi(2, definition.amount_at(runtime.level))
+	var amount: int = definition.amount_at(runtime.level)
 	var hits: Array[Dictionary] = []
 	var zones: Array[Dictionary] = []
 	for swing_index: int in range(amount):
@@ -478,13 +473,13 @@ func _fire_melee_wave(
 			"radius": range_m,
 			"damage": _base_damage(definition, runtime, stats),
 		})
-		for entity_id: int in uniform_grid.query_circle_candidates(player_position, range_m, MAX_ENEMY_BODY_RADIUS):
+		for entity_id: int in uniform_grid.query_circle_candidates(player_position, range_m, _catalog.maximum_enemy_body_radius):
 			if hit_ids.has(entity_id):
 				continue
 			var enemy: EnemyEntity = enemy_store.get_by_id(entity_id)
 			if not _is_ally_damageable(enemy, player_position, current_tick):
 				continue
-			if not CombatGeometry.point_in_fan(player_position, direction, range_m, MELEE_ARC_DEGREES, enemy.position, enemy.body_radius()):
+			if not CombatGeometry.point_in_fan(player_position, direction, range_m, _catalog.manifest().combat.melee_arc_degrees, enemy.position, enemy.body_radius()):
 				continue
 			hit_ids[entity_id] = true
 			hits.append(_instant_damage_record(
@@ -532,7 +527,7 @@ func _fire_homing(
 		runtime,
 		player_position,
 		(targets[0].position - player_position).normalized(),
-		definition.effective_range_at(runtime.level, StatCalculator.area_multiplier(stats)),
+		StatCalculator.weapon_range(definition, runtime.level, StatCalculator.area_multiplier(stats, _catalog.manifest().combat)),
 	)
 
 
@@ -570,7 +565,7 @@ func _advance_homing_projectile(
 			if burst.remaining_shots <= 0:
 				_homing_bursts.erase(lineage_id)
 			else:
-				burst.next_shot_tick += HOMING_CORE_BURST_INTERVAL_TICKS
+				burst.next_shot_tick += _catalog.manifest().combat.homing_burst_interval_ticks
 			return pending_result
 	else:
 		_homing_bursts.erase(lineage_id)
@@ -639,7 +634,7 @@ func _start_homing_core_burst(
 	if amount > 1:
 		var burst := HomingBurstState.new()
 		burst.remaining_shots = amount - 1
-		burst.next_shot_tick = current_tick + HOMING_CORE_BURST_INTERVAL_TICKS
+		burst.next_shot_tick = current_tick + _catalog.manifest().combat.homing_burst_interval_ticks
 		burst.target_entity_id = target.entity_id
 		burst.last_direction = direction
 		_homing_bursts[runtime.lineage_id] = burst
@@ -647,9 +642,9 @@ func _start_homing_core_burst(
 		runtime,
 		player_position,
 		direction,
-		definition.effective_range_at(
+		StatCalculator.weapon_range(definition,
 			runtime.level,
-			StatCalculator.area_multiplier(stats),
+			StatCalculator.area_multiplier(stats, _catalog.manifest().combat),
 		),
 	)
 
@@ -698,9 +693,9 @@ func _fire_pending_homing_core_shot(
 		runtime,
 		player_position,
 		direction,
-		definition.effective_range_at(
+		StatCalculator.weapon_range(definition,
 			runtime.level,
-			StatCalculator.area_multiplier(stats),
+			StatCalculator.area_multiplier(stats, _catalog.manifest().combat),
 		),
 	)
 
@@ -734,13 +729,13 @@ func _fire_directional(
 	var side := Vector2(-_last_move_direction.y, _last_move_direction.x)
 	for projectile_index: int in range(amount):
 		var centered_index: float = float(projectile_index) - float(amount - 1) * 0.5
-		var origin: Vector2 = player_position + side * centered_index * 0.28
+		var origin: Vector2 = player_position + side * centered_index * _catalog.manifest().combat.parallel_projectile_spacing
 		_spawn_ally_projectile(runtime, definition, origin, _last_move_direction, -1, stats, current_tick, ProjectileState.MovementKind.STRAIGHT)
 	return _projectile_result(
 		runtime,
 		player_position,
 		_last_move_direction,
-		definition.effective_range_at(runtime.level, StatCalculator.area_multiplier(stats)),
+		StatCalculator.weapon_range(definition, runtime.level, StatCalculator.area_multiplier(stats, _catalog.manifest().combat)),
 	)
 
 
@@ -769,7 +764,7 @@ func _fire_arc(
 			runtime,
 			player_position,
 			Vector2.RIGHT,
-			definition.effective_range_at(runtime.level, StatCalculator.area_multiplier(stats)),
+			StatCalculator.weapon_range(definition, runtime.level, StatCalculator.area_multiplier(stats, _catalog.manifest().combat)),
 		)
 	for projectile_index: int in range(amount):
 		var target: EnemyEntity = targets[projectile_index % targets.size()]
@@ -779,7 +774,7 @@ func _fire_arc(
 		runtime,
 		player_position,
 		(targets[0].position - player_position).normalized(),
-		definition.effective_range_at(runtime.level, StatCalculator.area_multiplier(stats)),
+		StatCalculator.weapon_range(definition, runtime.level, StatCalculator.area_multiplier(stats, _catalog.manifest().combat)),
 	)
 
 
@@ -802,13 +797,13 @@ func _fire_returning(
 	var amount: int = maxi(1, definition.amount_at(runtime.level))
 	var base_angle: float = (target.position - player_position).angle()
 	for projectile_index: int in range(amount):
-		var spread: float = deg_to_rad(12.0) * (float(projectile_index) - float(amount - 1) * 0.5)
+		var spread: float = deg_to_rad(_catalog.manifest().combat.returning_ring_spread_degrees) * (float(projectile_index) - float(amount - 1) * 0.5)
 		_spawn_ally_projectile(runtime, definition, player_position, Vector2.from_angle(base_angle + spread), target.entity_id, stats, current_tick, ProjectileState.MovementKind.RETURNING)
 	return _projectile_result(
 		runtime,
 		player_position,
 		Vector2.from_angle(base_angle),
-		definition.effective_range_at(runtime.level, StatCalculator.area_multiplier(stats)),
+		StatCalculator.weapon_range(definition, runtime.level, StatCalculator.area_multiplier(stats, _catalog.manifest().combat)),
 	)
 
 
@@ -821,14 +816,14 @@ func _fire_orbital(
 	current_tick: int,
 	stats: Dictionary,
 ) -> Dictionary:
-	var area_multiplier: float = StatCalculator.area_multiplier(stats)
+	var area_multiplier: float = StatCalculator.area_multiplier(stats, _catalog.manifest().combat)
 	var orbit_radius: float = maxf(
-		1.0,
-		definition.effective_range_at(runtime.level, area_multiplier),
+		0.0,
+		StatCalculator.weapon_range(definition, runtime.level, area_multiplier),
 	)
 	var hit_radius: float = minf(
-		definition.effective_effect_radius_at(runtime.level, area_multiplier),
-		maxf(0.0, CombatEnvelope.EFFECT_OUTER_RADIUS - orbit_radius),
+		StatCalculator.weapon_effect_radius(definition, runtime.level, area_multiplier),
+		maxf(0.0, _catalog.envelope.effect_outer_radius - orbit_radius),
 	)
 	var hits: Array[Dictionary] = []
 	var zones: Array[Dictionary] = []
@@ -841,7 +836,7 @@ func _fire_orbital(
 		stats,
 	):
 		zones.append({"center": position, "radius": hit_radius, "damage": _base_damage(definition, runtime, stats)})
-		for entity_id: int in uniform_grid.query_circle_candidates(position, hit_radius, MAX_ENEMY_BODY_RADIUS):
+		for entity_id: int in uniform_grid.query_circle_candidates(position, hit_radius, _catalog.maximum_enemy_body_radius):
 			if hit_ids.has(entity_id):
 				continue
 			var enemy: EnemyEntity = enemy_store.get_by_id(entity_id)
@@ -898,7 +893,7 @@ func _advance_orbital(
 		if current_tick < continuous_next_damage_tick:
 			return {"generated": false, "slot_index": slot_index}
 		_orbital_next_damage_tick_by_lineage[lineage_id] = (
-			current_tick + ORBITAL_DAMAGE_INTERVAL_TICKS
+			current_tick + _catalog.manifest().combat.orbital_damage_interval_ticks
 		)
 		return _fire_orbital(
 			runtime,
@@ -921,7 +916,7 @@ func _advance_orbital(
 		if current_tick < next_damage_tick:
 			return {"generated": false, "slot_index": slot_index}
 		_orbital_next_damage_tick_by_lineage[lineage_id] = (
-			current_tick + ORBITAL_DAMAGE_INTERVAL_TICKS
+			current_tick + _catalog.manifest().combat.orbital_damage_interval_ticks
 		)
 		return _fire_orbital(
 			runtime,
@@ -949,12 +944,12 @@ func _advance_orbital(
 		1,
 		roundi(
 			float(definition.duration_ticks_at(runtime.level))
-			* StatCalculator.duration_multiplier(stats)
+			* StatCalculator.duration_multiplier(stats, _catalog.manifest().combat)
 		),
 	)
 	_orbital_active_until_by_lineage[lineage_id] = current_tick + duration_ticks
 	_orbital_next_damage_tick_by_lineage[lineage_id] = (
-		current_tick + ORBITAL_DAMAGE_INTERVAL_TICKS
+		current_tick + _catalog.manifest().combat.orbital_damage_interval_ticks
 	)
 	return _fire_orbital(
 		runtime,
@@ -977,16 +972,16 @@ func _orbital_positions(
 	var result: Array[Vector2] = []
 	var amount: int = maxi(1, definition.amount_at(runtime.level))
 	var orbit_radius: float = maxf(
-		1.0,
-		definition.effective_range_at(
+		0.0,
+		StatCalculator.weapon_range(definition,
 			runtime.level,
-			StatCalculator.area_multiplier(stats),
+			StatCalculator.area_multiplier(stats, _catalog.manifest().combat),
 		),
 	)
 	var tangential_speed: float = maxf(
-		0.1,
+		0.0,
 		definition.projectile_speed_at(runtime.level)
-		* StatCalculator.projectile_speed_multiplier(stats),
+		* StatCalculator.projectile_speed_multiplier(stats, _catalog.manifest().combat),
 	)
 	var phase: float = (
 		float(current_tick)
@@ -1058,14 +1053,14 @@ func _fire_mass(
 	stats: Dictionary,
 ) -> Dictionary:
 	var targets: Array[EnemyEntity] = []
-	var area_multiplier: float = StatCalculator.area_multiplier(stats)
-	var travel_distance: float = definition.effective_range_at(
+	var area_multiplier: float = StatCalculator.area_multiplier(stats, _catalog.manifest().combat)
+	var travel_distance: float = StatCalculator.weapon_range(definition,
 		runtime.level,
 		area_multiplier,
 	)
 	var projectile_radius: float = maxf(
-		0.08,
-		definition.effective_projectile_radius_at(runtime.level, area_multiplier),
+		0.0,
+		StatCalculator.weapon_projectile_radius(definition, runtime.level, area_multiplier),
 	)
 	for candidate: EnemyEntity in _targets_by_entity_id(
 		enemy_store,
@@ -1103,17 +1098,17 @@ func _fire_aura(
 	stats: Dictionary,
 ) -> Dictionary:
 	var radius: float = minf(
-		CombatEnvelope.EFFECT_OUTER_RADIUS,
+		_catalog.envelope.effect_outer_radius,
 		maxf(
-			0.5,
-			definition.effective_effect_radius_at(
+			0.0,
+			StatCalculator.weapon_effect_radius(definition,
 				runtime.level,
-				StatCalculator.area_multiplier(stats),
+				StatCalculator.area_multiplier(stats, _catalog.manifest().combat),
 			),
 		),
 	)
 	var hits: Array[Dictionary] = []
-	for entity_id: int in uniform_grid.query_circle_candidates(player_position, radius, MAX_ENEMY_BODY_RADIUS):
+	for entity_id: int in uniform_grid.query_circle_candidates(player_position, radius, _catalog.maximum_enemy_body_radius):
 		var enemy: EnemyEntity = enemy_store.get_by_id(entity_id)
 		if (
 			_is_ally_damageable(enemy, player_position, current_tick)
@@ -1155,21 +1150,21 @@ func _spawn_ally_projectile(
 	movement_kind: ProjectileState.MovementKind,
 	arc_target: Vector2 = Vector2.ZERO,
 ) -> void:
-	var speed: float = maxf(0.1, definition.projectile_speed_at(runtime.level) * StatCalculator.projectile_speed_multiplier(stats))
-	var duration_ticks: int = maxi(1, roundi(float(definition.duration_ticks_at(runtime.level)) * StatCalculator.duration_multiplier(stats)))
+	var speed: float = maxf(0.0, definition.projectile_speed_at(runtime.level) * StatCalculator.projectile_speed_multiplier(stats, _catalog.manifest().combat))
+	var duration_ticks: int = maxi(1, roundi(float(definition.duration_ticks_at(runtime.level)) * StatCalculator.duration_multiplier(stats, _catalog.manifest().combat)))
 	var lifetime_seconds: float = float(duration_ticks) / float(RunState.TICKS_PER_SECOND)
-	var area_multiplier: float = StatCalculator.area_multiplier(stats)
+	var area_multiplier: float = StatCalculator.area_multiplier(stats, _catalog.manifest().combat)
 	var range_m: float = maxf(
 		0.0,
-		definition.effective_range_at(runtime.level, area_multiplier),
+		StatCalculator.weapon_range(definition, runtime.level, area_multiplier),
 	)
 	var projectile_radius: float = maxf(
-		0.08,
-		definition.effective_projectile_radius_at(runtime.level, area_multiplier),
+		0.0,
+		StatCalculator.weapon_projectile_radius(definition, runtime.level, area_multiplier),
 	)
 	var effect_radius: float = maxf(
 		0.0,
-		definition.effective_effect_radius_at(runtime.level, area_multiplier),
+		StatCalculator.weapon_effect_radius(definition, runtime.level, area_multiplier),
 	)
 	var remaining_distance: float = (
 		range_m * 2.0
@@ -1181,11 +1176,12 @@ func _spawn_ally_projectile(
 		var target_distance: float = minf(range_m, origin.distance_to(arc_target))
 		target_position = origin + direction * target_distance
 		remaining_distance = target_distance
-		lifetime_seconds = minf(
-			lifetime_seconds,
-			maxf(1.0 / float(RunState.TICKS_PER_SECOND), remaining_distance / speed),
-		)
-		duration_ticks = maxi(1, ceili(lifetime_seconds * float(RunState.TICKS_PER_SECOND)))
+		if speed > 0.0:
+			lifetime_seconds = minf(
+				lifetime_seconds,
+				maxf(1.0 / float(RunState.TICKS_PER_SECOND), remaining_distance / speed),
+			)
+			duration_ticks = maxi(1, ceili(lifetime_seconds * float(RunState.TICKS_PER_SECOND)))
 	var projectile: ProjectileState = _projectile_pool.acquire(
 		ProjectileState.FACTION_ALLY,
 		runtime.weapon_id,
@@ -1221,7 +1217,7 @@ func _resolve_projectile_explosion(
 ) -> Array[Dictionary]:
 	var records: Array[Dictionary] = []
 	var radius: float = maxf(projectile.radius, projectile.explosion_radius)
-	for entity_id: int in uniform_grid.query_circle_candidates(projectile.position, radius, MAX_ENEMY_BODY_RADIUS):
+	for entity_id: int in uniform_grid.query_circle_candidates(projectile.position, radius, _catalog.maximum_enemy_body_radius):
 		var enemy: EnemyEntity = enemy_store.get_by_id(entity_id)
 		if (
 			_is_ally_damageable(enemy, player_position, current_tick)
@@ -1283,7 +1279,7 @@ func _base_damage(definition: WeaponDefinition, runtime: RunWeapon, stats: Dicti
 
 func _roll_damage(definition: WeaponDefinition, runtime: RunWeapon, stats: Dictionary) -> float:
 	var damage: float = _base_damage(definition, runtime, stats)
-	if definition.critical_chance > 0.0 and runtime.rng != null and runtime.rng.randf() < definition.critical_chance:
+	if definition.critical_chance > 0.0 and runtime.rng != null and WeightedSelector.chance_succeeds_with_value(definition.critical_chance, runtime.rng.randf()):
 		damage *= maxf(1.0, definition.critical_multiplier)
 	return damage
 
@@ -1413,7 +1409,7 @@ func _is_ally_acquirable(
 	return (
 		_is_ally_targetable(enemy, current_tick)
 		and enemy.position.distance_squared_to(player_position)
-		<= CombatEnvelope.TARGET_CENTER_RADIUS * CombatEnvelope.TARGET_CENTER_RADIUS
+		<= _catalog.envelope.target_center_radius * _catalog.envelope.target_center_radius
 	)
 
 
@@ -1425,7 +1421,7 @@ func _is_ally_damageable(
 	return (
 		_is_ally_targetable(enemy, current_tick)
 		and enemy.position.distance_squared_to(player_position)
-		<= CombatEnvelope.DAMAGE_CENTER_RADIUS * CombatEnvelope.DAMAGE_CENTER_RADIUS
+		<= _catalog.envelope.damage_center_radius * _catalog.envelope.damage_center_radius
 	)
 
 

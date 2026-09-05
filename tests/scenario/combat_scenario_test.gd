@@ -70,7 +70,7 @@ func _test_scheduled_elites_and_boss(assertions: Variant) -> void:
 	var simulation: CombatSimulation = setup.get("simulation") as CombatSimulation
 	if simulation == null:
 		return
-	var schedule: PackedInt32Array = simulation.catalog.manifest().elite_spawn_ticks
+	var schedule: PackedInt32Array = simulation.catalog.elite_spawn_ticks
 	for elite_index: int in range(schedule.size()):
 		simulation.state.combat_tick = schedule[elite_index]
 		var spawned: Array[EnemyEntity] = simulation.enemy_system.resolve_scheduled_spawns(
@@ -81,15 +81,15 @@ func _test_scheduled_elites_and_boss(assertions: Variant) -> void:
 		assertions.expect_equal(GameTypes.EnemyType.ELITE, spawned[0].enemy_type, "scheduled spawn is an elite")
 		assertions.expect_equal(elite_index, spawned[0].elite_serial, "elite carries its chest serial")
 		assertions.expect_equal(0, simulation.enemy_system.resolve_scheduled_spawns(Vector2.ZERO, schedule[elite_index]).size(), "same scheduled elite cannot duplicate")
-	simulation.state.combat_tick = RunState.BOSS_START_TICK
+	simulation.state.combat_tick = BalanceTestFixtures.catalog().boss_start_tick
 	var boss_spawns: Array[EnemyEntity] = simulation.enemy_system.resolve_scheduled_spawns(
 		Vector2.ZERO,
-		RunState.BOSS_START_TICK,
+		BalanceTestFixtures.catalog().boss_start_tick,
 	)
 	assertions.expect_equal(1, boss_spawns.size(), "10:00 creates one final boss")
 	assertions.expect_equal(GameTypes.EnemyType.BOSS, boss_spawns[0].enemy_type, "10:00 scheduled entity is the boss")
 	assertions.expect_true(simulation.state.boss_spawned, "boss-spawn state latches after successful allocation")
-	assertions.expect_equal(0, simulation.enemy_system.resolve_normal_spawns(Vector2.ZERO, RunState.BOSS_START_TICK).size(), "normal spawning stops at 10:00")
+	assertions.expect_equal(0, simulation.enemy_system.resolve_normal_spawns(Vector2.ZERO, BalanceTestFixtures.catalog().boss_start_tick).size(), "normal spawning stops at 10:00")
 
 
 func _test_stop_scaling(assertions: Variant) -> void:
@@ -142,38 +142,38 @@ func _test_boss_phases(assertions: Variant) -> void:
 	var boss: EnemyEntity = simulation.spawn_fixture_enemy(
 		GameTypes.EnemyType.BOSS,
 		Vector2(8.0, 8.0),
-		RunState.BOSS_START_TICK - CombatEnvelope.BOSS_ENTRY_TICKS,
+		BalanceTestFixtures.catalog().boss_start_tick - BalanceTestFixtures.catalog().envelope.boss_entry_ticks,
 		true,
 		false,
 	)
 	simulation.state.boss_spawned = true
 	assertions.expect_float(
-		boss.definition.base_hp * simulation.catalog.manifest().boss_hp_multiplier,
+		boss.definition.base_hp * simulation.catalog.manifest().combat.boss_hp_multiplier,
 		boss.max_hp,
 		"boss HP uses its dedicated manifest multiplier outside segment scaling",
 	)
 	assertions.expect_float(
-		simulation.catalog.manifest().boss_damage_multiplier,
+		simulation.catalog.manifest().combat.boss_damage_multiplier,
 		boss.damage_multiplier,
 		"boss damage uses its dedicated manifest multiplier outside segment scaling",
 	)
-	simulation.state.combat_tick = RunState.BOSS_START_TICK
+	simulation.state.combat_tick = BalanceTestFixtures.catalog().boss_start_tick
 	boss.hp = boss.max_hp
-	simulation.enemy_system.advance_snapshot([boss.entity_id], Vector2.ZERO, RunState.BOSS_START_TICK + 1)
+	simulation.enemy_system.advance_snapshot([boss.entity_id], Vector2.ZERO, BalanceTestFixtures.catalog().boss_start_tick + 1)
 	assertions.expect_equal(1, simulation.state.boss_phase, "boss starts in phase one")
 	boss.hp = boss.max_hp * 0.66
-	simulation.enemy_system.advance_snapshot([boss.entity_id], Vector2.ZERO, RunState.BOSS_START_TICK + 2)
+	simulation.enemy_system.advance_snapshot([boss.entity_id], Vector2.ZERO, BalanceTestFixtures.catalog().boss_start_tick + 2)
 	assertions.expect_equal(2, simulation.state.boss_phase, "boss enters phase two at 66 percent HP")
 	boss.hp = boss.max_hp * 0.33
-	simulation.enemy_system.advance_snapshot([boss.entity_id], Vector2.ZERO, RunState.BOSS_START_TICK + 3)
+	simulation.enemy_system.advance_snapshot([boss.entity_id], Vector2.ZERO, BalanceTestFixtures.catalog().boss_start_tick + 3)
 	assertions.expect_equal(3, simulation.state.boss_phase, "boss enters phase three at 33 percent HP")
 	boss.boss_action_age_ticks = float(
-		simulation.catalog.manifest().boss_enrage_interval_ticks - 1
+		simulation.catalog.manifest().combat.boss_enrage_interval_ticks - 1
 	)
 	simulation.enemy_system.advance_snapshot(
 		[boss.entity_id],
 		Vector2.ZERO,
-		RunState.BOSS_START_TICK + 4,
+		BalanceTestFixtures.catalog().boss_start_tick + 4,
 	)
 	assertions.expect_equal(1, simulation.state.boss_enrage_stacks, "boss gains one pressure stack after thirty seconds")
 	simulation.state.boss_enrage_stacks = 2
@@ -182,14 +182,14 @@ func _test_boss_phases(assertions: Variant) -> void:
 
 func _test_scheduled_boss_multiplier_separation(assertions: Variant) -> void:
 	var canonical := DefinitionCatalog.new()
-	assertions.expect_true(canonical.load_and_validate(), "canonical boss fixture content validates")
+	assertions.expect_true(canonical.validate_manifest(BalanceTestFixtures.manifest()), "canonical boss fixture content validates")
 	if not canonical.is_valid:
 		return
-	var manifest: SurvivalContentManifest = canonical.manifest().duplicate(true) as SurvivalContentManifest
-	manifest.boss_hp_multiplier = SurvivalContentManifest.DEFAULT_BOSS_HP_MULTIPLIER * 0.80
-	manifest.boss_damage_multiplier = SurvivalContentManifest.DEFAULT_BOSS_DAMAGE_MULTIPLIER * 0.80
-	manifest.boss_action_rate_multiplier = (
-		SurvivalContentManifest.DEFAULT_BOSS_ACTION_RATE_MULTIPLIER * 0.80
+	var manifest: SurvivalContentManifest = canonical.manifest().duplicate_deep(Resource.DEEP_DUPLICATE_ALL) as SurvivalContentManifest
+	manifest.combat.boss_hp_multiplier = 2.0
+	manifest.combat.boss_damage_multiplier = 0.2
+	manifest.combat.boss_action_rate_multiplier = (
+		0.8
 	)
 	var custom_catalog := DefinitionCatalog.new()
 	assertions.expect_true(
@@ -200,20 +200,20 @@ func _test_scheduled_boss_multiplier_separation(assertions: Variant) -> void:
 		return
 	var segment_ten: EnemySegmentDefinition = custom_catalog.segment(9)
 	assertions.expect_true(
-		not is_equal_approx(manifest.boss_hp_multiplier, segment_ten.hp_multiplier),
+		not is_equal_approx(manifest.combat.boss_hp_multiplier, segment_ten.hp_multiplier),
 		"fixture keeps boss HP separate from segment ten",
 	)
 	assertions.expect_true(
-		not is_equal_approx(manifest.boss_damage_multiplier, segment_ten.damage_multiplier),
+		not is_equal_approx(manifest.combat.boss_damage_multiplier, segment_ten.damage_multiplier),
 		"fixture keeps boss damage separate from segment ten",
 	)
 	var state: RunState = RunStateFactory.create(8_104_801, custom_catalog)
 	var simulation := CombatSimulation.new()
 	simulation.initialize(state, custom_catalog)
-	state.combat_tick = manifest.boss_start_tick
+	state.combat_tick = custom_catalog.boss_start_tick
 	var spawned: Array[EnemyEntity] = simulation.enemy_system.resolve_scheduled_spawns(
 		Vector2.ZERO,
-		manifest.boss_start_tick,
+		custom_catalog.boss_start_tick,
 	)
 	var boss: EnemyEntity = null
 	for enemy: EnemyEntity in spawned:
@@ -224,12 +224,12 @@ func _test_scheduled_boss_multiplier_separation(assertions: Variant) -> void:
 	if boss == null:
 		return
 	assertions.expect_float(
-		boss.definition.base_hp * manifest.boss_hp_multiplier,
+		boss.definition.base_hp * manifest.combat.boss_hp_multiplier,
 		boss.max_hp,
 		"scheduled boss HP uses the dedicated multiplier",
 	)
 	assertions.expect_float(
-		manifest.boss_damage_multiplier,
+		manifest.combat.boss_damage_multiplier,
 		boss.damage_multiplier,
 		"scheduled boss damage uses the dedicated multiplier",
 	)
@@ -417,7 +417,7 @@ func _test_focused_build_pacing(assertions: Variant) -> void:
 		return
 	var evolution_bot := DifficultyCalibrationBot.new()
 	assertions.expect_true(
-		evolution_bot.initialize(DifficultyCalibrationBot.Policy.EVOLUTION, 43),
+		evolution_bot.initialize(DifficultyCalibrationBot.Policy.EVOLUTION, 43, simulation.catalog),
 		"focused pacing uses the approved evolution policy",
 	)
 	var gate_probe: RunState = RunStateFactory.create(1616, simulation.catalog)
@@ -500,24 +500,24 @@ func _prepare_replay(simulation: CombatSimulation, reduce_motion: bool) -> Dicti
 	var slot_index: int = simulation.state.weapons.size()
 	var mass_weapon: RunWeapon = RunWeapon.create(
 		mass_definition.weapon_id,
-		mass_definition.lineage_id,
+		simulation.catalog.lineage_for_weapon(mass_definition.weapon_id),
 		false,
 		simulation.state.rng_streams.create_weapon_rng(
-			mass_definition.lineage_id,
+			simulation.catalog.lineage_for_weapon(mass_definition.weapon_id),
 			slot_index,
 		),
 	)
 	simulation.state.weapons.append(mass_weapon)
 	ProgressionService.add_xp(
 		simulation.state,
-		ProgressionService.xp_required_for_level(simulation.state.level),
+		ProgressionService.xp_required_for_level(simulation.state.level, BalanceTestFixtures.catalog().manifest().progression),
 		simulation.catalog,
 	)
 	simulation.state.pending_chest_sources.append(0)
 	simulation.arena_object_system.damage_nodes_circle(
-		ArenaObjectSystem.NODE_SITE_POSITIONS[0],
+		BalanceTestFixtures.catalog().manifest().arena.node_site_positions[0],
 		1.0,
-		ArenaObjectSystem.NODE_MAX_HP,
+		BalanceTestFixtures.catalog().manifest().arena.node_max_hp,
 		simulation.state.combat_tick,
 	)
 	simulation.xp_pickup_pool.acquire(
@@ -983,7 +983,7 @@ func _int_bool_entries(source: Dictionary) -> Array:
 
 func _simulation(assertions: Variant, run_seed: int) -> Dictionary:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "survival scenario content validates")
+	assertions.expect_true(catalog.validate_manifest(BalanceTestFixtures.manifest()), "survival scenario content validates")
 	if not catalog.is_valid:
 		return {}
 	var state: RunState = RunStateFactory.create(run_seed, catalog)

@@ -3,15 +3,10 @@ extends RefCounted
 
 
 const FIXED_DELTA_SECONDS: float = 1.0 / 60.0
-const PLAYER_SPEED: float = 4.05
-const PLAYER_RADIUS: float = CombatEnvelope.PLAYER_BODY_RADIUS
-const ARENA_MIN: Vector2 = CombatEnvelope.PLAYER_CENTER_MIN
-const ARENA_MAX: Vector2 = CombatEnvelope.PLAYER_CENTER_MAX
 const VFX_HEIGHT_M: float = 0.03
 const DEATH_VFX_LIFETIME: float = 0.22
 const ATTACK_VFX_LIFETIME: float = 0.12
 const HIT_GLOW_TICKS: int = 6
-const ABSORPTION_DISPLAY_TICKS: int = CombatEnvelope.BOSS_ENTRY_TICKS
 const MAX_PRESENTATION_EVENTS_PER_TICK: int = 64
 const PRESENTATION_IMPORTANT_RESERVE: int = 32
 const PERFORMANCE_PROFILE_NAME: StringName = &"full_hd_500_2000"
@@ -25,6 +20,8 @@ const PERFORMANCE_FIXTURE_HP: float = 1_000_000_000.0
 const PERFORMANCE_PROJECTILE_SPEED: float = 7.0
 const PERFORMANCE_PROJECTILE_DISTANCE: float = 10_000.0
 const PERFORMANCE_FIXTURE_LIFETIME_SECONDS: float = 3_600.0
+
+var envelope: CombatEnvelope = null
 
 var state: RunState = null
 var catalog: DefinitionCatalog = null
@@ -77,11 +74,12 @@ func initialize(p_state: RunState, p_catalog: DefinitionCatalog) -> void:
 	state = p_state
 	catalog = p_catalog
 	_manifest = catalog.manifest()
+	envelope = catalog.envelope
 	player_position = Vector2.ZERO
 	freeze_all_updates = false
 	projectile_pool.clear()
 	vfx_pool.clear()
-	xp_pickup_pool.configure(_manifest)
+	xp_pickup_pool.configure(_manifest.progression)
 	xp_pickup_pool.clear()
 	event_router = CombatEventRouter.new()
 	enemy_system = EnemySystem.new()
@@ -370,7 +368,7 @@ func complete_chest_reward() -> bool:
 	return skip_chest_animation()
 
 
-func grant_level_up_resume_invulnerability_ticks(ticks: int = 45) -> void:
+func grant_level_up_resume_invulnerability_ticks(ticks: int) -> void:
 	if ticks <= 0:
 		return
 	# The grant occurs between ticks. With an exclusive deadline, T+1 through T+ticks
@@ -530,10 +528,10 @@ func spawn_fixture_enemy(
 	var hp_multiplier: float = segment.hp_multiplier if apply_time_multiplier and segment != null else 1.0
 	var damage_multiplier: float = segment.damage_multiplier if apply_time_multiplier and segment != null else 1.0
 	if apply_time_multiplier and enemy_type == GameTypes.EnemyType.BOSS:
-		hp_multiplier = _manifest.boss_hp_multiplier
-		damage_multiplier = _manifest.boss_damage_multiplier
+		hp_multiplier = _manifest.combat.boss_hp_multiplier
+		damage_multiplier = _manifest.combat.boss_damage_multiplier
 	elif apply_time_multiplier and enemy_type in EnemySystem.NORMAL_ENEMY_TYPES:
-		damage_multiplier *= _manifest.normal_enemy_damage_scale
+		damage_multiplier *= _manifest.combat.normal_enemy_damage_scale
 	var resolved_born_tick: int = state.combat_tick - 1 if born_tick < 0 else born_tick
 	var enemy: EnemyEntity = enemy_system.enemy_store.try_spawn(
 		state,
@@ -543,7 +541,7 @@ func spawn_fixture_enemy(
 		hp_multiplier,
 		damage_multiplier,
 		resolved_born_tick,
-		0 if activate_immediately else CombatEnvelope.entry_ticks_for_enemy_type(enemy_type),
+		0 if activate_immediately else envelope.entry_ticks_for_enemy_type(enemy_type),
 	)
 	_rebuild_uniform_grid(state.combat_tick + 1)
 	return enemy
@@ -739,17 +737,17 @@ func _move_player(move_input: Vector2) -> void:
 	var normalized_input: Vector2 = move_input
 	if normalized_input.length_squared() > 1.0:
 		normalized_input = normalized_input.normalized()
-	player_position += normalized_input * PLAYER_SPEED * FIXED_DELTA_SECONDS
+	player_position += normalized_input * _manifest.player.move_speed * FIXED_DELTA_SECONDS
 	player_position = Vector2(
-		clampf(player_position.x, ARENA_MIN.x, ARENA_MAX.x),
-		clampf(player_position.y, ARENA_MIN.y, ARENA_MAX.y),
+		clampf(player_position.x, envelope.player_center_min.x, envelope.player_center_max.x),
+		clampf(player_position.y, envelope.player_center_min.y, envelope.player_center_max.y),
 	)
 
 
 func _begin_boss_transition_if_due(current_tick: int) -> void:
 	if (
 		state.boss_transition_started
-		or current_tick < _manifest.boss_start_tick
+		or current_tick < catalog.boss_start_tick
 	):
 		return
 	state.boss_transition_started = true
@@ -794,8 +792,8 @@ func _begin_boss_transition_if_due(current_tick: int) -> void:
 	))
 	vfx_pool.request(
 		Vector2.ZERO,
-		CombatEnvelope.ARENA_HALF_EXTENT,
-		float(ABSORPTION_DISPLAY_TICKS) / float(RunState.TICKS_PER_SECOND),
+		maxf(envelope.arena_max.x, envelope.arena_max.y),
+		float(envelope.boss_entry_ticks) / float(RunState.TICKS_PER_SECOND),
 		Color(0.55, 0.08, 0.11, 0.62),
 		current_tick,
 		VfxPool.PRIORITY_IMPORTANT,
@@ -817,7 +815,7 @@ func _record_visible_enemy_sample(current_tick: int) -> void:
 		if (
 			enemy.is_targetable(current_tick)
 			and enemy.position.distance_squared_to(player_position)
-			<= CombatEnvelope.TARGET_CENTER_RADIUS * CombatEnvelope.TARGET_CENTER_RADIUS
+			<= envelope.target_center_radius * envelope.target_center_radius
 		):
 			engaged_count += 1
 		if enemy.enemy_type in EnemySystem.NORMAL_ENEMY_TYPES and not enemy.is_swarm_event:
@@ -825,13 +823,9 @@ func _record_visible_enemy_sample(current_tick: int) -> void:
 			if enemy.is_targetable(current_tick):
 				engaged_normal_count += 1
 	state.record_visible_enemy_sample(visible_count, engaged_count, materializing_count)
-	if current_tick < RunState.BOSS_START_TICK:
+	if current_tick < catalog.boss_start_tick:
 		state.record_enemy_segment_sample(
-			clampi(
-				floori(float(current_tick) / 3600.0),
-				0,
-				RunState.ENEMY_SEGMENT_COUNT - 1,
-			),
+			catalog.segment_index_for_tick(current_tick),
 			active_normal_count,
 			engaged_normal_count,
 		)
@@ -842,7 +836,7 @@ func _combat_position_is_visible(position: Vector2) -> bool:
 	# inside the supported viewports, including the maximum follow lag.
 	return (
 		position.distance_squared_to(player_position)
-		<= CombatEnvelope.DAMAGE_CENTER_RADIUS * CombatEnvelope.DAMAGE_CENTER_RADIUS
+		<= envelope.damage_center_radius * envelope.damage_center_radius
 	)
 
 
@@ -882,13 +876,13 @@ func _apply_enemy_hit_records(records: Array[Dictionary]) -> void:
 		if enemy == null or not enemy.is_targetable(state.combat_tick):
 			continue
 		var center_distance: float = player_position.distance_to(enemy.position)
-		if center_distance > CombatEnvelope.DAMAGE_CENTER_RADIUS + 0.0001:
+		if center_distance > envelope.damage_center_radius + 0.0001:
 			continue
 		var effect_outer_distance: float = maxf(
 			0.0,
 			float(record.get("effect_outer_distance", 0.0)),
 		)
-		if effect_outer_distance > CombatEnvelope.EFFECT_OUTER_RADIUS + 0.0001:
+		if effect_outer_distance > envelope.effect_outer_radius + 0.0001:
 			continue
 		var applied_damage: float = minf(enemy.hp, maxf(0.0, event.damage_snapshot))
 		if applied_damage <= 0.0:
@@ -1005,7 +999,7 @@ func _process_pending_deaths(current_tick: int) -> void:
 			))
 		if is_swarm_event:
 			state.swarm_event_kill_count += 1
-			state.swarm_event_xp += maxi(1, int(death["xp_value"]))
+			state.swarm_event_xp += int(death["xp_value"])
 		else:
 			match enemy_type:
 				GameTypes.EnemyType.ELITE:
@@ -1032,13 +1026,10 @@ func _process_pending_deaths(current_tick: int) -> void:
 					var normal_type_index: int = int(enemy_type)
 					if normal_type_index >= 0 and normal_type_index < state.normal_kills_by_type.size():
 						state.normal_kills_by_type[normal_type_index] += 1
-					var segment_index: int = clampi(
-						floori(float(current_tick) / 3600.0),
-						0,
-						RunState.ENEMY_SEGMENT_COUNT - 1,
-					)
-					state.normal_kills_by_segment[segment_index] += 1
-					state.normal_xp_by_segment[segment_index] += maxi(1, int(death["xp_value"]))
+					var segment_index: int = catalog.segment_index_for_tick(current_tick)
+					if segment_index >= 0:
+						state.normal_kills_by_segment[segment_index] += 1
+						state.normal_xp_by_segment[segment_index] += int(death["xp_value"])
 		_accumulate_kill_feedback(
 			death.get("source_effect_id", &""),
 			position,
@@ -1046,7 +1037,7 @@ func _process_pending_deaths(current_tick: int) -> void:
 		)
 		xp_pickup_pool.acquire(
 			position,
-			maxi(1, int(death["xp_value"])),
+			int(death["xp_value"]),
 			current_tick,
 			player_position,
 		)
@@ -1475,7 +1466,7 @@ func _continue_after_modal(grant_level_up_protection: bool) -> void:
 	state.phase = GameTypes.RunPhase.COMBAT
 	if grant_level_up_protection:
 		grant_level_up_resume_invulnerability_ticks(
-			_manifest.level_up_resume_invulnerability_ticks
+			_manifest.player.level_up_resume_invulnerability_ticks
 		)
 
 
@@ -1505,9 +1496,11 @@ func _build_hud_values() -> Dictionary:
 		"max_hp": state.max_hp,
 		"level": state.level,
 		"xp": state.xp,
-		"xp_for_next_level": 0 if state.build_maxed else ProgressionService.xp_required_for_level(state.level),
+		"xp_for_next_level": 0 if state.build_maxed else ProgressionService.xp_required_for_level(state.level, _manifest.progression),
 		"build_maxed": state.build_maxed,
 		"total_kills": state.total_kills,
+		"weapon_slot_count": _manifest.progression.weapon_slot_count,
+		"passive_slot_count": _manifest.progression.passive_slot_count,
 		"weapons": weapon_system.build_hud_weapons(),
 		"passives": passives,
 		"boss_active": state.boss_spawned and not state.boss_defeated,
@@ -1517,7 +1510,7 @@ func _build_hud_values() -> Dictionary:
 		"boss_enrage_stacks": state.boss_enrage_stacks,
 		"kill_chain_count": state.kill_chain_count if state.kill_chain_is_visible() else 0,
 		"kill_chain_remaining_ticks": (
-			maxi(0, RunState.KILL_CHAIN_WINDOW_TICKS - (state.combat_tick - state.kill_chain_last_tick))
+			maxi(0, state.kill_chain_window_ticks - (state.combat_tick - state.kill_chain_last_tick))
 			if state.kill_chain_last_tick >= 0
 			else 0
 		),
@@ -1794,8 +1787,8 @@ func _performance_position(index: int, count: int, offset: float) -> Vector2:
 	var x_ratio: float = float(column) / float(COLUMN_COUNT - 1)
 	var y_ratio: float = float(row) / float(maxi(1, row_count - 1))
 	return Vector2(
-		lerpf(ARENA_MIN.x + 0.25, ARENA_MAX.x - 0.25, x_ratio) + offset,
-		lerpf(ARENA_MIN.y + 0.25, ARENA_MAX.y - 0.25, y_ratio),
+		lerpf(envelope.player_center_min.x + 0.25, envelope.player_center_max.x - 0.25, x_ratio) + offset,
+		lerpf(envelope.player_center_min.y + 0.25, envelope.player_center_max.y - 0.25, y_ratio),
 	)
 
 
@@ -1809,9 +1802,9 @@ func _ensure_performance_weapons() -> void:
 			continue
 		var runtime: RunWeapon = RunWeapon.create(
 			definition.weapon_id,
-			definition.lineage_id,
+			catalog.lineage_for_weapon(definition.weapon_id),
 			false,
-			state.rng_streams.create_weapon_rng(definition.lineage_id, state.weapons.size()),
+			state.rng_streams.create_weapon_rng(catalog.lineage_for_weapon(definition.weapon_id), state.weapons.size()),
 		)
 		runtime.level = definition.max_level
 		runtime.ready_on_resume = true
@@ -1853,11 +1846,11 @@ func _apply_snapshot_markers(snapshot: CombatSnapshot) -> void:
 		snapshot.important_marker_radius = maxf(1.0, important.body_radius() * 1.45)
 	if (
 		_absorption_started_tick >= 0
-		and state.combat_tick < _absorption_started_tick + ABSORPTION_DISPLAY_TICKS
+		and state.combat_tick < _absorption_started_tick + envelope.boss_entry_ticks
 	):
 		var progress: float = clampf(
 			float(state.combat_tick - _absorption_started_tick)
-			/ float(ABSORPTION_DISPLAY_TICKS),
+			/ float(envelope.boss_entry_ticks),
 			0.0,
 			1.0,
 		)
@@ -1865,7 +1858,7 @@ func _apply_snapshot_markers(snapshot: CombatSnapshot) -> void:
 		snapshot.absorption_position = Vector2.ZERO
 		snapshot.absorption_progress = progress
 		snapshot.absorption_radius = lerpf(
-			CombatEnvelope.ARENA_HALF_EXTENT,
+			maxf(envelope.arena_max.x, envelope.arena_max.y),
 			0.8,
 			progress * progress * (3.0 - 2.0 * progress),
 		)
@@ -1911,7 +1904,7 @@ func _projectile_visual_kind(projectile: ProjectileState) -> int:
 	var lineage_id: StringName = projectile.source_effect_id
 	var definition: WeaponDefinition = catalog.weapon(projectile.weapon_id)
 	if definition != null:
-		lineage_id = definition.lineage_id
+		lineage_id = catalog.lineage_for_weapon(definition.weapon_id)
 	match lineage_id:
 		&"resonance_wave":
 			return CombatSnapshot.ProjectileVisualKind.RESONANCE_WAVE

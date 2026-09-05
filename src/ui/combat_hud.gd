@@ -15,20 +15,10 @@ const KILL_CHAIN_VISIBLE_MINIMUM: int = 3
 @onready var _boss_panel: PanelContainer = %BossPanel
 @onready var _boss_hp_value: Label = %BossHpValue
 @onready var _boss_hp_bar: ProgressBar = %BossHpBar
-@onready var _weapon_slots: Array[Label] = [
-	%WeaponSlot0,
-	%WeaponSlot1,
-	%WeaponSlot2,
-	%WeaponSlot3,
-	%WeaponSlot4,
-]
-@onready var _passive_slots: Array[Label] = [
-	%PassiveSlot0,
-	%PassiveSlot1,
-	%PassiveSlot2,
-	%PassiveSlot3,
-	%PassiveSlot4,
-]
+@onready var _weapon_container: HFlowContainer = %Weapons
+@onready var _passive_container: HFlowContainer = %Passives
+var _weapon_slots: Array[Label] = []
+var _passive_slots: Array[Label] = []
 @onready var _feedback_label: Label = %FeedbackLabel
 @onready var _kill_chain: Label = %KillChain
 @onready var _debug_overlay: Label = %DebugOverlay
@@ -91,8 +81,8 @@ func update_from_values(values: Dictionary) -> void:
 		_register_kills(total_kills - _last_total_kills)
 	_last_total_kills = total_kills
 
-	var current_hp: float = maxf(0.0, float(values.get("current_hp", 100.0)))
-	var max_hp: float = maxf(1.0, float(values.get("max_hp", 100.0)))
+	var current_hp: float = maxf(0.0, float(values.get("current_hp", 0.0)))
+	var max_hp: float = maxf(0.0, float(values.get("max_hp", 0.0)))
 	_hp_bar.max_value = max_hp
 	_hp_bar.value = minf(current_hp, max_hp)
 	_hp_value.text = "HP %s / %s" % [_format_number(current_hp), _format_number(max_hp)]
@@ -109,6 +99,8 @@ func update_from_values(values: Dictionary) -> void:
 		_xp_bar.value = mini(xp, xp_for_next)
 		_xp_value.text = "XP %d / %d" % [xp, xp_for_next]
 
+	_resize_slots(_weapon_slots, _weapon_container, int(values.get("weapon_slot_count", 0)))
+	_resize_slots(_passive_slots, _passive_container, int(values.get("passive_slot_count", 0)))
 	_update_build_slots(_weapon_slots, values.get("weapons", []), true)
 	_update_build_slots(_passive_slots, values.get("passives", []), false)
 	_update_boss(values, boss_active)
@@ -292,3 +284,17 @@ func _read_property(value: Variant, property_name: StringName, fallback: Variant
 			if StringName(property.get("name", "")) == property_name:
 				return object.get(property_name)
 	return fallback
+
+func _resize_slots(labels: Array[Label], container: HFlowContainer, count: int) -> void:
+	while labels.size() > count:
+		var label: Label = labels.pop_back()
+		container.remove_child(label)
+		label.queue_free()
+	while labels.size() < count:
+		var label := Label.new()
+		label.custom_minimum_size = Vector2(96.0, 40.0)
+		label.add_theme_font_size_override("font_size", 14)
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		container.add_child(label)
+		labels.append(label)

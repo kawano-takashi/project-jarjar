@@ -26,7 +26,7 @@ func run_test(test_name: String, assertions: Variant, context: Dictionary) -> vo
 
 func _test_powerup_pool(assertions: Variant) -> void:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "powerup pool catalog valid")
+	assertions.expect_true(catalog.validate_manifest(BalanceTestFixtures.manifest()), "powerup pool catalog valid")
 	if not catalog.is_valid:
 		return
 	var state: RunState = RunStateFactory.create(9401, catalog)
@@ -74,6 +74,8 @@ func _test_boss_hud_clock(assertions: Variant, tree: SceneTree) -> void:
 	tree.root.add_child(hud)
 	await tree.process_frame
 	hud.update_from_values({
+		"weapon_slot_count": 5,
+		"passive_slot_count": 5,
 		"time_seconds": 665.0,
 		"boss_active": true,
 	})
@@ -84,21 +86,21 @@ func _test_boss_hud_clock(assertions: Variant, tree: SceneTree) -> void:
 
 func _test_segment_shape(assertions: Variant) -> void:
 	var canonical_catalog := DefinitionCatalog.new()
-	assertions.expect_true(canonical_catalog.load_and_validate(), "segment shape canonical catalog valid")
+	assertions.expect_true(canonical_catalog.validate_manifest(BalanceTestFixtures.manifest()), "segment shape canonical catalog valid")
 	if not canonical_catalog.is_valid:
 		return
 	var canonical: SurvivalContentManifest = canonical_catalog.manifest()
-	var drift: SurvivalContentManifest = canonical.duplicate(true) as SurvivalContentManifest
+	var drift: SurvivalContentManifest = canonical.duplicate_deep(Resource.DEEP_DUPLICATE_ALL) as SurvivalContentManifest
 	var copied_segments: Array[EnemySegmentDefinition] = []
 	copied_segments.assign(canonical.segments)
-	var truncated: EnemySegmentDefinition = canonical.segments[0].duplicate(true) as EnemySegmentDefinition
+	var truncated: EnemySegmentDefinition = canonical.segments[0].duplicate_deep(Resource.DEEP_DUPLICATE_ALL) as EnemySegmentDefinition
 	truncated.spawn_weights = PackedFloat32Array([0.7, 0.3, 0.0, 0.0])
 	copied_segments[0] = truncated
 	drift.segments = copied_segments
 	var drift_catalog := DefinitionCatalog.new()
 	assertions.expect_false(drift_catalog.validate_manifest(drift), "validator rejects a four-entry segment weight array")
 	assertions.expect_true(
-		drift_catalog.error_text.contains("exactly one entry per EnemyType"),
+		drift_catalog.error_text.contains("spawn_weights") and drift_catalog.error_text.contains("6 weights"),
 		"segment shape rejection is specific",
 	)
 

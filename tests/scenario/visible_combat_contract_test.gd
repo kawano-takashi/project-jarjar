@@ -84,7 +84,7 @@ func _test_boss_transition_absorption(assertions: Variant) -> void:
 	var simulation: CombatSimulation = _simulation(assertions, 8501)
 	if simulation == null:
 		return
-	var boss_start_tick: int = simulation.catalog.manifest().boss_start_tick
+	var boss_start_tick: int = simulation.catalog.boss_start_tick
 	simulation.state.combat_tick = boss_start_tick - 1
 	# This fixture jumps directly to 10:00, so mark the four earlier scheduled
 	# elites handled. The elite below represents an already-active survivor.
@@ -182,7 +182,7 @@ func _test_boss_transition_absorption(assertions: Variant) -> void:
 		return
 	assertions.expect_equal(Vector2.ZERO, boss.position, "boss entry starts at the exact arena center")
 	assertions.expect_equal(boss_start_tick, boss.spawn_tick, "boss records the entry-start tick")
-	assertions.expect_equal(boss_start_tick + CombatEnvelope.BOSS_ENTRY_TICKS, boss.activation_tick, "boss materializes for exactly sixty ticks")
+	assertions.expect_equal(boss_start_tick + BalanceTestFixtures.catalog().envelope.boss_entry_ticks, boss.activation_tick, "boss materializes for exactly sixty ticks")
 	assertions.expect_true(boss.is_materializing(boss_start_tick + 59), "boss is still materializing on the last entry tick")
 	assertions.expect_true(not boss.is_targetable(boss_start_tick + 59), "boss cannot be targeted before entry completes")
 	assertions.expect_true(boss.is_targetable(boss_start_tick + 60), "boss becomes targetable on the exact activation boundary")
@@ -203,7 +203,7 @@ func _test_boss_enrage_action_clock(assertions: Variant) -> void:
 	if boss == null:
 		return
 	simulation.state.boss_spawned = true
-	var enrage_interval: int = simulation.catalog.manifest().boss_enrage_interval_ticks
+	var enrage_interval: int = simulation.catalog.manifest().combat.boss_enrage_interval_ticks
 	var stopped_updates_to_boundary: int = enrage_interval * 2
 	simulation.state.stop_until_tick = stopped_updates_to_boundary + 10
 	for current_tick: int in range(1, stopped_updates_to_boundary):
@@ -255,15 +255,15 @@ func _test_maximum_enrage_charge(assertions: Variant) -> void:
 		return
 	var manifest: SurvivalContentManifest = simulation.catalog.manifest()
 	simulation.state.boss_spawned = true
-	simulation.state.boss_enrage_stacks = manifest.boss_enrage_max_stacks
+	simulation.state.boss_enrage_stacks = manifest.combat.boss_enrage_max_stacks
 	boss.boss_action_age_ticks = float(
-		manifest.boss_enrage_interval_ticks * manifest.boss_enrage_max_stacks
+		manifest.combat.boss_enrage_interval_ticks * manifest.combat.boss_enrage_max_stacks
 	)
 	boss.hp = boss.max_hp * 0.30
 	boss.boss_phase = 3
 	simulation.state.boss_phase = 3
 	assertions.expect_equal(
-		CombatEnvelope.BOSS_CHARGE_TICKS,
+		BalanceTestFixtures.catalog().enemy_for_type(GameTypes.EnemyType.BOSS).telegraph_ticks,
 		simulation.enemy_system._boss_action_interval_ticks(
 			boss.definition.special_interval_ticks,
 			3,
@@ -279,7 +279,7 @@ func _test_maximum_enrage_charge(assertions: Variant) -> void:
 	assertions.expect_true(boss.boss_charge_active, "minimum interval starts a charge instead of firing immediately")
 	assertions.expect_equal(16, boss.boss_charge_spoke_count, "phase-three maximum-enrage charge previews all sixteen spokes")
 	assertions.expect_equal(0, simulation.projectile_pool.active_count(), "charge start emits no hostile projectile")
-	for current_tick: int in range(1, CombatEnvelope.BOSS_CHARGE_TICKS):
+	for current_tick: int in range(1, BalanceTestFixtures.catalog().enemy_for_type(GameTypes.EnemyType.BOSS).telegraph_ticks):
 		simulation.state.combat_tick = current_tick
 		simulation.enemy_system.advance_snapshot(
 			[boss.entity_id],
@@ -294,16 +294,16 @@ func _test_maximum_enrage_charge(assertions: Variant) -> void:
 		)
 	assertions.expect_float(29.0, boss.boss_charge_elapsed_ticks, "maximum-enrage warning lasts through twenty-nine complete action ticks")
 	assertions.expect_equal(0, simulation.projectile_pool.active_count(), "no volley fires before the thirtieth charge tick")
-	simulation.state.combat_tick = CombatEnvelope.BOSS_CHARGE_TICKS
+	simulation.state.combat_tick = BalanceTestFixtures.catalog().enemy_for_type(GameTypes.EnemyType.BOSS).telegraph_ticks
 	simulation.enemy_system.advance_snapshot(
 		[boss.entity_id],
 		simulation.player_position,
-		CombatEnvelope.BOSS_CHARGE_TICKS,
+		BalanceTestFixtures.catalog().enemy_for_type(GameTypes.EnemyType.BOSS).telegraph_ticks,
 	)
 	simulation.enemy_system.resolve_ready_enemy_special_actions(
 		[boss.entity_id],
 		simulation.player_position,
-		CombatEnvelope.BOSS_CHARGE_TICKS,
+		BalanceTestFixtures.catalog().enemy_for_type(GameTypes.EnemyType.BOSS).telegraph_ticks,
 		simulation.projectile_pool,
 	)
 	assertions.expect_equal(16, simulation.projectile_pool.active_count(), "sixteen-spoke volley fires exactly after the full thirty-tick warning")
@@ -356,14 +356,8 @@ func _test_shooter_contact_contract(assertions: Variant) -> void:
 		if definition.enemy_type == GameTypes.EnemyType.BOSS:
 			continue
 		assertions.expect_true(
-			is_finite(definition.preferred_distance_min)
-			and definition.preferred_distance_min == 0.0
-			and is_finite(definition.preferred_distance_max)
-			and definition.preferred_distance_max == 0.0
-			and definition.special_interval_ticks == 0
+			definition.special_interval_ticks == 0
 			and definition.telegraph_ticks == 0
-			and is_finite(definition.area_radius)
-			and definition.area_radius == 0.0
 			and is_finite(definition.projectile_damage)
 			and definition.projectile_damage == 0.0
 			and is_finite(definition.projectile_speed)
@@ -386,8 +380,11 @@ func _test_shooter_contact_contract(assertions: Variant) -> void:
 		shooter_definition.contact_damage > 0.0,
 		"SHOOTER is a contact-damage enemy",
 	)
-	assertions.expect_float(0.0, shooter_definition.preferred_distance_min, "SHOOTER no longer keeps a ranged minimum distance")
-	assertions.expect_float(0.0, shooter_definition.preferred_distance_max, "SHOOTER no longer keeps a ranged maximum distance")
+	var property_names: PackedStringArray = []
+	for property: Dictionary in shooter_definition.get_property_list():
+		property_names.append(property.name)
+	assertions.expect_false(property_names.has("preferred_distance_min"), "unused ranged minimum was removed")
+	assertions.expect_false(property_names.has("preferred_distance_max"), "unused ranged maximum was removed")
 	assertions.expect_equal(0, shooter_definition.special_interval_ticks, "SHOOTER has no ranged attack cadence")
 	assertions.expect_float(0.0, shooter_definition.projectile_damage, "SHOOTER has no projectile damage")
 	assertions.expect_float(0.0, shooter_definition.projectile_speed, "SHOOTER has no projectile speed")
@@ -405,7 +402,7 @@ func _test_shooter_contact_contract(assertions: Variant) -> void:
 	if scaled_contact_enemy != null:
 		assertions.expect_float(
 			simulation.catalog.segment_for_tick(simulation.state.combat_tick).damage_multiplier
-			* simulation.catalog.manifest().normal_enemy_damage_scale,
+			* simulation.catalog.manifest().combat.normal_enemy_damage_scale,
 			scaled_contact_enemy.damage_multiplier,
 			"normal contact enemies apply the shared tuning scale after segment damage",
 		)
@@ -478,14 +475,14 @@ func _test_combat_envelope_gates(assertions: Variant) -> void:
 		return
 	var acquired_at_eight: EnemyEntity = simulation.spawn_fixture_enemy(
 		GameTypes.EnemyType.BULWARK,
-		Vector2(CombatEnvelope.TARGET_CENTER_RADIUS, 0.0),
+		Vector2(BalanceTestFixtures.catalog().envelope.target_center_radius, 0.0),
 		-1,
 		false,
 		true,
 	)
 	var rejected_after_eight: EnemyEntity = simulation.spawn_fixture_enemy(
 		GameTypes.EnemyType.BULWARK,
-		Vector2(CombatEnvelope.TARGET_CENTER_RADIUS + 0.01, 1.0),
+		Vector2(BalanceTestFixtures.catalog().envelope.target_center_radius + 0.01, 1.0),
 		-1,
 		false,
 		true,
@@ -508,14 +505,14 @@ func _test_combat_envelope_gates(assertions: Variant) -> void:
 	)
 	var damage_at_ten: EnemyEntity = simulation.spawn_fixture_enemy(
 		GameTypes.EnemyType.PURSUER,
-		Vector2(CombatEnvelope.DAMAGE_CENTER_RADIUS, 0.0),
+		Vector2(BalanceTestFixtures.catalog().envelope.damage_center_radius, 0.0),
 		-1,
 		false,
 		true,
 	)
 	var rejected_after_ten: EnemyEntity = simulation.spawn_fixture_enemy(
 		GameTypes.EnemyType.PURSUER,
-		Vector2(CombatEnvelope.DAMAGE_CENTER_RADIUS + 0.01, 0.0),
+		Vector2(BalanceTestFixtures.catalog().envelope.damage_center_radius + 0.01, 0.0),
 		-1,
 		false,
 		true,
@@ -539,10 +536,10 @@ func _test_combat_envelope_gates(assertions: Variant) -> void:
 	var effect_at_nine_before: float = effect_at_nine.hp
 	var rejected_after_nine_before: float = rejected_after_nine.hp
 	simulation._apply_enemy_hit_records([
-		_damage_record(simulation, damage_at_ten.entity_id, 3.0, CombatEnvelope.EFFECT_OUTER_RADIUS),
-		_damage_record(simulation, rejected_after_ten.entity_id, 3.0, CombatEnvelope.EFFECT_OUTER_RADIUS),
-		_damage_record(simulation, effect_at_nine.entity_id, 3.0, CombatEnvelope.EFFECT_OUTER_RADIUS),
-		_damage_record(simulation, rejected_after_nine.entity_id, 3.0, CombatEnvelope.EFFECT_OUTER_RADIUS + 0.01),
+		_damage_record(simulation, damage_at_ten.entity_id, 3.0, BalanceTestFixtures.catalog().envelope.effect_outer_radius),
+		_damage_record(simulation, rejected_after_ten.entity_id, 3.0, BalanceTestFixtures.catalog().envelope.effect_outer_radius),
+		_damage_record(simulation, effect_at_nine.entity_id, 3.0, BalanceTestFixtures.catalog().envelope.effect_outer_radius),
+		_damage_record(simulation, rejected_after_nine.entity_id, 3.0, BalanceTestFixtures.catalog().envelope.effect_outer_radius + 0.01),
 	])
 	assertions.expect_float(damage_at_ten_before - 3.0, damage_at_ten.hp, "body-overlap exception allows a center exactly ten meters away")
 	assertions.expect_float(rejected_after_ten_before, rejected_after_ten.hp, "final damage resolution rejects centers beyond ten meters")
@@ -551,8 +548,8 @@ func _test_combat_envelope_gates(assertions: Variant) -> void:
 	var metrics: Dictionary = simulation.visible_combat_metrics()
 	assertions.expect_equal(2, metrics["weapon_hits"], "only the two in-contract hit records apply")
 	assertions.expect_equal(0, metrics["offscreen_weapon_hits"], "accepted envelope hits remain visible")
-	assertions.expect_float(CombatEnvelope.DAMAGE_CENTER_RADIUS, float(metrics["max_hit_center_distance"]), "damage-center metric reaches but never exceeds ten meters")
-	assertions.expect_float(CombatEnvelope.EFFECT_OUTER_RADIUS, float(metrics["max_effect_outer_distance"]), "effect metric reaches but never exceeds nine meters")
+	assertions.expect_float(BalanceTestFixtures.catalog().envelope.damage_center_radius, float(metrics["max_hit_center_distance"]), "damage-center metric reaches but never exceeds ten meters")
+	assertions.expect_float(BalanceTestFixtures.catalog().envelope.effect_outer_radius, float(metrics["max_effect_outer_distance"]), "effect metric reaches but never exceeds nine meters")
 
 
 func _test_visible_metric_schema(assertions: Variant) -> void:
@@ -891,7 +888,7 @@ func _arena_object_digest(arena: ArenaObjectSystem) -> Array:
 
 func _simulation(assertions: Variant, run_seed: int) -> CombatSimulation:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "combat content validates")
+	assertions.expect_true(catalog.validate_manifest(BalanceTestFixtures.manifest()), "combat content validates")
 	if not catalog.is_valid:
 		return null
 	var state: RunState = RunStateFactory.create(run_seed, catalog)

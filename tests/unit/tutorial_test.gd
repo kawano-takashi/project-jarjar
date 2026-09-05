@@ -30,7 +30,7 @@ func _test_contextual_sequence(assertions: Variant) -> void:
 	tutorial.completed.connect(func() -> void:
 		completions.append(true)
 	)
-	tutorial.begin_run(false)
+	tutorial.begin_run(false, BalanceTestFixtures.catalog())
 	assertions.expect_true(tutorial.enabled, "incomplete tutorial enables contextual hints")
 	assertions.expect_equal(TutorialController.MOVE_MESSAGE, tutorial.current_message(), "movement and automatic attack appear first")
 	for _tick: int in range(59):
@@ -52,7 +52,7 @@ func _test_contextual_sequence(assertions: Variant) -> void:
 		assertions.expect_false(tutorial.current_message().is_empty(), "%s has contextual text" % context_id)
 		if context_id == &"evolution":
 			assertions.expect_equal(
-				"武器Lv8＋触媒Lv1以上で宝箱から進化。触媒は最大Lv不要・進化後も消費されません",
+				"武器が最大Lv、触媒がLv1以上なら宝箱から進化。触媒は最大Lv不要・進化後も消費されません",
 				tutorial.current_message(),
 				"evolution tutorial explains the complete catalyst contract",
 			)
@@ -63,7 +63,7 @@ func _test_contextual_sequence(assertions: Variant) -> void:
 
 func _test_completed_tutorial(assertions: Variant) -> void:
 	var tutorial := TutorialController.new()
-	tutorial.begin_run(true)
+	tutorial.begin_run(true, BalanceTestFixtures.catalog())
 	assertions.expect_false(tutorial.enabled, "completed tutorial suppresses first-run hints")
 	assertions.expect_true(tutorial.move_completed, "completed tutorial never gates movement")
 	assertions.expect_equal("", tutorial.current_message(), "completed tutorial has no initial message")
@@ -81,7 +81,7 @@ func _test_saved_completion(assertions: Variant, context: Dictionary) -> void:
 	assertions.expect_equal(OK, store.reload_settings(), "saved settings reload")
 	assertions.expect_true(store.tutorial_completed, "completion survives a settings reload")
 	var tutorial := TutorialController.new()
-	tutorial.begin_run(store.tutorial_completed)
+	tutorial.begin_run(store.tutorial_completed, BalanceTestFixtures.catalog())
 	assertions.expect_false(tutorial.enabled, "saved completion suppresses the next run's hints")
 
 	var overlay := SETTINGS_OVERLAY_SCENE.instantiate() as SettingsOverlay
@@ -96,7 +96,7 @@ func _test_saved_completion(assertions: Variant, context: Dictionary) -> void:
 	assertions.expect_equal(OK, store.reload_settings(), "closing settings persists the replay request")
 	assertions.expect_false(store.tutorial_completed, "replay request survives reload")
 	assertions.expect_float(0.37, store.master_volume, "replaying the tutorial preserves other settings")
-	tutorial.begin_run(store.tutorial_completed)
+	tutorial.begin_run(store.tutorial_completed, BalanceTestFixtures.catalog())
 	assertions.expect_true(tutorial.enabled, "replay request enables movement and contextual hints")
 	overlay.queue_free()
 	await tree.process_frame

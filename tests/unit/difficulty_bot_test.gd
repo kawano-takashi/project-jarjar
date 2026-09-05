@@ -44,7 +44,7 @@ func _test_prediction_contract_and_view(assertions: Variant) -> void:
 		return
 	var simulation: CombatSimulation = setup["simulation"]
 	var bot: RefCounted = BotScript.new()
-	assertions.expect_true(bot.initialize(1, 16), "prediction bot initializes")
+	assertions.expect_true(bot.initialize(1, 16, BalanceTestFixtures.catalog()), "prediction bot initializes")
 	var initial_debug: Dictionary = bot.debug_state()
 	assertions.expect_equal(120, initial_debug["prediction_horizon_ticks"], "prediction horizon is exactly two seconds")
 	assertions.expect_equal(32, initial_debug["heading_direction_count"], "candidate ring has thirty-two directions")
@@ -109,7 +109,7 @@ func _test_prediction_contract_and_view(assertions: Variant) -> void:
 		Vector2.ZERO,
 	)
 	var movement_bot: RefCounted = BotScript.new()
-	assertions.expect_true(movement_bot.initialize(1, 16), "every-tick movement bot initializes")
+	assertions.expect_true(movement_bot.initialize(1, 16, BalanceTestFixtures.catalog()), "every-tick movement bot initializes")
 	var first_move: Vector2 = movement_bot.movement_input(movement_simulation)
 	assertions.expect_true(first_move.x > 0.9, "visible XP is selected as the objective")
 	pickup.position = Vector2(-4.0, 0.0)
@@ -132,7 +132,7 @@ func _test_prediction_contract_and_view(assertions: Variant) -> void:
 	var memory_state: RunState = memory_setup["state"]
 	var chest: ArenaPickup = memory_simulation.arena_object_system.spawn_chest(Vector2(8.0, 0.0), 0)
 	var memory_bot: RefCounted = BotScript.new()
-	assertions.expect_true(memory_bot.initialize(1, 17), "chest-memory bot initializes")
+	assertions.expect_true(memory_bot.initialize(1, 17, BalanceTestFixtures.catalog()), "chest-memory bot initializes")
 	memory_bot.movement_input(memory_simulation)
 	assertions.expect_equal(1, memory_bot.debug_state()["seen_chest_count"], "only observed static chests enter memory")
 	memory_simulation.player_position = Vector2(-10.0, 0.0)
@@ -181,7 +181,7 @@ func _test_avoidance_and_walls(assertions: Variant) -> void:
 	)
 	assertions.expect_true(incoming != null, "incoming projectile fixture spawns")
 	var bot: RefCounted = BotScript.new()
-	assertions.expect_true(bot.initialize(1, 17), "projectile avoidance bot initializes")
+	assertions.expect_true(bot.initialize(1, 17, BalanceTestFixtures.catalog()), "projectile avoidance bot initializes")
 	var first_move: Vector2 = bot.movement_input(simulation)
 	var first_debug: Dictionary = bot.debug_state()["avoidance"]
 	assertions.expect_true(int(first_debug["safe_candidate_count"]) > 0, "incoming projectile leaves at least one predicted safe path")
@@ -201,7 +201,7 @@ func _test_avoidance_and_walls(assertions: Variant) -> void:
 	assertions.expect_equal(0, damage_ticks, "per-tick replanning avoids the crossing projectile in the real tick order")
 	assertions.expect_float(0.0, total_damage, "projectile avoidance takes no damage in the fixed scenario")
 
-	var radius: float = CombatEnvelope.PLAYER_BODY_RADIUS + 0.26 + 0.20
+	var radius: float = BalanceTestFixtures.catalog().envelope.player_body_radius + 0.26 + 0.20
 	var just_inside: Vector2 = bot.call(
 		&"_circle_contact_interval",
 		Vector2(radius - 0.001, 0.0),
@@ -221,15 +221,15 @@ func _test_avoidance_and_walls(assertions: Variant) -> void:
 
 	var wall_setup: Dictionary = _bot_fixture(17)
 	var wall_simulation: CombatSimulation = wall_setup["simulation"]
-	wall_simulation.player_position = Vector2(CombatSimulation.ARENA_MIN.x + 0.10, 0.0)
+	wall_simulation.player_position = Vector2(BalanceTestFixtures.catalog().envelope.player_center_min.x + 0.10, 0.0)
 	wall_simulation.xp_pickup_pool.acquire(
-		Vector2(CombatSimulation.ARENA_MIN.x, 0.0),
+		Vector2(BalanceTestFixtures.catalog().envelope.player_center_min.x, 0.0),
 		1,
 		-1,
 		wall_simulation.player_position,
 	)
 	var wall_bot: RefCounted = BotScript.new()
-	assertions.expect_true(wall_bot.initialize(1, 17), "wall bot initializes")
+	assertions.expect_true(wall_bot.initialize(1, 17, BalanceTestFixtures.catalog()), "wall bot initializes")
 	assertions.expect_true(wall_bot.movement_input(wall_simulation).x > 0.0, "wall scoring keeps the selected input inward")
 	var wall_segments: Array = wall_bot.call(
 		&"_player_motion_segments",
@@ -238,7 +238,7 @@ func _test_avoidance_and_walls(assertions: Variant) -> void:
 	)
 	var final_segment: Dictionary = wall_segments[wall_segments.size() - 1]
 	var predicted_end: Vector2 = wall_bot.call(&"_segment_position_at", final_segment, 2.0)
-	assertions.expect_float(CombatSimulation.ARENA_MIN.x, predicted_end.x, "prediction applies the same arena clamp as gameplay")
+	assertions.expect_float(BalanceTestFixtures.catalog().envelope.player_center_min.x, predicted_end.x, "prediction applies the same arena clamp as gameplay")
 
 
 func _test_special_threats(assertions: Variant) -> void:
@@ -288,7 +288,7 @@ func _test_special_threats(assertions: Variant) -> void:
 		if swarm != null:
 			swarm.configure_swarm_event(77, Vector2.RIGHT, 20.0, false)
 	var bot: RefCounted = BotScript.new()
-	assertions.expect_true(bot.initialize(0, 17), "special-threat bot initializes")
+	assertions.expect_true(bot.initialize(0, 17, BalanceTestFixtures.catalog()), "special-threat bot initializes")
 	bot.movement_input(simulation)
 	var debug: Dictionary = bot.debug_state()
 	var counts: Dictionary = debug["threat_counts"]
@@ -421,7 +421,7 @@ func _test_special_threats(assertions: Variant) -> void:
 			"each enemy type fixture spawns",
 		)
 	var all_types_bot: RefCounted = BotScript.new()
-	all_types_bot.initialize(1, 29)
+	all_types_bot.initialize(1, 29, BalanceTestFixtures.catalog())
 	all_types_bot.movement_input(all_types_simulation)
 	assertions.expect_equal(6, all_types_bot.debug_state()["threat_counts"]["enemy"], "all six enemy types enter the common prediction path")
 	var all_types_collection: Dictionary = all_types_bot.call(
@@ -478,7 +478,7 @@ func _test_detail_and_history(assertions: Variant) -> void:
 			"detail-cap enemy fixture spawns",
 		)
 	var bot: RefCounted = BotScript.new()
-	assertions.expect_true(bot.initialize(1, 17), "detail-cap bot initializes")
+	assertions.expect_true(bot.initialize(1, 17, BalanceTestFixtures.catalog()), "detail-cap bot initializes")
 	bot.movement_input(simulation)
 	var debug: Dictionary = bot.debug_state()
 	var avoidance: Dictionary = debug["avoidance"]
@@ -503,7 +503,7 @@ func _test_detail_and_history(assertions: Variant) -> void:
 		Vector2(3.0, 0.0),
 	)
 	var generation_bot: RefCounted = BotScript.new()
-	generation_bot.initialize(1, 17)
+	generation_bot.initialize(1, 17, BalanceTestFixtures.catalog())
 	generation_bot.movement_input(generation_simulation)
 	var first_history: Array = generation_bot.deterministic_state_values()[8]
 	assertions.expect_equal(1, first_history.size(), "first pool generation enters history")
@@ -525,8 +525,8 @@ func _test_detail_and_history(assertions: Variant) -> void:
 
 	var odd_bot: RefCounted = BotScript.new()
 	var even_bot: RefCounted = BotScript.new()
-	odd_bot.initialize(1, 17)
-	even_bot.initialize(1, 18)
+	odd_bot.initialize(1, 17, BalanceTestFixtures.catalog())
+	even_bot.initialize(1, 18, BalanceTestFixtures.catalog())
 	assertions.expect_true(bool(odd_bot.call(&"_stable_id_wins", 1, 2)), "odd seed prefers the lower stable ID")
 	assertions.expect_true(bool(even_bot.call(&"_stable_id_wins", 2, 1)), "even seed prefers the higher stable ID")
 
@@ -554,9 +554,9 @@ func _test_policies_and_determinism(assertions: Variant) -> void:
 	var cautious: RefCounted = BotScript.new()
 	var normal: RefCounted = BotScript.new()
 	var evolution: RefCounted = BotScript.new()
-	cautious.initialize(0, 17)
-	normal.initialize(1, 17)
-	evolution.initialize(2, 17)
+	cautious.initialize(0, 17, BalanceTestFixtures.catalog())
+	normal.initialize(1, 17, BalanceTestFixtures.catalog())
+	evolution.initialize(2, 17, BalanceTestFixtures.catalog())
 	assertions.expect_equal(2, cautious.choose_upgrade(offer, state, catalog), "cautious upgrade priority remains recovery first")
 	assertions.expect_equal(0, normal.choose_upgrade(offer, state, catalog), "normal upgrade focus still completes a visible pair")
 	assertions.expect_equal(0, evolution.choose_upgrade(offer, state, catalog), "evolution policy still acquires its catalyst first")
@@ -579,9 +579,9 @@ func _test_policies_and_determinism(assertions: Variant) -> void:
 	var objective_cautious: RefCounted = BotScript.new()
 	var objective_normal: RefCounted = BotScript.new()
 	var objective_evolution: RefCounted = BotScript.new()
-	objective_cautious.initialize(0, 17)
-	objective_normal.initialize(1, 17)
-	objective_evolution.initialize(2, 17)
+	objective_cautious.initialize(0, 17, BalanceTestFixtures.catalog())
+	objective_normal.initialize(1, 17, BalanceTestFixtures.catalog())
+	objective_evolution.initialize(2, 17, BalanceTestFixtures.catalog())
 	assertions.expect_true(objective_cautious.movement_input(objective_simulation).x < -0.9, "cautious objective priority still chooses low-HP healing")
 	assertions.expect_true(objective_normal.movement_input(objective_simulation).x > 0.9, "normal objective priority still chooses a chest")
 	assertions.expect_true(objective_evolution.movement_input(objective_simulation).x > 0.9, "evolution objective priority still chooses a chest")
@@ -613,7 +613,7 @@ func _test_policies_and_determinism(assertions: Variant) -> void:
 	var rng_before: Dictionary = safety_state.rng_streams.state_digest()
 	for policy_value: int in range(3):
 		var policy_bot: RefCounted = BotScript.new()
-		policy_bot.initialize(policy_value, 29)
+		policy_bot.initialize(policy_value, 29, BalanceTestFixtures.catalog())
 		policy_bot.movement_input(safety_simulation)
 		var policy_debug: Dictionary = policy_bot.debug_state()["avoidance"]
 		assertions.expect_true(int(policy_debug["safe_candidate_count"]) > 0, "every policy evaluates the common safe set")
@@ -630,8 +630,8 @@ func _test_policies_and_determinism(assertions: Variant) -> void:
 	var right_projectile: ProjectileState = _add_determinism_projectile(right_simulation)
 	var left_bot: RefCounted = BotScript.new()
 	var right_bot: RefCounted = BotScript.new()
-	left_bot.initialize(1, 43)
-	right_bot.initialize(1, 43)
+	left_bot.initialize(1, 43, BalanceTestFixtures.catalog())
+	right_bot.initialize(1, 43, BalanceTestFixtures.catalog())
 	var left_inputs: Array[Vector2] = []
 	var right_inputs: Array[Vector2] = []
 	for tick: int in range(5):
@@ -649,7 +649,7 @@ func _test_policies_and_determinism(assertions: Variant) -> void:
 
 func _test_fallback_order(assertions: Variant) -> void:
 	var bot: RefCounted = BotScript.new()
-	bot.initialize(1, 17)
+	bot.initialize(1, 17, BalanceTestFixtures.catalog())
 	var baseline: Dictionary = _fallback_metrics(20, 12, 8.0, 1.0, 5)
 	assertions.expect_true(
 		bool(bot.call(&"_candidate_is_better", _fallback_metrics(21, 99, 99.0, -5.0, 6), baseline, true)),
@@ -689,7 +689,7 @@ func _test_fallback_order(assertions: Variant) -> void:
 	for position: Vector2 in overlap_positions:
 		simulation.spawn_fixture_enemy(GameTypes.EnemyType.ELITE, position)
 	var trapped_bot: RefCounted = BotScript.new()
-	trapped_bot.initialize(1, 17)
+	trapped_bot.initialize(1, 17, BalanceTestFixtures.catalog())
 	trapped_bot.movement_input(simulation)
 	var trapped_debug: Dictionary = trapped_bot.debug_state()["avoidance"]
 	assertions.expect_equal(0, trapped_debug["safe_candidate_count"], "an immediate enclosure has no safe candidate")
@@ -699,7 +699,7 @@ func _test_fallback_order(assertions: Variant) -> void:
 
 func _bot_fixture(run_seed: int) -> Dictionary:
 	var catalog := DefinitionCatalog.new()
-	if not catalog.load_and_validate():
+	if not catalog.validate_manifest(BalanceTestFixtures.manifest()):
 		return {"valid": false}
 	var state: RunState = RunStateFactory.create(run_seed, catalog)
 	var simulation := CombatSimulation.new()
@@ -770,6 +770,15 @@ func _test_acceptance_bounds(assertions: Variant) -> void:
 		bool(accepted_with_segments["passed"]),
 		"wave, elite, and boss duration boundaries pass together",
 	)
+	var five_elites: Array[Dictionary] = _passing_results()
+	for row: Dictionary in five_elites:
+		var spawns: PackedInt32Array = row["elite_spawn_ticks"]
+		var kills: PackedInt32Array = row["elite_kill_ticks"]
+		spawns.append(32000)
+		kills.append(-1)
+		row["elite_spawn_ticks"] = spawns
+		row["elite_kill_ticks"] = kills
+	assertions.expect_float(0.8, float(AcceptanceScript.evaluate(five_elites)["elite_killed_within_sixty_ratio"]), "all five elite events contribute to the unchanged sixty-second metric")
 	var flat_rest_segments: Array[Dictionary] = []
 	flat_rest_segments.assign(passing_segments.duplicate(true))
 	for row: Dictionary in flat_rest_segments:
@@ -967,14 +976,8 @@ func _passing_results() -> Array[Dictionary]:
 			"audio_suppressed": 20,
 			"pool_overflow_count": 0,
 			"pool_orphan_count": 0,
-			"elite_1_spawn_tick": 7_200,
-			"elite_1_kill_seconds": 45.0,
-			"elite_2_spawn_tick": 14_400,
-			"elite_2_kill_seconds": 45.0,
-			"elite_3_spawn_tick": 21_600,
-			"elite_3_kill_seconds": 45.0,
-			"elite_4_spawn_tick": 28_800,
-			"elite_4_kill_seconds": 45.0,
+			"elite_spawn_ticks": PackedInt32Array([7200, 14400, 21600, 28800]),
+			"elite_kill_ticks": PackedInt32Array([9900, 17100, 24300, 31500]),
 		})
 	return results
 

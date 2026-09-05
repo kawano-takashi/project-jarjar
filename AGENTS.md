@@ -56,6 +56,16 @@ New-Item -ItemType Directory -Force -Path .\build\windows | Out-Null
 - `build/`、`artifacts/`、`.godot/`、`.codex/`、`work/` をコミットしない。
 - fetch、pull、push、rebase、amend、tag作成は、ユーザーの明示指示なしに実行しない。
 
+## Balance
+
+- 調整値の正本は `data/balance/` の `.tres` とし、`survival_content_manifest.tres` を唯一の読み込み入口にする。コードに本番値や代替の既定値を持たせない。
+- 数値調整の依頼では、指定されたデータと項目だけを変更する。現在値との一致を要求する検証を追加しない。
+- 計算式・公開項目の追加・データ形式の変更は、数値調整とは別の構造変更として扱う。
+- 定義Resourceを実行状態の保存先にしない。変更するテスト入力は外部参照まで `duplicate_deep(Resource.DEEP_DUPLICATE_ALL)` で複製する。
+- 公開項目には意味・単位・有効範囲・成立条件をドキュメントコメントとInspectorヒントで示す。時間は整数tick、1秒＝60tickとする。
+- テストを通す目的で、DPS比率・評価ボットの判断・受入閾値・人間の成功基準を無断変更しない。
+- 完了報告には変更項目・変更前後の実効値・変更理由・実行した検証・未確認事項を記載する。QA・playtestの開始条件は既存のWorkflowに従う。
+
 ## Export Templates
 
 - ScoopのGodotはself-contained構成とし、`C:\Users\konop\scoop\apps\godot\current\._sc_` を維持する。

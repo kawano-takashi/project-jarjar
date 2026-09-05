@@ -2,20 +2,6 @@ class_name ArenaObjectSystem
 extends RefCounted
 
 
-const NODE_SITE_POSITIONS: Array[Vector2] = [
-	Vector2(-9.75, -9.75),
-	Vector2(0.0, -11.25),
-	Vector2(9.75, -9.75),
-	Vector2(11.25, 0.0),
-	Vector2(9.75, 9.75),
-	Vector2(0.0, 11.25),
-	Vector2(-9.75, 9.75),
-	Vector2(-11.25, 0.0),
-]
-const INITIAL_ACTIVE_SITES: Array[int] = [0, 2, 4, 6]
-const NODE_MAX_HP: float = 18.0
-const NODE_BODY_RADIUS: float = 0.55
-const PICKUP_COLLECT_RADIUS: float = 0.8
 const POWERUP_CAPACITY: int = 32
 const POWERUP_KINDS: Array[ArenaPickup.Kind] = [
 	ArenaPickup.Kind.HEAL,
@@ -51,12 +37,12 @@ func initialize(state: RunState, catalog: DefinitionCatalog) -> void:
 		var pickup_slot := ArenaPickup.new()
 		pickup_slot.deactivate()
 		_free_powerup_slots.append(pickup_slot)
-	for site_index: int in range(NODE_SITE_POSITIONS.size()):
+	for site_index: int in range(_manifest.arena.node_site_positions.size()):
 		var node := ArenaNodeState.new()
 		node.site_index = site_index
-		node.position = NODE_SITE_POSITIONS[site_index]
-		if site_index in INITIAL_ACTIVE_SITES:
-			node.activate(site_index, node.position, NODE_MAX_HP)
+		node.position = _manifest.arena.node_site_positions[site_index]
+		if site_index in _manifest.arena.initial_active_sites:
+			node.activate(site_index, node.position, _manifest.arena.node_max_hp)
 		nodes.append(node)
 
 
@@ -75,7 +61,7 @@ func damage_nodes_circle(
 	if damage <= 0.0:
 		return 0
 	var destroyed: int = 0
-	var combined_radius: float = maxf(0.0, radius) + NODE_BODY_RADIUS
+	var combined_radius: float = maxf(0.0, radius) + _manifest.arena.node_body_radius
 	var combined_radius_squared: float = combined_radius * combined_radius
 	for node: ArenaNodeState in nodes:
 		if not node.active:
@@ -108,7 +94,7 @@ func damage_nodes_segment(
 			segment_start,
 			segment_end,
 			node.position,
-			maxf(0.0, projectile_radius) + NODE_BODY_RADIUS,
+			maxf(0.0, projectile_radius) + _manifest.arena.node_body_radius,
 		)
 		if intersection_t < 0.0:
 			continue
@@ -122,7 +108,7 @@ func damage_nodes_segment(
 
 func collect_at(player_position: Vector2) -> Array[ArenaPickup]:
 	var collected: Array[ArenaPickup] = []
-	var radius_squared: float = PICKUP_COLLECT_RADIUS * PICKUP_COLLECT_RADIUS
+	var radius_squared: float = _manifest.arena.pickup_collect_radius * _manifest.arena.pickup_collect_radius
 	var index: int = 0
 	while index < pickups.size():
 		var pickup: ArenaPickup = pickups[index]
@@ -196,7 +182,7 @@ func _destroy_node(node: ArenaNodeState, current_tick: int) -> void:
 	var drop_position: Vector2 = node.position
 	node.deactivate()
 	destroyed_node_count += 1
-	_pending_respawn_ticks.append(current_tick + _manifest.node_respawn_ticks)
+	_pending_respawn_ticks.append(current_tick + _manifest.arena.node_respawn_ticks)
 	_pending_respawn_ticks.sort()
 	var drop_type: GameTypes.NodeDropType = NodeDropService.roll_drop(_state, _catalog)
 	match drop_type:
@@ -278,7 +264,7 @@ func _append_collected_powerup_effects(
 		if effect_kind == ArenaPickup.Kind.HEAL and count > 1:
 			_state.current_hp = minf(
 				_state.max_hp,
-				_state.current_hp + _manifest.node_heal_amount * float(count - 1),
+				_state.current_hp + _manifest.arena.node_heal_amount * float(count - 1),
 			)
 		var collected_effect := ArenaPickup.new(
 			pickup.pickup_id,
@@ -291,7 +277,7 @@ func _append_collected_powerup_effects(
 
 
 func _respawn_one_node() -> void:
-	if active_node_count() >= INITIAL_ACTIVE_SITES.size():
+	if active_node_count() >= _manifest.arena.initial_active_sites.size():
 		return
 	var inactive_sites: Array[int] = []
 	for node: ArenaNodeState in nodes:
@@ -303,4 +289,4 @@ func _respawn_one_node() -> void:
 	if _powerup_rng != null:
 		selected_index = _powerup_rng.randi_range(0, inactive_sites.size() - 1)
 	var site_index: int = inactive_sites[selected_index]
-	nodes[site_index].activate(site_index, NODE_SITE_POSITIONS[site_index], NODE_MAX_HP)
+	nodes[site_index].activate(site_index, _manifest.arena.node_site_positions[site_index], _manifest.arena.node_max_hp)

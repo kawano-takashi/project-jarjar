@@ -158,7 +158,7 @@ func _test_fixture_contract(assertions: Variant, context: Dictionary) -> void:
 		"performance test output directory exists",
 	)
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "performance fixture catalog valid")
+	assertions.expect_true(catalog.validate_manifest(BalanceTestFixtures.manifest()), "performance fixture catalog valid")
 	if not catalog.is_valid:
 		return
 

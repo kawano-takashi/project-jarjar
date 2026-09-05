@@ -53,6 +53,15 @@ static func select_with_value(
 	return last_positive
 
 
+## Godot randf() includes both endpoints; probability 1 must also accept a draw of 1.
+static func chance_succeeds_with_value(probability: float, randf_value: float) -> bool:
+	if not is_finite(probability) or probability < 0.0 or probability > 1.0:
+		return false
+	if not is_finite(randf_value) or randf_value < 0.0 or randf_value > 1.0:
+		return false
+	return probability > 0.0 and (probability == 1.0 or randf_value < probability)
+
+
 static func sort_ordinal(candidates: Array[StringName]) -> Array[StringName]:
 	var sorted: Array[StringName] = []
 	for index: int in _ordinal_order(candidates):

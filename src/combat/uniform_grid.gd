@@ -3,18 +3,25 @@ extends RefCounted
 
 
 const CELL_SIZE: float = 2.0
-const ARENA_MIN: Vector2 = CombatEnvelope.ARENA_MIN
-const ARENA_MAX: Vector2 = CombatEnvelope.ARENA_MAX
-const COLUMN_COUNT: int = 16
-const ROW_COUNT: int = 16
-const CELL_COUNT: int = COLUMN_COUNT * ROW_COUNT
+
+var arena_min: Vector2
+var arena_max: Vector2
+var column_count: int = 0
+var row_count: int = 0
+var cell_count: int = 0
 
 var _cells: Array[Array] = []
 
 
-func _init() -> void:
-	_cells.resize(CELL_COUNT)
-	for key: int in range(CELL_COUNT):
+func configure(arena_size: Vector2) -> void:
+	arena_min = -arena_size * 0.5
+	arena_max = arena_size * 0.5
+	column_count = ceili(arena_size.x / CELL_SIZE)
+	row_count = ceili(arena_size.y / CELL_SIZE)
+	cell_count = column_count * row_count
+	_cells.clear()
+	_cells.resize(cell_count)
+	for key: int in range(cell_count):
 		_cells[key] = []
 
 
@@ -36,12 +43,12 @@ func insert(entity_id: int, position: Vector2) -> void:
 
 func cell_key_for_position(position: Vector2) -> int:
 	var indices: Vector2i = cell_indices_for_position(position)
-	return indices.x + indices.y * COLUMN_COUNT
+	return indices.x + indices.y * column_count
 
 
 func cell_indices_for_position(position: Vector2) -> Vector2i:
-	var column: int = clampi(int(floor((position.x - ARENA_MIN.x) / CELL_SIZE)), 0, COLUMN_COUNT - 1)
-	var row: int = clampi(int(floor((position.y - ARENA_MIN.y) / CELL_SIZE)), 0, ROW_COUNT - 1)
+	var column: int = clampi(int(floor((position.x - arena_min.x) / CELL_SIZE)), 0, column_count - 1)
+	var row: int = clampi(int(floor((position.y - arena_min.y) / CELL_SIZE)), 0, row_count - 1)
 	return Vector2i(column, row)
 
 
@@ -79,7 +86,7 @@ func query_aabb_candidates(aabb_min: Vector2, aabb_max: Vector2) -> Array[int]:
 	var seen: Dictionary[int, bool] = {}
 	for row: int in range(cell_range.position.y, cell_range.end.y):
 		for column: int in range(cell_range.position.x, cell_range.end.x):
-			var key: int = column + row * COLUMN_COUNT
+			var key: int = column + row * column_count
 			for raw_entity_id: Variant in _cells[key]:
 				var entity_id: int = int(raw_entity_id)
 				if not seen.has(entity_id):
@@ -93,5 +100,5 @@ func occupied_keys_for_aabb(aabb_min: Vector2, aabb_max: Vector2) -> Array[int]:
 	var result: Array[int] = []
 	for row: int in range(cell_range.position.y, cell_range.end.y):
 		for column: int in range(cell_range.position.x, cell_range.end.x):
-			result.append(column + row * COLUMN_COUNT)
+			result.append(column + row * column_count)
 	return result

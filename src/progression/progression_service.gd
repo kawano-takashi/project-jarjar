@@ -7,30 +7,22 @@ const UPGRADE_DESCRIPTION_FORMATTER: Script = preload(
 )
 
 
-static func xp_required_for_level(current_level: int) -> int:
-	return SurvivalContentManifest.default_required_xp_for_level(current_level)
+static func xp_required_for_level(level: int, balance: ProgressionBalanceDefinition) -> int:
+	if level <= 0:
+		return 0
+	if level <= balance.xp_early_max_level:
+		return balance.xp_early_coefficient * level + balance.xp_early_offset
+	if level == balance.xp_early_max_level + 1:
+		return balance.xp_first_transition_requirement
+	if level <= balance.xp_middle_max_level:
+		return balance.xp_middle_coefficient * level + balance.xp_middle_offset
+	if level == balance.xp_middle_max_level + 1:
+		return balance.xp_second_transition_requirement
+	return balance.xp_late_coefficient * level + balance.xp_late_offset
 
 
-static func xp_growth_multiplier(current_level: int) -> float:
-	return SurvivalContentManifest.default_growth_multiplier_for_level(current_level)
-
-
-static func xp_required_for_level_with_manifest(
-	current_level: int,
-	manifest: SurvivalContentManifest,
-) -> int:
-	if manifest == null:
-		return xp_required_for_level(current_level)
-	return manifest.required_xp_for_level(current_level)
-
-
-static func xp_growth_multiplier_with_manifest(
-	current_level: int,
-	manifest: SurvivalContentManifest,
-) -> float:
-	if manifest == null:
-		return xp_growth_multiplier(current_level)
-	return manifest.growth_multiplier_for_level(current_level)
+static func xp_growth_multiplier(level: int, balance: ProgressionBalanceDefinition) -> float:
+	return balance.xp_growth_compensation_multiplier if level in balance.xp_growth_compensation_levels else 1.0
 
 
 static func add_xp(state: RunState, amount: int, catalog: DefinitionCatalog) -> int:
@@ -41,7 +33,7 @@ static func add_xp(state: RunState, amount: int, catalog: DefinitionCatalog) -> 
 		return 0
 	var manifest: SurvivalContentManifest = catalog.manifest()
 	var scaled_numerator: int = (
-		amount * manifest.xp_yield_percent + state.xp_yield_remainder
+		amount * manifest.progression.xp_yield_percent + state.xp_yield_remainder
 	)
 	var scaled_amount: int = floori(float(scaled_numerator) / 100.0)
 	state.xp_yield_remainder = scaled_numerator % 100
@@ -54,12 +46,12 @@ static func add_xp(state: RunState, amount: int, catalog: DefinitionCatalog) -> 
 		return 0
 	var unprocessed_xp: int = scaled_amount
 	while unprocessed_xp > 0 and state.pending_level_ups < upgrade_capacity:
-		var required: int = xp_required_for_level_with_manifest(state.level, manifest)
+		var required: int = xp_required_for_level(state.level, manifest.progression)
 		if required <= 0:
 			break
 		var growth_multiplier: int = maxi(
 			1,
-			roundi(xp_growth_multiplier_with_manifest(state.level, manifest)),
+			roundi(xp_growth_multiplier(state.level, manifest.progression)),
 		)
 		var xp_to_threshold: int = maxi(1, required - state.xp)
 		var source_xp_to_threshold: int = ceili(
@@ -95,10 +87,10 @@ static func create_offer(state: RunState, catalog: DefinitionCatalog) -> LevelOf
 	state.next_offer_serial += 1
 	offer.offer_level = state.level - state.pending_level_ups + 1
 	var available: Array[UpgradeOption] = candidates.duplicate()
-	var option_count: int = mini(catalog.manifest().level_offer_count, available.size())
+	var option_count: int = mini(catalog.manifest().progression.level_offer_count, available.size())
 	var has_open_category_slot: bool = (
-		state.weapons.size() < catalog.manifest().weapon_slot_count
-		or state.passives.size() < catalog.manifest().passive_slot_count
+		state.weapons.size() < catalog.manifest().progression.weapon_slot_count
+		or state.passives.size() < catalog.manifest().progression.passive_slot_count
 	)
 	if has_open_category_slot:
 		var owned: Array[UpgradeOption] = []
@@ -110,10 +102,10 @@ static func create_offer(state: RunState, catalog: DefinitionCatalog) -> LevelOf
 			catalog,
 			offer.offer_level,
 		)
-		for _attempt_index: int in range(catalog.manifest().owned_offer_attempt_count):
+		for _attempt_index: int in range(catalog.manifest().progression.owned_offer_attempt_count):
 			if owned.is_empty() or offer.options.size() >= option_count:
 				break
-			if state.rng_streams.upgrade_rng.randf() >= owned_probability:
+			if not WeightedSelector.chance_succeeds_with_value(owned_probability, state.rng_streams.upgrade_rng.randf()):
 				continue
 			var selected_owned: UpgradeOption = owned[
 				state.rng_streams.upgrade_rng.randi_range(0, owned.size() - 1)
@@ -189,17 +181,17 @@ static func apply_direct_upgrade(
 		var definition: WeaponDefinition = catalog.weapon(content_id)
 		if definition == null or definition.is_evolved:
 			return _failure(&"invalid_weapon")
-		var runtime: RunWeapon = state.weapon_for_lineage(definition.lineage_id)
+		var runtime: RunWeapon = state.weapon_for_lineage(catalog.lineage_for_weapon(definition.weapon_id))
 		if runtime == null:
-			if state.weapons.size() >= catalog.manifest().weapon_slot_count:
+			if state.weapons.size() >= catalog.manifest().progression.weapon_slot_count:
 				return _failure(&"weapon_slots_full")
 			var weapon_rng: RandomNumberGenerator = state.rng_streams.create_weapon_rng(
-				definition.lineage_id,
+				catalog.lineage_for_weapon(definition.weapon_id),
 				state.weapons.size(),
 			)
 			runtime = RunWeapon.create(
 				definition.weapon_id,
-				definition.lineage_id,
+				catalog.lineage_for_weapon(definition.weapon_id),
 				false,
 				weapon_rng,
 			)
@@ -218,7 +210,7 @@ static func apply_direct_upgrade(
 	var passive_runtime: RunPassive = state.passive(content_id)
 	var previous_max_hp: float = state.max_hp
 	if passive_runtime == null:
-		if state.passives.size() >= catalog.manifest().passive_slot_count:
+		if state.passives.size() >= catalog.manifest().progression.passive_slot_count:
 			return _failure(&"passive_slots_full")
 		passive_runtime = RunPassive.create(content_id)
 		state.passives.append(passive_runtime)
@@ -231,24 +223,38 @@ static func apply_direct_upgrade(
 
 
 static func remaining_upgrade_capacity(state: RunState, catalog: DefinitionCatalog) -> int:
-	if state == null or catalog == null or catalog.manifest() == null:
-		return 0
 	var remaining: int = 0
-	for runtime: RunWeapon in state.weapons:
-		var definition: WeaponDefinition = catalog.weapon(runtime.weapon_id)
-		if definition != null and not runtime.evolved:
+	var unowned_weapons: Array[int] = []
+	for id: StringName in catalog.basic_weapon_ids():
+		var definition: WeaponDefinition = catalog.weapon(id)
+		if definition.selection_weight <= 0.0:
+			continue
+		var runtime: RunWeapon = state.weapon_for_lineage(catalog.lineage_for_weapon(definition.weapon_id))
+		if runtime == null:
+			unowned_weapons.append(definition.max_level)
+		elif not runtime.evolved:
 			remaining += maxi(0, definition.max_level - runtime.level)
-	remaining += (
-		catalog.manifest().weapon_slot_count - state.weapons.size()
-	) * 8
-	for runtime: RunPassive in state.passives:
-		var definition: PassiveDefinition = catalog.passive(runtime.passive_id)
-		if definition != null:
+	remaining += _capacity_for_open_slots(unowned_weapons, catalog.manifest().progression.weapon_slot_count - state.weapons.size())
+	var unowned_passives: Array[int] = []
+	for id: StringName in catalog.passive_ids():
+		var definition: PassiveDefinition = catalog.passive(id)
+		if definition.selection_weight <= 0.0:
+			continue
+		var runtime: RunPassive = state.passive(id)
+		if runtime == null:
+			unowned_passives.append(definition.max_level)
+		else:
 			remaining += maxi(0, definition.max_level - runtime.level)
-	remaining += (
-		catalog.manifest().passive_slot_count - state.passives.size()
-	) * 5
-	return maxi(0, remaining)
+	return remaining + _capacity_for_open_slots(unowned_passives, catalog.manifest().progression.passive_slot_count - state.passives.size())
+
+
+static func _capacity_for_open_slots(level_counts: Array[int], slots: int) -> int:
+	level_counts.sort()
+	level_counts.reverse()
+	var capacity: int = 0
+	for index: int in range(mini(maxi(0, slots), level_counts.size())):
+		capacity += level_counts[index]
+	return capacity
 
 
 static func is_build_maxed(state: RunState, catalog: DefinitionCatalog) -> bool:
@@ -283,11 +289,13 @@ static func _eligible_options(
 ) -> Array[UpgradeOption]:
 	var result: Array[UpgradeOption] = []
 	var weapon_slots_available: bool = (
-		state.weapons.size() < catalog.manifest().weapon_slot_count
+		state.weapons.size() < catalog.manifest().progression.weapon_slot_count
 	)
 	for weapon_id: StringName in catalog.basic_weapon_ids():
 		var definition: WeaponDefinition = catalog.weapon(weapon_id)
-		var runtime: RunWeapon = state.weapon_for_lineage(definition.lineage_id)
+		if definition.selection_weight <= 0.0:
+			continue
+		var runtime: RunWeapon = state.weapon_for_lineage(catalog.lineage_for_weapon(definition.weapon_id))
 		if runtime == null and not weapon_slots_available:
 			continue
 		if runtime != null:
@@ -296,10 +304,12 @@ static func _eligible_options(
 				continue
 		result.append(_weapon_option(state, catalog, definition, runtime))
 	var passive_slots_available: bool = (
-		state.passives.size() < catalog.manifest().passive_slot_count
+		state.passives.size() < catalog.manifest().progression.passive_slot_count
 	)
 	for passive_id: StringName in catalog.passive_ids():
 		var definition: PassiveDefinition = catalog.passive(passive_id)
+		if definition.selection_weight <= 0.0:
+			continue
 		var runtime: RunPassive = state.passive(passive_id)
 		if runtime == null and not passive_slots_available:
 			continue
@@ -343,7 +353,7 @@ static func _passive_option(
 	option.kind = GameTypes.UpgradeKind.PASSIVE
 	option.content_id = definition.passive_id
 	option.display_name = definition.display_name
-	option.description = definition.description
+	option.description = UPGRADE_DESCRIPTION_FORMATTER.passive_detail(definition, 0, 1)
 	option.current_level = 0 if runtime == null else runtime.level
 	option.next_level = option.current_level + 1
 	if runtime != null:
@@ -354,7 +364,11 @@ static func _passive_option(
 		)
 	option.max_level = definition.max_level
 	option.weight = definition.selection_weight
-	option.pairing_hint = _pairing_hint(catalog, definition.paired_weapon_id)
+	var hints: PackedStringArray = []
+	for evolution: EvolutionDefinition in catalog.evolutions.values():
+		if evolution.passive_id == definition.passive_id:
+			hints.append(_pairing_hint(catalog, evolution.base_weapon_id))
+	option.pairing_hint = "\n".join(hints)
 	return option
 
 
@@ -367,8 +381,9 @@ static func _pairing_hint(catalog: DefinitionCatalog, base_weapon_id: StringName
 	var evolved: WeaponDefinition = catalog.weapon(evolution.evolved_weapon_id)
 	if base == null or paired_passive == null or evolved == null:
 		return ""
-	return "進化: %s Lv8 ＋ 触媒：%s Lv1以上 → %s" % [
+	return "進化: %s Lv%d ＋ 触媒：%s Lv1以上 → %s" % [
 		base.display_name,
+		base.max_level,
 		paired_passive.display_name,
 		evolved.display_name,
 	]
@@ -385,11 +400,11 @@ static func _owned_offer_probability(
 ) -> float:
 	var luck_pct: float = passive_stat_total(state, catalog, &"luck_pct")
 	var total_luck: float = 1.0 + luck_pct / 100.0
-	var parity_factor: float = 2.0 if offer_level % 2 == 0 else 1.0
+	var parity_factor: float = catalog.manifest().progression.owned_offer_even_level_multiplier if offer_level % 2 == 0 else 1.0
 	return clampf(
 		1.0
-		+ catalog.manifest().owned_offer_luck_coefficient * parity_factor
-		- 1.0 / maxf(0.000001, total_luck),
+		+ catalog.manifest().progression.owned_offer_luck_coefficient * parity_factor
+		- 1.0 / total_luck,
 		0.0,
 		1.0,
 	)
@@ -417,8 +432,9 @@ static func _apply_max_hp_passive(
 	catalog: DefinitionCatalog,
 	previous_max_hp: float,
 ) -> void:
-	var max_hp_pct: float = passive_stat_total(state, catalog, &"max_hp_pct")
-	state.max_hp = state.base_max_hp * (1.0 + max_hp_pct / 100.0)
+	state.max_hp = StatCalculator.effective_max_hp(
+		state.base_max_hp, StatCalculator.aggregate(state, catalog),
+	)
 	var gained_max_hp: float = maxf(0.0, state.max_hp - previous_max_hp)
 	state.current_hp = minf(state.max_hp, state.current_hp + gained_max_hp)
 

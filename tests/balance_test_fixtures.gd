@@ -1,0 +1,30 @@
+class_name BalanceTestFixtures
+extends RefCounted
+
+
+static var _catalog: DefinitionCatalog = null
+
+
+## Read-only default input for existing integration fixtures. Never mutate this catalog.
+static func catalog() -> DefinitionCatalog:
+	if _catalog == null:
+		_catalog = DefinitionCatalog.new()
+		assert(_catalog.load_and_validate(), _catalog.error_text)
+	return _catalog
+
+
+## Detached input, including every external .tres reference, for mutation tests.
+static func manifest() -> SurvivalContentManifest:
+	return catalog().manifest().duplicate_deep(Resource.DEEP_DUPLICATE_ALL) as SurvivalContentManifest
+
+
+static func grid() -> UniformGrid:
+	var result := UniformGrid.new()
+	result.configure(catalog().manifest().arena.size)
+	return result
+
+
+static func xp_pool() -> XpPickupPool:
+	var result := XpPickupPool.new()
+	result.configure(catalog().manifest().progression)
+	return result

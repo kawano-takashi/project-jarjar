@@ -26,7 +26,7 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 
 func _test_initial_state(assertions: Variant) -> void:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "survival catalog valid")
+	assertions.expect_true(catalog.validate_manifest(BalanceTestFixtures.manifest()), "survival catalog valid")
 	var state: RunState = RunStateFactory.create(123456, catalog)
 	assertions.expect_equal(GameTypes.RunPhase.COMBAT, state.phase, "new run enters continuous combat")
 	assertions.expect_equal(1, state.weapons.size(), "starter occupies one of five weapon slots")
@@ -41,7 +41,7 @@ func _test_initial_state(assertions: Variant) -> void:
 
 func _test_modal_lifecycle(assertions: Variant) -> void:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "modal lifecycle catalog valid")
+	assertions.expect_true(catalog.validate_manifest(BalanceTestFixtures.manifest()), "modal lifecycle catalog valid")
 	var state: RunState = RunStateFactory.create(654321, catalog)
 	var simulation := CombatSimulation.new()
 	simulation.initialize(state, catalog)
@@ -71,7 +71,7 @@ func _test_modal_lifecycle(assertions: Variant) -> void:
 
 func _test_resume_protection_by_final_modal(assertions: Variant) -> void:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "resume protection catalog valid")
+	assertions.expect_true(catalog.validate_manifest(BalanceTestFixtures.manifest()), "resume protection catalog valid")
 	if not catalog.is_valid:
 		return
 

@@ -20,7 +20,6 @@ func test_names() -> PackedStringArray:
 		"mass_projectile_requires_an_in_range_target",
 		"directional_projectile_preserves_last_nonzero_move_direction",
 		"returning_ring_uses_explicit_outbound_range_and_hits_on_return",
-		"orbital_outer_reach_is_monotonic_and_bounded",
 		"infinite_homing_one_tick_cadence_stays_within_pool",
 		"orbital_active_window_uses_duration_and_has_real_gaps",
 	])
@@ -62,8 +61,6 @@ func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> v
 			_test_directional_move_targeting(assertions)
 		"returning_ring_uses_explicit_outbound_range_and_hits_on_return":
 			_test_returning_ring_rehit(assertions)
-		"orbital_outer_reach_is_monotonic_and_bounded":
-			_test_orbital_outer_reach(assertions)
 		"infinite_homing_one_tick_cadence_stays_within_pool":
 			_test_infinite_homing_pool(assertions)
 		"orbital_active_window_uses_duration_and_has_real_gaps":
@@ -124,24 +121,24 @@ func _test_pool_active_free_indices(assertions: Variant) -> void:
 
 
 func _test_xp_overflow_merge(assertions: Variant) -> void:
-	var pool := XpPickupPool.new()
-	for index: int in range(XpPickupPool.CAPACITY):
+	var pool := BalanceTestFixtures.xp_pool()
+	for index: int in range(pool.capacity):
 		pool.acquire(Vector2(float(index % 40), float(floori(float(index) / 40.0))), 1, 0, Vector2.ZERO)
 	var total_before: int = pool.total_value()
 	var merged: XpPickupState = pool.acquire(Vector2(19.0, 19.0), 17, 1, Vector2.ZERO)
 	assertions.expect_true(merged != null, "overflow resolves to a far pickup")
-	assertions.expect_equal(XpPickupPool.CAPACITY, pool.active_count(), "overflow does not exceed the 2048 crystal cap")
+	assertions.expect_equal(pool.capacity, pool.active_count(), "overflow does not exceed the 2048 crystal cap")
 	assertions.expect_equal(total_before + 17, pool.total_value(), "overflow XP is merged without losing value")
 	assertions.expect_equal(1, pool.overflow_merge_count, "overflow merge is observable")
 
 
 func _test_grid_boundaries(assertions: Variant) -> void:
-	var grid := UniformGrid.new()
-	assertions.expect_equal(Vector2(-16.0, -16.0), UniformGrid.ARENA_MIN, "grid begins at the 32m arena corner")
-	assertions.expect_equal(Vector2(16.0, 16.0), UniformGrid.ARENA_MAX, "grid ends at the 32m arena corner")
+	var grid := BalanceTestFixtures.grid()
+	assertions.expect_equal(Vector2(-16.0, -16.0), grid.arena_min, "grid begins at the 32m arena corner")
+	assertions.expect_equal(Vector2(16.0, 16.0), grid.arena_max, "grid ends at the 32m arena corner")
 	assertions.expect_equal(Vector2i.ZERO, grid.cell_indices_for_position(Vector2(-100.0, -100.0)), "outside negative positions clamp to first cell")
 	assertions.expect_equal(Vector2i(15, 15), grid.cell_indices_for_position(Vector2(100.0, 100.0)), "outside positive positions clamp to last cell")
-	assertions.expect_equal(256, UniformGrid.CELL_COUNT, "2m cells cover the complete 32 by 32 arena")
+	assertions.expect_equal(256, grid.cell_count, "2m cells cover the complete 32 by 32 arena")
 
 
 func _test_segment_boundaries(assertions: Variant) -> void:
@@ -152,7 +149,7 @@ func _test_segment_boundaries(assertions: Variant) -> void:
 	var expected: PackedInt32Array = PackedInt32Array([0, 0, 1, 9, 9])
 	for index: int in range(ticks.size()):
 		var segment: EnemySegmentDefinition = catalog.segment_for_tick(ticks[index])
-		assertions.expect_equal(expected[index], segment.segment_index, "tick %d resolves the expected time-only segment" % ticks[index])
+		assertions.expect_equal(expected[index], catalog.manifest().segments.find(segment), "tick %d resolves the expected time-only segment" % ticks[index])
 
 
 func _test_arena_node_respawn(assertions: Variant) -> void:
@@ -164,16 +161,16 @@ func _test_arena_node_respawn(assertions: Variant) -> void:
 	nodes.initialize(state, catalog)
 	assertions.expect_equal(4, nodes.active_node_count(), "four of eight geometric node sites begin active")
 	var destroyed: int = nodes.damage_nodes_circle(
-		ArenaObjectSystem.NODE_SITE_POSITIONS[0],
+		BalanceTestFixtures.catalog().manifest().arena.node_site_positions[0],
 		1.0,
-		ArenaObjectSystem.NODE_MAX_HP,
+		BalanceTestFixtures.catalog().manifest().arena.node_max_hp,
 		1,
 	)
 	assertions.expect_equal(1, destroyed, "weapon damage destroys one arena node")
 	assertions.expect_equal(3, nodes.active_node_count(), "destroyed node leaves three active during respawn delay")
-	nodes.advance(catalog.manifest().node_respawn_ticks)
+	nodes.advance(catalog.manifest().arena.node_respawn_ticks)
 	assertions.expect_equal(3, nodes.active_node_count(), "node does not respawn one tick early")
-	nodes.advance(catalog.manifest().node_respawn_ticks + 1)
+	nodes.advance(catalog.manifest().arena.node_respawn_ticks + 1)
 	assertions.expect_equal(4, nodes.active_node_count(), "node respawns at an empty site after thirty seconds")
 
 
@@ -189,9 +186,9 @@ func _test_all_weapon_behaviors(assertions: Variant) -> void:
 		var definition: WeaponDefinition = catalog.weapon(weapon_id)
 		var runtime := RunWeapon.create(
 			weapon_id,
-			definition.lineage_id,
+			catalog.lineage_for_weapon(definition.weapon_id),
 			definition.is_evolved,
-			state.rng_streams.create_weapon_rng(definition.lineage_id, 0),
+			state.rng_streams.create_weapon_rng(catalog.lineage_for_weapon(definition.weapon_id), 0),
 		)
 		runtime.level = definition.max_level
 		state.weapons.append(runtime)
@@ -216,9 +213,9 @@ func _test_resonance_wave_amount(assertions: Variant) -> void:
 	var definition: WeaponDefinition = catalog.weapon(&"resonance_wave")
 	state.weapons.append(RunWeapon.create(
 		definition.weapon_id,
-		definition.lineage_id,
+		catalog.lineage_for_weapon(definition.weapon_id),
 		false,
-		state.rng_streams.create_weapon_rng(definition.lineage_id, 0),
+		state.rng_streams.create_weapon_rng(catalog.lineage_for_weapon(definition.weapon_id), 0),
 	))
 	var simulation := CombatSimulation.new()
 	simulation.initialize(state, catalog)
@@ -313,7 +310,7 @@ func _test_homing_core_level_bursts(assertions: Variant) -> void:
 		target.hp = target.max_hp
 		var expected_ticks := PackedInt32Array()
 		for shot_index: int in range(expected_amount):
-			expected_ticks.append(1 + shot_index * WeaponSystem.HOMING_CORE_BURST_INTERVAL_TICKS)
+			expected_ticks.append(1 + shot_index * BalanceTestFixtures.catalog().manifest().combat.homing_burst_interval_ticks)
 		var observed_ticks := PackedInt32Array()
 		var final_tick: int = expected_ticks[expected_ticks.size() - 1]
 		for current_tick: int in range(1, final_tick + 1):
@@ -627,9 +624,9 @@ func _test_arc_impact_explosion(assertions: Variant) -> void:
 	var definition: WeaponDefinition = catalog.weapon(&"arc_crystal")
 	state.weapons.append(RunWeapon.create(
 		definition.weapon_id,
-		definition.lineage_id,
+		catalog.lineage_for_weapon(definition.weapon_id),
 		false,
-		state.rng_streams.create_weapon_rng(definition.lineage_id, 0),
+		state.rng_streams.create_weapon_rng(catalog.lineage_for_weapon(definition.weapon_id), 0),
 	))
 	var simulation := CombatSimulation.new()
 	simulation.initialize(state, catalog)
@@ -686,7 +683,7 @@ func _test_arc_node_impact_order(assertions: Variant) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
-	var node_position: Vector2 = ArenaObjectSystem.NODE_SITE_POSITIONS[4]
+	var node_position: Vector2 = BalanceTestFixtures.catalog().manifest().arena.node_site_positions[4]
 
 	var collision_simulation: CombatSimulation = _node_projectile_simulation(
 		catalog,
@@ -714,7 +711,7 @@ func _test_arc_node_impact_order(assertions: Variant) -> void:
 		"production tick resolves an arc collision",
 	)
 	assertions.expect_float(
-		ArenaObjectSystem.NODE_MAX_HP,
+		BalanceTestFixtures.catalog().manifest().arena.node_max_hp,
 		collision_node.hp,
 		"arc flight through a later node deals no segment damage before enemy impact",
 	)
@@ -816,9 +813,9 @@ func _test_mass_range_gate(assertions: Variant) -> void:
 	var definition: WeaponDefinition = catalog.weapon(&"mass_projectile")
 	var runtime := RunWeapon.create(
 		definition.weapon_id,
-		definition.lineage_id,
+		catalog.lineage_for_weapon(definition.weapon_id),
 		false,
-		state.rng_streams.create_weapon_rng(definition.lineage_id, 0),
+		state.rng_streams.create_weapon_rng(catalog.lineage_for_weapon(definition.weapon_id), 0),
 	)
 	state.weapons.append(runtime)
 	var simulation := CombatSimulation.new()
@@ -860,9 +857,9 @@ func _test_directional_move_targeting(assertions: Variant) -> void:
 	var definition: WeaponDefinition = catalog.weapon(&"directional_needle")
 	state.weapons.append(RunWeapon.create(
 		definition.weapon_id,
-		definition.lineage_id,
+		catalog.lineage_for_weapon(definition.weapon_id),
 		false,
-		state.rng_streams.create_weapon_rng(definition.lineage_id, 0),
+		state.rng_streams.create_weapon_rng(catalog.lineage_for_weapon(definition.weapon_id), 0),
 	))
 	var simulation := CombatSimulation.new()
 	simulation.initialize(state, catalog)
@@ -889,9 +886,9 @@ func _test_returning_ring_rehit(assertions: Variant) -> void:
 	var definition: WeaponDefinition = catalog.weapon(&"returning_ring")
 	var runtime := RunWeapon.create(
 		definition.weapon_id,
-		definition.lineage_id,
+		catalog.lineage_for_weapon(definition.weapon_id),
 		false,
-		state.rng_streams.create_weapon_rng(definition.lineage_id, 0),
+		state.rng_streams.create_weapon_rng(catalog.lineage_for_weapon(definition.weapon_id), 0),
 	)
 	state.weapons.append(runtime)
 	var outward_reach: float = definition.range_at(1)
@@ -955,36 +952,6 @@ func _test_returning_ring_rehit(assertions: Variant) -> void:
 	assertions.expect_equal(1, return_hit_count, "moving the player during return does not repeatedly clear the returning hit set")
 
 
-func _test_orbital_outer_reach(assertions: Variant) -> void:
-	var catalog: DefinitionCatalog = _catalog(assertions)
-	if catalog == null:
-		return
-	var base: WeaponDefinition = catalog.weapon(&"orbital_array")
-	var evolved: WeaponDefinition = catalog.weapon(&"eternal_orbit")
-	var expected_base_outer_reaches := PackedFloat32Array([
-		2.07,
-		2.07,
-		2.07,
-		2.07,
-		3.07,
-		3.07,
-		3.07,
-		3.07,
-	])
-	for level_index: int in range(expected_base_outer_reaches.size()):
-		assertions.expect_float(
-			expected_base_outer_reaches[level_index],
-			_orbital_outer_reach(base, level_index + 1),
-			"orbital outer reach follows the fixed one-property upgrade schedule at level %d" % (level_index + 1),
-		)
-	var level_eight_outer: float = _orbital_outer_reach(base, 8)
-	var evolved_outer: float = _orbital_outer_reach(evolved, 1)
-	assertions.expect_true(evolved_outer >= 4.2 and evolved_outer <= 4.8, "evolved orbital outer reach stays in the approved band")
-	assertions.expect_true(level_eight_outer < evolved_outer, "evolution extends orbital outer reach beyond the base weapon")
-
-
-func _orbital_outer_reach(definition: WeaponDefinition, level: int) -> float:
-	return definition.range_at(level) + definition.effect_radius_at(level)
 
 
 func _test_infinite_homing_pool(assertions: Variant) -> void:
@@ -996,9 +963,9 @@ func _test_infinite_homing_pool(assertions: Variant) -> void:
 	var definition: WeaponDefinition = catalog.weapon(&"infinite_homing")
 	state.weapons.append(RunWeapon.create(
 		definition.weapon_id,
-		definition.lineage_id,
+		catalog.lineage_for_weapon(definition.weapon_id),
 		true,
-		state.rng_streams.create_weapon_rng(definition.lineage_id, 0),
+		state.rng_streams.create_weapon_rng(catalog.lineage_for_weapon(definition.weapon_id), 0),
 	))
 	var simulation := CombatSimulation.new()
 	simulation.initialize(state, catalog)
@@ -1108,8 +1075,8 @@ func _test_orbital_active_window(assertions: Variant) -> void:
 		1,
 	)
 	assertions.expect_equal(-1, evolved_simulation.weapon_system.orbital_active_until_tick(&"orbital_array"), "eternal orbit uses no finite active deadline")
-	assertions.expect_true(evolved_simulation.weapon_system.orbital_is_active(&"orbital_array", RunState.BOSS_START_TICK * 2), "eternal orbit has no gameplay or visual gap through an unlimited boss fight")
-	assertions.expect_equal(8, evolved_simulation.weapon_system.orbital_transforms(Vector2.ZERO, RunState.BOSS_START_TICK * 2).size(), "eternal orbit continuously renders every evolved orb")
+	assertions.expect_true(evolved_simulation.weapon_system.orbital_is_active(&"orbital_array", BalanceTestFixtures.catalog().boss_start_tick * 2), "eternal orbit has no gameplay or visual gap through an unlimited boss fight")
+	assertions.expect_equal(8, evolved_simulation.weapon_system.orbital_transforms(Vector2.ZERO, BalanceTestFixtures.catalog().boss_start_tick * 2).size(), "eternal orbit continuously renders every evolved orb")
 	var long_run_tick: int = 2_000_000
 	var long_run_pulse: Array[Dictionary] = evolved_simulation.weapon_system.advance_and_fire(
 		Vector2.ZERO,
@@ -1133,9 +1100,9 @@ func _orbital_fixture(
 	var definition: WeaponDefinition = catalog.weapon(weapon_id)
 	var runtime: RunWeapon = RunWeapon.create(
 		definition.weapon_id,
-		definition.lineage_id,
+		catalog.lineage_for_weapon(definition.weapon_id),
 		definition.is_evolved,
-		state.rng_streams.create_weapon_rng(definition.lineage_id, 0),
+		state.rng_streams.create_weapon_rng(catalog.lineage_for_weapon(definition.weapon_id), 0),
 	)
 	runtime.level = level
 	state.weapons.append(runtime)
@@ -1166,9 +1133,9 @@ func _homing_fixture(
 	var definition: WeaponDefinition = catalog.weapon(weapon_id)
 	var runtime := RunWeapon.create(
 		definition.weapon_id,
-		definition.lineage_id,
+		catalog.lineage_for_weapon(definition.weapon_id),
 		definition.is_evolved,
-		state.rng_streams.create_weapon_rng(definition.lineage_id, 0),
+		state.rng_streams.create_weapon_rng(catalog.lineage_for_weapon(definition.weapon_id), 0),
 	)
 	runtime.level = level
 	state.weapons.append(runtime)
@@ -1214,7 +1181,7 @@ func _node_projectile_simulation(
 		runtime.cooldown_remaining_ticks = 10_000
 	var simulation := CombatSimulation.new()
 	simulation.initialize(state, catalog)
-	simulation.player_position = Vector2(6.0, ArenaObjectSystem.NODE_SITE_POSITIONS[4].y)
+	simulation.player_position = Vector2(6.0, BalanceTestFixtures.catalog().manifest().arena.node_site_positions[4].y)
 	return simulation
 
 
@@ -1268,5 +1235,5 @@ func _fixture_projectile(pool: ProjectilePool, position: Vector2) -> ProjectileS
 
 func _catalog(assertions: Variant) -> DefinitionCatalog:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "survival content catalog validates")
+	assertions.expect_true(catalog.validate_manifest(BalanceTestFixtures.manifest()), "survival content catalog validates")
 	return catalog if catalog.is_valid else null

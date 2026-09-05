@@ -3,7 +3,7 @@ extends RefCounted
 
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
-		"catalog_locks_contact_damage_and_radius_without_per_enemy_cadence",
+		"catalog_accepts_contact_tuning_without_per_enemy_cadence",
 		"seeking_enemy_stops_at_contact_and_damages_every_tick",
 		"player_pushes_enemy_at_full_speed_and_recontact_damages_immediately",
 		"all_active_enemy_kinds_offer_contact_while_entry_and_stop_gate_actions",
@@ -18,7 +18,7 @@ func test_names() -> PackedStringArray:
 
 func run_test(test_name: String, assertions: Variant, _context: Dictionary) -> void:
 	match test_name:
-		"catalog_locks_contact_damage_and_radius_without_per_enemy_cadence":
+		"catalog_accepts_contact_tuning_without_per_enemy_cadence":
 			_test_contact_catalog_contract(assertions)
 		"seeking_enemy_stops_at_contact_and_damages_every_tick":
 			_test_continuous_contact(assertions)
@@ -54,8 +54,6 @@ func _test_contact_catalog_contract(assertions: Variant) -> void:
 		property_names.has(&"contact_interval_ticks"),
 		"enemy definitions no longer expose a per-enemy contact cadence",
 	)
-	assertions.expect_float(0.38, definition.body_radius, "locks pursuer radius")
-	assertions.expect_float(8.0, definition.contact_damage, "locks pursuer contact damage")
 	var canonical: SurvivalContentManifest = catalog.manifest()
 	var manifest_property_names: Array[StringName] = []
 	for property: Dictionary in canonical.get_property_list():
@@ -68,27 +66,22 @@ func _test_contact_catalog_contract(assertions: Variant) -> void:
 		manifest_property_names.has(&"modal_resume_invulnerability_ticks"),
 		"the generic modal protection setting is removed",
 	)
-	assertions.expect_equal(
-		45,
-		canonical.level_up_resume_invulnerability_ticks,
-		"level-up resume protection remains forty-five ticks",
-	)
 	var enemy_index: int = _enemy_index(canonical, &"pursuer")
-	var radius_drift: EnemyDefinition = definition.duplicate(true) as EnemyDefinition
+	var radius_drift: EnemyDefinition = definition.duplicate_deep(Resource.DEEP_DUPLICATE_ALL) as EnemyDefinition
 	radius_drift.body_radius += 0.01
-	assertions.expect_false(
+	assertions.expect_true(
 		DefinitionCatalog.new().validate_manifest(
 			_manifest_with_enemy(canonical, enemy_index, radius_drift)
 		),
-		"catalog rejects contact-radius drift",
+		"catalog accepts a valid contact-radius change",
 	)
-	var damage_drift: EnemyDefinition = definition.duplicate(true) as EnemyDefinition
+	var damage_drift: EnemyDefinition = definition.duplicate_deep(Resource.DEEP_DUPLICATE_ALL) as EnemyDefinition
 	damage_drift.contact_damage += 1.0
-	assertions.expect_false(
+	assertions.expect_true(
 		DefinitionCatalog.new().validate_manifest(
 			_manifest_with_enemy(canonical, enemy_index, damage_drift)
 		),
-		"catalog rejects contact-damage drift",
+		"catalog accepts a valid contact-damage change",
 	)
 
 
@@ -97,7 +90,7 @@ func _test_continuous_contact(assertions: Variant) -> void:
 	if simulation == null:
 		return
 	var definition: EnemyDefinition = simulation.catalog.enemy(&"pursuer")
-	var contact_radius: float = CombatEnvelope.PLAYER_BODY_RADIUS + definition.body_radius
+	var contact_radius: float = BalanceTestFixtures.catalog().envelope.player_body_radius + definition.body_radius
 	var enemy: EnemyEntity = simulation.spawn_fixture_enemy(
 		GameTypes.EnemyType.PURSUER,
 		Vector2(contact_radius + definition.move_speed / 120.0, 0.0),
@@ -140,7 +133,7 @@ func _test_player_push_and_recontact(assertions: Variant) -> void:
 	if simulation == null:
 		return
 	var definition: EnemyDefinition = simulation.catalog.enemy(&"pursuer")
-	var contact_radius: float = CombatEnvelope.PLAYER_BODY_RADIUS + definition.body_radius
+	var contact_radius: float = BalanceTestFixtures.catalog().envelope.player_body_radius + definition.body_radius
 	var enemy: EnemyEntity = simulation.spawn_fixture_enemy(
 		GameTypes.EnemyType.PURSUER,
 		Vector2(contact_radius, 0.0),
@@ -150,7 +143,7 @@ func _test_player_push_and_recontact(assertions: Variant) -> void:
 	simulation._move_player(Vector2.RIGHT)
 	simulation.enemy_system.advance_snapshot(ids, simulation.player_position, 1)
 	assertions.expect_float(
-		CombatSimulation.PLAYER_SPEED / float(RunState.TICKS_PER_SECOND),
+		BalanceTestFixtures.catalog().manifest().player.move_speed / float(RunState.TICKS_PER_SECOND),
 		simulation.player_position.x,
 		"contact never reduces the player's configured movement step",
 	)
@@ -260,7 +253,7 @@ func _test_enemy_kinds_entry_and_stop(assertions: Variant) -> void:
 		1.0,
 		1.0,
 		100,
-		CombatEnvelope.NORMAL_ENTRY_TICKS,
+		BalanceTestFixtures.catalog().envelope.normal_entry_ticks,
 	)
 	var ids: Array[int] = system.snapshot_ids()
 	var active_candidates: Array[Dictionary] = system.resolve_contact_damage_candidates(
@@ -306,7 +299,7 @@ func _test_exact_overlap_and_wall(assertions: Variant) -> void:
 	)
 	first_state.combat_tick = 1
 	first_system.advance_snapshot([first.entity_id], Vector2.ZERO, 1)
-	var contact_radius: float = CombatEnvelope.PLAYER_BODY_RADIUS + definition.body_radius
+	var contact_radius: float = BalanceTestFixtures.catalog().envelope.player_body_radius + definition.body_radius
 	var expected_position: Vector2 = (
 		first_system._deterministic_contact_direction(first.entity_id) * contact_radius
 	)
@@ -334,7 +327,7 @@ func _test_exact_overlap_and_wall(assertions: Variant) -> void:
 	var wall_state: RunState = RunStateFactory.create(14_005, catalog)
 	var wall_system := EnemySystem.new()
 	wall_system.initialize(wall_state, catalog)
-	var wall_player := Vector2(CombatEnvelope.PLAYER_CENTER_LIMIT, 0.0)
+	var wall_player := Vector2(BalanceTestFixtures.catalog().envelope.player_center_max.x, 0.0)
 	var wall_enemy: EnemyEntity = wall_system.enemy_store.try_spawn(
 		wall_state,
 		GameTypes.EnemyType.PURSUER,
@@ -347,7 +340,7 @@ func _test_exact_overlap_and_wall(assertions: Variant) -> void:
 	wall_state.combat_tick = 1
 	wall_system.advance_snapshot([wall_enemy.entity_id], wall_player, 1)
 	assertions.expect_float(
-		CombatEnvelope.enemy_center_limit(definition.body_radius),
+		BalanceTestFixtures.catalog().envelope.enemy_center_limit(definition.body_radius).x,
 		wall_enemy.position.x,
 		"wall-constrained separation holds the enemy at its arena boundary",
 	)
@@ -394,7 +387,7 @@ func _test_swarm_passthrough(assertions: Variant) -> void:
 	)
 	assertions.expect_true(
 		enemy.position.distance_to(Vector2.ZERO)
-		< CombatEnvelope.PLAYER_BODY_RADIUS + unit.body_radius,
+		< BalanceTestFixtures.catalog().envelope.player_body_radius + unit.body_radius,
 		"swarm is not pushed out to the soft-contact radius",
 	)
 	assertions.expect_equal(
@@ -550,7 +543,7 @@ func _manifest_with_enemy(
 	enemy_index: int,
 	enemy: EnemyDefinition,
 ) -> SurvivalContentManifest:
-	var copy: SurvivalContentManifest = manifest.duplicate(true) as SurvivalContentManifest
+	var copy: SurvivalContentManifest = manifest.duplicate_deep(Resource.DEEP_DUPLICATE_ALL) as SurvivalContentManifest
 	var enemies: Array[EnemyDefinition] = []
 	enemies.assign(manifest.enemies)
 	enemies[enemy_index] = enemy
@@ -578,7 +571,7 @@ func _simulation(assertions: Variant, run_seed: int) -> CombatSimulation:
 func _catalog(assertions: Variant) -> DefinitionCatalog:
 	var catalog := DefinitionCatalog.new()
 	assertions.expect_true(
-		catalog.load_and_validate(),
+		catalog.validate_manifest(BalanceTestFixtures.manifest()),
 		"contact content validates: %s" % catalog.error_text,
 	)
 	return catalog if catalog.is_valid else null

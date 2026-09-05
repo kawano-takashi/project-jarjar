@@ -2,39 +2,30 @@ class_name XpPickupPool
 extends RefCounted
 
 
-const CAPACITY: int = SurvivalContentManifest.DEFAULT_XP_POOL_CAPACITY
-const BASE_ATTRACT_RADIUS: float = SurvivalContentManifest.DEFAULT_XP_PICKUP_ATTRACT_RADIUS
-const COLLECT_RADIUS: float = SurvivalContentManifest.DEFAULT_XP_PICKUP_COLLECT_RADIUS
-const ATTRACT_SPEED: float = SurvivalContentManifest.DEFAULT_XP_PICKUP_SPEED
 
 var slots: Array[XpPickupState] = []
 var overflow_merge_count: int = 0
 var reuse_count: int = 0
-var capacity: int = CAPACITY
-var attract_radius: float = BASE_ATTRACT_RADIUS
-var collect_radius: float = COLLECT_RADIUS
-var attract_speed: float = ATTRACT_SPEED
+var capacity: int = 0
+var attract_radius: float = 0
+var collect_radius: float = 0
+var attract_speed: float = 0
 
 var _free_indices: Array[int] = []
 var _active_indices: Array[int] = []
 var _active_position_by_pool_index: PackedInt32Array = PackedInt32Array()
 
 
-func _init() -> void:
-	_rebuild_storage()
 
 
-func configure(manifest: SurvivalContentManifest) -> void:
-	if manifest == null:
-		return
-	var requested_capacity: int = maxi(1, manifest.xp_pool_capacity)
-	attract_radius = maxf(0.0, manifest.xp_pickup_attract_radius)
-	collect_radius = maxf(0.0, manifest.xp_pickup_collect_radius)
-	attract_speed = maxf(0.0, manifest.xp_pickup_speed)
-	if requested_capacity == capacity:
-		return
-	capacity = requested_capacity
-	_rebuild_storage()
+
+func configure(balance: ProgressionBalanceDefinition) -> void:
+	attract_radius = balance.xp_pickup_attract_radius
+	collect_radius = balance.xp_pickup_collect_radius
+	attract_speed = balance.xp_pickup_speed
+	if balance.xp_pool_capacity != capacity:
+		capacity = balance.xp_pool_capacity
+		_rebuild_storage()
 
 
 func _rebuild_storage() -> void:
@@ -56,10 +47,12 @@ func _rebuild_storage() -> void:
 
 
 func acquire(position: Vector2, value: int, born_tick: int, player_position: Vector2) -> XpPickupState:
+	if value <= 0:
+		return null
 	if _free_indices.is_empty():
 		var merge_target: XpPickupState = _farthest_from(player_position)
 		if merge_target != null:
-			merge_target.value += maxi(1, value)
+			merge_target.value += value
 			overflow_merge_count += 1
 		return merge_target
 	var pool_index: int = _free_indices.pop_back()

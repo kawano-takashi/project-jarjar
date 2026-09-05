@@ -78,6 +78,8 @@ func _enter_tree() -> void:
 			"DEFINITION_CATALOG_INVALID count=%d"
 			% _definition_catalog.validation_errors.size()
 		)
+		for error: String in _definition_catalog.validation_errors:
+			printerr(error)
 		_quit_deferred(2)
 		return
 	_launch_valid = true
@@ -229,7 +231,8 @@ func start_new_run_with_seed(run_seed: int) -> bool:
 		return false
 	var settings_store: Variant = _settings_store()
 	_tutorial_controller.begin_run(
-		bool(settings_store.tutorial_completed) if settings_store != null else false
+		bool(settings_store.tutorial_completed) if settings_store != null else false,
+		_definition_catalog,
 	)
 	combat_simulation = CombatSimulation.new()
 	combat_simulation.initialize(run_state, _definition_catalog)
@@ -724,7 +727,7 @@ func _start_qa_mode(scenario_id: String) -> void:
 		print("QA_SCENARIO_FAILED reason=state")
 		get_tree().quit(1)
 		return
-	_tutorial_controller.begin_run(true)
+	_tutorial_controller.begin_run(true, _definition_catalog)
 	match run_state.phase:
 		GameTypes.RunPhase.RESULT:
 			_show_result()

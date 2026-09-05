@@ -6,16 +6,26 @@ static func weapon_detail(definition: WeaponDefinition, next_level: int) -> Stri
 	if definition == null:
 		return ""
 	var deltas: Array[WeaponDefinition.WeaponLevelDelta] = definition.level_deltas(next_level)
-	if deltas.size() != 1:
-		return ""
-	var delta: WeaponDefinition.WeaponLevelDelta = deltas[0]
+	var lines: PackedStringArray = []
+	for delta: WeaponDefinition.WeaponLevelDelta in deltas:
+		lines.append(_weapon_delta_detail(definition, delta))
+	return "\n".join(lines)
+
+
+static func _weapon_delta_detail(definition: WeaponDefinition, delta: WeaponDefinition.WeaponLevelDelta) -> String:
 	var label: String = _weapon_stat_label(definition, delta.stat_id)
+	var previous: float = delta.previous_value
+	var next: float = delta.new_value
+	if delta.stat_id in [WeaponDefinition.STAT_COOLDOWN_TICKS, WeaponDefinition.STAT_DURATION_TICKS]:
+		previous /= float(RunState.TICKS_PER_SECOND)
+		next /= float(RunState.TICKS_PER_SECOND)
+	var numbers: PackedStringArray = _delta_numbers(previous, next)
 	match delta.stat_id:
 		WeaponDefinition.STAT_COOLDOWN_TICKS, WeaponDefinition.STAT_DURATION_TICKS:
 			return "%s %s秒 → %s秒" % [
 				label,
-				_number(delta.previous_value / float(RunState.TICKS_PER_SECOND)),
-				_number(delta.new_value / float(RunState.TICKS_PER_SECOND)),
+				numbers[0],
+				numbers[1],
 			]
 		WeaponDefinition.STAT_AMOUNT, WeaponDefinition.STAT_PIERCE:
 			return "%s %d → %d" % [
@@ -26,20 +36,20 @@ static func weapon_detail(definition: WeaponDefinition, next_level: int) -> Stri
 		WeaponDefinition.STAT_PROJECTILE_SPEED:
 			return "%s %sm/秒 → %sm/秒" % [
 				label,
-				_number(delta.previous_value),
-				_number(delta.new_value),
+				numbers[0],
+				numbers[1],
 			]
 		WeaponDefinition.STAT_RANGE, WeaponDefinition.STAT_PROJECTILE_RADIUS, WeaponDefinition.STAT_EFFECT_RADIUS:
 			return "%s %sm → %sm" % [
 				label,
-				_number(delta.previous_value),
-				_number(delta.new_value),
+				numbers[0],
+				numbers[1],
 			]
 		_:
 			return "%s %s → %s" % [
 				label,
-				_number(delta.previous_value),
-				_number(delta.new_value),
+				numbers[0],
+				numbers[1],
 			]
 
 
@@ -48,7 +58,7 @@ static func passive_detail(
 	current_level: int,
 	next_level: int,
 ) -> String:
-	if definition == null or current_level <= 0 or next_level <= current_level:
+	if definition == null or current_level < 0 or next_level <= current_level:
 		return ""
 	var previous_value: float = definition.amount_per_level * float(current_level)
 	var new_value: float = definition.amount_per_level * float(next_level)
@@ -127,10 +137,18 @@ static func _passive_stat_label(stat_id: StringName) -> String:
 	return "効果"
 
 
+static func _delta_numbers(previous: float, next: float) -> PackedStringArray:
+	for decimals: int in range(2, 15):
+		var left: String = String.num(previous, decimals).trim_suffix(".0")
+		var right: String = String.num(next, decimals).trim_suffix(".0")
+		if left != right:
+			return [left, right]
+	return [String.num_scientific(previous), String.num_scientific(next)]
+
+
 static func _number(value: float) -> String:
-	var result: String = "%.2f" % value
-	result = result.trim_suffix("0").trim_suffix("0").trim_suffix(".")
-	return result
+	var result: String = String.num(value).trim_suffix(".0")
+	return String.num_scientific(value) if value != 0.0 and result.to_float() == 0.0 else result
 
 
 static func _signed_number(value: float) -> String:

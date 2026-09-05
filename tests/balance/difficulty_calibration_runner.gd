@@ -56,18 +56,8 @@ const RUN_COLUMNS: Array[String] = [
 	"boss_spawn_tick",
 	"boss_defeat_tick",
 	"boss_fight_seconds",
-	"elite_1_spawn_tick",
-	"elite_1_kill_tick",
-	"elite_1_kill_seconds",
-	"elite_2_spawn_tick",
-	"elite_2_kill_tick",
-	"elite_2_kill_seconds",
-	"elite_3_spawn_tick",
-	"elite_3_kill_tick",
-	"elite_3_kill_seconds",
-	"elite_4_spawn_tick",
-	"elite_4_kill_tick",
-	"elite_4_kill_seconds",
+	"elite_spawn_ticks",
+	"elite_kill_ticks",
 	"weapon_hits",
 	"weapon_kills",
 	"visible_weapon_hits",
@@ -275,8 +265,6 @@ func _load_catalog() -> Dictionary:
 	var catalog := DefinitionCatalog.new()
 	if not catalog.load_and_validate():
 		return {"valid": false, "reason": "definition_catalog_invalid"}
-	if catalog.manifest().starter_weapon_id != &"homing_core":
-		return {"valid": false, "reason": "starter_weapon_must_be_homing_core"}
 	return {"valid": true, "reason": "", "catalog": catalog}
 
 
@@ -294,7 +282,7 @@ func _run_one(
 	if not simulation.has_method(&"visible_combat_metrics"):
 		return {"infrastructure_error": "visible_combat_metrics_missing"}
 	var bot: RefCounted = BotScript.new()
-	if not bot.initialize(policy_value, run_seed):
+	if not bot.initialize(policy_value, run_seed, catalog):
 		return {"infrastructure_error": "bot_policy_invalid"}
 	var runtime: Dictionary = {
 		"first_evolution_tick": -1,
@@ -467,19 +455,10 @@ func _run_row(
 		"boss_spawn_tick": state.boss_spawn_tick,
 		"boss_defeat_tick": state.boss_defeat_tick,
 		"boss_fight_seconds": _elapsed_seconds(state.boss_spawn_tick, state.boss_defeat_tick),
-		"elite_1_spawn_tick": state.elite_spawn_ticks[0],
-		"elite_1_kill_tick": state.elite_kill_ticks[0],
-		"elite_1_kill_seconds": _elapsed_seconds(state.elite_spawn_ticks[0], state.elite_kill_ticks[0]),
-		"elite_2_spawn_tick": state.elite_spawn_ticks[1],
-		"elite_2_kill_tick": state.elite_kill_ticks[1],
-		"elite_2_kill_seconds": _elapsed_seconds(state.elite_spawn_ticks[1], state.elite_kill_ticks[1]),
-		"elite_3_spawn_tick": state.elite_spawn_ticks[2],
-		"elite_3_kill_tick": state.elite_kill_ticks[2],
-		"elite_3_kill_seconds": _elapsed_seconds(state.elite_spawn_ticks[2], state.elite_kill_ticks[2]),
-		"elite_4_spawn_tick": state.elite_spawn_ticks[3],
-		"elite_4_kill_tick": state.elite_kill_ticks[3],
-		"elite_4_kill_seconds": _elapsed_seconds(state.elite_spawn_ticks[3], state.elite_kill_ticks[3]),
 		"segment_samples": state.normal_active_samples_by_segment.duplicate(),
+		"segment_durations": simulation.catalog.manifest().segments.map(func(segment: EnemySegmentDefinition) -> int: return segment.duration_ticks),
+		"elite_spawn_ticks": state.elite_spawn_ticks.duplicate(),
+		"elite_kill_ticks": state.elite_kill_ticks.duplicate(),
 		"segment_active_totals": state.normal_active_total_by_segment.duplicate(),
 		"segment_engaged_totals": state.normal_engaged_total_by_segment.duplicate(),
 		"segment_normal_kills": state.normal_kills_by_segment.duplicate(),
@@ -512,13 +491,13 @@ func _append_segment_rows(run_row: Dictionary, segment_rows: Array[Dictionary]) 
 	var engaged_totals: PackedInt64Array = run_row["segment_engaged_totals"]
 	var normal_kills: PackedInt32Array = run_row["segment_normal_kills"]
 	var normal_xp: PackedInt32Array = run_row["segment_normal_xp"]
-	for segment_index: int in range(RunState.ENEMY_SEGMENT_COUNT):
+	for segment_index: int in range(samples.size()):
 		var sample_count: int = samples[segment_index]
 		segment_rows.append({
 			"policy": run_row["policy"],
 			"seed": run_row["seed"],
 			"segment_index": segment_index,
-			"completed": sample_count >= 3_590,
+			"completed": sample_count >= int(run_row["segment_durations"][segment_index]) - 10,
 			"sample_count": sample_count,
 			"mean_active_normal": (
 				0.0 if sample_count <= 0 else float(active_totals[segment_index]) / float(sample_count)

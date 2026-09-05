@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="WeaponDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/weapon_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+weapon_id = &"collapse_projectile"
+display_name = "崩壊弾"
+description = "敵群を貫きながら膨張する超高質量弾。"
+behavior = 6
+is_evolved = true
+damage_by_level = PackedFloat32Array(503.7)
+cooldown_ticks_by_level = PackedInt32Array(72)
+amount_by_level = PackedInt32Array(3)
+projectile_speed_by_level = PackedFloat32Array(9)
+range_by_level = PackedFloat32Array(5.5)
+projectile_radius_by_level = PackedFloat32Array(2.2)
+effect_radius_by_level = PackedFloat32Array(0)
+range_scales_with_area = false
+projectile_radius_scales_with_area = true
+effect_radius_scales_with_area = false
+duration_ticks_by_level = PackedInt32Array(240)
+pierce_by_level = PackedInt32Array(999)
+critical_multiplier = 1.0

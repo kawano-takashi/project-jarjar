@@ -49,9 +49,9 @@ const REMOVED_PRODUCTION_TOKENS: PackedStringArray = [
 
 const REMOVED_PATH_PREFIXES: PackedStringArray = [
 	"res://assets/ui/inventory_icons/",
-	"res://data/definitions/affixes/",
-	"res://data/definitions/rarities/",
-	"res://data/definitions/waves/",
+	"res://data/balance/affixes/",
+	"res://data/balance/rarities/",
+	"res://data/balance/waves/",
 	"res://src/inventory/",
 	"res://src/loot/",
 	"res://src/ui/inventory_",
@@ -91,14 +91,14 @@ const REMOVED_PATHS: PackedStringArray = [
 	"res://src/definitions/affix_definition.gd",
 	"res://src/definitions/wave_definition.gd",
 	"res://src/definitions/score_definition.gd",
-	"res://data/definitions/affixes",
-	"res://data/definitions/rarities",
-	"res://data/definitions/waves",
-	"res://data/definitions/score.tres",
-	"res://data/definitions/weapons/wood_stick.tres",
-	"res://data/definitions/weapons/bow.tres",
-	"res://data/definitions/weapons/staff.tres",
-	"res://data/definitions/weapons/sword.tres",
+	"res://data/balance/affixes",
+	"res://data/balance/rarities",
+	"res://data/balance/waves",
+	"res://data/balance/score.tres",
+	"res://data/balance/weapons/wood_stick.tres",
+	"res://data/balance/weapons/bow.tres",
+	"res://data/balance/weapons/staff.tres",
+	"res://data/balance/weapons/sword.tres",
 	"res://scenes/ui/inventory_screen.tscn",
 	"res://scenes/ui/fusion_dialog.tscn",
 	"res://scenes/ui/reward_reveal_screen.tscn",
@@ -163,25 +163,26 @@ func _test_no_removed_references(assertions: Variant) -> void:
 	for icon_path: String in REMOVED_ICON_PATHS:
 		assertions.expect_false(FileAccess.file_exists(icon_path), "removed inventory icon absent: %s" % icon_path)
 	var audited_prefixes: Array[String] = [
+		"res://data/definitions/",
 		"res://tools/",
 		"res://build/",
 		"res://artifacts/",
 		"res://work/",
 		"res://.codex/",
 		"res://assets/ui/inventory_icons/",
-		"res://data/definitions/affixes/",
-		"res://data/definitions/rarities/",
-		"res://data/definitions/waves/",
+		"res://data/balance/affixes/",
+		"res://data/balance/rarities/",
+		"res://data/balance/waves/",
 		"res://src/inventory/",
 		"res://src/loot/",
 		"res://src/definitions/rarity_definition.",
 		"res://src/definitions/affix_definition.",
 		"res://src/definitions/wave_definition.",
 		"res://src/definitions/score_definition.",
-		"res://data/definitions/weapons/wood_stick.tres",
-		"res://data/definitions/weapons/bow.tres",
-		"res://data/definitions/weapons/staff.tres",
-		"res://data/definitions/weapons/sword.tres",
+		"res://data/balance/weapons/wood_stick.tres",
+		"res://data/balance/weapons/bow.tres",
+		"res://data/balance/weapons/staff.tres",
+		"res://data/balance/weapons/sword.tres",
 		"res://src/ui/inventory_",
 		"res://scenes/ui/reward_reveal_",
 	]
@@ -231,7 +232,7 @@ func _test_launch_balance(assertions: Variant) -> void:
 	]
 	assertions.expect_equal(expected, LaunchArguments.QA_SCENARIOS, "QA scenarios expose only survival fixtures")
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "project contract catalog valid: %s" % catalog.error_text)
+	assertions.expect_true(catalog.validate_manifest(BalanceTestFixtures.manifest()), "project contract catalog valid: %s" % catalog.error_text)
 	assertions.expect_equal(60, int(ProjectSettings.get_setting("physics/common/physics_ticks_per_second", 60)), "gameplay physics is fixed at 60Hz")
 	assertions.expect_equal("4.7", str(ProjectSettings.get_setting("application/config/features", PackedStringArray())[0]).left(3), "project targets Godot 4.7")
 	assertions.expect_false(InputMap.has_action(&"item_lock"), "old item lock input removed")

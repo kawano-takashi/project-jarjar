@@ -8,7 +8,7 @@ const SCREEN_DIRECTION_DOT_MINIMUM: float = 0.9999
 func test_names() -> PackedStringArray:
 	return PackedStringArray([
 		"camera_relative_movement_matches_view",
-		"survival_arena_is_thirty_two_by_thirty_two_with_exterior",
+		"survival_arena_dimensions_follow_validated_settings",
 		"gameplay_movement_input_bindings",
 	])
 
@@ -17,7 +17,7 @@ func run_test(test_name: String, assertions: Variant, context: Dictionary) -> vo
 	match test_name:
 		"camera_relative_movement_matches_view":
 			await _test_camera_relative_movement(assertions, context["tree"] as SceneTree)
-		"survival_arena_is_thirty_two_by_thirty_two_with_exterior":
+		"survival_arena_dimensions_follow_validated_settings":
 			await _test_arena_dimensions(assertions, context["tree"] as SceneTree)
 		"gameplay_movement_input_bindings":
 			_test_input_bindings(assertions)
@@ -46,28 +46,31 @@ func _test_camera_relative_movement(assertions: Variant, tree: SceneTree) -> voi
 
 
 func _test_arena_dimensions(assertions: Variant, tree: SceneTree) -> void:
+	var content: SurvivalContentManifest = BalanceTestFixtures.manifest()
+	content.arena.size = Vector2(44.0, 30.0)
+	content.progression.xp_pool_capacity = 3072
+	var catalog := DefinitionCatalog.new()
+	assertions.expect_true(catalog.validate_manifest(content), catalog.error_text)
+	var simulation := CombatSimulation.new()
+	simulation.initialize(RunStateFactory.create(17, catalog), catalog)
 	var arena: ArenaPresenter = ARENA_SCENE.instantiate() as ArenaPresenter
-	if arena == null:
-		assertions.expect_true(false, "survival arena scene instantiates for dimensions")
-		return
+	arena.initialize(simulation)
 	var viewport: SubViewport = await _attach(arena, tree)
-	var exterior_mesh_instance: MeshInstance3D = arena.get_node("Exterior") as MeshInstance3D
-	var exterior_mesh: BoxMesh = exterior_mesh_instance.mesh as BoxMesh
-	var floor_mesh_instance: MeshInstance3D = arena.get_node("Floor") as MeshInstance3D
-	var floor_mesh: BoxMesh = floor_mesh_instance.mesh as BoxMesh
-	assertions.expect_equal(Vector3(80.0, 0.08, 80.0), exterior_mesh.size, "dark non-colliding exterior is eighty meters square")
-	assertions.expect_equal(Vector3(32.0, 0.1, 32.0), floor_mesh.size, "combat floor is thirty-two meters square")
-	assertions.expect_float(-16.0, (arena.get_node("BoundaryNorth") as MeshInstance3D).position.z, "north boundary is at minus sixteen")
-	assertions.expect_float(16.0, (arena.get_node("BoundarySouth") as MeshInstance3D).position.z, "south boundary is at plus sixteen")
-	assertions.expect_float(-16.0, (arena.get_node("BoundaryWest") as MeshInstance3D).position.x, "west boundary is at minus sixteen")
-	assertions.expect_float(16.0, (arena.get_node("BoundaryEast") as MeshInstance3D).position.x, "east boundary is at plus sixteen")
+	var exterior: BoxMesh = (arena.get_node("Exterior") as MeshInstance3D).mesh as BoxMesh
+	var floor_mesh: BoxMesh = (arena.get_node("Floor") as MeshInstance3D).mesh as BoxMesh
+	assertions.expect_true(exterior.size.x > floor_mesh.size.x and exterior.size.z > floor_mesh.size.z, "non-colliding exterior surrounds the configured arena")
+	assertions.expect_equal(Vector3(44.0, 0.1, 30.0), floor_mesh.size, "floor follows both configured dimensions")
+	assertions.expect_float(-15.0, (arena.get_node("BoundaryNorth") as MeshInstance3D).position.z, "north boundary follows height")
+	assertions.expect_float(15.0, (arena.get_node("BoundarySouth") as MeshInstance3D).position.z, "south boundary follows height")
+	assertions.expect_float(-22.0, (arena.get_node("BoundaryWest") as MeshInstance3D).position.x, "west boundary follows width")
+	assertions.expect_float(22.0, (arena.get_node("BoundaryEast") as MeshInstance3D).position.x, "east boundary follows width")
 	var grid: MultiMesh = (arena.get_node("%GridLines") as MultiMeshInstance3D).multimesh
-	assertions.expect_equal(26, grid.instance_count, "thirteen lines per axis form the 2.5-meter grid")
+	assertions.expect_equal(30, grid.instance_count, "grid line count follows rectangular dimensions")
 	var camera: Camera3D = arena.get_node("%ArenaCamera") as Camera3D
 	assertions.expect_equal(Camera3D.PROJECTION_ORTHOGONAL, camera.projection, "arena camera is orthographic")
 	assertions.expect_equal(Camera3D.KEEP_HEIGHT, camera.keep_aspect, "arena camera preserves vertical coverage")
-	assertions.expect_float(CombatEnvelope.CAMERA_SIZE, camera.size, "arena camera uses the shared eighteen-meter size")
-	assertions.expect_equal(2048, ((arena.get_node("%XpInstances") as MultiMeshInstance3D).multimesh).instance_count, "arena renders the complete XP pool")
+	assertions.expect_float(CombatEnvelope.CAMERA_SIZE, camera.size, "camera retains its presentation setting")
+	assertions.expect_equal(3072, (arena.get_node("%XpInstances") as MultiMeshInstance3D).multimesh.instance_count, "render capacity follows the configured XP pool")
 	await _detach(arena, viewport, tree)
 
 

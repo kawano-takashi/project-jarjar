@@ -2,7 +2,6 @@ class_name ChestRewardService
 extends RefCounted
 
 
-const MAX_EVOLUTIONS_PER_RUN: int = 4
 const UPGRADE_DESCRIPTION_FORMATTER: Script = preload(
 	"res://src/progression/upgrade_description_formatter.gd"
 )
@@ -36,7 +35,7 @@ static func create_outcome(
 		outcome.content_id = selected_evolution.evolved_weapon_id
 		outcome.source_weapon_id = selected_evolution.base_weapon_id
 		outcome.display_name = evolved_definition.display_name
-		outcome.previous_level = 8
+		outcome.previous_level = catalog.weapon(selected_evolution.base_weapon_id).max_level
 		outcome.new_level = 1
 		state.active_chest_outcome = outcome
 		return outcome
@@ -113,7 +112,7 @@ static func _eligible_evolutions(
 	catalog: DefinitionCatalog,
 ) -> Array[EvolutionDefinition]:
 	var result: Array[EvolutionDefinition] = []
-	if state.evolution_count >= MAX_EVOLUTIONS_PER_RUN:
+	if state.evolution_count >= catalog.manifest().progression.max_evolutions_per_run:
 		return result
 	for base_weapon_id: StringName in catalog.basic_weapon_ids():
 		var evolution: EvolutionDefinition = catalog.evolution_for_weapon(base_weapon_id)
@@ -140,7 +139,7 @@ static func _eligible_owned_upgrades(
 		if runtime.evolved:
 			continue
 		var definition: WeaponDefinition = catalog.weapon(runtime.weapon_id)
-		if definition == null or runtime.level >= definition.max_level:
+		if definition == null or definition.selection_weight <= 0.0 or runtime.level >= definition.max_level:
 			continue
 		var option := UpgradeOption.new()
 		option.kind = GameTypes.UpgradeKind.WEAPON
@@ -156,7 +155,7 @@ static func _eligible_owned_upgrades(
 		result.append(option)
 	for runtime: RunPassive in state.passives:
 		var definition: PassiveDefinition = catalog.passive(runtime.passive_id)
-		if definition == null or runtime.level >= definition.max_level:
+		if definition == null or definition.selection_weight <= 0.0 or runtime.level >= definition.max_level:
 			continue
 		var option := UpgradeOption.new()
 		option.kind = GameTypes.UpgradeKind.PASSIVE
@@ -180,7 +179,7 @@ static func _apply_evolution(
 	catalog: DefinitionCatalog,
 	outcome: ChestOutcome,
 ) -> Dictionary:
-	if state.evolution_count >= MAX_EVOLUTIONS_PER_RUN:
+	if state.evolution_count >= catalog.manifest().progression.max_evolutions_per_run:
 		return _failure(&"evolution_cap")
 	var mapping: EvolutionDefinition = catalog.evolution_for_weapon(
 		outcome.source_weapon_id

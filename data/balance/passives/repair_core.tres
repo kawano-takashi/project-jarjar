@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="PassiveDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/passive_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+passive_id = &"repair_core"
+display_name = "修復核"
+selection_weight = 90.0
+stat_id = &"recovery_per_second"
+amount_per_level = 0.2
+
+max_level = 5

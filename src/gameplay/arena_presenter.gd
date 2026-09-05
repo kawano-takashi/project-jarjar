@@ -7,9 +7,7 @@ signal terminal_presentation_finished(phase: GameTypes.RunPhase)
 const CAMERA_FOLLOW_TAU_SECONDS: float = CombatEnvelope.CAMERA_FOLLOW_TAU_SECONDS
 const CAMERA_OFFSET: Vector3 = Vector3(8.912187, 18.0, 8.912187)
 const CAMERA_INPUT_AXIS_EPSILON_SQUARED: float = 0.000001
-const GRID_HALF_EXTENT_M: float = CombatEnvelope.ARENA_HALF_EXTENT
 const GRID_SPACING_M: float = 2.5
-const GRID_LINE_COUNT_PER_AXIS: int = 13
 const BOSS_DEFEAT_SECONDS: float = 0.80
 const PLAYER_DEFEAT_SECONDS: float = 0.45
 const ABSORPTION_EVENT_SECONDS: float = 0.24
@@ -77,9 +75,10 @@ func _ready() -> void:
 	set_process(false)
 	_player_base_scale = _player_mesh.scale
 	_configure_camera()
-	_configure_static_grid()
 	_hide_presentation_markers()
 	if _simulation != null:
+		_configure_static_grid()
+		_configure_render_capacity()
 		_apply_snapshot(_simulation.build_snapshot(), 0.0)
 
 
@@ -91,6 +90,8 @@ func initialize(simulation: RefCounted) -> void:
 		return
 	set_physics_process(false)
 	if _simulation != null:
+		_configure_static_grid()
+		_configure_render_capacity()
 		_apply_snapshot(_simulation.build_snapshot(), 0.0)
 
 
@@ -281,7 +282,9 @@ func _copy_transform_prefix(
 	var multimesh: MultiMesh = instance.multimesh
 	if multimesh == null:
 		return
-	var visible_count := mini(transforms.size(), multimesh.instance_count)
+	var visible_count: int = transforms.size()
+	if visible_count > multimesh.instance_count:
+		multimesh.instance_count = visible_count
 	for index: int in range(visible_count):
 		multimesh.set_instance_transform(index, transforms[index])
 	multimesh.visible_instance_count = visible_count
@@ -408,7 +411,9 @@ func _update_boss_charge_spokes(snapshot: CombatSnapshot) -> void:
 	if not snapshot.boss_charge_active:
 		multimesh.visible_instance_count = 0
 		return
-	var spoke_count: int = clampi(snapshot.boss_charge_spoke_count, 0, multimesh.instance_count)
+	var spoke_count: int = maxi(0, snapshot.boss_charge_spoke_count)
+	if spoke_count > multimesh.instance_count:
+		multimesh.instance_count = spoke_count
 	var radius: float = maxf(0.2, snapshot.boss_charge_radius)
 	for spoke_index: int in range(spoke_count):
 		var angle: float = (
@@ -433,9 +438,9 @@ func _update_important_countdown(snapshot: CombatSnapshot) -> void:
 	if not snapshot.important_marker_active:
 		return
 	var total_ticks: int = (
-		CombatEnvelope.BOSS_ENTRY_TICKS
+		_simulation.envelope.boss_entry_ticks
 		if snapshot.important_marker_kind == CombatSnapshot.ImportantMarkerKind.BOSS
-		else CombatEnvelope.ELITE_ENTRY_TICKS
+		else _simulation.envelope.elite_entry_ticks
 	)
 	var remaining_seconds: float = (
 		float(total_ticks)
@@ -455,23 +460,65 @@ func _update_important_countdown(snapshot: CombatSnapshot) -> void:
 
 
 func _configure_static_grid() -> void:
-	var multimesh: MultiMesh = _grid_lines.multimesh
-	if multimesh == null:
+	if _simulation == null:
 		return
+	var extent: Vector2 = _simulation.envelope.arena_max
+	var dimensions: Vector2 = _simulation.envelope.arena_size
+	var exterior_mesh: BoxMesh = ($Exterior as MeshInstance3D).mesh.duplicate() as BoxMesh
+	exterior_mesh.size = Vector3(dimensions.x + 48.0, 0.08, dimensions.y + 48.0)
+	($Exterior as MeshInstance3D).mesh = exterior_mesh
+	var player_mesh: CapsuleMesh = _player_mesh.mesh.duplicate() as CapsuleMesh
+	player_mesh.radius = _simulation.catalog.manifest().player.body_radius
+	player_mesh.height = maxf(1.2, player_mesh.radius * 2.0)
+	_player_mesh.mesh = player_mesh
+	var floor_mesh: BoxMesh = ($Floor as MeshInstance3D).mesh.duplicate() as BoxMesh
+	floor_mesh.size = Vector3(dimensions.x, 0.1, dimensions.y)
+	($Floor as MeshInstance3D).mesh = floor_mesh
+	for name_key: String in ["BoundaryNorth", "BoundarySouth", "BoundaryWest", "BoundaryEast"]:
+		var wall: MeshInstance3D = get_node(name_key) as MeshInstance3D
+		var mesh: BoxMesh = wall.mesh.duplicate() as BoxMesh
+		if name_key in ["BoundaryNorth", "BoundarySouth"]:
+			mesh.size = Vector3(dimensions.x + 0.5, 0.28, 0.24)
+			wall.position.z = -extent.y if name_key == "BoundaryNorth" else extent.y
+		else:
+			mesh.size = Vector3(0.24, 0.28, dimensions.y)
+			wall.position.x = -extent.x if name_key == "BoundaryWest" else extent.x
+		wall.mesh = mesh
+	var multimesh: MultiMesh = _grid_lines.multimesh.duplicate() as MultiMesh
+	_grid_lines.multimesh = multimesh
+	var half_x_lines: int = floori(extent.x / GRID_SPACING_M)
+	var half_y_lines: int = floori(extent.y / GRID_SPACING_M)
+	multimesh.instance_count = (half_x_lines + half_y_lines) * 2 + 2
 	var line_index: int = 0
-	for grid_index: int in range(GRID_LINE_COUNT_PER_AXIS):
-		var coordinate: float = float(grid_index - 6) * GRID_SPACING_M
+	for grid_index: int in range(-half_y_lines, half_y_lines + 1):
 		multimesh.set_instance_transform(line_index, Transform3D(
-			Basis.IDENTITY.scaled(Vector3(GRID_HALF_EXTENT_M * 2.0, 1.0, 1.0)),
-			Vector3(0.0, 0.006, coordinate),
+			Basis.IDENTITY.scaled(Vector3(dimensions.x, 1.0, 1.0)),
+			Vector3(0.0, 0.006, float(grid_index) * GRID_SPACING_M),
 		))
 		line_index += 1
+	for grid_index: int in range(-half_x_lines, half_x_lines + 1):
 		multimesh.set_instance_transform(line_index, Transform3D(
-			Basis.IDENTITY.scaled(Vector3(1.0, 1.0, GRID_HALF_EXTENT_M * 2.0)),
-			Vector3(coordinate, 0.006, 0.0),
+			Basis.IDENTITY.scaled(Vector3(1.0, 1.0, dimensions.y)),
+			Vector3(float(grid_index) * GRID_SPACING_M, 0.006, 0.0),
 		))
 		line_index += 1
 	multimesh.visible_instance_count = line_index
+
+
+func _configure_render_capacity() -> void:
+	var catalog: DefinitionCatalog = _simulation.catalog
+	_resize_multimesh(_xp_instances, catalog.manifest().progression.xp_pool_capacity)
+	_resize_multimesh(_node_instances, catalog.manifest().arena.node_site_positions.size())
+	_resize_multimesh(_chest_instances, catalog.elite_spawn_ticks.size())
+	var boss: EnemyDefinition = catalog.enemy_for_type(GameTypes.EnemyType.BOSS)
+	_resize_multimesh(_boss_charge_spokes, boss.volley_count + 2 * catalog.manifest().combat.boss_volley_phase_bonus)
+
+
+func _resize_multimesh(instance: MultiMeshInstance3D, capacity: int) -> void:
+	var multimesh: MultiMesh = instance.multimesh.duplicate() as MultiMesh
+	multimesh.instance_count = capacity
+	multimesh.visible_instance_count = 0
+	instance.multimesh = multimesh
 
 
 func _configure_camera() -> void:

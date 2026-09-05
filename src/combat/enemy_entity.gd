@@ -73,7 +73,7 @@ func boss_charge_progress() -> float:
 	if not boss_charge_active:
 		return 0.0
 	return clampf(
-		boss_charge_elapsed_ticks / float(CombatEnvelope.BOSS_CHARGE_TICKS),
+		boss_charge_elapsed_ticks / float(definition.telegraph_ticks),
 		0.0,
 		1.0,
 	)

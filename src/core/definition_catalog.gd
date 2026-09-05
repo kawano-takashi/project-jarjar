@@ -3,840 +3,462 @@ extends RefCounted
 
 
 const MANIFEST_PATH: String = "res://data/balance/survival_content_manifest.tres"
-const EXPECTED_TARGETS: Array[int] = [
-	16, 46, 32, 68, 49, 140, 92, 132, 97, 176,
+const FLOAT_TOLERANCE: float = 0.0001
+const PASSIVE_STATS: Array[StringName] = [
+	&"might_pct", &"cooldown_pct", &"projectile_speed_pct", &"area_pct",
+	&"duration_pct", &"max_hp_pct", &"recovery_per_second", &"luck_pct",
 ]
-const BASELINE_HP_MULTIPLIERS: Array[float] = [
-	0.15, 0.215, 1.325, 0.24, 0.74, 0.35, 1.85, 0.78, 1.75, 1.40,
-]
-const BASELINE_DAMAGE_MULTIPLIERS: Array[float] = [
-	0.18, 0.20, 0.22, 0.25, 0.29, 0.34, 0.42, 0.50, 0.64, 1.50,
-]
-const EXPECTED_SEGMENT_WEIGHTS: Array = [
-	[0.70, 0.30, 0.0, 0.0, 0.0, 0.0],
-	[0.25, 0.75, 0.0, 0.0, 0.0, 0.0],
-	[1.00, 0.00, 0.0, 0.0, 0.0, 0.0],
-	[0.40, 0.225, 0.225, 0.15, 0.0, 0.0],
-	[0.45, 0.25, 0.25, 0.05, 0.0, 0.0],
-	[0.16, 0.165, 0.15, 0.525, 0.0, 0.0],
-	[0.20, 0.15, 0.65, 0.00, 0.0, 0.0],
-	[0.15, 0.15, 0.50, 0.20, 0.0, 0.0],
-	[0.15, 0.15, 0.45, 0.25, 0.0, 0.0],
-	[0.25, 0.25, 0.25, 0.25, 0.0, 0.0],
-]
-const MAX_APPROVED_AREA_MULTIPLIER: float = 1.5
-const EXPECTED_ELITE_TICKS: Array[int] = [
-	7200, 14400, 21600, 28800,
-]
-const EXPECTED_SWARM_SCHEDULES: Array = [
-	[&"minute_02", 7500, 300, 3, 1.0],
-	[&"minute_03", 11100, 300, 2, 0.1],
-	[&"minute_04", 14700, 300, 2, 0.1],
-	[&"minute_06", 21900, 300, 2, 0.1],
-	[&"minute_07", 25500, 300, 6, 0.8],
-	[&"minute_08", 29700, 900, 3, 0.8],
-	[&"minute_09", 33300, 900, 3, 0.7],
-]
-const WEIGHT_TOLERANCE: float = 0.0001
-const MIN_SEGMENT_TARGET_HP_RATIO: float = 0.10
-const MIN_SEGMENT_DAMAGE_RATIO: float = 0.15
-const MIN_BOSS_TUNING_RATIO: float = 0.20
-const MIN_BOSS_HP_TUNING_RATIO: float = 0.15
-const MIN_BOSS_DAMAGE_ACTION_TUNING_RATIO: float = 0.05
 
 var weapons: Dictionary[StringName, WeaponDefinition] = {}
+var _lineage_by_weapon_id: Dictionary[StringName, StringName] = {}
 var passives: Dictionary[StringName, PassiveDefinition] = {}
 var enemies: Dictionary[StringName, EnemyDefinition] = {}
 var segments: Dictionary[int, EnemySegmentDefinition] = {}
 var evolutions: Dictionary[StringName, EvolutionDefinition] = {}
 var is_valid: bool = false
 var error_text: String = ""
-var validation_errors: PackedStringArray = PackedStringArray()
+var validation_errors: PackedStringArray = []
+var boss_start_tick: int = 0
+var segment_start_ticks: PackedInt32Array = []
+var segment_end_ticks: PackedInt32Array = []
+var elite_spawn_ticks: PackedInt32Array = []
+var swarm_attempts: Array[Dictionary] = []
+var envelope: CombatEnvelope = null
+var maximum_enemy_body_radius: float = 0.0
 
 var _manifest: SurvivalContentManifest = null
 var _enemies_by_type: Dictionary[int, EnemyDefinition] = {}
 var _evolved_weapon_ids: Dictionary[StringName, bool] = {}
 
 
-func load_and_validate() -> bool:
-	var loaded: Resource = ResourceLoader.load(MANIFEST_PATH)
+func load_and_validate(path: String = MANIFEST_PATH) -> bool:
+	var loaded: Resource = ResourceLoader.load(path)
 	if not loaded is SurvivalContentManifest:
 		_reset()
-		_add_error("Missing or invalid SurvivalContentManifest: %s" % MANIFEST_PATH)
-		_finish_validation()
-		return false
+		validation_errors.append("%s: resource=%s; SurvivalContentManifest is required" % [path, loaded])
+		return _finish_validation()
 	return validate_manifest(loaded as SurvivalContentManifest)
 
 
-func validate_manifest(content_manifest: SurvivalContentManifest) -> bool:
+func validate_manifest(content: SurvivalContentManifest) -> bool:
 	_reset()
-	if content_manifest == null:
-		_add_error("SurvivalContentManifest must not be null")
-		_finish_validation()
-		return false
-	_manifest = content_manifest
+	_manifest = content
+	if content == null:
+		validation_errors.append("<manifest>: resource=null; SurvivalContentManifest is required")
+		return _finish_validation()
+	for key: String in ["player", "progression", "arena", "combat", "spawn", "swarm_event"]:
+		_require(content, key, content.get(key) != null, "required Resource reference")
+	if not validation_errors.is_empty():
+		return _finish_validation()
 	_index_content()
-	_validate_globals()
-	_validate_weapons()
+	_validate_settings()
 	_validate_passives()
+	_validate_weapons()
 	_validate_evolutions()
-	_validate_enemies()
-	_validate_swarm_event()
+	for definition: EnemyDefinition in enemies.values():
+		_validate_enemy(definition)
+	for enemy_type: int in GameTypes.EnemyType.values():
+		_require(content, "enemies", _enemies_by_type.has(enemy_type), "one definition for enemy type %d" % enemy_type)
+	_validate_swarm()
 	_validate_segments()
-	_finish_validation()
-	return is_valid
+	if validation_errors.is_empty():
+		envelope = CombatEnvelope.new(content)
+	return _finish_validation()
 
 
 func manifest() -> SurvivalContentManifest:
 	return _manifest
 
 
-func weapon(weapon_id: StringName) -> WeaponDefinition:
-	return weapons.get(weapon_id) as WeaponDefinition
+func weapon(id: StringName) -> WeaponDefinition:
+	return weapons.get(id) as WeaponDefinition
 
 
-func passive(passive_id: StringName) -> PassiveDefinition:
-	return passives.get(passive_id) as PassiveDefinition
+func passive(id: StringName) -> PassiveDefinition:
+	return passives.get(id) as PassiveDefinition
 
 
-func enemy(enemy_id: StringName) -> EnemyDefinition:
-	return enemies.get(enemy_id) as EnemyDefinition
+func enemy(id: StringName) -> EnemyDefinition:
+	return enemies.get(id) as EnemyDefinition
 
 
 func enemy_for_type(enemy_type: GameTypes.EnemyType) -> EnemyDefinition:
 	return _enemies_by_type.get(int(enemy_type)) as EnemyDefinition
 
 
-func segment(segment_index: int) -> EnemySegmentDefinition:
-	return segments.get(segment_index) as EnemySegmentDefinition
+func segment(index: int) -> EnemySegmentDefinition:
+	return segments.get(index) as EnemySegmentDefinition
 
 
-func segment_for_tick(combat_tick: int) -> EnemySegmentDefinition:
+func segment_index_for_tick(tick: int) -> int:
+	if tick < 0 or tick >= boss_start_tick:
+		return -1
+	for index: int in range(segment_end_ticks.size()):
+		if tick < segment_end_ticks[index]:
+			return index
+	return -1
+
+
+func segment_for_tick(tick: int) -> EnemySegmentDefinition:
 	if segments.is_empty():
 		return null
-	var index: int = clampi(
-		int(floor(float(combat_tick) / 3600.0)),
-		0,
-		segments.size() - 1,
-	)
-	return segment(index)
+	var index: int = segment_index_for_tick(tick)
+	return segment(segments.size() - 1 if index < 0 else index)
 
 
-func evolution_for_weapon(base_weapon_id: StringName) -> EvolutionDefinition:
-	return evolutions.get(base_weapon_id) as EvolutionDefinition
+func evolution_for_weapon(id: StringName) -> EvolutionDefinition:
+	return evolutions.get(id) as EvolutionDefinition
 
 
-func is_evolved_weapon(weapon_id: StringName) -> bool:
-	return _evolved_weapon_ids.has(weapon_id)
+func lineage_for_weapon(id: StringName) -> StringName:
+	return _lineage_by_weapon_id.get(id, &"")
+
+
+func is_evolved_weapon(id: StringName) -> bool:
+	return _evolved_weapon_ids.has(id)
 
 
 func basic_weapon_ids() -> Array[StringName]:
-	var result: Array[StringName] = []
+	var ids: Array[StringName] = []
 	for definition: WeaponDefinition in weapons.values():
 		if not definition.is_evolved:
-			result.append(definition.weapon_id)
-	result.sort_custom(_string_name_less)
-	return result
+			ids.append(definition.weapon_id)
+	return WeightedSelector.sort_ordinal(ids)
 
 
 func evolved_weapon_ids() -> Array[StringName]:
-	var result: Array[StringName] = []
-	for weapon_id: StringName in _evolved_weapon_ids:
-		result.append(weapon_id)
-	result.sort_custom(_string_name_less)
-	return result
+	return WeightedSelector.sort_ordinal(_evolved_weapon_ids.keys())
 
 
 func passive_ids() -> Array[StringName]:
-	var result: Array[StringName] = []
-	for passive_id: StringName in passives:
-		result.append(passive_id)
-	result.sort_custom(_string_name_less)
-	return result
+	return WeightedSelector.sort_ordinal(passives.keys())
 
 
 func _reset() -> void:
 	weapons.clear()
+	_lineage_by_weapon_id.clear()
 	passives.clear()
 	enemies.clear()
 	segments.clear()
 	evolutions.clear()
 	_enemies_by_type.clear()
 	_evolved_weapon_ids.clear()
+	validation_errors.clear()
+	segment_start_ticks.clear()
+	segment_end_ticks.clear()
+	elite_spawn_ticks.clear()
+	swarm_attempts.clear()
+	boss_start_tick = 0
+	maximum_enemy_body_radius = 0.0
+	envelope = null
 	_manifest = null
 	is_valid = false
 	error_text = ""
-	validation_errors.clear()
 
 
 func _index_content() -> void:
 	for definition: WeaponDefinition in _manifest.weapons:
-		if definition == null:
-			_add_error("Manifest contains a null weapon")
-			continue
-		if weapons.has(definition.weapon_id):
-			_add_error("Duplicate weapon_id: %s" % definition.weapon_id)
-		else:
-			weapons[definition.weapon_id] = definition
-		if definition.is_evolved:
-			_evolved_weapon_ids[definition.weapon_id] = true
+		if _index_entry(definition, "weapon_id", weapons):
+			_lineage_by_weapon_id[definition.weapon_id] = definition.weapon_id
+			if definition.is_evolved:
+				_evolved_weapon_ids[definition.weapon_id] = true
 	for definition: PassiveDefinition in _manifest.passives:
-		if definition == null:
-			_add_error("Manifest contains a null passive")
-			continue
-		if passives.has(definition.passive_id):
-			_add_error("Duplicate passive_id: %s" % definition.passive_id)
-		else:
-			passives[definition.passive_id] = definition
-	for definition: EvolutionDefinition in _manifest.evolutions:
-		if definition == null:
-			_add_error("Manifest contains a null evolution")
-			continue
-		if evolutions.has(definition.base_weapon_id):
-			_add_error("Duplicate evolution base weapon: %s" % definition.base_weapon_id)
-		else:
-			evolutions[definition.base_weapon_id] = definition
+		_index_entry(definition, "passive_id", passives)
 	for definition: EnemyDefinition in _manifest.enemies:
-		if definition == null:
-			_add_error("Manifest contains a null enemy")
-			continue
-		if enemies.has(definition.enemy_id):
-			_add_error("Duplicate enemy_id: %s" % definition.enemy_id)
-		else:
-			enemies[definition.enemy_id] = definition
-		if _enemies_by_type.has(int(definition.enemy_type)):
-			_add_error("Duplicate enemy_type: %s" % definition.enemy_id)
-		else:
+		if _index_entry(definition, "enemy_id", enemies):
+			_require(definition, "enemy_type", not _enemies_by_type.has(int(definition.enemy_type)), "unique enemy type")
 			_enemies_by_type[int(definition.enemy_type)] = definition
-	for definition: EnemySegmentDefinition in _manifest.segments:
+	for definition: EvolutionDefinition in _manifest.evolutions:
+		if _index_entry(definition, "base_weapon_id", evolutions):
+			_lineage_by_weapon_id[definition.evolved_weapon_id] = definition.base_weapon_id
+	for index: int in range(_manifest.segments.size()):
+		var definition: EnemySegmentDefinition = _manifest.segments[index]
 		if definition == null:
-			_add_error("Manifest contains a null segment")
-			continue
-		if segments.has(definition.segment_index):
-			_add_error("Duplicate segment_index: %d" % definition.segment_index)
+			_error(_manifest, "segments[%d]" % index, null, "required Resource")
 		else:
-			segments[definition.segment_index] = definition
+			segments[index] = definition
 
 
-func _validate_globals() -> void:
-	if _manifest.ticks_per_second != 60:
-		_add_error("ticks_per_second must be 60")
-	if not _manifest.arena_size.is_equal_approx(Vector2(32.0, 32.0)):
-		_add_error("arena_size must be 32x32")
-	if _manifest.boss_start_tick != 36000:
-		_add_error("boss_start_tick must be 36000")
-	_validate_xp_contract()
-	if _manifest.weapon_slot_count != 5 or _manifest.passive_slot_count != 5:
-		_add_error("run slots must be five weapons and five passives")
-	if _manifest.level_offer_count != 3:
-		_add_error("level_offer_count must be 3")
-	if (
-		_manifest.owned_offer_attempt_count != 2
-		or not is_equal_approx(_manifest.owned_offer_luck_coefficient, 0.3)
-	):
-		_add_error("owned offer must use two attempts and coefficient 0.3")
-	if _manifest.elite_spawn_ticks != PackedInt32Array(EXPECTED_ELITE_TICKS):
-		_add_error("elite spawn ticks do not match 2/4/6/8 minutes")
-	if _manifest.node_site_count != 8 or _manifest.active_node_count != 4:
-		_add_error("node site/active counts must be 8/4")
-	if _manifest.node_respawn_ticks != 1800:
-		_add_error("node respawn must be 1800 ticks")
-	if not is_equal_approx(_manifest.node_heal_amount, 30.0):
-		_add_error("node heal must be 30")
-	if _manifest.node_stop_ticks != 300:
-		_add_error("node stop must be 300 ticks")
-	_validate_probability_weights(_manifest.node_drop_weights, "node_drop_weights")
-	var expected_node_weights := PackedFloat32Array([0.55, 0.35, 0.07, 0.03])
-	if not _float_arrays_equal(_manifest.node_drop_weights, expected_node_weights):
-		_add_error("node drop weights differ from approved values")
-	if _manifest.level_up_resume_invulnerability_ticks != 45:
-		_add_error("level-up resume invulnerability must be 45 ticks")
-	_validate_tunable_multiplier(
-		_manifest.normal_enemy_damage_scale,
-		SurvivalContentManifest.DEFAULT_NORMAL_ENEMY_DAMAGE_SCALE,
-		"normal enemy damage scale",
-	)
-	_validate_tunable_multiplier(
-		_manifest.boss_hp_multiplier,
-		SurvivalContentManifest.DEFAULT_BOSS_HP_MULTIPLIER,
-		"boss HP multiplier",
-		MIN_BOSS_HP_TUNING_RATIO,
-	)
-	_validate_tunable_multiplier(
-		_manifest.boss_damage_multiplier,
-		SurvivalContentManifest.DEFAULT_BOSS_DAMAGE_MULTIPLIER,
-		"boss damage multiplier",
-		MIN_BOSS_DAMAGE_ACTION_TUNING_RATIO,
-	)
-	_validate_tunable_multiplier(
-		_manifest.boss_action_rate_multiplier,
-		SurvivalContentManifest.DEFAULT_BOSS_ACTION_RATE_MULTIPLIER,
-		"boss action rate multiplier",
-		MIN_BOSS_DAMAGE_ACTION_TUNING_RATIO,
-	)
-	if _manifest.boss_enrage_interval_ticks != 1800:
-		_add_error("boss enrage interval must be 1800 ticks")
-	if _manifest.boss_enrage_max_stacks != 10:
-		_add_error("boss enrage cap must be 10 stacks")
-	if not is_equal_approx(_manifest.boss_attack_bonus_per_stack, 0.10):
-		_add_error("boss attack bonus must be +10% per stack")
-	if not is_equal_approx(_manifest.boss_interval_reduction_per_stack, 0.10):
-		_add_error("boss interval reduction must be -10% per stack")
-	if not weapons.has(_manifest.starter_weapon_id):
-		_add_error("starter weapon is missing")
-	elif _manifest.starter_weapon_id != &"homing_core":
-		_add_error("starter weapon must be homing_core")
-
-
-func _validate_xp_contract() -> void:
-	if (
-		_manifest.xp_early_max_level != SurvivalContentManifest.DEFAULT_XP_EARLY_MAX_LEVEL
-		or _manifest.xp_early_coefficient != SurvivalContentManifest.DEFAULT_XP_EARLY_COEFFICIENT
-		or _manifest.xp_early_offset != SurvivalContentManifest.DEFAULT_XP_EARLY_OFFSET
-	):
-		_add_error("early XP formula must be 10L-5 through level 19")
-	if _manifest.xp_level_20_requirement != SurvivalContentManifest.DEFAULT_XP_LEVEL_20_REQUIREMENT:
-		_add_error("level 20 XP requirement must be 795")
-	if (
-		_manifest.xp_middle_max_level != SurvivalContentManifest.DEFAULT_XP_MIDDLE_MAX_LEVEL
-		or _manifest.xp_middle_coefficient != SurvivalContentManifest.DEFAULT_XP_MIDDLE_COEFFICIENT
-		or _manifest.xp_middle_offset != SurvivalContentManifest.DEFAULT_XP_MIDDLE_OFFSET
-	):
-		_add_error("middle XP formula must be 13L-65 through level 39")
-	if _manifest.xp_level_40_requirement != SurvivalContentManifest.DEFAULT_XP_LEVEL_40_REQUIREMENT:
-		_add_error("level 40 XP requirement must be 2855")
-	if (
-		_manifest.xp_late_coefficient != SurvivalContentManifest.DEFAULT_XP_LATE_COEFFICIENT
-		or _manifest.xp_late_offset != SurvivalContentManifest.DEFAULT_XP_LATE_OFFSET
-	):
-		_add_error("late XP formula must be 16L-185 from level 41")
-	if (
-		_manifest.xp_growth_compensation_levels
-		!= PackedInt32Array(SurvivalContentManifest.DEFAULT_XP_GROWTH_COMPENSATION_LEVELS)
-		or not is_equal_approx(
-			_manifest.xp_growth_compensation_multiplier,
-			SurvivalContentManifest.DEFAULT_XP_GROWTH_COMPENSATION_MULTIPLIER,
-		)
-	):
-		_add_error("Growth compensation must be 2x at levels 20 and 40")
-	if _manifest.xp_pool_capacity != SurvivalContentManifest.DEFAULT_XP_POOL_CAPACITY:
-		_add_error("XP pickup capacity must be 2048")
-	if not is_equal_approx(
-		_manifest.xp_pickup_attract_radius,
-		SurvivalContentManifest.DEFAULT_XP_PICKUP_ATTRACT_RADIUS,
-	):
-		_add_error("XP pickup attract radius must be 2.25")
-	if not is_equal_approx(
-		_manifest.xp_pickup_collect_radius,
-		SurvivalContentManifest.DEFAULT_XP_PICKUP_COLLECT_RADIUS,
-	):
-		_add_error("XP pickup collect radius must be 0.7")
-	if not is_equal_approx(
-		_manifest.xp_pickup_speed,
-		SurvivalContentManifest.DEFAULT_XP_PICKUP_SPEED,
-	):
-		_add_error("XP pickup speed must be 14")
-	if (
-		_manifest.xp_yield_percent < 50
-		or _manifest.xp_yield_percent > 200
-		or _manifest.xp_yield_percent % 5 != 0
-	):
-		_add_error("XP yield percent must be 50-200 in 5% steps")
-
-
-func _validate_tunable_multiplier(
-	value: float,
-	baseline: float,
-	label: String,
-	minimum_ratio: float = MIN_BOSS_TUNING_RATIO,
-) -> void:
-	if not is_finite(value) or not is_finite(baseline) or baseline <= 0.0:
-		_add_error("%s must be finite with a positive baseline" % label)
-		return
-	var ratio: float = value / baseline
-	var five_percent_units: float = ratio * 20.0
-	if (
-		ratio < minimum_ratio - WEIGHT_TOLERANCE
-		or ratio > 1.10 + WEIGHT_TOLERANCE
-		or absf(five_percent_units - roundf(five_percent_units)) > WEIGHT_TOLERANCE
-	):
-		_add_error(
-			"%s must be -%d%% to +10%% in 5%% steps"
-			% [label, 100 - roundi(minimum_ratio * 100.0)]
-		)
-
-
-func _validate_weapons() -> void:
-	if weapons.size() != 16:
-		_add_error("weapon count must be 8 base + 8 evolved")
-	var basic_count: int = 0
-	var evolved_count: int = 0
-	var seen_behaviors: Dictionary[int, bool] = {}
-	for definition: WeaponDefinition in weapons.values():
-		if definition.weapon_id == &"" or definition.display_name.is_empty():
-			_add_error("weapon id/name must not be empty")
-		if definition.lineage_id == &"":
-			_add_error("weapon lineage must not be empty: %s" % definition.weapon_id)
-		var expected_levels: int = 1 if definition.is_evolved else 8
-		if definition.max_level != expected_levels:
-			_add_error("weapon max level mismatch: %s" % definition.weapon_id)
-		_validate_weapon_arrays(definition)
-		if definition.is_evolved:
-			evolved_count += 1
-			if not is_zero_approx(definition.selection_weight):
-				_add_error("evolved weapon must not enter offers: %s" % definition.weapon_id)
-		else:
-			basic_count += 1
-			_validate_single_weapon_level_deltas(definition)
-			if definition.selection_weight <= 0.0:
-				_add_error("base weapon must have positive weight: %s" % definition.weapon_id)
-			if not is_equal_approx(
-				definition.selection_weight,
-				_expected_weapon_weight(definition.weapon_id),
-			):
-				_add_error("base weapon weight differs from approved value: %s" % definition.weapon_id)
-			if seen_behaviors.has(int(definition.behavior)):
-				_add_error("duplicate base weapon behavior: %s" % definition.weapon_id)
-			seen_behaviors[int(definition.behavior)] = true
-	if basic_count != 8 or evolved_count != 8 or seen_behaviors.size() != 8:
-		_add_error("weapon role count must be exactly eight base/evolved")
-
-
-func _validate_weapon_arrays(definition: WeaponDefinition) -> void:
-	var size: int = definition.max_level
-	if definition.damage_by_level.size() != size:
-		_add_error("damage_by_level length mismatch: %s" % definition.weapon_id)
-	if definition.cooldown_ticks_by_level.size() != size:
-		_add_error("cooldown_ticks_by_level length mismatch: %s" % definition.weapon_id)
-	if definition.amount_by_level.size() != size:
-		_add_error("amount_by_level length mismatch: %s" % definition.weapon_id)
-	if definition.projectile_speed_by_level.size() != size:
-		_add_error("projectile_speed_by_level length mismatch: %s" % definition.weapon_id)
-	if definition.range_by_level.size() != size:
-		_add_error("range_by_level length mismatch: %s" % definition.weapon_id)
-	if definition.projectile_radius_by_level.size() != size:
-		_add_error("projectile_radius_by_level length mismatch: %s" % definition.weapon_id)
-	if definition.effect_radius_by_level.size() != size:
-		_add_error("effect_radius_by_level length mismatch: %s" % definition.weapon_id)
-	if definition.duration_ticks_by_level.size() != size:
-		_add_error("duration_ticks_by_level length mismatch: %s" % definition.weapon_id)
-	if definition.pierce_by_level.size() != size:
-		_add_error("pierce_by_level length mismatch: %s" % definition.weapon_id)
-	for value: float in definition.damage_by_level:
-		if not is_finite(value) or value <= 0.0:
-			_add_error("weapon damage must be positive: %s" % definition.weapon_id)
-	for value: int in definition.cooldown_ticks_by_level:
-		if value <= 0:
-			_add_error("weapon cooldown must be positive: %s" % definition.weapon_id)
-	for value: float in definition.range_by_level:
-		if not is_finite(value) or value < 0.0:
-			_add_error("weapon range must be finite and non-negative: %s" % definition.weapon_id)
-	for value: float in definition.projectile_radius_by_level:
-		if not is_finite(value) or value < 0.0:
-			_add_error("weapon projectile radius must be finite and non-negative: %s" % definition.weapon_id)
-	for value: float in definition.effect_radius_by_level:
-		if not is_finite(value) or value < 0.0:
-			_add_error("weapon effect radius must be finite and non-negative: %s" % definition.weapon_id)
-	_validate_weapon_envelope(definition)
-
-
-func _validate_single_weapon_level_deltas(definition: WeaponDefinition) -> void:
-	for next_level: int in range(2, definition.max_level + 1):
-		var deltas: Array[WeaponDefinition.WeaponLevelDelta] = definition.level_deltas(next_level)
-		if deltas.size() != 1:
-			_add_error(
-				"base weapon level must change exactly one stat: %s level %d changed %d"
-				% [definition.weapon_id, next_level, deltas.size()]
-			)
-			continue
-		var delta: WeaponDefinition.WeaponLevelDelta = deltas[0]
-		if (
-			delta.stat_id == WeaponDefinition.STAT_AMOUNT
-			and not is_equal_approx(delta.new_value - delta.previous_value, 1.0)
-		):
-			_add_error(
-				"base weapon amount level delta must be +1: %s level %d changed %d to %d"
-				% [
-					definition.weapon_id,
-					next_level,
-					roundi(delta.previous_value),
-					roundi(delta.new_value),
-				]
-			)
-
-
-func _validate_weapon_envelope(definition: WeaponDefinition) -> void:
-	for level: int in range(1, definition.max_level + 1):
-		var range_m: float = definition.effective_range_at(
-			level,
-			MAX_APPROVED_AREA_MULTIPLIER,
-		)
-		var projectile_radius: float = definition.effective_projectile_radius_at(
-			level,
-			MAX_APPROVED_AREA_MULTIPLIER,
-		)
-		var effect_radius: float = definition.effective_effect_radius_at(
-			level,
-			MAX_APPROVED_AREA_MULTIPLIER,
-		)
-		var outer_edge: float = 0.0
-		match definition.behavior:
-			GameTypes.WeaponBehavior.MELEE_WAVE:
-				outer_edge = range_m
-			GameTypes.WeaponBehavior.ORBITAL:
-				outer_edge = range_m + effect_radius
-			GameTypes.WeaponBehavior.AURA:
-				outer_edge = effect_radius
-			_:
-				outer_edge = range_m + maxf(projectile_radius, effect_radius)
-		if outer_edge > CombatEnvelope.EFFECT_OUTER_RADIUS + WEIGHT_TOLERANCE:
-			_add_error(
-				"weapon outer edge exceeds combat envelope: %s level %d"
-				% [definition.weapon_id, level]
-			)
-
-
-func _validate_passives() -> void:
-	if passives.size() != 8:
-		_add_error("passive count must be eight")
-	for definition: PassiveDefinition in passives.values():
-		if definition.passive_id == &"" or definition.display_name.is_empty():
-			_add_error("passive id/name must not be empty")
-		if definition.max_level != 5:
-			_add_error("passive max level must be five: %s" % definition.passive_id)
-		if definition.selection_weight <= 0.0:
-			_add_error("passive weight must be positive: %s" % definition.passive_id)
-		if definition.stat_id == &"" or not weapons.has(definition.paired_weapon_id):
-			_add_error("passive effect/pair is invalid: %s" % definition.passive_id)
-		var approved: Dictionary = _expected_passive_spec(definition.passive_id)
-		if approved.is_empty():
-			_add_error("unknown passive identity: %s" % definition.passive_id)
-		elif (
-			definition.stat_id != approved[&"stat_id"]
-			or not is_equal_approx(definition.amount_per_level, float(approved[&"amount"]))
-			or not is_equal_approx(definition.selection_weight, float(approved[&"weight"]))
-		):
-			_add_error("passive spec differs from approved value: %s" % definition.passive_id)
-
-
-func _validate_evolutions() -> void:
-	if evolutions.size() != 8:
-		_add_error("evolution count must be eight")
-	var evolved_targets: Dictionary[StringName, bool] = {}
-	for definition: EvolutionDefinition in evolutions.values():
-		var base: WeaponDefinition = weapon(definition.base_weapon_id)
-		var evolved: WeaponDefinition = weapon(definition.evolved_weapon_id)
-		var paired_passive: PassiveDefinition = passive(definition.passive_id)
-		if base == null or base.is_evolved:
-			_add_error("evolution base is invalid: %s" % definition.base_weapon_id)
-		if evolved == null or not evolved.is_evolved:
-			_add_error("evolution target is invalid: %s" % definition.evolved_weapon_id)
-		if paired_passive == null:
-			_add_error("evolution passive is invalid: %s" % definition.passive_id)
-		if base != null and base.paired_passive_id != definition.passive_id:
-			_add_error("weapon/passive evolution pair mismatch: %s" % definition.base_weapon_id)
-		if evolved != null and evolved.lineage_id != definition.base_weapon_id:
-			_add_error("evolution lineage mismatch: %s" % definition.evolved_weapon_id)
-		if evolved_targets.has(definition.evolved_weapon_id):
-			_add_error("duplicate evolution target: %s" % definition.evolved_weapon_id)
-		evolved_targets[definition.evolved_weapon_id] = true
-
-
-func _validate_enemies() -> void:
-	if enemies.size() != GameTypes.EnemyType.size():
-		_add_error("enemy count must match EnemyType")
-	for definition: EnemyDefinition in enemies.values():
-		if definition.enemy_id == &"" or definition.display_name.is_empty():
-			_add_error("enemy id/name must not be empty")
-		if (
-			definition.base_hp <= 0.0
-			or definition.move_speed <= 0.0
-			or definition.body_radius <= 0.0
-		):
-			_add_error("enemy hp/speed/radius must be positive: %s" % definition.enemy_id)
-		if definition.contact_damage <= 0.0:
-			_add_error("enemy contact damage must be positive: %s" % definition.enemy_id)
-		if definition.xp_value < 0:
-			_add_error("enemy XP must not be negative: %s" % definition.enemy_id)
-		if definition.enemy_type != GameTypes.EnemyType.BOSS and (
-			not is_finite(definition.preferred_distance_min)
-			or definition.preferred_distance_min != 0.0
-			or not is_finite(definition.preferred_distance_max)
-			or definition.preferred_distance_max != 0.0
-			or definition.special_interval_ticks != 0
-			or definition.telegraph_ticks != 0
-			or not is_finite(definition.area_radius)
-			or definition.area_radius != 0.0
-			or not is_finite(definition.projectile_damage)
-			or definition.projectile_damage != 0.0
-			or not is_finite(definition.projectile_speed)
-			or definition.projectile_speed != 0.0
-			or not is_finite(definition.projectile_radius)
-			or definition.projectile_radius != 0.0
-			or definition.projectile_lifetime_ticks != 0
-			or definition.volley_count != 0
-		):
-			_add_error("non-boss enemies must be contact-only: %s" % definition.enemy_id)
-	var elite: EnemyDefinition = enemy_for_type(GameTypes.EnemyType.ELITE)
-	var boss: EnemyDefinition = enemy_for_type(GameTypes.EnemyType.BOSS)
-	if elite == null or not elite.drops_chest:
-		_add_error("elite must drop a chest")
-	elif not is_equal_approx(elite.base_hp, 650.0):
-		_add_error("elite HP must remain 650")
-	if boss == null or not boss.is_boss:
-		_add_error("boss definition must be marked as boss")
-	_validate_enemy_roles()
-
-
-func _validate_enemy_roles() -> void:
-	var expected_specs: Dictionary[StringName, Array] = {
-		&"pursuer": [20.0, 1.944, 0.38, 8.0, 1],
-		&"swarmer": [9.0, 5.184, 0.26, 4.0, 1],
-		&"bulwark": [80.0, 1.0935, 0.58, 14.0, 2],
-		&"shooter": [34.0, 2.43, 0.4, 11.0, 2],
-		&"elite": [650.0, 1.62, 0.82, 18.0, 50],
-		&"boss": [40000.0, 1.296, 1.4, 24.0, 0],
-	}
-	for enemy_id: StringName in expected_specs:
-		var definition: EnemyDefinition = enemy(enemy_id)
-		var expected: Array = expected_specs[enemy_id]
-		if definition == null:
-			continue
-		if (
-			not is_equal_approx(definition.base_hp, float(expected[0]))
-			or not is_equal_approx(definition.move_speed, float(expected[1]))
-			or not is_equal_approx(definition.body_radius, float(expected[2]))
-			or not is_equal_approx(definition.contact_damage, float(expected[3]))
-			or definition.xp_value != int(expected[4])
-		):
-			_add_error("enemy role differs from approved values: %s" % enemy_id)
-
-
-func _validate_swarm_event() -> void:
-	var event_definition: SwarmEventDefinition = _manifest.swarm_event
-	if event_definition == null:
-		_add_error("bat swarm definition is required")
-		return
-	if event_definition.event_id != &"bat_swarm":
-		_add_error("swarm event id must be bat_swarm")
-	var unit: EnemyDefinition = event_definition.unit_definition
-	if unit == null:
-		_add_error("bat swarm unit definition is required")
-	else:
-		if unit in _manifest.enemies:
-			_add_error("bat swarm unit must remain outside the normal enemy catalog")
-		if (
-			unit.enemy_id != &"swarmer_event"
-			or unit.enemy_type != GameTypes.EnemyType.SWARMER
-			or not is_equal_approx(unit.base_hp, 1.0)
-			or not is_equal_approx(unit.move_speed, 2.59)
-			or not is_equal_approx(unit.body_radius, 0.26)
-			or not is_equal_approx(unit.contact_damage, 1.0)
-			or unit.xp_value != 1
-			or unit.drops_chest
-			or unit.is_boss
-		):
-			_add_error("bat swarm unit differs from approved values")
-		if (
-			not is_zero_approx(unit.preferred_distance_min)
-			or not is_zero_approx(unit.preferred_distance_max)
-			or unit.special_interval_ticks != 0
-			or unit.telegraph_ticks != 0
-			or not is_zero_approx(unit.area_radius)
-			or not is_zero_approx(unit.projectile_damage)
-			or not is_zero_approx(unit.projectile_speed)
-			or not is_zero_approx(unit.projectile_radius)
-			or unit.projectile_lifetime_ticks != 0
-			or unit.volley_count != 0
-		):
-			_add_error("bat swarm unit must be contact-only")
-	if (
-		event_definition.member_count != 50
-		or event_definition.lateral_count != 10
-		or event_definition.depth_count != 5
-		or event_definition.member_count != (
-			event_definition.lateral_count * event_definition.depth_count
-		)
-		or not is_equal_approx(event_definition.lateral_pitch, 2.0 / 3.0)
-		or not is_equal_approx(event_definition.depth_pitch, 0.7)
-	):
-		_add_error("bat swarm formation differs from approved values")
-	if event_definition.schedules.size() != EXPECTED_SWARM_SCHEDULES.size():
-		_add_error("bat swarm schedule must contain seven minute groups")
-		return
-	var total_attempt_count: int = 0
-	var seen_ticks: Dictionary[int, bool] = {}
-	for index: int in range(EXPECTED_SWARM_SCHEDULES.size()):
-		var schedule: SwarmEventScheduleDefinition = event_definition.schedules[index]
-		var expected: Array = EXPECTED_SWARM_SCHEDULES[index]
-		if schedule == null:
-			_add_error("bat swarm schedule contains null at index %d" % index)
-			continue
-		if (
-			schedule.schedule_id != expected[0]
-			or schedule.first_tick != int(expected[1])
-			or schedule.interval_ticks != int(expected[2])
-			or schedule.attempt_count != int(expected[3])
-			or not is_equal_approx(schedule.spawn_chance, float(expected[4]))
-		):
-			_add_error("bat swarm schedule differs from approved values: %d" % index)
-		total_attempt_count += schedule.attempt_count
-		for attempt_offset: int in range(schedule.attempt_count):
-			var attempt_tick: int = schedule.first_tick + schedule.interval_ticks * attempt_offset
-			if attempt_tick >= _manifest.boss_start_tick or seen_ticks.has(attempt_tick):
-				_add_error("bat swarm attempt tick is invalid or duplicated: %d" % attempt_tick)
-			seen_ticks[attempt_tick] = true
-	if total_attempt_count != 21:
-		_add_error("bat swarm schedule must contain exactly 21 attempts")
-
-
-func _validate_segments() -> void:
-	if segments.size() != 10:
-		_add_error("segment count must be ten")
-	for index: int in range(10):
-		var definition: EnemySegmentDefinition = segment(index)
-		if definition == null:
-			_add_error("missing segment %d" % index)
-			continue
-		if definition.start_tick != index * 3600 or definition.end_tick != (index + 1) * 3600:
-			_add_error("segment tick bounds mismatch: %d" % index)
-		if definition.target_active != EXPECTED_TARGETS[index]:
-			_add_error("segment target differs from approved value: %d" % index)
-		if not is_equal_approx(definition.hp_multiplier, BASELINE_HP_MULTIPLIERS[index]):
-			_add_error("segment HP differs from approved value: %d" % index)
-		if not is_equal_approx(
-			definition.damage_multiplier,
-			BASELINE_DAMAGE_MULTIPLIERS[index],
-		):
-			_add_error("segment damage differs from approved value: %d" % index)
-		_validate_probability_weights(definition.spawn_weights, "segment_%02d weights" % (index + 1))
-		if not _float_arrays_equal(definition.spawn_weights, EXPECTED_SEGMENT_WEIGHTS[index]):
-			_add_error("segment weights differ from approved value: %d" % index)
-		if definition.spawn_weights.size() != GameTypes.EnemyType.size():
-			_add_error(
-				"segment spawn weights must contain exactly one entry per EnemyType: %d"
-				% index
-			)
-		else:
-			if (
-				not is_zero_approx(definition.spawn_weights[GameTypes.EnemyType.ELITE])
-				or not is_zero_approx(definition.spawn_weights[GameTypes.EnemyType.BOSS])
-			):
-				_add_error("segments may only spawn normal enemy types: %d" % index)
-
-
-func _validate_probability_weights(values: PackedFloat32Array, label: String) -> void:
-	if values.is_empty():
-		_add_error("%s must not be empty" % label)
-		return
-	var total: float = 0.0
-	for value: float in values:
-		if not is_finite(value) or value < 0.0:
-			_add_error("%s contains an invalid value" % label)
-		total += value
-	if absf(total - 1.0) > WEIGHT_TOLERANCE:
-		_add_error("%s must sum to one" % label)
-
-
-func _validate_segment_target_tuning(
-	definition: EnemySegmentDefinition,
-	segment_index: int,
-) -> void:
-	var baseline: int = EXPECTED_TARGETS[segment_index]
-	var maximum_step: int = 22 if segment_index >= 6 else 20
-	for five_percent_step: int in range(
-		roundi(MIN_SEGMENT_TARGET_HP_RATIO * 20.0),
-		maximum_step + 1,
-	):
-		var allowed_target: int = roundi(
-			float(baseline) * float(five_percent_step) / 20.0
-		)
-		if definition.target_active == allowed_target:
-			return
-	_add_error(
-		"segment target must be -90%%..%s in 5%% steps: %d"
-		% ["+10%" if segment_index >= 6 else "baseline", segment_index]
-	)
-
-
-func _validate_segment_multiplier_tuning(
-	value: float,
-	baseline: float,
-	segment_index: int,
-	label: String,
-	minimum_ratio: float,
-) -> void:
-	if not is_finite(value) or not is_finite(baseline) or baseline <= 0.0:
-		_add_error("segment %s multiplier must be finite with a positive baseline: %d" % [label, segment_index])
-		return
-	var ratio: float = value / baseline
-	var maximum_ratio: float = 1.10 if segment_index >= 6 else 1.0
-	var five_percent_units: float = ratio * 20.0
-	if (
-		ratio < minimum_ratio - WEIGHT_TOLERANCE
-		or ratio > maximum_ratio + WEIGHT_TOLERANCE
-		or absf(five_percent_units - roundf(five_percent_units)) > WEIGHT_TOLERANCE
-	):
-		_add_error(
-			"segment %s must be -%d%%..%s in 5%% steps: %d"
-			% [
-				label,
-				100 - roundi(minimum_ratio * 100.0),
-				"+10%" if segment_index >= 6 else "baseline",
-				segment_index,
-			]
-		)
-
-
-func _float_arrays_equal(left: PackedFloat32Array, right: Array) -> bool:
-	if left.size() != right.size():
+func _index_entry(definition: Resource, key: String, entries: Dictionary) -> bool:
+	if definition == null:
+		_error(_manifest, key, null, "required definition Resource")
 		return false
-	for index: int in range(left.size()):
-		if not is_equal_approx(left[index], right[index]):
-			return false
+	var id: StringName = definition.get(key)
+	if id == &"" or entries.has(id):
+		_error(definition, key, id, "nonempty unique ID")
+		return false
+	entries[id] = definition
 	return true
 
 
-func _finish_validation() -> void:
+func _validate_settings() -> void:
+	for settings: Resource in [_manifest.player, _manifest.progression, _manifest.arena, _manifest.combat, _manifest.spawn]:
+		_validate_numbers(settings, ["xp_early_offset", "xp_middle_offset", "xp_late_offset", "xp_early_coefficient", "xp_middle_coefficient", "xp_late_coefficient"])
+	var player: PlayerBalanceDefinition = _manifest.player
+	for key: String in ["base_max_hp", "body_radius", "kill_chain_window_ticks"]:
+		_positive(player, key)
+	var progression: ProgressionBalanceDefinition = _manifest.progression
+	for key: String in ["weapon_slot_count", "level_offer_count", "xp_pool_capacity", "xp_early_max_level", "xp_first_transition_requirement", "xp_second_transition_requirement"]:
+		_positive(progression, key)
+	_require(progression, "xp_middle_max_level", progression.xp_middle_max_level > progression.xp_early_max_level + 1, "greater than early boundary + 1")
+	_require(progression, "xp_growth_compensation_multiplier", is_finite(progression.xp_growth_compensation_multiplier) and progression.xp_growth_compensation_multiplier >= 1.0 and progression.xp_growth_compensation_multiplier == floorf(progression.xp_growth_compensation_multiplier), "finite whole integer >= 1")
+	_unique_positive_integers(progression, "xp_growth_compensation_levels")
+	_require(progression, "xp_pickup_collect_radius", progression.xp_pickup_collect_radius <= progression.xp_pickup_attract_radius, "<= xp_pickup_attract_radius")
+	var starter: WeaponDefinition = weapon(progression.starter_weapon_id)
+	_require(progression, "starter_weapon_id", starter != null and not starter.is_evolved, "existing basic weapon")
+	# Piecewise linear XP only needs endpoints and both transition levels checked.
+	var reachable_level: int = 1
+	for definition: WeaponDefinition in weapons.values():
+		if not definition.is_evolved:
+			reachable_level += definition.max_level
+	for definition: PassiveDefinition in passives.values():
+		reachable_level += maxi(0, definition.max_level)
+	for level: int in [1, progression.xp_early_max_level, progression.xp_early_max_level + 1, progression.xp_early_max_level + 2, progression.xp_middle_max_level, progression.xp_middle_max_level + 1, progression.xp_middle_max_level + 2, reachable_level]:
+		if level > 0 and level <= reachable_level:
+			var xp: int = ProgressionService.xp_required_for_level(level, progression)
+			if xp <= 0:
+				_error(progression, "required_xp(level=%d)" % level, xp, "positive XP at every reachable level")
+	var arena: ArenaBalanceDefinition = _manifest.arena
+	_require(arena, "size", arena.size.is_finite() and arena.size.x > player.body_radius * 2.0 and arena.size.y > player.body_radius * 2.0, "finite dimensions larger than player diameter (m)")
+	_positive(arena, "node_max_hp")
+	_positive(arena, "node_body_radius")
+	_positive(arena, "node_respawn_ticks")
+	var half: Vector2 = arena.size * 0.5 - Vector2.ONE * arena.node_body_radius
+	for index: int in range(arena.node_site_positions.size()):
+		var position: Vector2 = arena.node_site_positions[index]
+		if not position.is_finite() or absf(position.x) > half.x or absf(position.y) > half.y:
+			_error(arena, "node_site_positions[%d]" % index, position, "finite position inside arena including node radius")
+	var used: Dictionary[int, bool] = {}
+	for index: int in arena.initial_active_sites:
+		_require(arena, "initial_active_sites", index >= 0 and index < arena.node_site_positions.size() and not used.has(index), "unique indices into node_site_positions")
+		used[index] = true
+	_validate_weights(arena, "node_drop_weights", GameTypes.NodeDropType.size())
+	var combat: CombatBalanceDefinition = _manifest.combat
+	for key: String in ["boss_hp_multiplier", "boss_action_rate_multiplier", "boss_enrage_interval_ticks", "min_cooldown_multiplier", "min_duration_multiplier", "min_projectile_speed_multiplier", "min_area_multiplier", "target_center_radius", "effect_outer_radius", "damage_center_radius", "boss_phase_interval_multiplier", "boss_min_interval_multiplier", "orbital_damage_interval_ticks", "homing_burst_interval_ticks"]:
+		_positive(combat, key)
+	_require(combat, "target_center_radius", combat.target_center_radius <= combat.effect_outer_radius, "<= effect_outer_radius")
+	_require(combat, "effect_outer_radius", combat.effect_outer_radius <= combat.damage_center_radius, "<= damage_center_radius")
+	_require(combat, "melee_arc_degrees", combat.melee_arc_degrees > 0.0 and combat.melee_arc_degrees <= 360.0, "(0, 360] degrees")
+	_require(combat, "returning_ring_spread_degrees", combat.returning_ring_spread_degrees <= 360.0, "[0, 360] degrees")
+	_require(combat, "boss_phase_two_hp_ratio", combat.boss_phase_two_hp_ratio <= 1.0 and combat.boss_phase_two_hp_ratio > combat.boss_phase_three_hp_ratio, "phase_three_hp_ratio < ratio <= 1")
+	_require(combat, "boss_stop_time_scale", combat.boss_stop_time_scale <= 1.0, "time multiplier in [0, 1]")
+	var spawn: SpawnBalanceDefinition = _manifest.spawn
+	_positive(spawn, "target_ramp_ticks")
+	_require(spawn, "outer_half_extent", spawn.outer_half_extent >= spawn.inner_half_extent and spawn.outer_half_extent < spawn.normal_despawn_half_extent, "inner_half_extent <= outer < normal_despawn_half_extent")
+
+
+func _validate_passives() -> void:
+	var total: float = 0.0
+	for definition: PassiveDefinition in passives.values():
+		_validate_numbers(definition, ["amount_per_level"])
+		_positive(definition, "max_level")
+		_require(definition, "display_name", not definition.display_name.is_empty(), "nonempty name")
+		_require(definition, "stat_id", definition.stat_id in PASSIVE_STATS, "supported passive stat")
+		_require(definition, "amount_per_level", is_finite(definition.amount_per_level) and definition.amount_per_level != 0.0, "finite nonzero signed modifier")
+		total += definition.selection_weight
+	if _manifest.progression.passive_slot_count > 0 and not passives.is_empty():
+		_require(_manifest, "passives", is_finite(total) and total > 0.0, "finite positive total selection weight")
+	for stat: StringName in [&"max_hp_pct", &"luck_pct"]:
+		var penalties: Array[float] = []
+		for definition: PassiveDefinition in passives.values():
+			if definition.stat_id == stat and definition.amount_per_level < 0.0:
+				penalties.append(definition.amount_per_level * float(maxi(0, definition.max_level)))
+		penalties.sort()
+		var minimum: float = 0.0
+		for index: int in range(mini(maxi(0, _manifest.progression.passive_slot_count), penalties.size())):
+			minimum += penalties[index]
+		if not is_finite(minimum) or minimum <= -100.0:
+			_error(_manifest, "passives.%s.minimum_total" % stat, minimum, "> -100%; combined HP and luck multipliers must stay positive")
+
+
+func _validate_weapons() -> void:
+	var total: float = 0.0
+	var max_area: float = _maximum_area_multiplier()
+	for definition: WeaponDefinition in weapons.values():
+		_validate_numbers(definition)
+		_require(definition, "display_name", not definition.display_name.is_empty(), "nonempty name")
+		_require(definition, "behavior", int(definition.behavior) in GameTypes.WeaponBehavior.values(), "supported weapon behavior")
+		_positive(definition, "max_level")
+		var arrays_valid: bool = true
+		for key: String in ["damage_by_level", "cooldown_ticks_by_level", "amount_by_level", "projectile_speed_by_level", "range_by_level", "projectile_radius_by_level", "effect_radius_by_level", "duration_ticks_by_level", "pierce_by_level"]:
+			var values: Variant = definition.get(key)
+			if values.size() != definition.max_level:
+				arrays_valid = false
+				_error(definition, key, values, "same nonzero length as damage_by_level")
+			for index: int in range(values.size()):
+				var value: float = float(values[index])
+				var needs_positive: bool = key in ["damage_by_level", "cooldown_ticks_by_level", "amount_by_level"]
+				if not is_finite(value) or value < 0.0 or (needs_positive and value == 0.0):
+					_error(definition, "%s[%d]" % [key, index], values[index], "finite and positive" if needs_positive else "finite and nonnegative")
+		for key: String in ["critical_chance", "life_steal_ratio"]:
+			_require(definition, key, float(definition.get(key)) <= 1.0, "probability/ratio in [0, 1]")
+		_require(definition, "critical_multiplier", definition.critical_multiplier >= 1.0, ">= 1")
+		if definition.is_evolved:
+			_require(definition, "selection_weight", definition.selection_weight == 0.0, "evolved weapons are acquired by evolution only (0)")
+			_require(definition, "max_level", definition.max_level == 1, "one terminal evolved level")
+		else:
+			total += definition.selection_weight
+		if not arrays_valid:
+			continue
+		for level: int in range(2, definition.max_level + 1):
+			if definition.level_deltas(level).is_empty():
+				_error(definition, "level[%d]" % level, "no changes", "at least one stat changes")
+		for level: int in range(1, definition.max_level + 1):
+			if definition.behavior == GameTypes.WeaponBehavior.ORBITAL and definition.range_at(level) <= 0.0:
+				_error(definition, "range_by_level[%d]" % (level - 1), definition.range_at(level), "positive orbital radius for angular motion")
+			var outer: float = StatCalculator.weapon_outer_radius(definition, level, max_area)
+			if not is_finite(outer) or outer > _manifest.combat.effect_outer_radius + FLOAT_TOLERANCE:
+				_error(definition, "effective_outer_radius(level=%d)" % level, outer, "<= combat.effect_outer_radius (%s m) at maximum attainable area" % _manifest.combat.effect_outer_radius)
+	_require(_manifest, "weapons", is_finite(total) and total > 0.0, "finite positive basic weapon selection weight total")
+
+
+func _maximum_area_multiplier() -> float:
+	var gains: Array[float] = []
+	for definition: PassiveDefinition in passives.values():
+		if definition.stat_id == &"area_pct" and definition.amount_per_level > 0.0:
+			gains.append(definition.amount_per_level * float(maxi(0, definition.max_level)))
+	gains.sort()
+	gains.reverse()
+	var total: float = 0.0
+	for index: int in range(mini(maxi(0, _manifest.progression.passive_slot_count), gains.size())):
+		total += gains[index]
+	return maxf(_manifest.combat.min_area_multiplier, 1.0 + total / 100.0)
+
+
+func _validate_evolutions() -> void:
+	var targets: Dictionary[StringName, bool] = {}
+	for definition: EvolutionDefinition in evolutions.values():
+		var base: WeaponDefinition = weapon(definition.base_weapon_id)
+		var evolved: WeaponDefinition = weapon(definition.evolved_weapon_id)
+		_require(definition, "base_weapon_id", base != null and not base.is_evolved, "existing basic weapon")
+		_require(definition, "passive_id", passive(definition.passive_id) != null, "existing passive")
+		_require(definition, "evolved_weapon_id", evolved != null and evolved.is_evolved and not targets.has(definition.evolved_weapon_id), "unique existing evolved weapon")
+		targets[definition.evolved_weapon_id] = true
+	for id: StringName in _evolved_weapon_ids:
+		_require(weapon(id), "weapon_id", targets.has(id), "referenced by an evolution definition")
+
+
+func _validate_enemy(definition: EnemyDefinition) -> void:
+	_validate_numbers(definition)
+	_require(definition, "display_name", not definition.display_name.is_empty(), "nonempty name")
+	for key: String in ["base_hp", "body_radius"]:
+		_positive(definition, key)
+	_require(definition, "enemy_id", definition.enemy_id != &"", "nonempty ID")
+	_require(definition, "enemy_type", int(definition.enemy_type) in GameTypes.EnemyType.values(), "supported enemy type")
+	_require(definition, "body_radius", definition.body_radius * 2.0 < minf(_manifest.arena.size.x, _manifest.arena.size.y), "diameter smaller than arena dimensions")
+	maximum_enemy_body_radius = maxf(maximum_enemy_body_radius, definition.body_radius)
+	if definition.enemy_type != GameTypes.EnemyType.BOSS:
+		for key: String in ["special_interval_ticks", "telegraph_ticks", "projectile_damage", "projectile_speed", "projectile_radius", "projectile_lifetime_ticks", "volley_count"]:
+			_require(definition, key, float(definition.get(key)) == 0.0, "contact-only enemy: unused special attack field must be 0")
+	elif definition.special_interval_ticks > 0:
+		for key: String in ["telegraph_ticks", "projectile_lifetime_ticks", "volley_count"]:
+			_positive(definition, key)
+
+
+func _validate_swarm() -> void:
+	var swarm: SwarmEventDefinition = _manifest.swarm_event
+	_validate_numbers(swarm)
+	for key: String in ["lateral_count", "depth_count", "lateral_pitch", "depth_pitch"]:
+		_positive(swarm, key)
+	_require(swarm, "event_id", swarm.event_id != &"", "nonempty ID")
+	_require(swarm, "member_count", swarm.member_count > 0 and swarm.member_count <= EnemyStore.CAPACITY, "formation product in [1, enemy pool capacity %d]" % EnemyStore.CAPACITY)
+	_require(swarm, "unit_definition", swarm.unit_definition != null, "required enemy Resource")
+	if swarm.unit_definition != null:
+		_validate_enemy(swarm.unit_definition)
+		_require(swarm.unit_definition, "enemy_type", swarm.unit_definition.enemy_type == GameTypes.EnemyType.SWARMER, "swarm event unit is SWARMER")
+
+
+func _validate_segments() -> void:
+	_require(_manifest, "segments", not _manifest.segments.is_empty(), "at least one ordered segment")
+	for index: int in range(_manifest.segments.size()):
+		var definition: EnemySegmentDefinition = segment(index)
+		if definition == null:
+			continue
+		_validate_numbers(definition)
+		_positive(definition, "duration_ticks")
+		_positive(definition, "hp_multiplier")
+		_require(definition, "target_active", definition.target_active <= EnemyStore.CAPACITY, "0..enemy pool capacity %d" % EnemyStore.CAPACITY)
+		_validate_weights(definition, "spawn_weights", GameTypes.EnemyType.size())
+		for enemy_type: int in [GameTypes.EnemyType.ELITE, GameTypes.EnemyType.BOSS]:
+			if enemy_type < definition.spawn_weights.size():
+				_require(definition, "spawn_weights", definition.spawn_weights[enemy_type] == 0.0, "elite/boss weights are 0; scheduled separately")
+		if definition.duration_ticks <= 0 or definition.duration_ticks > 2147483647 - boss_start_tick:
+			_require(definition, "duration_ticks", false, "positive duration, cumulative tick <= 2147483647")
+			continue
+		segment_start_ticks.append(boss_start_tick)
+		for offset: int in definition.elite_offsets_ticks:
+			_require(definition, "elite_offsets_ticks", offset >= 0 and offset < definition.duration_ticks, "0 <= every offset < duration_ticks")
+			if offset >= 0 and offset < definition.duration_ticks:
+				elite_spawn_ticks.append(boss_start_tick + offset)
+		var ids: Dictionary[StringName, bool] = {}
+		for schedule: SwarmEventScheduleDefinition in definition.swarm_schedules:
+			if schedule == null:
+				_error(definition, "swarm_schedules", null, "required schedule Resource")
+				continue
+			_validate_numbers(schedule)
+			_require(schedule, "schedule_id", schedule.schedule_id != &"" and not ids.has(schedule.schedule_id), "nonempty unique ID within segment")
+			ids[schedule.schedule_id] = true
+			_positive(schedule, "interval_ticks")
+			_require(schedule, "spawn_chance", schedule.spawn_chance <= 1.0, "probability in [0, 1]")
+			var last_offset: int = schedule.first_offset_ticks + maxi(0, schedule.attempt_count - 1) * schedule.interval_ticks
+			var fits: bool = schedule.first_offset_ticks >= 0 and last_offset >= schedule.first_offset_ticks and last_offset < definition.duration_ticks
+			_require(schedule, "first_offset_ticks", fits, "all attempts inside segment: first + (count - 1) * interval < duration_ticks (%d)" % definition.duration_ticks)
+			if fits and schedule.interval_ticks > 0 and schedule.attempt_count >= 0:
+				for attempt: int in range(schedule.attempt_count):
+					swarm_attempts.append({&"tick": boss_start_tick + schedule.first_offset_ticks + attempt * schedule.interval_ticks, &"chance": schedule.spawn_chance})
+		boss_start_tick += definition.duration_ticks
+		segment_end_ticks.append(boss_start_tick)
+
+
+func _validate_numbers(resource: Resource, signed_fields: Array[String] = []) -> void:
+	for property: Dictionary in resource.get_property_list():
+		if (int(property.usage) & PROPERTY_USAGE_SCRIPT_VARIABLE) == 0:
+			continue
+		var key: String = property.name
+		var value: Variant = resource.get(key)
+		if typeof(value) == TYPE_FLOAT:
+			_require(resource, key, is_finite(float(value)) and (key in signed_fields or float(value) >= 0.0), "finite signed value" if key in signed_fields else "finite nonnegative value")
+		elif typeof(value) == TYPE_INT and key not in signed_fields:
+			_require(resource, key, int(value) >= 0, "nonnegative integer")
+
+
+func _validate_weights(resource: Resource, key: String, size: int) -> void:
+	var values: Variant = resource.get(key)
+	_require(resource, key, values.size() == size, "%d weights in enum order" % size)
+	var total: float = 0.0
+	for index: int in range(values.size()):
+		var value: float = float(values[index])
+		if not is_finite(value) or value < 0.0:
+			_error(resource, "%s[%d]" % [key, index], value, "finite nonnegative relative weight")
+		total += value
+	_require(resource, key, is_finite(total) and total > 0.0, "finite positive total relative weight")
+
+
+func _unique_positive_integers(resource: Resource, key: String) -> void:
+	var used: Dictionary[int, bool] = {}
+	for value: int in resource.get(key):
+		_require(resource, key, value > 0 and not used.has(value), "unique positive integers")
+		used[value] = true
+
+
+func _positive(resource: Resource, key: String) -> void:
+	var value: float = float(resource.get(key))
+	_require(resource, key, is_finite(value) and value > 0.0, "finite and positive")
+
+
+func _require(resource: Resource, key: String, condition: bool, rule: String) -> void:
+	if not condition:
+		_error(resource, key, resource.get(key), rule)
+
+
+func _error(resource: Resource, key: String, value: Variant, rule: String) -> void:
+	var path: String = resource.resource_path
+	if path.is_empty():
+		path = "<%s fixture>" % (resource.get_script() as Script).get_global_name()
+	validation_errors.append("%s: %s=%s; %s" % [path, key, var_to_str(value), rule])
+
+
+func _finish_validation() -> bool:
 	is_valid = validation_errors.is_empty()
 	error_text = "\n".join(validation_errors)
-
-
-func _add_error(message: String) -> void:
-	validation_errors.append(message)
-
-
-func _expected_weapon_weight(weapon_id: StringName) -> float:
-	match weapon_id:
-		&"resonance_wave", &"homing_core", &"directional_needle", &"arc_crystal":
-			return 100.0
-		&"returning_ring", &"orbital_array", &"mass_projectile":
-			return 80.0
-		&"zero_field":
-			return 70.0
-	return -1.0
-
-
-func _expected_passive_spec(passive_id: StringName) -> Dictionary:
-	match passive_id:
-		&"life_lattice":
-			return {&"stat_id": &"max_hp_pct", &"amount": 20.0, &"weight": 90.0}
-		&"cycle_crystal":
-			return {&"stat_id": &"cooldown_pct", &"amount": -8.0, &"weight": 50.0}
-		&"speed_gate":
-			return {&"stat_id": &"projectile_speed_pct", &"amount": 10.0, &"weight": 100.0}
-		&"scale_lens":
-			return {&"stat_id": &"area_pct", &"amount": 10.0, &"weight": 100.0}
-		&"probability_core":
-			return {&"stat_id": &"luck_pct", &"amount": 10.0, &"weight": 100.0}
-		&"duration_ring":
-			return {&"stat_id": &"duration_pct", &"amount": 10.0, &"weight": 100.0}
-		&"amplifier_core":
-			return {&"stat_id": &"might_pct", &"amount": 10.0, &"weight": 100.0}
-		&"repair_core":
-			return {&"stat_id": &"recovery_per_second", &"amount": 0.2, &"weight": 90.0}
-	return {}
-
-
-func _string_name_less(left: StringName, right: StringName) -> bool:
-	return String(left) < String(right)
+	return is_valid

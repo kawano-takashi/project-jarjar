@@ -9,11 +9,11 @@ const CONTEXT_MESSAGE_SECONDS: float = 4.5
 const MOVE_MESSAGE: String = "WASD / 矢印 / 左スティックで移動。攻撃は自動です"
 const MESSAGE_BY_CONTEXT: Dictionary[StringName, String] = {
 	&"xp_pickup": "小さな図形はXPです。近づくと吸い寄せられます",
-	&"level_up": "レベルアップは3択。武器5枠・パッシブ5枠を組み立てます",
-	&"chest_pickup": "2・4・6・8分のエリートは宝箱を落とします",
-	&"evolution": "武器Lv8＋触媒Lv1以上で宝箱から進化。触媒は最大Lv不要・進化後も消費されません",
-	&"stop_pickup": "停止場は通常敵とエリートを5秒停止し、ボスを減速します",
-	&"boss_spawn": "10:00。最後のボスを倒せばクリアです",
+	&"level_up": "レベルアップで武器・パッシブを選びます",
+	&"chest_pickup": "エリートは宝箱を落とします",
+	&"evolution": "武器が最大Lv、触媒がLv1以上なら宝箱から進化。触媒は最大Lv不要・進化後も消費されません",
+	&"stop_pickup": "停止場は通常敵とエリートを停止し、ボスを減速します",
+	&"boss_spawn": "最後のボスを倒せばクリアです",
 }
 
 var enabled: bool = false
@@ -22,10 +22,17 @@ var move_completed: bool = false
 var message_remaining: float = 0.0
 var active_message: String = ""
 
+var _messages: Dictionary[StringName, String] = {}
+
 var _shown_contexts: Dictionary[StringName, bool] = {}
 
 
-func begin_run(tutorial_completed: bool) -> void:
+func begin_run(tutorial_completed: bool, catalog: DefinitionCatalog) -> void:
+	_messages = MESSAGE_BY_CONTEXT.duplicate()
+	var progression: ProgressionBalanceDefinition = catalog.manifest().progression
+	_messages[&"level_up"] = "レベルアップは最大%d択。武器%d枠・パッシブ%d枠を組み立てます" % [progression.level_offer_count, progression.weapon_slot_count, progression.passive_slot_count]
+	_messages[&"stop_pickup"] = "停止場は通常敵とエリートを%s秒停止し、ボスを減速します" % String.num(float(catalog.manifest().arena.node_stop_ticks) / float(RunState.TICKS_PER_SECOND), 2)
+	_messages[&"boss_spawn"] = "%02d:%02d。最後のボスを倒せばクリアです" % [floori(float(catalog.boss_start_tick) / 3600.0), floori(float(catalog.boss_start_tick) / 60.0) % 60]
 	enabled = not tutorial_completed
 	move_elapsed = 0.0
 	move_completed = not enabled
@@ -62,11 +69,11 @@ func notify_context(context_id: StringName) -> bool:
 		not enabled
 		or not move_completed
 		or _shown_contexts.has(context_id)
-		or not MESSAGE_BY_CONTEXT.has(context_id)
+		or not _messages.has(context_id)
 	):
 		return false
 	_shown_contexts[context_id] = true
-	active_message = MESSAGE_BY_CONTEXT[context_id]
+	active_message = _messages[context_id]
 	message_remaining = CONTEXT_MESSAGE_SECONDS
 	return true
 

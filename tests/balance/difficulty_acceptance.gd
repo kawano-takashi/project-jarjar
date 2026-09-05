@@ -78,15 +78,16 @@ static func evaluate(
 					normal_evolved_by_five += 1
 				if evolution_tick <= SEVEN_MINUTE_TICK:
 					normal_evolved_by_seven += 1
-			for elite_index: int in range(1, 5):
-				var spawn_tick: int = int(result.get("elite_%d_spawn_tick" % elite_index, -1))
+			var elite_spawns: PackedInt32Array = result.get("elite_spawn_ticks", PackedInt32Array())
+			var elite_kills: PackedInt32Array = result.get("elite_kill_ticks", PackedInt32Array())
+			for elite_index: int in range(elite_spawns.size()):
+				var spawn_tick: int = elite_spawns[elite_index]
 				if spawn_tick < 0:
 					continue
 				elite_spawn_count += 1
-				var kill_seconds: float = float(
-					result.get("elite_%d_kill_seconds" % elite_index, -1.0)
-				)
-				if kill_seconds >= 0.0 and kill_seconds <= 60.0:
+				var kill_tick: int = elite_kills[elite_index] if elite_index < elite_kills.size() else -1
+				var kill_seconds: float = float(kill_tick - spawn_tick) / float(RunState.TICKS_PER_SECOND)
+				if kill_tick >= spawn_tick and kill_seconds <= 60.0:
 					elite_killed_within_sixty += 1
 		if int(result.get("pool_overflow_count", 0)) > 0:
 			overflow_runs += 1
@@ -132,11 +133,11 @@ static func evaluate(
 			offscreen_weapon_hit_runs += 1
 		if int(result["offscreen_weapon_kills"]) != 0:
 			offscreen_weapon_kill_runs += 1
-		if float(result["max_hit_center_distance"]) > CombatEnvelope.DAMAGE_CENTER_RADIUS + 0.0001:
+		if float(result["max_hit_center_distance"]) > 10.0 + 0.0001:
 			hit_distance_runs += 1
-		if float(result["max_kill_center_distance"]) > CombatEnvelope.DAMAGE_CENTER_RADIUS + 0.0001:
+		if float(result["max_kill_center_distance"]) > 10.0 + 0.0001:
 			kill_distance_runs += 1
-		if float(result["max_effect_outer_distance"]) > CombatEnvelope.EFFECT_OUTER_RADIUS + 0.0001:
+		if float(result["max_effect_outer_distance"]) > 9.0 + 0.0001:
 			effect_outer_distance_runs += 1
 		if int(result["feedback_suppressed"]) != 0:
 			feedback_suppressed_runs += 1

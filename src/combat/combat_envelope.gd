@@ -2,42 +2,54 @@ class_name CombatEnvelope
 extends RefCounted
 
 
-const ARENA_HALF_EXTENT: float = 16.0
-const ARENA_SIZE: Vector2 = Vector2(ARENA_HALF_EXTENT * 2.0, ARENA_HALF_EXTENT * 2.0)
-const ARENA_MIN: Vector2 = Vector2(-ARENA_HALF_EXTENT, -ARENA_HALF_EXTENT)
-const ARENA_MAX: Vector2 = Vector2(ARENA_HALF_EXTENT, ARENA_HALF_EXTENT)
-
-const PLAYER_BODY_RADIUS: float = 0.45
-const PLAYER_CENTER_LIMIT: float = ARENA_HALF_EXTENT - PLAYER_BODY_RADIUS
-const PLAYER_CENTER_MIN: Vector2 = Vector2(-PLAYER_CENTER_LIMIT, -PLAYER_CENTER_LIMIT)
-const PLAYER_CENTER_MAX: Vector2 = Vector2(PLAYER_CENTER_LIMIT, PLAYER_CENTER_LIMIT)
-
-const TARGET_CENTER_RADIUS: float = 8.0
-const EFFECT_OUTER_RADIUS: float = 9.0
-const DAMAGE_CENTER_RADIUS: float = 10.0
 const BOT_AWARENESS_RADIUS: float = 10.0
-const SPAWN_INNER_HALF_EXTENT: float = 10.0
-const SPAWN_OUTER_HALF_EXTENT: float = 12.0
-const NORMAL_DESPAWN_HALF_EXTENT: float = 18.0
-
-const NORMAL_ENTRY_TICKS: int = 21
-const ELITE_ENTRY_TICKS: int = 36
-const BOSS_ENTRY_TICKS: int = 60
-const BOSS_CHARGE_TICKS: int = 30
-
 const CAMERA_SIZE: float = 18.0
 const CAMERA_FOLLOW_TAU_SECONDS: float = 0.12
 
+var arena_size: Vector2
+var arena_min: Vector2
+var arena_max: Vector2
+var player_body_radius: float
+var player_center_min: Vector2
+var player_center_max: Vector2
+var target_center_radius: float
+var effect_outer_radius: float
+var damage_center_radius: float
+var spawn_inner_half_extent: float
+var spawn_outer_half_extent: float
+var normal_despawn_half_extent: float
+var normal_entry_ticks: int
+var elite_entry_ticks: int
+var boss_entry_ticks: int
 
-static func entry_ticks_for_enemy_type(enemy_type: GameTypes.EnemyType) -> int:
+
+func _init(manifest: SurvivalContentManifest) -> void:
+	arena_size = manifest.arena.size
+	arena_min = -arena_size * 0.5
+	arena_max = arena_size * 0.5
+	player_body_radius = manifest.player.body_radius
+	player_center_min = arena_min + Vector2.ONE * player_body_radius
+	player_center_max = arena_max - Vector2.ONE * player_body_radius
+	target_center_radius = manifest.combat.target_center_radius
+	effect_outer_radius = manifest.combat.effect_outer_radius
+	damage_center_radius = manifest.combat.damage_center_radius
+	spawn_inner_half_extent = manifest.spawn.inner_half_extent
+	spawn_outer_half_extent = manifest.spawn.outer_half_extent
+	normal_despawn_half_extent = manifest.spawn.normal_despawn_half_extent
+	normal_entry_ticks = manifest.spawn.normal_entry_ticks
+	elite_entry_ticks = manifest.spawn.elite_entry_ticks
+	boss_entry_ticks = manifest.spawn.boss_entry_ticks
+
+
+func entry_ticks_for_enemy_type(enemy_type: GameTypes.EnemyType) -> int:
 	match enemy_type:
 		GameTypes.EnemyType.ELITE:
-			return ELITE_ENTRY_TICKS
+			return elite_entry_ticks
 		GameTypes.EnemyType.BOSS:
-			return BOSS_ENTRY_TICKS
+			return boss_entry_ticks
 		_:
-			return NORMAL_ENTRY_TICKS
+			return normal_entry_ticks
 
 
-static func enemy_center_limit(body_radius: float) -> float:
-	return maxf(0.0, ARENA_HALF_EXTENT - maxf(0.0, body_radius))
+func enemy_center_limit(body_radius: float) -> Vector2:
+	return Vector2(maxf(0.0, arena_max.x - body_radius), maxf(0.0, arena_max.y - body_radius))

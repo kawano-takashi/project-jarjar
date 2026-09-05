@@ -44,7 +44,7 @@ func _test_ids(assertions: Variant) -> void:
 
 func _test_builds(assertions: Variant) -> void:
 	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.load_and_validate(), "QA fixture catalog valid")
+	assertions.expect_true(catalog.validate_manifest(BalanceTestFixtures.manifest()), "QA fixture catalog valid")
 	if not catalog.is_valid:
 		return
 	for scenario_id: String in QaScenarioFactory.VALID_IDS:

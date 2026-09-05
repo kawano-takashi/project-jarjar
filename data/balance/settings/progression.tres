@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="ProgressionBalanceDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/progression_balance_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+xp_early_coefficient = 10
+xp_early_max_level = 19
+xp_early_offset = -5
+xp_growth_compensation_levels = PackedInt32Array(20, 40)
+xp_growth_compensation_multiplier = 2.0
+xp_late_coefficient = 16
+xp_late_offset = -185
+xp_first_transition_requirement = 795
+xp_second_transition_requirement = 2855
+xp_middle_coefficient = 13
+xp_middle_max_level = 39
+xp_middle_offset = -65
+xp_pickup_attract_radius = 2.25
+xp_pickup_collect_radius = 0.7
+xp_pickup_speed = 14.0
+xp_pool_capacity = 2048
+xp_yield_percent = 90
+weapon_slot_count = 5
+passive_slot_count = 5
+level_offer_count = 3
+owned_offer_attempt_count = 2
+owned_offer_luck_coefficient = 0.3
+starter_weapon_id = &"homing_core"
+max_evolutions_per_run = 4
+owned_offer_even_level_multiplier = 2.0

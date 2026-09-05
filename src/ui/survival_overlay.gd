@@ -12,11 +12,9 @@ const CHEST_DISPLAY_SECONDS: float = 2.0
 const StrictChestActionScript = preload("res://src/ui/strict_chest_action.gd")
 
 @onready var _level_modal: Control = %LevelUpModal
-@onready var _level_buttons: Array[Button] = [
-	%LevelChoice0,
-	%LevelChoice1,
-	%LevelChoice2,
-]
+@onready var _choice_container: VBoxContainer = %Choices
+@onready var _choice_scroll: ScrollContainer = %ChoiceScroll
+var _level_buttons: Array[Button] = []
 @onready var _chest_modal: Control = %ChestModal
 @onready var _chest_heading: Label = %ChestHeading
 @onready var _chest_result: Label = %ChestResult
@@ -39,8 +37,6 @@ var _pause_build_values: Dictionary = {}
 
 
 func _ready() -> void:
-	for index: int in range(_level_buttons.size()):
-		_level_buttons[index].pressed.connect(_on_level_choice_pressed.bind(index))
 	_chest_continue.connect("activated", _request_chest_continue)
 	_pause_resume.pressed.connect(_request_pause_resume)
 	_pause_settings.pressed.connect(_open_settings)
@@ -83,6 +79,8 @@ func show_level_offer(offer: Variant) -> void:
 	var options_value: Variant = _read_property(offer, &"options", [])
 	if options_value is Array:
 		options.assign(options_value)
+	_resize_level_buttons(options.size())
+	_choice_scroll.scroll_vertical = 0
 	var visible_buttons: Array = []
 	for index: int in range(_level_buttons.size()):
 		var button: Button = _level_buttons[index]
@@ -96,7 +94,10 @@ func show_level_offer(offer: Variant) -> void:
 		visible_buttons.append(button)
 	if visible_buttons.is_empty():
 		return
-	FocusController.configure_horizontal_cycle(visible_buttons)
+	FocusController.configure_vertical_cycle(visible_buttons)
+	for button: Button in _level_buttons:
+		button.focus_neighbor_left = button.focus_neighbor_top
+		button.focus_neighbor_right = button.focus_neighbor_bottom
 	_level_modal.visible = true
 	FocusController.grab_focus_deferred(visible_buttons[0] as Control)
 
@@ -345,8 +346,9 @@ func _refresh_evolution_guide() -> void:
 		var evolved_weapon: WeaponDefinition = _catalog.weapon(evolution.evolved_weapon_id)
 		if passive == null or evolved_weapon == null:
 			continue
-		lines.append("%s Lv8 ＋ 触媒：%s Lv1以上 → %s" % [
+		lines.append("%s Lv%d ＋ 触媒：%s Lv1以上 → %s" % [
 			base_weapon.display_name,
+			base_weapon.max_level,
 			passive.display_name,
 			evolved_weapon.display_name,
 		])
@@ -388,3 +390,24 @@ func _read_property(value: Variant, property_name: StringName, fallback: Variant
 			if StringName(property.get("name", "")) == property_name:
 				return object.get(property_name)
 	return fallback
+
+func _resize_level_buttons(count: int) -> void:
+	while _level_buttons.size() > count:
+		var button: Button = _level_buttons.pop_back()
+		_choice_container.remove_child(button)
+		button.queue_free()
+	while _level_buttons.size() < count:
+		var index: int = _level_buttons.size()
+		var button := Button.new()
+		button.name = "LevelChoice%d" % index
+		button.custom_minimum_size = Vector2(0.0, 160.0)
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		button.add_theme_font_size_override("font_size", 21)
+		button.add_theme_stylebox_override("focus", _pause_resume.get_theme_stylebox("focus"))
+		_choice_container.add_child(button)
+		button.owner = self
+		button.unique_name_in_owner = true
+		button.pressed.connect(_on_level_choice_pressed.bind(index))
+		button.focus_entered.connect(func() -> void: _choice_scroll.ensure_control_visible(button))
+		_level_buttons.append(button)

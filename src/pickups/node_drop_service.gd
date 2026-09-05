@@ -8,7 +8,7 @@ static func roll_drop(
 ) -> GameTypes.NodeDropType:
 	if state == null or catalog == null or catalog.manifest() == null:
 		return GameTypes.NodeDropType.NONE
-	var source_weights: PackedFloat32Array = catalog.manifest().node_drop_weights
+	var source_weights: PackedFloat32Array = catalog.manifest().arena.node_drop_weights
 	var candidates: Array[StringName] = []
 	var adjusted_weights := PackedFloat64Array()
 	var luck_multiplier: float = 1.0 + (
@@ -42,7 +42,7 @@ static func apply_drop(
 		GameTypes.NodeDropType.HEAL:
 			state.current_hp = minf(
 				state.max_hp,
-				state.current_hp + catalog.manifest().node_heal_amount,
+				state.current_hp + catalog.manifest().arena.node_heal_amount,
 			)
 			return {&"success": true, &"vacuum": false}
 		GameTypes.NodeDropType.VACUUM:
@@ -50,7 +50,7 @@ static func apply_drop(
 		GameTypes.NodeDropType.STOP:
 			state.stop_until_tick = maxi(
 				state.stop_until_tick,
-				state.combat_tick + catalog.manifest().node_stop_ticks,
+				state.combat_tick + catalog.manifest().arena.node_stop_ticks,
 			)
 			return {&"success": true, &"vacuum": false}
 	return {&"success": false, &"vacuum": false}

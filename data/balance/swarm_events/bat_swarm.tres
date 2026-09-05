@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="SwarmEventDefinition" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/swarm_event_definition.gd" id="1_event"]
+[ext_resource type="Resource" path="res://data/balance/enemies/swarmer_event.tres" id="2_unit"]
+
+[resource]
+script = ExtResource("1_event")
+event_id = &"bat_swarm"
+unit_definition = ExtResource("2_unit")
+lateral_count = 10
+depth_count = 5
+lateral_pitch = 0.6666667
+depth_pitch = 0.7

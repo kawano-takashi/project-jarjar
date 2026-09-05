@@ -3,19 +3,18 @@ extends RefCounted
 
 
 const TICKS_PER_SECOND: int = 60
-const BOSS_START_TICK: int = 36000
-const KILL_CHAIN_WINDOW_TICKS: int = 90
-const ENEMY_SEGMENT_COUNT: int = 10
 const NORMAL_ENEMY_TYPE_COUNT: int = 4
-const ELITE_COUNT: int = 4
+
+var boss_start_tick: int = 0
+var kill_chain_window_ticks: int = 0
 
 var run_seed: int = 0
 var rng_streams: RunRngStreams = null
 var phase: GameTypes.RunPhase = GameTypes.RunPhase.BOOT
 var combat_tick: int = 0
-var current_hp: float = 100.0
-var max_hp: float = 100.0
-var base_max_hp: float = 100.0
+var current_hp: float = 0.0
+var max_hp: float = 0.0
+var base_max_hp: float = 0.0
 var level: int = 1
 var xp: int = 0
 var xp_yield_remainder: int = 0
@@ -51,13 +50,13 @@ var normal_kills: int = 0
 var elite_kills: int = 0
 var boss_kills: int = 0
 var normal_kills_by_type: PackedInt32Array = PackedInt32Array([0, 0, 0, 0])
-var normal_kills_by_segment: PackedInt32Array = PackedInt32Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-var normal_xp_by_segment: PackedInt32Array = PackedInt32Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-var normal_active_samples_by_segment: PackedInt32Array = PackedInt32Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-var normal_active_total_by_segment: PackedInt64Array = PackedInt64Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-var normal_engaged_total_by_segment: PackedInt64Array = PackedInt64Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-var elite_spawn_ticks: PackedInt32Array = PackedInt32Array([-1, -1, -1, -1])
-var elite_kill_ticks: PackedInt32Array = PackedInt32Array([-1, -1, -1, -1])
+var normal_kills_by_segment: PackedInt32Array = []
+var normal_xp_by_segment: PackedInt32Array = []
+var normal_active_samples_by_segment: PackedInt32Array = []
+var normal_active_total_by_segment: PackedInt64Array = []
+var normal_engaged_total_by_segment: PackedInt64Array = []
+var elite_spawn_ticks: PackedInt32Array = []
+var elite_kill_ticks: PackedInt32Array = []
 var boss_spawn_tick: int = -1
 var boss_defeat_tick: int = -1
 var absorbed_normal_count: int = 0
@@ -136,7 +135,7 @@ func record_weapon_damage(lineage_id: StringName, amount: float) -> void:
 
 
 func record_kill_chain(current_tick: int) -> int:
-	if kill_chain_last_tick >= 0 and current_tick - kill_chain_last_tick <= KILL_CHAIN_WINDOW_TICKS:
+	if kill_chain_last_tick >= 0 and current_tick - kill_chain_last_tick <= kill_chain_window_ticks:
 		kill_chain_count += 1
 	else:
 		kill_chain_count = 1
@@ -153,7 +152,7 @@ func kill_chain_is_visible() -> bool:
 	return (
 		kill_chain_count >= 3
 		and kill_chain_last_tick >= 0
-		and combat_tick - kill_chain_last_tick <= KILL_CHAIN_WINDOW_TICKS
+		and combat_tick - kill_chain_last_tick <= kill_chain_window_ticks
 	)
 
 
@@ -172,7 +171,7 @@ func record_enemy_segment_sample(
 	active_normal_count: int,
 	engaged_normal_count: int,
 ) -> void:
-	if segment_index < 0 or segment_index >= ENEMY_SEGMENT_COUNT:
+	if segment_index < 0 or segment_index >= normal_kills_by_segment.size():
 		return
 	normal_active_samples_by_segment[segment_index] += 1
 	normal_active_total_by_segment[segment_index] += maxi(0, active_normal_count)
