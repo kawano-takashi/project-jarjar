@@ -89,6 +89,32 @@ func test_bot_observation_excludes_hidden_state_and_detaches_values(a: Variant, 
 		var after_hidden_change: BotObservation = session.observer.capture(sim, session.view)
 		a.expect_equal(_body_values(before_hidden_change.enemies), _body_values(after_hidden_change.enemies), "unseen movement and disappearance remain unobservable across ticks")
 		a.expect_equal(first_brain.decide(before_hidden_change).move_input, second_brain.decide(after_hidden_change).move_input, "offscreen changes cannot alter decisions through observation memory")
+	session.view.reset(Vector2.ZERO)
+	var xp: XpPickupState = sim.xp_pickup_pool.acquire(Vector2.ONE, 1, 0, Vector2.ZERO)
+	var old_loot: BotObservation = session.observer.capture(sim, session.view)
+	var retained: PackedVector4Array = old_loot.loot.duplicate()
+	xp.position = Vector2(2.0, 2.0)
+	xp.value = 16
+	var moved_loot: BotObservation = session.observer.capture(sim, session.view)
+	a.expect_equal(Vector2(2.0, 2.0), Vector2(moved_loot.loot[0].y, moved_loot.loot[0].z), "batch culling uses the pickup's current position")
+	a.expect_true(moved_loot.loot[0].w > old_loot.loot[0].w, "absorbed XP updates the observed visual scale")
+	a.expect_equal(retained, old_loot.loot, "updating the shared visual buffer cannot rewrite an earlier observation")
+	sim.xp_pickup_pool.release(xp.pool_index, xp.generation)
+	sim.xp_pickup_pool.acquire(Vector2(-1.0, -1.0), 1, 0, Vector2.ZERO)
+	var recycled_loot: BotObservation = session.observer.capture(sim, session.view)
+	a.expect_equal(Vector4(BotObservation.LootKind.XP, -1.0, -1.0, 1.0), recycled_loot.loot[0], "reused slots expose the new pickup's position and scale")
+	sim.enemy_system.enemy_store.clear()
+	var arriving: EnemyEntity = sim.spawn_fixture_enemy(GameTypes.EnemyType.PURSUER, Vector2.ONE, -1)
+	var active: EnemyEntity = sim.spawn_fixture_enemy(GameTypes.EnemyType.PURSUER, Vector2.ONE, -1)
+	arriving.activation_tick = sim.state.combat_tick + 10
+	active.activation_tick = 0
+	var coincident: BotObservation = session.observer.capture(sim, session.view)
+	a.expect_false(coincident.enemies[0].materializing, "coincident bodies sort by visible attributes before spawn order")
+	a.expect_true(coincident.enemies[1].materializing, "the materializing body follows an otherwise identical active body")
+	var deferred_bodies: BotObservation = session.observer.capture(sim, session.view)
+	active.position = Vector2(3.0, 0.0)
+	session.observer.capture(sim, session.view)
+	a.expect_equal(Vector2.ONE, deferred_bodies.enemies[0].position, "an unread packed observation retains its values across later captures")
 
 
 func test_bot_observes_partial_telegraphs_and_escapes_swarm_lane(a: Variant, _context: Dictionary) -> void:

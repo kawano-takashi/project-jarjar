@@ -15,6 +15,7 @@ const NORMAL_ENEMY_IDS: Array[StringName] = [
 	&"shooter",
 ]
 const MAXIMUM_SPAWNS_PER_TICK: int = 16
+const EMPTY_SWEEP: Dictionary = {}
 const SCREEN_RIGHT_WORLD: Vector2 = Vector2(0.70710678, -0.70710678)
 const SCREEN_DOWN_WORLD: Vector2 = Vector2(0.70710678, 0.70710678)
 const CONTACT_SEPARATION_DIRECTIONS: Array[Vector2] = [
@@ -36,6 +37,7 @@ const DAMAGE_SOURCE_CONTACT: StringName = &"enemy_contact"
 
 var enemy_store: EnemyStore = EnemyStore.new()
 var uniform_grid: UniformGrid = UniformGrid.new()
+var _swarm_sweep_grid: UniformGrid = UniformGrid.new()
 
 var _state: RunState = null
 var _catalog: DefinitionCatalog = null
@@ -59,6 +61,7 @@ func initialize(state: RunState, catalog: DefinitionCatalog) -> void:
 	_swarm_rng = state.rng_streams.swarm_event_rng if state.rng_streams != null else null
 	enemy_store.clear()
 	uniform_grid.configure(_manifest.arena.size)
+	_swarm_sweep_grid.configure(_manifest.arena.size)
 	_elite_spawned.resize(_catalog.elite_spawn_ticks.size())
 	_elite_spawned.fill(0)
 	cancel_swarm_warning()
@@ -73,20 +76,26 @@ func advance_snapshot(
 	ids: Array[int],
 	player_position: Vector2,
 	current_tick: int,
-) -> void:
+) -> Array[int]:
 	var swarm_sweeps: Array[Dictionary] = []
 	var exited_swarm_ids: Array[int] = []
+	var special_ids: Array[int] = []
+	var stop_active: bool = _state.is_stop_active()
 	for entity_id: int in ids:
 		var enemy: EnemyEntity = enemy_store.get_by_id(entity_id)
 		if enemy == null:
 			continue
+		if enemy.enemy_type == GameTypes.EnemyType.BOSS:
+			special_ids.append(entity_id)
 		if _should_far_despawn_normal(enemy, player_position, current_tick):
 			if enemy_store.remove(entity_id):
 				_state.normal_far_despawn_count += 1
 			continue
 		if not enemy.is_targetable(current_tick):
 			continue
-		var time_scale: float = _time_scale_for(enemy)
+		var time_scale: float = 1.0
+		if stop_active:
+			time_scale = _manifest.combat.boss_stop_time_scale if enemy.enemy_type == GameTypes.EnemyType.BOSS else 0.0
 		if time_scale <= 0.0:
 			continue
 		var sweep: Dictionary = _move_enemy(enemy, player_position, time_scale)
@@ -94,13 +103,24 @@ func advance_snapshot(
 			swarm_sweeps.append(sweep)
 			if enemy.remaining_travel_distance <= 0.0:
 				exited_swarm_ids.append(enemy.entity_id)
-		_advance_enemy_action_timers(enemy, time_scale)
-		_update_boss_state(enemy)
+		if enemy.definition.special_interval_ticks > 0:
+			enemy.special_elapsed_ticks += time_scale
+		if enemy.boss_charge_active:
+			enemy.boss_charge_elapsed_ticks += time_scale
+		if enemy.enemy_type == GameTypes.EnemyType.BOSS:
+			enemy.boss_action_age_ticks += time_scale
+		if enemy.telegraph_active:
+			enemy.telegraph_elapsed_ticks += time_scale
+		if enemy.enemy_type == GameTypes.EnemyType.BOSS:
+			_update_boss_state(enemy)
 	_apply_swarm_pushes(ids, swarm_sweeps)
 	for entity_id: int in exited_swarm_ids:
 		if enemy_store.remove(entity_id):
 			_state.swarm_event_exit_count += 1
 	_rebuild_grid(current_tick)
+	# Preserve every boss in the tick-start order, including stopped/entering
+	# bosses. The action stage applies its usual eligibility checks later.
+	return special_ids
 
 
 func accrue_spawn_credit() -> void:
@@ -274,10 +294,11 @@ func resolve_ready_enemy_special_actions(
 ) -> void:
 	for entity_id: int in ids:
 		var enemy: EnemyEntity = enemy_store.get_by_id(entity_id)
+		if enemy == null or enemy.enemy_type != GameTypes.EnemyType.BOSS:
+			continue
 		if not _can_resolve_actions(enemy, current_tick):
 			continue
-		if enemy.enemy_type == GameTypes.EnemyType.BOSS:
-			_fire_ready_boss_volley(enemy, current_tick, projectile_pool)
+		_fire_ready_boss_volley(enemy, current_tick, projectile_pool)
 
 
 func current_segment() -> EnemySegmentDefinition:
@@ -325,7 +346,8 @@ func _move_enemy(
 		if distance_to_player > 0.0
 		else _deterministic_contact_direction(enemy.entity_id)
 	)
-	var contact_radius: float = _catalog.envelope.player_body_radius + enemy.body_radius()
+	var body_radius: float = enemy.body_radius()
+	var contact_radius: float = _catalog.envelope.player_body_radius + body_radius
 	var next_position: Vector2 = enemy.position
 	if distance_to_player < contact_radius:
 		# Player motion is authoritative. Resolve only the current penetration and
@@ -339,10 +361,11 @@ func _move_enemy(
 		)
 		var travel_step: float = minf(maximum_step, distance_to_player - contact_radius)
 		next_position -= separation_direction * travel_step
-	if _is_enemy_center_inside_arena(enemy.position, enemy.body_radius()):
-		next_position = _clamp_enemy_center(next_position, enemy.body_radius())
+	var center_limit: Vector2 = _catalog.envelope.enemy_center_limit(body_radius)
+	if absf(enemy.position.x) <= center_limit.x and absf(enemy.position.y) <= center_limit.y:
+		next_position = next_position.clamp(-center_limit, center_limit)
 	enemy.position = next_position
-	return {}
+	return EMPTY_SWEEP
 
 
 func _deterministic_contact_direction(entity_id: int) -> Vector2:
@@ -358,13 +381,39 @@ func _apply_swarm_pushes(ids: Array[int], swarm_sweeps: Array[Dictionary]) -> vo
 	var push_distance_per_tick: float = _swarm_push_distance_per_tick()
 	if push_distance_per_tick <= 0.0:
 		return
+	_swarm_sweep_grid.clear()
+	var sweep_extent: float = 0.0
+	var sweep_min: Vector2 = swarm_sweeps[0]["from"]
+	var sweep_max: Vector2 = sweep_min
+	for index: int in swarm_sweeps.size():
+		var sweep: Dictionary = swarm_sweeps[index]
+		var start: Vector2 = sweep["from"]
+		var end: Vector2 = sweep["to"]
+		_swarm_sweep_grid.insert(index, start)
+		sweep_min = sweep_min.min(start)
+		sweep_max = sweep_max.max(start)
+		# Round outwards: this broad phase may include extras, never discard a hit.
+		sweep_extent = maxf(sweep_extent, ceilf(start.distance_to(end) + float(sweep["radius"])) + 1.0)
 	for entity_id: int in ids:
 		var target: EnemyEntity = enemy_store.get_by_id(entity_id)
 		if target == null or target.is_swarm_event or not target.alive:
 			continue
+		var body_radius: float = target.body_radius()
+		var broad_extent: float = sweep_extent + maxf(0.0, body_radius)
+		if (
+			target.position.x < sweep_min.x - broad_extent
+			or target.position.x > sweep_max.x + broad_extent
+			or target.position.y < sweep_min.y - broad_extent
+			or target.position.y > sweep_max.y + broad_extent
+		):
+			continue
 		var total_displacement: Vector2 = Vector2.ZERO
-		for sweep: Dictionary in swarm_sweeps:
-			var collision_radius: float = target.body_radius() + float(sweep["radius"])
+		var sweep_indices: Array[int] = _swarm_sweep_grid.query_circle_candidates(target.position, body_radius, sweep_extent)
+		# Accumulation order matters for Vector2 rounding.
+		sweep_indices.sort()
+		for sweep_index: int in sweep_indices:
+			var sweep: Dictionary = swarm_sweeps[sweep_index]
+			var collision_radius: float = body_radius + float(sweep["radius"])
 			if not _segment_intersects_circle(
 				sweep["from"],
 				sweep["to"],
@@ -380,8 +429,8 @@ func _apply_swarm_pushes(ids: Array[int], swarm_sweeps: Array[Dictionary]) -> vo
 		):
 			total_displacement = total_displacement.normalized() * push_distance_per_tick
 		var pushed_position: Vector2 = target.position + total_displacement
-		if _is_enemy_center_inside_arena(target.position, target.body_radius()):
-			pushed_position = _clamp_enemy_center(pushed_position, target.body_radius())
+		if _is_enemy_center_inside_arena(target.position, body_radius):
+			pushed_position = _clamp_enemy_center(pushed_position, body_radius)
 		target.position = pushed_position
 
 
@@ -411,17 +460,6 @@ func _segment_intersects_circle(
 		)
 		closest += segment * ratio
 	return closest.distance_squared_to(circle_center) <= circle_radius * circle_radius
-
-
-func _advance_enemy_action_timers(enemy: EnemyEntity, time_scale: float) -> void:
-	if enemy.definition.special_interval_ticks > 0:
-		enemy.special_elapsed_ticks += time_scale
-	if enemy.boss_charge_active:
-		enemy.boss_charge_elapsed_ticks += time_scale
-	if enemy.enemy_type == GameTypes.EnemyType.BOSS:
-		enemy.boss_action_age_ticks += time_scale
-	if enemy.telegraph_active:
-		enemy.telegraph_elapsed_ticks += time_scale
 
 
 func _fire_ready_boss_volley(
@@ -776,10 +814,7 @@ func _normal_enemy_count() -> int:
 
 
 func _rebuild_grid(current_tick: int) -> void:
-	uniform_grid.clear()
-	for enemy: EnemyEntity in enemy_store.entities:
-		if enemy.is_targetable(current_tick):
-			uniform_grid.insert(enemy.entity_id, enemy.position)
+	uniform_grid.rebuild_enemies(enemy_store, current_tick)
 
 
 func _can_resolve_actions(enemy: EnemyEntity, current_tick: int) -> bool:

@@ -1,6 +1,7 @@
 class_name XpPickupPool
 extends RefCounted
 
+const CELL_SIZE: float = 4.0
 
 
 var slots: Array[XpPickupState] = []
@@ -14,9 +15,9 @@ var attract_speed: float = 0
 var _free_indices: Array[int] = []
 var _active_indices: Array[int] = []
 var _active_position_by_pool_index: PackedInt32Array = PackedInt32Array()
-
-
-
+var _cells: Dictionary[Vector2i, Array] = {}
+var _cell_by_pool_index: Array[Vector2i] = []
+var _visual_columns: PackedVector3Array = []
 
 
 func configure(balance: ProgressionBalanceDefinition) -> void:
@@ -29,16 +30,23 @@ func configure(balance: ProgressionBalanceDefinition) -> void:
 
 
 func _rebuild_storage() -> void:
+	for slot: XpPickupState in slots:
+		slot.visual_changed.disconnect(_pickup_changed)
 	slots.clear()
 	_free_indices.clear()
 	_active_indices.clear()
+	_cells.clear()
+	_cell_by_pool_index.resize(capacity)
+	_visual_columns.resize(capacity * 4)
 	_active_position_by_pool_index = PackedInt32Array()
 	slots.resize(capacity)
 	_active_position_by_pool_index.resize(capacity)
 	for index: int in range(capacity):
 		var slot := XpPickupState.new()
 		slot.pool_index = index
+		slot.visual_changed.connect(_pickup_changed)
 		slots[index] = slot
+		_store_visual(index, slot.visual_transform)
 		_active_position_by_pool_index[index] = -1
 	for index: int in range(capacity - 1, -1, -1):
 		_free_indices.append(index)
@@ -63,6 +71,7 @@ func acquire(position: Vector2, value: int, born_tick: int, player_position: Vec
 	pickup.activate(position, value, born_tick)
 	_active_position_by_pool_index[pool_index] = _active_indices.size()
 	_active_indices.append(pool_index)
+	_add_to_cell(pool_index)
 	return pickup
 
 
@@ -73,27 +82,41 @@ func advance_and_collect(
 	vacuum_active: bool = false,
 ) -> int:
 	var collected_xp: int = 0
-	var active_position: int = 0
 	var attract_radius_squared: float = attract_radius * attract_radius
 	var collect_radius_squared: float = collect_radius * collect_radius
-	while active_position < _active_indices.size():
-		var pool_index: int = _active_indices[active_position]
-		var pickup: XpPickupState = slots[pool_index]
-		if pickup.born_tick >= current_tick:
-			active_position += 1
-			continue
-		var distance_squared: float = pickup.position.distance_squared_to(player_position)
-		if vacuum_active or distance_squared <= attract_radius_squared:
-			pickup.position = pickup.position.move_toward(
-				player_position,
-				attract_speed * maxf(0.0, delta),
-			)
-			distance_squared = pickup.position.distance_squared_to(player_position)
-		if distance_squared <= collect_radius_squared:
+	var candidates: Array[int] = []
+	if vacuum_active:
+		candidates.assign(_active_indices)
+	else:
+		# A generous broad phase keeps rounding at attraction/collection edges
+		# in the original distance check below.
+		var extent := Vector2.ONE * (ceilf(maxf(absf(attract_radius), absf(collect_radius))) + 1.0)
+		var lower: Vector2i = _cell_for(player_position - extent)
+		var upper: Vector2i = _cell_for(player_position + extent)
+		for x: int in range(lower.x, upper.x + 1):
+			for y: int in range(lower.y, upper.y + 1):
+				candidates.append_array(_cells.get(Vector2i(x, y), []))
+	var positions: Array[int] = []
+	for pool_index: int in candidates:
+		positions.append(_active_position_by_pool_index[pool_index])
+	positions.sort()
+	var step: float = attract_speed * maxf(0.0, delta)
+	for active_position: int in positions:
+		# Release swaps the last active slot into this position. Process that
+		# slot immediately, exactly as the original dense-array traversal did.
+		while active_position < _active_indices.size():
+			var pool_index: int = _active_indices[active_position]
+			var pickup: XpPickupState = slots[pool_index]
+			if pickup.born_tick >= current_tick:
+				break
+			var distance_squared: float = pickup.position.distance_squared_to(player_position)
+			if vacuum_active or distance_squared <= attract_radius_squared:
+				pickup.position = pickup.position.move_toward(player_position, step)
+				distance_squared = pickup.position.distance_squared_to(player_position)
+			if distance_squared > collect_radius_squared:
+				break
 			collected_xp += pickup.value
 			release(pool_index, pickup.generation)
-		else:
-			active_position += 1
 	return collected_xp
 
 
@@ -106,6 +129,7 @@ func release(pool_index: int, generation: int = -1) -> bool:
 	var active_position: int = _active_position_by_pool_index[pool_index]
 	if active_position < 0 or active_position >= _active_indices.size():
 		return false
+	_remove_from_cell(pool_index)
 	pickup.deactivate()
 	var last_position: int = _active_indices.size() - 1
 	if active_position != last_position:
@@ -123,16 +147,23 @@ func transforms() -> Array[Transform3D]:
 	result.resize(_active_indices.size())
 	for active_position: int in range(_active_indices.size()):
 		var pickup: XpPickupState = slots[_active_indices[active_position]]
-		result[active_position] = visual_transform(pickup)
+		result[active_position] = pickup.visual_transform
 	return result
 
 
+## Read-only working buffer for synchronous rendering/culling. Observations must
+## copy their visible values before the next simulation update.
+## Each slot stores the three basis columns followed by its origin.
+func visual_columns_by_slot() -> PackedVector3Array:
+	return _visual_columns
+
+
+func visual_slot_indices() -> PackedInt32Array:
+	return PackedInt32Array(_active_indices)
+
+
 static func visual_transform(pickup: XpPickupState) -> Transform3D:
-	var value_scale: float = 1.0 + minf(1.0, log(float(maxi(1, pickup.value))) * 0.08)
-	return Transform3D(
-		Basis.IDENTITY.scaled(Vector3.ONE * value_scale),
-		Vector3(pickup.position.x, 0.22, pickup.position.y),
-	)
+	return pickup.visual_transform
 
 
 func active_count() -> int:
@@ -198,10 +229,48 @@ func clear() -> void:
 		slots[pool_index].deactivate()
 		_active_position_by_pool_index[pool_index] = -1
 	_active_indices.clear()
+	_cells.clear()
 	_free_indices.clear()
 	for index: int in range(capacity - 1, -1, -1):
 		_free_indices.append(index)
 	overflow_merge_count = 0
+
+
+func _cell_for(position: Vector2) -> Vector2i:
+	return Vector2i(floori(position.x / CELL_SIZE), floori(position.y / CELL_SIZE))
+
+
+func _add_to_cell(pool_index: int) -> void:
+	var cell: Vector2i = _cell_for(slots[pool_index].position)
+	_cell_by_pool_index[pool_index] = cell
+	if not _cells.has(cell):
+		_cells[cell] = []
+	_cells[cell].append(pool_index)
+
+
+func _remove_from_cell(pool_index: int) -> void:
+	var cell: Vector2i = _cell_by_pool_index[pool_index]
+	_cells[cell].erase(pool_index)
+	if _cells[cell].is_empty():
+		_cells.erase(cell)
+
+
+func _pickup_changed(pool_index: int) -> void:
+	_store_visual(pool_index, slots[pool_index].visual_transform)
+	if _active_position_by_pool_index[pool_index] < 0:
+		return
+	if _cell_by_pool_index[pool_index] == _cell_for(slots[pool_index].position):
+		return
+	_remove_from_cell(pool_index)
+	_add_to_cell(pool_index)
+
+
+func _store_visual(pool_index: int, transform: Transform3D) -> void:
+	var offset: int = pool_index * 4
+	_visual_columns[offset] = transform.basis.x
+	_visual_columns[offset + 1] = transform.basis.y
+	_visual_columns[offset + 2] = transform.basis.z
+	_visual_columns[offset + 3] = transform.origin
 
 
 func _farthest_from(player_position: Vector2) -> XpPickupState:

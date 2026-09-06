@@ -173,7 +173,7 @@ func advance_tick(move_input: Vector2) -> bool:
 
 	# 2. Enemy update and time-driven spawns.
 	var boss_phase_before: int = state.boss_phase
-	enemy_system.advance_snapshot(enemy_snapshot, player_position, current_tick)
+	var special_enemy_snapshot: Array[int] = enemy_system.advance_snapshot(enemy_snapshot, player_position, current_tick)
 	if state.boss_phase != boss_phase_before and state.boss_phase > 0:
 		var phase_boss: EnemyEntity = enemy_system.boss_entity()
 		_queue_presentation_event(_make_presentation_event(
@@ -230,10 +230,11 @@ func advance_tick(move_input: Vector2) -> bool:
 			)
 	vfx_pool.advance(FIXED_DELTA_SECONDS, current_tick)
 	_damage_nodes_from_projectiles(projectile_snapshot, current_tick)
+	# Resolution values are consumed synchronously before the next projectile.
+	var projectile_resolution: Dictionary = {}
 	for projectile_entry: Vector2i in projectile_snapshot:
 		if _performance_fixture_active:
 			_performance_projectile_collision_resolutions += 1
-		var projectile_resolution: Dictionary = {}
 		var hit_records: Array[Dictionary] = weapon_system.resolve_ally_projectile(
 			projectile_entry,
 			enemy_system.enemy_store,
@@ -242,11 +243,10 @@ func advance_tick(move_input: Vector2) -> bool:
 			current_tick,
 			projectile_resolution,
 		)
-		_damage_nodes_from_projectile_resolution(
-			projectile_resolution,
-			current_tick,
-		)
-		_apply_enemy_hit_records(hit_records)
+		if not projectile_resolution.is_empty():
+			_damage_nodes_from_projectile_resolution(projectile_resolution, current_tick)
+		if not hit_records.is_empty():
+			_apply_enemy_hit_records(hit_records)
 	weapon_system.update_move_direction(move_input)
 	var attacks: Array[Dictionary] = weapon_system.advance_and_fire(
 		player_position,
@@ -263,8 +263,14 @@ func advance_tick(move_input: Vector2) -> bool:
 
 	# 4. Enemy damage and special actions. Lethal allied hits remain pending so their
 	# current contact still participates before the death stage.
+	# The grid was rebuilt from the tick-start enemies, before this tick's spawns.
+	# Keep their ID order while excluding cells that cannot touch the player.
+	var contact_snapshot: Array[int] = enemy_system.uniform_grid.query_circle_candidates(
+		player_position, envelope.player_body_radius, catalog.maximum_enemy_body_radius + 1.0,
+	)
+	contact_snapshot.sort()
 	var player_damage_candidates: Array[Dictionary] = enemy_system.resolve_contact_damage_candidates(
-		enemy_snapshot,
+		contact_snapshot,
 		player_position,
 		current_tick,
 	)
@@ -288,7 +294,7 @@ func advance_tick(move_input: Vector2) -> bool:
 		boss_before_special.boss_charge_spoke_count if boss_before_special != null else 0
 	)
 	enemy_system.resolve_ready_enemy_special_actions(
-		enemy_snapshot,
+		special_enemy_snapshot,
 		player_position,
 		current_tick,
 		projectile_pool,
@@ -816,20 +822,20 @@ func _record_visible_enemy_sample(current_tick: int) -> void:
 	var materializing_count: int = 0
 	var active_normal_count: int = 0
 	var engaged_normal_count: int = 0
+	var visible_radius_squared: float = envelope.damage_center_radius * envelope.damage_center_radius
+	var engaged_radius_squared: float = envelope.target_center_radius * envelope.target_center_radius
 	for enemy: EnemyEntity in enemy_system.enemy_store.entities:
+		var targetable: bool = enemy.is_targetable(current_tick)
+		var distance_squared: float = enemy.position.distance_squared_to(player_position)
 		if enemy.is_materializing(current_tick):
 			materializing_count += 1
-		if _combat_position_is_visible(enemy.position):
+		if distance_squared <= visible_radius_squared:
 			visible_count += 1
-		if (
-			enemy.is_targetable(current_tick)
-			and enemy.position.distance_squared_to(player_position)
-			<= envelope.target_center_radius * envelope.target_center_radius
-		):
+		if targetable and distance_squared <= engaged_radius_squared:
 			engaged_count += 1
 		if enemy.enemy_type in EnemySystem.NORMAL_ENEMY_TYPES and not enemy.is_swarm_event:
 			active_normal_count += 1
-			if enemy.is_targetable(current_tick):
+			if targetable:
 				engaged_normal_count += 1
 	state.record_visible_enemy_sample(visible_count, engaged_count, materializing_count)
 	if current_tick < catalog.boss_start_tick:
@@ -1875,15 +1881,17 @@ func _apply_snapshot_markers(snapshot: CombatSnapshot) -> void:
 
 func _materializing_important_enemy() -> EnemyEntity:
 	var elite: EnemyEntity = null
-	for entity_id: int in enemy_system.enemy_store.snapshot_ids_sorted():
-		var enemy: EnemyEntity = enemy_system.enemy_store.get_by_id(entity_id)
-		if enemy == null or not enemy.is_materializing(state.combat_tick):
+	var boss: EnemyEntity = null
+	for enemy: EnemyEntity in enemy_system.enemy_store.entities:
+		if enemy.enemy_type != GameTypes.EnemyType.BOSS and enemy.enemy_type != GameTypes.EnemyType.ELITE:
 			continue
-		if enemy.enemy_type == GameTypes.EnemyType.BOSS:
-			return enemy
-		if enemy.enemy_type == GameTypes.EnemyType.ELITE and elite == null:
+		if not enemy.is_materializing(state.combat_tick):
+			continue
+		if enemy.enemy_type == GameTypes.EnemyType.BOSS and (boss == null or enemy.entity_id < boss.entity_id):
+			boss = enemy
+		if enemy.enemy_type == GameTypes.EnemyType.ELITE and (elite == null or enemy.entity_id < elite.entity_id):
 			elite = enemy
-	return elite
+	return boss if boss != null else elite
 
 
 func _enemy_visual_kind(enemy_type: int) -> int:

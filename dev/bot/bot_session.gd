@@ -6,12 +6,16 @@ const BotKnowledge = preload("res://dev/bot/bot_knowledge.gd")
 const BotController = preload("res://dev/bot/bot_controller.gd")
 const BotObserver = preload("res://dev/bot/bot_observer.gd")
 
+const RecordedSimulation = preload("res://dev/bot/recorded_simulation.gd")
+const BotProfile = preload("res://dev/bot/bot_profile.gd")
+
 const MAX_COMBAT_TICKS: int = 30 * 60 * RunState.TICKS_PER_SECOND
 
+var profile: BotProfile = null
 var simulation: RecordedSimulation
 var view := ArenaView.new()
 var controller: BotController
-var observer := BotObserver.new()
+var observer: BotObserver
 var last_action: BotAction = null
 var last_observation: BotObservation = null
 var result: StringName = &""
@@ -25,27 +29,23 @@ var decision_usec: int = 0
 var combat_usec: int = 0
 
 
-class RecordedSimulation extends CombatSimulation:
-	## Accepted damage capped at the remaining HP, before recovery; reporting only.
-	var total_damage_taken: float = 0.0
-
-	func _apply_raw_player_damage(raw_damage: float) -> void:
-		var hp_before: float = state.current_hp
-		super(raw_damage)
-		if state.current_hp < hp_before:
-			total_damage_taken += minf(hp_before, raw_damage)
-
-
-func initialize(catalog: DefinitionCatalog, seed_value: int, viewport_size: Vector2i) -> bool:
+func initialize(catalog: DefinitionCatalog, seed_value: int, viewport_size: Vector2i, detailed_profile: bool = false) -> bool:
+	if not preload("res://dev/bot/native_loader.gd").ensure_loaded():
+		fail(preload("res://dev/bot/native_loader.gd").error_message)
+		return false
 	var state: RunState = RunStateFactory.create(seed_value, catalog)
 	if state == null:
 		fail("run_initialization")
 		return false
-	simulation = RecordedSimulation.new()
+	if detailed_profile:
+		profile = BotProfile.new()
+	simulation = profile.create_simulation() if profile != null else RecordedSimulation.new()
 	simulation.initialize(state, catalog)
 	view.viewport_size = viewport_size
 	view.reset(simulation.player_position)
-	controller = BotController.new(BotKnowledge.new(catalog))
+	var knowledge := BotKnowledge.new(catalog)
+	controller = profile.create_controller(knowledge) if profile != null else BotController.new(knowledge)
+	observer = profile.create_observer() if profile != null else BotObserver.new()
 	_started_usec = Time.get_ticks_usec()
 	return true
 

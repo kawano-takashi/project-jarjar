@@ -7,7 +7,11 @@ const CAMERA_SIZE: float = CombatEnvelope.CAMERA_SIZE
 const FOLLOW_TAU_SECONDS: float = CombatEnvelope.CAMERA_FOLLOW_TAU_SECONDS
 
 var viewport_size := Vector2i(1920, 1080)
-var camera_transform := Transform3D(Basis.looking_at(-CAMERA_OFFSET), CAMERA_OFFSET)
+var camera_transform := Transform3D(Basis.looking_at(-CAMERA_OFFSET), CAMERA_OFFSET):
+	set(value):
+		camera_transform = value
+		_projection_inverse = camera_transform.affine_inverse()
+var _projection_inverse: Transform3D = camera_transform.affine_inverse()
 var _target := Vector3.ZERO
 var _initialized: bool = false
 
@@ -37,7 +41,7 @@ func world_to_screen_input(world_input: Vector2) -> Vector2:
 
 
 func project_position(world_position: Vector3) -> Vector2:
-	var local: Vector3 = camera_transform.affine_inverse() * world_position
+	var local: Vector3 = _projection_inverse * world_position
 	var pixels_per_meter: float = float(viewport_size.y) / CAMERA_SIZE
 	return Vector2(viewport_size) * 0.5 + Vector2(local.x, -local.y) * pixels_per_meter
 

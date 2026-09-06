@@ -32,67 +32,29 @@ class Culler:
 		)
 
 
-## Broad bounds reject most objects. At screen edges, test the actual projected
-## mesh, so an empty corner of its bounding box cannot expose an unseen object.
+## Mesh culling accepts geometry only; it never reads combat state.
 class Visual:
 	extends RefCounted
 	var bounds: AABB
-	var _mesh: Mesh
-	var _convex: bool
-	var _outlines: Dictionary[Basis, PackedVector2Array] = {}
-	var _triangles: Dictionary[Basis, PackedVector2Array] = {}
+	var _native: RefCounted
 
 	func _init(mesh: Mesh) -> void:
-		_mesh = mesh
 		bounds = mesh.get_aabb()
-		_convex = mesh is BoxMesh or mesh is SphereMesh or mesh is CapsuleMesh or mesh is CylinderMesh
+		if not preload("res://dev/bot/native_loader.gd").ensure_loaded():
+			return
+		_native = ClassDB.instantiate(&"JarjarBotVisual") as RefCounted
+		_native.setup(mesh, mesh is BoxMesh or mesh is SphereMesh or mesh is CapsuleMesh or mesh is CylinderMesh)
 
 	func is_visible(culler: Culler, world_transform: Transform3D) -> bool:
-		var local: Transform3D = culler.inverse * world_transform
-		var projected: AABB = local * bounds
-		if not culler.contains_projected(projected):
-			return false
-		if (
-			projected.position.x >= -culler.half_width and projected.end.x <= culler.half_width
-			and projected.position.y >= -culler.half_height and projected.end.y <= culler.half_height
-		):
-			return true
-		if not _outlines.has(local.basis):
-			var faces: PackedVector3Array = Transform3D(local.basis, Vector3.ZERO) * _mesh.get_faces()
-			var points: PackedVector2Array = []
-			points.resize(faces.size())
-			for index: int in faces.size():
-				points[index] = Vector2(faces[index].x, faces[index].y)
-			_outlines[local.basis] = Geometry2D.convex_hull(points)
-			if not _convex:
-				_triangles[local.basis] = points
-		var offset := Vector2(local.origin.x, local.origin.y)
-		var lower := Vector2(-culler.half_width, -culler.half_height) - offset
-		var upper := Vector2(culler.half_width, culler.half_height) - offset
-		var rectangle := PackedVector2Array([lower, Vector2(upper.x, lower.y), upper, Vector2(lower.x, upper.y)])
-		if Geometry2D.intersect_polygons(_outlines[local.basis], rectangle).is_empty():
-			return false
-		if _convex:
-			return true
-		# Rings have holes. Keep those holes when a telegraph only partly enters
-		# the viewport instead of treating its convex outline as filled.
-		var triangles: PackedVector2Array = _triangles[local.basis]
-		for index: int in range(0, triangles.size(), 3):
-			var first: Vector2 = triangles[index]
-			var second: Vector2 = triangles[index + 1]
-			var third: Vector2 = triangles[index + 2]
-			if (
-				maxf(first.x, maxf(second.x, third.x)) < lower.x
-				or minf(first.x, minf(second.x, third.x)) > upper.x
-				or maxf(first.y, maxf(second.y, third.y)) < lower.y
-				or minf(first.y, minf(second.y, third.y)) > upper.y
-			):
-				continue
-			if not Geometry2D.intersect_polygons(PackedVector2Array([first, second, third]), rectangle).is_empty():
-				return true
-		return false
+		return _native.is_visible(culler.inverse, culler.half_width, culler.half_height, world_transform)
+
+	func visible_loot(culler: Culler, transforms: PackedVector3Array, indices: PackedInt32Array, kind: int) -> PackedVector4Array:
+		return _native.visible_loot(culler.inverse, culler.half_width, culler.half_height, transforms, indices, kind)
 
 var _visuals: Dictionary[StringName, Visual] = {}
+var _native_observer: RefCounted
+var _enemy_shape_indices: Dictionary[int, Dictionary] = {}
+var _enemy_templates: Array[Transform3D] = []
 
 
 func _init() -> void:
@@ -107,6 +69,13 @@ func _init() -> void:
 				_visuals[node_name] = Visual.new((value as MultiMesh).mesh)
 			elif property_name == &"mesh" and value is Mesh:
 				_visuals[node_name] = Visual.new(value as Mesh)
+
+	if preload("res://dev/bot/native_loader.gd").ensure_loaded():
+		_native_observer = ClassDB.instantiate(&"JarjarBotObserver") as RefCounted
+		var enemy_visuals: Array[RefCounted] = []
+		for mesh_name: StringName in ENEMY_MESH_NAMES:
+			enemy_visuals.append(_visuals[mesh_name]._native)
+		_native_observer.configure(enemy_visuals)
 
 
 func capture(simulation: CombatSimulation, view: ArenaView) -> BotObservation:
@@ -136,18 +105,56 @@ func capture(simulation: CombatSimulation, view: ArenaView) -> BotObservation:
 	if state.phase != GameTypes.RunPhase.COMBAT:
 		return observation
 	var culler := Culler.new(view)
-	for entity_id: int in simulation.enemy_system.snapshot_ids():
-		var enemy: EnemyEntity = simulation.enemy_system.enemy_store.get_by_id(entity_id)
-		var visual_kind: int = simulation._enemy_entity_visual_kind(enemy)
-		var transform: Transform3D = simulation.enemy_visual_transform(enemy)
-		if not _visuals[ENEMY_MESH_NAMES[visual_kind]].is_visible(culler, transform):
-			continue
-		var body := BotObservation.Body.new()
-		body.position = enemy.position
-		body.kind = visual_kind
-		body.radius = transform.basis.x.length() * 0.4
-		body.materializing = enemy.materialization_progress(state.combat_tick) < 1.0
-		observation.enemies.append(body)
+	_capture_enemies(simulation, culler, observation)
+	_capture_projectiles(simulation, culler, observation)
+	_capture_xp(simulation, culler, observation)
+	_capture_arena_loot(simulation, culler, observation)
+	_capture_warnings(simulation, culler, observation)
+	# Internal pool/spawn order is not observable, even when hidden objects change.
+	_sort_bodies(observation.bullets)
+	observation.needles.sort()
+	observation.loot.sort()
+	return observation
+
+
+func _capture_enemies(simulation: CombatSimulation, culler: Culler, observation: BotObservation) -> void:
+	var enemies: Array[EnemyEntity] = simulation.enemy_system.enemy_store.entities
+	var positions := PackedVector2Array()
+	var kinds := PackedInt32Array()
+	var shapes := PackedInt32Array()
+	var materializing := PackedByteArray()
+	positions.resize(enemies.size())
+	kinds.resize(enemies.size())
+	shapes.resize(enemies.size())
+	materializing.resize(enemies.size())
+	for index: int in enemies.size():
+		var enemy: EnemyEntity = enemies[index]
+		var radius: float = enemy.body_radius()
+		if not _enemy_shape_indices.has(enemy.enemy_type):
+			_enemy_shape_indices[enemy.enemy_type] = {}
+		var by_radius: Dictionary = _enemy_shape_indices[enemy.enemy_type]
+		var shape: int = by_radius.get(radius, -1)
+		if shape < 0:
+			shape = _enemy_templates.size()
+			by_radius[radius] = shape
+			# The shared render transform's basis and height depend only on type
+			# and body radius. Keep exact doubles as keys, including custom data.
+			_enemy_templates.append(simulation.enemy_visual_transform(enemy))
+		positions[index] = enemy.position
+		kinds[index] = simulation._enemy_entity_visual_kind(enemy)
+		shapes[index] = shape
+		# Completed entries have progress 1 regardless of their entry duration.
+		# Keep the original division/clamping only for entries still in progress.
+		materializing[index] = int(not enemy.alive or (observation.tick < enemy.activation_tick and enemy.materialization_progress(observation.tick) < 1.0))
+	var visible: Dictionary = _native_observer.observe_bodies({
+		"inverse": culler.inverse, "half_width": culler.half_width, "half_height": culler.half_height,
+		"positions": positions, "kinds": kinds, "shapes": shapes, "materializing": materializing,
+		"templates": _enemy_templates, "radius_factor": 0.4,
+	})
+	observation.set_enemy_values(visible)
+
+
+func _capture_projectiles(simulation: CombatSimulation, culler: Culler, observation: BotObservation) -> void:
 	for pool_index: int in simulation.projectile_pool.active_indices_snapshot():
 		var projectile: ProjectileState = simulation.projectile_pool.slots[pool_index]
 		if projectile.faction != ProjectileState.FACTION_ENEMY:
@@ -162,9 +169,15 @@ func capture(simulation: CombatSimulation, view: ArenaView) -> BotObservation:
 		body.position = projectile.position
 		body.radius = transform.basis.x.length() * 0.18
 		observation.bullets.append(body)
-	for pool_index: int in simulation.xp_pickup_pool.active_indices_snapshot():
-		var pickup: XpPickupState = simulation.xp_pickup_pool.slots[pool_index]
-		_add_loot(observation, culler, XpPickupPool.visual_transform(pickup), &"XpInstances", BotObservation.LootKind.XP)
+
+
+func _capture_xp(simulation: CombatSimulation, culler: Culler, observation: BotObservation) -> void:
+	observation.loot.append_array(_visuals[&"XpInstances"].visible_loot(
+		culler, simulation.xp_pickup_pool.visual_columns_by_slot(), simulation.xp_pickup_pool.visual_slot_indices(), BotObservation.LootKind.XP,
+	))
+
+
+func _capture_arena_loot(simulation: CombatSimulation, culler: Culler, observation: BotObservation) -> void:
 	for pickup: ArenaPickup in simulation.arena_object_system.pickups:
 		if not pickup.active:
 			continue
@@ -179,13 +192,6 @@ func capture(simulation: CombatSimulation, view: ArenaView) -> BotObservation:
 		_add_loot(observation, culler, pickup.transform(), mesh_name, kind)
 	for transform: Transform3D in simulation.arena_object_system.node_transforms():
 		_add_loot(observation, culler, transform, &"NodeInstances", BotObservation.LootKind.NODE)
-	_capture_warnings(simulation, culler, observation)
-	# Internal pool/spawn order is not observable, even when hidden objects change.
-	_sort_bodies(observation.enemies)
-	_sort_bodies(observation.bullets)
-	observation.needles.sort()
-	observation.loot.sort()
-	return observation
 
 
 func _add_loot(

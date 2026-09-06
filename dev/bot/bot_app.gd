@@ -177,8 +177,8 @@ func _start_bot_session() -> void:
 	_bot_summary_printed = false
 	_bot_next_report_tick = 18000
 	var seed_value: int = int(_launch["run_seed"]) + _bot_completed_runs
-	if not _bot_session.initialize(_definition_catalog, seed_value, _launch["bot_view"]):
-		_report_bot("BOT_ERROR run_initialization")
+	if not _bot_session.initialize(_definition_catalog, seed_value, _launch["bot_view"], _launch["bot_profile"]):
+		_report_bot("BOT_ERROR " + _bot_session.error_message)
 		set_process(false)
 		set_physics_process(false)
 		_quit_deferred(2)
@@ -256,6 +256,8 @@ func _finish_bot_session() -> void:
 		_bot_session.fail("engine_or_script_error")
 	_bot_summary_printed = true
 	_report_bot("BOT_RUN " + JSON.stringify(_bot_session.summary()))
+	if _bot_session.profile != null:
+		_bot_session.profile.report()
 	_bot_completed_runs += 1
 	if _bot_session.result == &"won":
 		_bot_wins += 1

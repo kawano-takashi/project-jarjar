@@ -13,7 +13,9 @@ var _free_indices: Array[int] = []
 var _active_indices: Array[int] = []
 var _active_position_by_pool_index: PackedInt32Array = PackedInt32Array()
 var _dense_index_by_entity_id: Dictionary[int, int] = {}
-var _pool_index_by_entity_id: Dictionary[int, int] = {}
+var _entity_by_id: Dictionary[int, EnemyEntity] = {}
+var _sorted_ids: Array[int] = []
+var _sorted_ids_dirty: bool = true
 
 
 func _init() -> void:
@@ -67,10 +69,11 @@ func try_spawn(
 	)
 	var active_position: int = entities.size()
 	_dense_index_by_entity_id[entity_id] = active_position
-	_pool_index_by_entity_id[entity_id] = pool_index
+	_entity_by_id[entity_id] = entity
 	_active_position_by_pool_index[pool_index] = active_position
 	_active_indices.append(pool_index)
 	entities.append(entity)
+	_sorted_ids_dirty = true
 	return entity
 
 
@@ -78,9 +81,9 @@ func remove(entity_id: int) -> bool:
 	if not _dense_index_by_entity_id.has(entity_id):
 		return false
 	var dense_index: int = _dense_index_by_entity_id[entity_id]
-	var pool_index: int = _pool_index_by_entity_id[entity_id]
 	var last_index: int = entities.size() - 1
 	var removed: EnemyEntity = entities[dense_index]
+	var pool_index: int = removed.pool_index
 	if dense_index != last_index:
 		var moved: EnemyEntity = entities[last_index]
 		var moved_pool_index: int = _active_indices[last_index]
@@ -91,17 +94,16 @@ func remove(entity_id: int) -> bool:
 	entities.pop_back()
 	_active_indices.pop_back()
 	_dense_index_by_entity_id.erase(entity_id)
-	_pool_index_by_entity_id.erase(entity_id)
+	_entity_by_id.erase(entity_id)
 	_active_position_by_pool_index[pool_index] = -1
 	removed.deactivate()
 	_free_indices.append(pool_index)
+	_sorted_ids_dirty = true
 	return true
 
 
 func get_by_id(entity_id: int) -> EnemyEntity:
-	if not _dense_index_by_entity_id.has(entity_id):
-		return null
-	return entities[_dense_index_by_entity_id[entity_id]]
+	return _entity_by_id.get(entity_id)
 
 
 func has_entity(entity_id: int) -> bool:
@@ -136,7 +138,7 @@ func orphan_count() -> int:
 		invalid_count += absi(entities.size() - _active_indices.size())
 	if (
 		_dense_index_by_entity_id.size() != entities.size()
-		or _pool_index_by_entity_id.size() != entities.size()
+		or _entity_by_id.size() != entities.size()
 	):
 		invalid_count += 1
 	var seen := PackedByteArray()
@@ -157,7 +159,7 @@ func orphan_count() -> int:
 			or _active_position_by_pool_index[pool_index] != active_position
 			or entities[active_position] != entity
 			or int(_dense_index_by_entity_id.get(entity.entity_id, -1)) != active_position
-			or int(_pool_index_by_entity_id.get(entity.entity_id, -1)) != pool_index
+			or _entity_by_id.get(entity.entity_id) != entity
 		):
 			invalid_count += 1
 	for pool_index: int in _free_indices:
@@ -180,21 +182,25 @@ func record_overflow() -> void:
 
 
 func snapshot_ids_sorted() -> Array[int]:
-	var entity_ids: Array[int] = []
-	for entity_id: int in _dense_index_by_entity_id:
-		entity_ids.append(entity_id)
-	entity_ids.sort()
-	return entity_ids
+	if _sorted_ids_dirty:
+		_sorted_ids.clear()
+		for entity_id: int in _dense_index_by_entity_id:
+			_sorted_ids.append(entity_id)
+		_sorted_ids.sort()
+		_sorted_ids_dirty = false
+	# Callers retain tick-start snapshots while spawns/removals continue.
+	return _sorted_ids.duplicate()
 
 
 func clear() -> void:
+	_sorted_ids_dirty = true
 	for pool_index: int in _active_indices:
 		slots[pool_index].deactivate()
 		_active_position_by_pool_index[pool_index] = -1
 	entities.clear()
 	_active_indices.clear()
 	_dense_index_by_entity_id.clear()
-	_pool_index_by_entity_id.clear()
+	_entity_by_id.clear()
 	_free_indices.clear()
 	for pool_index: int in range(CAPACITY - 1, -1, -1):
 		_free_indices.append(pool_index)

@@ -24,6 +24,9 @@ var _last_move_direction: Vector2 = Vector2.RIGHT
 var _orbital_active_until_by_lineage: Dictionary[StringName, int] = {}
 var _orbital_next_damage_tick_by_lineage: Dictionary[StringName, int] = {}
 var _homing_bursts: Dictionary[StringName, HomingBurstState] = {}
+var _moving_snapshot: bool = false
+var _move_targets_ready: bool = false
+var _move_targets: Array[EnemyEntity] = []
 
 
 func initialize(
@@ -129,6 +132,9 @@ func move_snapshot_projectiles(
 	current_tick: int,
 	stop_active: bool,
 ) -> void:
+	_moving_snapshot = true
+	_move_targets_ready = false
+	_move_targets.clear()
 	for entry: Vector2i in entries:
 		var projectile: ProjectileState = _projectile_pool.resolve_snapshot_entry(entry)
 		if projectile == null or projectile.born_tick >= current_tick:
@@ -186,6 +192,8 @@ func move_snapshot_projectiles(
 			projectile.remaining_distance <= 0.0
 			or projectile.remaining_lifetime <= 0.0
 		)
+	_moving_snapshot = false
+	_move_targets.clear()
 
 
 func resolve_ally_projectile(
@@ -209,7 +217,7 @@ func resolve_ally_projectile(
 	var candidates: Array[int] = uniform_grid.query_segment_candidates(
 		projectile.previous_position,
 		projectile.position,
-		projectile.radius + _catalog.maximum_enemy_body_radius,
+		projectile.radius + _maximum_grid_body_radius(uniform_grid),
 	)
 	var intersections: Array[Dictionary] = []
 	for entity_id: int in candidates:
@@ -226,7 +234,8 @@ func resolve_ally_projectile(
 		)
 		if first_t >= 0.0:
 			intersections.append({"entity_id": entity_id, "t": first_t})
-	intersections.sort_custom(_intersection_less)
+	if intersections.size() > 1:
+		intersections.sort_custom(_intersection_less)
 	if projectile.movement_kind == ProjectileState.MovementKind.ARC:
 		if not intersections.is_empty():
 			var impact_t: float = float(intersections[0]["t"])
@@ -473,7 +482,7 @@ func _fire_melee_wave(
 			"radius": range_m,
 			"damage": _base_damage(definition, runtime, stats),
 		})
-		for entity_id: int in uniform_grid.query_circle_candidates(player_position, range_m, _catalog.maximum_enemy_body_radius):
+		for entity_id: int in uniform_grid.query_circle_candidates(player_position, range_m, _maximum_grid_body_radius(uniform_grid)):
 			if hit_ids.has(entity_id):
 				continue
 			var enemy: EnemyEntity = enemy_store.get_by_id(entity_id)
@@ -510,23 +519,22 @@ func _fire_homing(
 	current_tick: int,
 	stats: Dictionary,
 ) -> Dictionary:
-	var targets: Array[EnemyEntity] = _targets_by_distance(
+	var target: EnemyEntity = _first_target(
 		enemy_store,
 		player_position,
 		player_position,
 		current_tick,
 	)
-	if targets.is_empty():
+	if target == null:
 		return {"generated": false}
 	var amount: int = maxi(1, definition.amount_at(runtime.level))
-	var target: EnemyEntity = targets[0]
 	for _projectile_index: int in range(amount):
 		var direction: Vector2 = (target.position - player_position).normalized()
 		_spawn_ally_projectile(runtime, definition, player_position, direction, target.entity_id, stats, current_tick, ProjectileState.MovementKind.HOMING)
 	return _projectile_result(
 		runtime,
 		player_position,
-		(targets[0].position - player_position).normalized(),
+		(target.position - player_position).normalized(),
 		StatCalculator.weapon_range(definition, runtime.level, StatCalculator.area_multiplier(stats, _catalog.manifest().combat)),
 	)
 
@@ -747,14 +755,14 @@ func _fire_arc(
 	current_tick: int,
 	stats: Dictionary,
 ) -> Dictionary:
-	var targets: Array[EnemyEntity] = _targets_by_distance(
-		enemy_store,
-		player_position,
-		player_position,
-		current_tick,
-	)
-	if targets.is_empty():
-		return {"generated": false}
+	var targets: Array[EnemyEntity] = []
+	if runtime.weapon_id == &"spiral_crystal":
+		if _first_target(enemy_store, player_position, player_position, current_tick) == null:
+			return {"generated": false}
+	else:
+		targets = _targets_by_distance(enemy_store, player_position, player_position, current_tick)
+		if targets.is_empty():
+			return {"generated": false}
 	var amount: int = maxi(1, definition.amount_at(runtime.level))
 	if runtime.weapon_id == &"spiral_crystal":
 		for projectile_index: int in range(amount):
@@ -836,7 +844,7 @@ func _fire_orbital(
 		stats,
 	):
 		zones.append({"center": position, "radius": hit_radius, "damage": _base_damage(definition, runtime, stats)})
-		for entity_id: int in uniform_grid.query_circle_candidates(position, hit_radius, _catalog.maximum_enemy_body_radius):
+		for entity_id: int in uniform_grid.query_circle_candidates(position, hit_radius, _maximum_grid_body_radius(uniform_grid)):
 			if hit_ids.has(entity_id):
 				continue
 			var enemy: EnemyEntity = enemy_store.get_by_id(entity_id)
@@ -1108,7 +1116,7 @@ func _fire_aura(
 		),
 	)
 	var hits: Array[Dictionary] = []
-	for entity_id: int in uniform_grid.query_circle_candidates(player_position, radius, _catalog.maximum_enemy_body_radius):
+	for entity_id: int in uniform_grid.query_circle_candidates(player_position, radius, _maximum_grid_body_radius(uniform_grid)):
 		var enemy: EnemyEntity = enemy_store.get_by_id(entity_id)
 		if (
 			_is_ally_damageable(enemy, player_position, current_tick)
@@ -1217,7 +1225,7 @@ func _resolve_projectile_explosion(
 ) -> Array[Dictionary]:
 	var records: Array[Dictionary] = []
 	var radius: float = maxf(projectile.radius, projectile.explosion_radius)
-	for entity_id: int in uniform_grid.query_circle_candidates(projectile.position, radius, _catalog.maximum_enemy_body_radius):
+	for entity_id: int in uniform_grid.query_circle_candidates(projectile.position, radius, _maximum_grid_body_radius(uniform_grid)):
 		var enemy: EnemyEntity = enemy_store.get_by_id(entity_id)
 		if (
 			_is_ally_damageable(enemy, player_position, current_tick)
@@ -1388,17 +1396,35 @@ func _first_target(
 	player_position: Vector2,
 	current_tick: int,
 ) -> EnemyEntity:
-	var targets: Array[EnemyEntity] = _targets_by_distance(
-		enemy_store,
-		sort_origin,
-		player_position,
-		current_tick,
-	)
-	return null if targets.is_empty() else targets[0]
+	# Only the first ordered target is needed. Keep the distance/id ordering
+	# without allocating and sorting the complete candidate list.
+	var selected: EnemyEntity = null
+	var selected_distance: float = INF
+	var candidates: Array[EnemyEntity] = enemy_store.entities
+	if _moving_snapshot:
+		# Enemy HP and positions are unchanged throughout projectile movement.
+		# Share acquisition filtering only inside that stage of this tick.
+		if not _move_targets_ready:
+			for enemy: EnemyEntity in enemy_store.entities:
+				if _is_ally_acquirable(enemy, player_position, current_tick):
+					_move_targets.append(enemy)
+			_move_targets_ready = true
+		candidates = _move_targets
+	for enemy: EnemyEntity in candidates:
+		if not _moving_snapshot and not _is_ally_acquirable(enemy, player_position, current_tick):
+			continue
+		var distance: float = enemy.position.distance_squared_to(sort_origin)
+		if selected == null or distance < selected_distance or (distance == selected_distance and enemy.entity_id < selected.entity_id):
+			selected = enemy
+			selected_distance = distance
+	return selected
 
 
-func _is_ally_targetable(enemy: EnemyEntity, current_tick: int) -> bool:
-	return enemy != null and enemy.hp > 0.0 and enemy.is_targetable(current_tick)
+func _maximum_grid_body_radius(grid: UniformGrid) -> float:
+	if grid.maximum_body_radius < 0.0:
+		return _catalog.maximum_enemy_body_radius
+	# Keep the original upper bound and room for the narrow phase's epsilon.
+	return minf(_catalog.maximum_enemy_body_radius, grid.maximum_body_radius + 0.01)
 
 
 func _is_ally_acquirable(
@@ -1407,7 +1433,7 @@ func _is_ally_acquirable(
 	current_tick: int,
 ) -> bool:
 	return (
-		_is_ally_targetable(enemy, current_tick)
+		enemy != null and enemy.hp > 0.0 and enemy.alive and current_tick >= enemy.activation_tick
 		and enemy.position.distance_squared_to(player_position)
 		<= _catalog.envelope.target_center_radius * _catalog.envelope.target_center_radius
 	)
@@ -1419,7 +1445,7 @@ func _is_ally_damageable(
 	current_tick: int,
 ) -> bool:
 	return (
-		_is_ally_targetable(enemy, current_tick)
+		enemy != null and enemy.hp > 0.0 and enemy.alive and current_tick >= enemy.activation_tick
 		and enemy.position.distance_squared_to(player_position)
 		<= _catalog.envelope.damage_center_radius * _catalog.envelope.damage_center_radius
 	)

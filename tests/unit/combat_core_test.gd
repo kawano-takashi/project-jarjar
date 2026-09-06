@@ -35,6 +35,8 @@ func test_survival_pool_active_free_index_contract(assertions: Variant, _context
 	)
 	var first_enemy_pool_index: int = first_enemy.pool_index
 	var first_enemy_generation: int = first_enemy.generation
+	var first_enemy_id: int = first_enemy.entity_id
+	var retained_ids: Array[int] = enemy_pool.snapshot_ids_sorted()
 	assertions.expect_equal(1, enemy_pool.active_count(), "enemy pool tracks one dense active index")
 	assertions.expect_equal(EnemyStore.CAPACITY - 1, enemy_pool.free_count(), "enemy pool consumes one preallocated free index")
 	assertions.expect_true(enemy_pool.remove(first_enemy.entity_id), "enemy pool releases by stable entity ID")
@@ -50,6 +52,7 @@ func test_survival_pool_active_free_index_contract(assertions: Variant, _context
 	assertions.expect_equal(first_enemy_pool_index, recycled_enemy.pool_index, "enemy pool reuses the released free index")
 	assertions.expect_true(recycled_enemy.generation > first_enemy_generation, "enemy pool generation advances on reuse")
 	assertions.expect_equal(1, enemy_pool.active_indices_snapshot().size(), "enemy snapshot traverses active indices only")
+	assertions.expect_equal([first_enemy_id], retained_ids, "spawn and removal cannot rewrite a retained tick-start snapshot")
 
 
 func test_xp_pool_overflow_merges_without_loss(assertions: Variant, _context: Dictionary) -> void:
@@ -62,6 +65,32 @@ func test_xp_pool_overflow_merges_without_loss(assertions: Variant, _context: Di
 	assertions.expect_equal(pool.capacity, pool.active_count(), "overflow does not exceed the 2048 crystal cap")
 	assertions.expect_equal(total_before + 17, pool.total_value(), "overflow XP is merged without losing value")
 	assertions.expect_equal(1, pool.overflow_merge_count, "overflow merge is observable")
+
+
+func test_xp_collection_keeps_swap_order_and_tracks_relocated_pickups(a: Variant, _context: Dictionary) -> void:
+	var balance: ProgressionBalanceDefinition = BalanceTestFixtures.manifest().progression
+	balance.xp_pool_capacity = 4
+	balance.xp_pickup_attract_radius = 2.0
+	balance.xp_pickup_collect_radius = 0.1
+	balance.xp_pickup_speed = 1.0
+	var pool := XpPickupPool.new()
+	pool.configure(balance)
+	var first: XpPickupState = pool.acquire(Vector2.ZERO, 1, 0, Vector2.ZERO)
+	var remote: XpPickupState = pool.acquire(Vector2(100.0, 0.0), 2, 0, Vector2.ZERO)
+	pool.acquire(Vector2(2.0, 0.0), 4, 0, Vector2.ZERO)
+	var last: XpPickupState = pool.acquire(Vector2.ZERO, 8, 0, Vector2.ZERO)
+	var last_index: int = last.pool_index
+	a.expect_equal(9, pool.advance_and_collect(Vector2.ZERO, 0.0, 1), "collection includes the last slot swapped into the first position")
+	a.expect_false(first.active or last.active, "both collected handles are released")
+	var reused: XpPickupState = pool.acquire(Vector2(1.0, 0.0), 16, 2, Vector2.ZERO)
+	a.expect_equal(last_index, reused.pool_index, "collection retains the original free-slot reuse order")
+	remote.position = Vector2.ZERO
+	a.expect_equal(2, pool.advance_and_collect(Vector2.ZERO, 0.0, 2), "direct relocation is reflected in the collection candidates")
+	a.expect_equal(Vector2(1.0, 0.0), reused.position, "a newly born pickup is not advanced")
+	pool.advance_and_collect(Vector2.ZERO, 0.5, 3)
+	a.expect_equal(Vector2(0.5, 0.0), reused.position, "a swapped survivor moves once per tick")
+	a.expect_equal(20, pool.advance_and_collect(Vector2.ZERO, 100.0, 4, true), "vacuum collection reaches every remaining slot")
+	a.expect_equal(0, pool.orphan_count(), "spatial collection preserves active/free pool ownership")
 
 
 func test_thirty_two_meter_grid_boundaries(assertions: Variant, _context: Dictionary) -> void:
