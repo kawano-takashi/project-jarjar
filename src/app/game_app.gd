@@ -105,13 +105,7 @@ func _initialize_settings_for_launch(settings_store: Variant) -> Error:
 func _ready() -> void:
 	if not _launch_valid:
 		return
-	_tutorial_controller.completed.connect(_on_tutorial_completed)
-	_tutorial_overlay = TutorialOverlayScript.new()
-	add_child(_tutorial_overlay)
-	_audio_pool = AudioVoicePoolScript.new()
-	add_child(_audio_pool)
-	_feedback = SurvivalFeedbackScript.new()
-	_feedback.initialize(_audio_pool, _settings_store())
+	_initialize_presentation()
 
 	match _launch.get("mode", LaunchArgumentsScript.MODE_NORMAL):
 		LaunchArgumentsScript.MODE_QA_SCENARIO:
@@ -120,6 +114,16 @@ func _ready() -> void:
 			_start_performance_mode()
 		_:
 			_show_title()
+
+
+func _initialize_presentation() -> void:
+	_tutorial_controller.completed.connect(_on_tutorial_completed)
+	_tutorial_overlay = TutorialOverlayScript.new()
+	add_child(_tutorial_overlay)
+	_audio_pool = AudioVoicePoolScript.new()
+	add_child(_audio_pool)
+	_feedback = SurvivalFeedbackScript.new()
+	_feedback.initialize(_audio_pool, _settings_store())
 
 
 func _process(delta: float) -> void:

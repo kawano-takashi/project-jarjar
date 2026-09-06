@@ -123,13 +123,21 @@ func _run() -> void:
 	])
 
 
+func _excluded_roots() -> Array[String]:
+	return ["dev"]
+
+
+func _test_directory() -> String:
+	return "res://tests/"
+
+
 func _collect_paths(directory_path: String, paths: Array[String]) -> void:
 	var directory := DirAccess.open(directory_path)
 	if directory == null:
 		_discovery_error = "cannot open %s" % directory_path
 		return
 	for child in directory.get_directories():
-		if directory_path == "res://" and child in IGNORED_ROOTS:
+		if directory_path == "res://" and (child in IGNORED_ROOTS or child in _excluded_roots()):
 			continue
 		_collect_paths(directory_path.path_join(child), paths)
 	for file in directory.get_files():
@@ -145,7 +153,7 @@ func _load_and_discover(paths: Array[String]) -> Array[Dictionary]:
 		if resource == null or (resource is Script and not resource.can_instantiate()):
 			_discovery_error = "cannot load %s" % path
 			return []
-		if not path.begins_with("res://tests/") or not path.ends_with("_test.gd"):
+		if not path.begins_with(_test_directory()) or not path.ends_with("_test.gd"):
 			continue
 		var script := resource as Script
 		if script.get_instance_base_type() != &"RefCounted":

@@ -1,0 +1,276 @@
+extends RefCounted
+
+const BotAction = preload("res://dev/bot/bot_action.gd")
+const BotObservation = preload("res://dev/bot/bot_observation.gd")
+const BotKnowledge = preload("res://dev/bot/bot_knowledge.gd")
+const BotController = preload("res://dev/bot/bot_controller.gd")
+const BotObserver = preload("res://dev/bot/bot_observer.gd")
+const BotSession = preload("res://dev/bot/bot_session.gd")
+const BotArguments = preload("res://dev/bot/launch_arguments.gd")
+
+
+class InvalidController extends BotController:
+	func decide(_observation: BotObservation) -> BotAction:
+		var action := BotAction.new()
+		action.move_input = Vector2(2.0, 0.0)
+		return action
+
+
+func test_bot_cli_validates_execution_modes_and_reproducible_view(a: Variant, _context: Dictionary) -> void:
+	var defaults: Dictionary = BotArguments.parse(PackedStringArray(["--bot=fast"]))
+	a.expect_true(defaults["valid"], "fast mode accepts default settings")
+	a.expect_equal(Vector2i(1920, 1080), defaults["bot_view"], "default view matches the normal project")
+	var watch: Dictionary = BotArguments.parse(PackedStringArray(["--bot=watch", "--run-seed=-123", "--bot-speed=16", "--bot-view=1024x768"]))
+	a.expect_true(watch["valid"], "watch accepts a seed, speed and observation viewport")
+	for arguments: PackedStringArray in [
+		PackedStringArray(),
+		PackedStringArray(["--bot=fast", "--bot=watch"]),
+		PackedStringArray(["--bot=watch", "--runs=2"]),
+		PackedStringArray(["--bot=fast", "--runs=0"]),
+		PackedStringArray(["--bot=fast", "--bot-speed=4"]),
+		PackedStringArray(["--bot=watch", "--bot-speed=3"]),
+		PackedStringArray(["--bot=fast", "--bot-view=0x1080"]),
+		PackedStringArray(["--bot=fast", "--run-seed=9223372036854775807", "--runs=2"]),
+		PackedStringArray(["--bot=fast", "--qa-scenario=result"]),
+	]:
+		a.expect_false(BotArguments.parse(arguments)["valid"], "invalid or conflicting bot arguments are rejected")
+
+
+func test_bot_observation_excludes_hidden_state_and_detaches_values(a: Variant, _context: Dictionary) -> void:
+	var catalog: DefinitionCatalog = BalanceTestFixtures.catalog()
+	var session := BotSession.new()
+	a.expect_true(session.initialize(catalog, 771, Vector2i(1920, 1080)), "session initializes")
+	var sim: CombatSimulation = session.simulation
+	var visible: EnemyEntity = sim.spawn_fixture_enemy(GameTypes.EnemyType.PURSUER, Vector2(2.0, 0.0), -1)
+	var hidden: EnemyEntity = sim.spawn_fixture_enemy(GameTypes.EnemyType.PURSUER, Vector2(60.0, 60.0), -1)
+	var first: BotObservation = session.observer.capture(sim, session.view)
+	var first_brain := BotController.new(BotKnowledge.new(catalog))
+	var first_action: BotAction = first_brain.decide(first)
+	visible.hp *= 0.01
+	visible.special_elapsed_ticks = 123456.0
+	hidden.position = Vector2(-60.0, -60.0)
+	sim.state.spawn_credit = 8765.0
+	sim.state.weapons[0].cooldown_remaining_ticks = 9999
+	sim.state.rng_streams.upgrade_rng.state = 123456
+	var second: BotObservation = session.observer.capture(sim, session.view)
+	var second_brain := BotController.new(BotKnowledge.new(catalog))
+	var second_action: BotAction = second_brain.decide(second)
+	a.expect_equal(1, first.enemies.size(), "only the visible enemy is exposed")
+	a.expect_equal(_body_values(first.enemies), _body_values(second.enemies), "hidden HP, timers, enemies and RNG do not affect observation")
+	a.expect_equal(first_action.move_input, second_action.move_input, "identical visible history produces identical decisions")
+	second.enemies[0].position = Vector2(500, 500)
+	second.weapons[0]["level"] = 999
+	a.expect_equal(Vector2(2, 0), visible.position, "observation does not retain mutable entity references")
+	a.expect_equal(1, sim.state.weapons[0].level, "inventory observation is detached")
+	# All three powerups currently use the same mesh, scale and material.
+	sim.arena_object_system.pickups.clear()
+	sim.arena_object_system.pickups.append(ArenaPickup.new(1, ArenaPickup.Kind.HEAL, Vector2.ONE))
+	var heal: BotObservation = session.observer.capture(sim, session.view)
+	sim.arena_object_system.pickups[0].kind = ArenaPickup.Kind.STOP
+	var stop: BotObservation = session.observer.capture(sim, session.view)
+	a.expect_equal(heal.loot, stop.loot, "indistinguishable powerups do not reveal their effects")
+	# HP-driven escape planning must obey the same observation boundary.
+	sim.state.combat_tick = 1
+	sim.state.current_hp -= 1.0
+	visible.position = Vector2(0.9, 0.0)
+	var hurt_before: BotObservation = session.observer.capture(sim, session.view)
+	hidden.position = Vector2(70.0, -70.0)
+	visible.hp *= 0.1
+	var hurt_after: BotObservation = session.observer.capture(sim, session.view)
+	a.expect_equal(first_brain.decide(hurt_before).move_input, second_brain.decide(hurt_after).move_input, "escape planning uses the visible HP change without reading hidden enemy state")
+	# Both brains retain the same visible history while the former target is
+	# offscreen. Moving or removing it cannot refresh either brain's memory.
+	session.view.reset(Vector2(40.0, 0.0))
+	for tick: int in range(2, 6):
+		sim.state.combat_tick = tick
+		var before_hidden_change: BotObservation = session.observer.capture(sim, session.view)
+		visible.position = Vector2(-50.0 - tick, -50.0)
+		visible.alive = tick < 3
+		var after_hidden_change: BotObservation = session.observer.capture(sim, session.view)
+		a.expect_equal(_body_values(before_hidden_change.enemies), _body_values(after_hidden_change.enemies), "unseen movement and disappearance remain unobservable across ticks")
+		a.expect_equal(first_brain.decide(before_hidden_change).move_input, second_brain.decide(after_hidden_change).move_input, "offscreen changes cannot alter decisions through observation memory")
+
+
+func test_bot_observes_partial_telegraphs_and_escapes_swarm_lane(a: Variant, _context: Dictionary) -> void:
+	var session := BotSession.new()
+	session.initialize(BalanceTestFixtures.catalog(), 774, Vector2i(1920, 1080))
+	var right: Vector3 = session.view.camera_transform.basis.x
+	var edge_position := Vector2(right.x, right.z) * 17.0
+	var boss: EnemyEntity = session.simulation.spawn_fixture_enemy(GameTypes.EnemyType.BOSS, edge_position, -1)
+	boss.boss_charge_active = true
+	boss.boss_charge_spoke_count = 8
+	var partial: BotObservation = session.observer.capture(session.simulation, session.view)
+	a.expect_false(Rect2(Vector2.ZERO, Vector2(partial.viewport_size)).has_point(session.view.project_position(Vector3(edge_position.x, 0.055, edge_position.y))), "telegraph center is beyond the screen edge")
+	a.expect_true(not partial.warnings.is_empty(), "the visible part of a boss telegraph is still observed")
+	boss.position *= 4.0
+	var hidden: BotObservation = session.observer.capture(session.simulation, session.view)
+	a.expect_true(hidden.warnings.is_empty(), "an entirely offscreen warning does not reveal its position")
+	var warning := SwarmWarningState.new()
+	warning.direction = Vector2.LEFT
+	warning.spawn_distance = 11.0
+	warning.spawn_tick = 90
+	warning.hp_multiplier = 1.0
+	warning.damage_multiplier = 1.0
+	session.simulation.enemy_system.swarm_warning = warning
+	var arrows: BotObservation = session.observer.capture(session.simulation, session.view)
+	a.expect_equal(Vector2.LEFT, arrows.warnings[0]["travel_direction"], "visible arrowheads reveal the swarm's travel direction")
+	var screen_right := Vector2(right.x, right.z)
+	warning.anchor = screen_right * 28.0
+	warning.direction = -screen_right
+	var band_only: BotObservation = session.observer.capture(session.simulation, session.view)
+	a.expect_equal(1, band_only.warnings.size(), "the edge of the band is visible while all arrows are offscreen")
+	a.expect_equal(Vector2.ZERO, band_only.warnings[0]["travel_direction"], "an offscreen arrowhead cannot reveal travel direction")
+	warning.direction = screen_right
+	var reversed: BotObservation = session.observer.capture(session.simulation, session.view)
+	a.expect_equal(band_only.warnings, reversed.warnings, "changing an unseen arrow direction preserves the visible band observation")
+	# Exercise the real warning, spawn, movement and contact rules. XP ahead
+	# tempts the bot toward the approaching group after its warning fades.
+	var escape := BotSession.new()
+	escape.initialize(BalanceTestFixtures.catalog(), 774, Vector2i(1920, 1080))
+	warning.anchor = Vector2.ZERO
+	warning.direction = Vector2.LEFT
+	escape.simulation.enemy_system.swarm_warning = warning
+	escape.simulation.xp_pickup_pool.acquire(Vector2(8.0, 0.0), 1, 0, Vector2.ZERO)
+	for _tick: int in 360:
+		if not escape.advance():
+			break
+	a.expect_float(0.0, escape.summary()["damage_taken"], "the bot avoids contact with the real incoming swarm while collecting")
+
+
+func test_bot_reports_accepted_damage_without_changing_combat(a: Variant, _context: Dictionary) -> void:
+	var catalog: DefinitionCatalog = BalanceTestFixtures.catalog()
+	var session := BotSession.new()
+	a.expect_true(session.initialize(catalog, 775, Vector2i(1920, 1080)), "recorded run initializes")
+	var ordinary := CombatSimulation.new()
+	ordinary.initialize(RunStateFactory.create(775, catalog), catalog)
+	for sim: CombatSimulation in [ordinary, session.simulation]:
+		sim.state.current_hp = 10.0
+		sim._apply_player_damage_candidates([{"raw_damage": 3.0}])
+		sim.state.current_hp += 2.0
+		sim._apply_player_damage_candidates([{"raw_damage": 4.0}])
+		sim.state.level_up_invulnerable_until_tick = 1
+		sim._apply_player_damage_candidates([{"raw_damage": 4.0}])
+	a.expect_float(5.0, session.simulation.state.current_hp, "recovery and invulnerability still use ordinary combat rules")
+	a.expect_float(ordinary.state.current_hp, session.simulation.state.current_hp, "recording leaves combat HP unchanged")
+	a.expect_float(7.0, session.summary()["damage_taken"], "report includes damage before recovery and excludes blocked hits")
+	for sim: CombatSimulation in [ordinary, session.simulation]:
+		sim.state.level_up_invulnerable_until_tick = 0
+		sim._apply_player_damage_candidates([{"raw_damage": 20.0}])
+	a.expect_float(0.0, session.simulation.state.current_hp, "a lethal hit still removes the remaining HP")
+	a.expect_float(ordinary.state.current_hp, session.simulation.state.current_hp, "recording preserves the lethal outcome")
+	a.expect_float(12.0, session.summary()["damage_taken"], "report counts only the remaining HP on a lethal hit")
+
+
+func test_bot_mesh_visibility_excludes_empty_corners_and_ring_holes(a: Variant, _context: Dictionary) -> void:
+	var view := ArenaView.new()
+	var culler := BotObserver.Culler.new(view)
+	var sphere := SphereMesh.new()
+	sphere.radius = 1.0
+	sphere.height = 2.0
+	var sphere_visual := BotObserver.Visual.new(sphere)
+	var empty_corner := Transform3D(view.camera_transform.basis, view.camera_transform * Vector3(16.9, 9.9, -20.0))
+	a.expect_true(culler.contains_visual(empty_corner, sphere.get_aabb()), "the broad bounds overlap the viewport corner")
+	a.expect_false(sphere_visual.is_visible(culler, empty_corner), "an empty corner of a sphere's box does not reveal the sphere")
+	var partial := Transform3D(view.camera_transform.basis, view.camera_transform * Vector3(16.6, 9.6, -20.0))
+	a.expect_true(sphere_visual.is_visible(culler, partial), "a real part of the sphere at the corner is observed")
+	var ring := TorusMesh.new()
+	ring.inner_radius = 2.0
+	ring.outer_radius = 3.0
+	var ring_visual := BotObserver.Visual.new(ring)
+	var facing := Transform3D(view.camera_transform.basis * Basis(Vector3.RIGHT, PI * 0.5).scaled(Vector3.ONE * 10.0), view.camera_transform * Vector3(0.0, 0.0, -100.0))
+	a.expect_false(ring_visual.is_visible(culler, facing), "a viewport entirely inside a ring's hole sees no ring")
+
+
+func test_bot_handles_modal_chain_and_terminal_limits(a: Variant, _context: Dictionary) -> void:
+	var catalog: DefinitionCatalog = BalanceTestFixtures.catalog()
+	var session := BotSession.new()
+	session.initialize(catalog, 772, Vector2i(1920, 1080))
+	var state: RunState = session.simulation.state
+	state.pending_level_ups = 1
+	state.pending_chest_sources.append(0)
+	session.simulation._resolve_modal_priority()
+	a.expect_equal(GameTypes.RunPhase.LEVEL_UP, state.phase, "a queued upgrade precedes the chest")
+	a.expect_true(session.advance(), "bot chooses an offered upgrade")
+	a.expect_equal(0, state.combat_tick, "upgrade choice does not advance combat")
+	a.expect_equal(GameTypes.RunPhase.CHEST_REWARD, state.phase, "chest remains in the modal chain")
+	a.expect_true(session.advance(), "bot continues the chest")
+	a.expect_equal(0, state.combat_tick, "chest continuation does not advance combat")
+	a.expect_equal(1, state.opened_chests, "chest applies exactly once")
+	state.current_hp = 0.0
+	session.advance()
+	a.expect_equal(&"lost", session.result, "death ends the run without a retry")
+	var timed_out := BotSession.new()
+	timed_out.initialize(catalog, 773, Vector2i(1920, 1080))
+	timed_out.simulation.state.combat_tick = BotSession.MAX_COMBAT_TICKS
+	a.expect_false(timed_out.advance(), "time limit stops further ticks")
+	a.expect_equal(&"timeout", timed_out.result, "time limit is not counted as a victory")
+	var invalid := BotSession.new()
+	invalid.initialize(catalog, 774, Vector2i(1920, 1080))
+	invalid.controller = InvalidController.new(BotKnowledge.new(catalog))
+	a.expect_false(invalid.advance(), "an illegal bot input stops execution")
+	a.expect_equal(&"error", invalid.result, "illegal input is an execution error")
+	a.expect_equal(0, invalid.simulation.state.combat_tick, "illegal input does not reach combat")
+
+
+func test_bot_reacts_to_observed_projectile_motion_and_keeps_legal_input(a: Variant, _context: Dictionary) -> void:
+	var knowledge := BotKnowledge.new(BalanceTestFixtures.catalog())
+	var controller := BotController.new(knowledge)
+	var observation := BotObservation.new()
+	observation.hp = 100.0
+	observation.max_hp = 100.0
+	var view := ArenaView.new()
+	observation.camera_transform = view.camera_transform
+	var bullet := BotObservation.Body.new()
+	bullet.position = Vector2(1.0, 0.0)
+	bullet.radius = 0.18
+	observation.bullets.append(bullet)
+	controller.decide(observation)
+	observation.tick = 1
+	bullet.position = Vector2(0.8, 0.0)
+	var action: BotAction = controller.decide(observation)
+	a.expect_true(action.is_valid_for(observation), "movement stays within the normal analog input range")
+	var movement: Vector2 = view.screen_to_world_input(action.move_input)
+	a.expect_true(movement.x < 0.1, "an approaching projectile does not cause a move directly into it")
+	observation.tick = 2
+	observation.bullets.clear()
+	observation.player_position = knowledge.arena_max - Vector2.ONE * 0.01
+	var wall_action: BotAction = controller.decide(observation)
+	var next_position: Vector2 = observation.player_position + view.screen_to_world_input(wall_action.move_input) * knowledge.move_speed / 60.0
+	a.expect_true(next_position.x <= knowledge.arena_max.x and next_position.y <= knowledge.arena_max.y, "wall escape uses a legal movement into the arena")
+	var aiming := BotController.new(knowledge)
+	var firing := BotObservation.new()
+	firing.hp = 100.0
+	firing.max_hp = 100.0
+	firing.camera_transform = view.camera_transform
+	firing.weapons.append({"id": &"directional_needle", "level": 1, "evolved": false})
+	firing.needles.append(Vector2(0.1, 0.0))
+	var behind := BotObservation.Body.new()
+	behind.position = Vector2(-4.0, 0.0)
+	behind.radius = 0.38
+	firing.enemies.append(behind)
+	aiming.decide(firing)
+	firing.tick = int(knowledge.weapons[&"directional_needle"]["cooldown"][0]) - 1
+	firing.needles[0] = Vector2(7.0, 0.0)
+	var aimed: BotAction = aiming.decide(firing)
+	a.expect_true(aimed.is_valid_for(firing), "aiming uses the ordinary analog movement range")
+	a.expect_true(view.screen_to_world_input(aimed.move_input).x < 0.0, "a visible volley and the known firing cadence allow aiming at the pursuing enemy")
+	var defending := BotController.new(knowledge)
+	firing.tick = 0
+	firing.needles[0] = Vector2(0.1, 0.0)
+	defending.decide(firing)
+	firing.tick = int(knowledge.weapons[&"directional_needle"]["cooldown"][0]) - 2
+	firing.needles[0] = Vector2(7.0, 0.0)
+	bullet.position = Vector2(1.0, 0.0)
+	firing.bullets.append(bullet)
+	defending.decide(firing)
+	firing.tick += 1
+	bullet.position = Vector2(0.8, 0.0)
+	var dodging: BotAction = defending.decide(firing)
+	a.expect_true(dodging.move_input.length() > 0.25, "an imminent projectile takes priority over the small aiming step")
+
+
+func _body_values(bodies: Array[BotObservation.Body]) -> Array:
+	var result: Array = []
+	for body: BotObservation.Body in bodies:
+		result.append([body.position, body.kind, body.radius, body.materializing])
+	return result

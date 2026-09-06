@@ -1,0 +1,286 @@
+extends RefCounted
+
+const BotObservation = preload("res://dev/bot/bot_observation.gd")
+
+const ARENA_SCENE: PackedScene = preload("res://scenes/gameplay/arena_combat.tscn")
+const ENEMY_MESH_NAMES: Array[StringName] = [
+	&"EnemyInstances", &"EnemySwarmerInstances", &"EnemyBulwarkInstances",
+	&"EnemyShooterInstances", &"EnemyEliteInstances", &"EnemyBossInstances",
+	&"EnemySwarmerEventRedInstances",
+]
+## A frame-local culler shares the inverse camera matrix across all objects.
+class Culler:
+	extends RefCounted
+	var inverse: Transform3D
+	var half_width: float
+	var half_height: float
+
+	func _init(view: ArenaView) -> void:
+		inverse = view.camera_transform.affine_inverse()
+		half_height = ArenaView.CAMERA_SIZE * 0.5
+		half_width = half_height * float(view.viewport_size.x) / float(view.viewport_size.y)
+
+	func contains_visual(world_transform: Transform3D, bounds: AABB) -> bool:
+		var projected: AABB = (inverse * world_transform) * bounds
+		return contains_projected(projected)
+
+	func contains_projected(projected: AABB) -> bool:
+		return (
+			projected.position.x <= half_width and projected.end.x >= -half_width
+			and projected.position.y <= half_height and projected.end.y >= -half_height
+			and projected.position.z <= -0.05 and projected.end.z >= -4000.0
+		)
+
+
+## Broad bounds reject most objects. At screen edges, test the actual projected
+## mesh, so an empty corner of its bounding box cannot expose an unseen object.
+class Visual:
+	extends RefCounted
+	var bounds: AABB
+	var _mesh: Mesh
+	var _convex: bool
+	var _outlines: Dictionary[Basis, PackedVector2Array] = {}
+	var _triangles: Dictionary[Basis, PackedVector2Array] = {}
+
+	func _init(mesh: Mesh) -> void:
+		_mesh = mesh
+		bounds = mesh.get_aabb()
+		_convex = mesh is BoxMesh or mesh is SphereMesh or mesh is CapsuleMesh or mesh is CylinderMesh
+
+	func is_visible(culler: Culler, world_transform: Transform3D) -> bool:
+		var local: Transform3D = culler.inverse * world_transform
+		var projected: AABB = local * bounds
+		if not culler.contains_projected(projected):
+			return false
+		if (
+			projected.position.x >= -culler.half_width and projected.end.x <= culler.half_width
+			and projected.position.y >= -culler.half_height and projected.end.y <= culler.half_height
+		):
+			return true
+		if not _outlines.has(local.basis):
+			var faces: PackedVector3Array = Transform3D(local.basis, Vector3.ZERO) * _mesh.get_faces()
+			var points: PackedVector2Array = []
+			points.resize(faces.size())
+			for index: int in faces.size():
+				points[index] = Vector2(faces[index].x, faces[index].y)
+			_outlines[local.basis] = Geometry2D.convex_hull(points)
+			if not _convex:
+				_triangles[local.basis] = points
+		var offset := Vector2(local.origin.x, local.origin.y)
+		var lower := Vector2(-culler.half_width, -culler.half_height) - offset
+		var upper := Vector2(culler.half_width, culler.half_height) - offset
+		var rectangle := PackedVector2Array([lower, Vector2(upper.x, lower.y), upper, Vector2(lower.x, upper.y)])
+		if Geometry2D.intersect_polygons(_outlines[local.basis], rectangle).is_empty():
+			return false
+		if _convex:
+			return true
+		# Rings have holes. Keep those holes when a telegraph only partly enters
+		# the viewport instead of treating its convex outline as filled.
+		var triangles: PackedVector2Array = _triangles[local.basis]
+		for index: int in range(0, triangles.size(), 3):
+			var first: Vector2 = triangles[index]
+			var second: Vector2 = triangles[index + 1]
+			var third: Vector2 = triangles[index + 2]
+			if (
+				maxf(first.x, maxf(second.x, third.x)) < lower.x
+				or minf(first.x, minf(second.x, third.x)) > upper.x
+				or maxf(first.y, maxf(second.y, third.y)) < lower.y
+				or minf(first.y, minf(second.y, third.y)) > upper.y
+			):
+				continue
+			if not Geometry2D.intersect_polygons(PackedVector2Array([first, second, third]), rectangle).is_empty():
+				return true
+		return false
+
+var _visuals: Dictionary[StringName, Visual] = {}
+
+
+func _init() -> void:
+	# Read the actual render meshes, without instantiating the arena in fast mode.
+	var scene: SceneState = ARENA_SCENE.get_state()
+	for node_index: int in scene.get_node_count():
+		var node_name := StringName(str(scene.get_node_path(node_index)).get_file())
+		for property_index: int in scene.get_node_property_count(node_index):
+			var property_name: StringName = scene.get_node_property_name(node_index, property_index)
+			var value: Variant = scene.get_node_property_value(node_index, property_index)
+			if property_name == &"multimesh" and value is MultiMesh:
+				_visuals[node_name] = Visual.new((value as MultiMesh).mesh)
+			elif property_name == &"mesh" and value is Mesh:
+				_visuals[node_name] = Visual.new(value as Mesh)
+
+
+func capture(simulation: CombatSimulation, view: ArenaView) -> BotObservation:
+	var observation := BotObservation.new()
+	var state: RunState = simulation.state
+	observation.tick = state.combat_tick
+	observation.phase = state.phase
+	observation.player_position = simulation.player_position
+	observation.camera_transform = view.camera_transform
+	observation.viewport_size = view.viewport_size
+	observation.hp = state.current_hp
+	observation.max_hp = state.max_hp
+	observation.level = state.level
+	observation.build_maxed = state.build_maxed
+	observation.boss_active = state.boss_spawned and not state.boss_defeated
+	observation.boss_hp = state.boss_hp if observation.boss_active else 0.0
+	for weapon: RunWeapon in state.weapons:
+		observation.weapons.append({"id": weapon.weapon_id, "level": weapon.level, "evolved": weapon.evolved})
+	for passive: RunPassive in state.passives:
+		observation.passives.append({"id": passive.passive_id, "level": passive.level})
+	if state.phase == GameTypes.RunPhase.LEVEL_UP and state.active_level_offer != null:
+		for option: UpgradeOption in state.active_level_offer.options:
+			observation.options.append({
+				"id": option.content_id, "kind": option.kind,
+				"level": option.current_level, "next": option.next_level,
+			})
+	if state.phase != GameTypes.RunPhase.COMBAT:
+		return observation
+	var culler := Culler.new(view)
+	for entity_id: int in simulation.enemy_system.snapshot_ids():
+		var enemy: EnemyEntity = simulation.enemy_system.enemy_store.get_by_id(entity_id)
+		var visual_kind: int = simulation._enemy_entity_visual_kind(enemy)
+		var transform: Transform3D = simulation.enemy_visual_transform(enemy)
+		if not _visuals[ENEMY_MESH_NAMES[visual_kind]].is_visible(culler, transform):
+			continue
+		var body := BotObservation.Body.new()
+		body.position = enemy.position
+		body.kind = visual_kind
+		body.radius = transform.basis.x.length() * 0.4
+		body.materializing = enemy.materialization_progress(state.combat_tick) < 1.0
+		observation.enemies.append(body)
+	for pool_index: int in simulation.projectile_pool.active_indices_snapshot():
+		var projectile: ProjectileState = simulation.projectile_pool.slots[pool_index]
+		if projectile.faction != ProjectileState.FACTION_ENEMY:
+			if simulation._projectile_visual_kind(projectile) == CombatSnapshot.ProjectileVisualKind.DIRECTIONAL_NEEDLE:
+				if _visuals[&"ProjectileNeedleInstances"].is_visible(culler, simulation.projectile_visual_transform(projectile)):
+					observation.needles.append(projectile.position)
+			continue
+		var transform: Transform3D = simulation.projectile_visual_transform(projectile)
+		if not _visuals[&"ProjectileEnemyInstances"].is_visible(culler, transform):
+			continue
+		var body := BotObservation.Body.new()
+		body.position = projectile.position
+		body.radius = transform.basis.x.length() * 0.18
+		observation.bullets.append(body)
+	for pool_index: int in simulation.xp_pickup_pool.active_indices_snapshot():
+		var pickup: XpPickupState = simulation.xp_pickup_pool.slots[pool_index]
+		_add_loot(observation, culler, XpPickupPool.visual_transform(pickup), &"XpInstances", BotObservation.LootKind.XP)
+	for pickup: ArenaPickup in simulation.arena_object_system.pickups:
+		if not pickup.active:
+			continue
+		var kind: BotObservation.LootKind = BotObservation.LootKind.POWERUP
+		var mesh_name: StringName = &"PickupInstances"
+		if pickup.kind == ArenaPickup.Kind.CHEST:
+			kind = BotObservation.LootKind.CHEST
+			mesh_name = &"ChestInstances"
+			if pickup.chest_kind == GameTypes.ChestKind.EVOLUTION_CAPABLE:
+				kind = BotObservation.LootKind.EVOLUTION_CHEST
+				mesh_name = &"EvolutionChestInstances"
+		_add_loot(observation, culler, pickup.transform(), mesh_name, kind)
+	for transform: Transform3D in simulation.arena_object_system.node_transforms():
+		_add_loot(observation, culler, transform, &"NodeInstances", BotObservation.LootKind.NODE)
+	_capture_warnings(simulation, culler, observation)
+	# Internal pool/spawn order is not observable, even when hidden objects change.
+	_sort_bodies(observation.enemies)
+	_sort_bodies(observation.bullets)
+	observation.needles.sort()
+	observation.loot.sort()
+	return observation
+
+
+func _add_loot(
+	observation: BotObservation, culler: Culler, transform: Transform3D,
+	mesh_name: StringName, kind: BotObservation.LootKind,
+) -> void:
+	if not _visuals[mesh_name].is_visible(culler, transform):
+		return
+	observation.loot.append(Vector4(kind, transform.origin.x, transform.origin.z, transform.basis.x.length()))
+
+
+func _capture_warnings(simulation: CombatSimulation, culler: Culler, observation: BotObservation) -> void:
+	var snapshot := CombatSnapshot.new()
+	simulation._apply_snapshot_markers(snapshot)
+	var reduce_motion: bool = simulation.vfx_pool.reduce_motion
+	if snapshot.important_marker_active:
+		var entry_transform: Transform3D = ArenaView.ring_transform(snapshot.important_marker_position, 0.05, snapshot.important_marker_radius, snapshot.important_marker_progress, reduce_motion)
+		if _visuals[&"ImportantMarker"].is_visible(culler, entry_transform):
+			observation.warnings.append({"kind": &"entry", "position": snapshot.important_marker_position, "radius": snapshot.important_marker_radius})
+	if snapshot.boss_charge_active:
+		var position: Vector2 = snapshot.boss_charge_position
+		var radius: float = snapshot.boss_charge_radius
+		var boss_transform: Transform3D = ArenaView.ring_transform(position, 0.055, radius, snapshot.boss_charge_progress, reduce_motion)
+		var directions: PackedVector2Array = []
+		for index: int in snapshot.boss_charge_spoke_count:
+			var angle: float = snapshot.boss_charge_angle_offset + TAU * float(index) / float(snapshot.boss_charge_spoke_count)
+			if _visuals[&"BossChargeSpokes"].is_visible(culler, ArenaView.boss_spoke_transform(position, radius, angle)):
+				directions.append(Vector2.from_angle(angle))
+		if not directions.is_empty() or _visuals[&"BossChargeMarker"].is_visible(culler, boss_transform):
+			observation.warnings.append({
+				"kind": &"boss", "position": position, "radius": radius,
+				"directions": directions,
+			})
+	var warning: SwarmWarningState = simulation.enemy_system.swarm_warning
+	if warning == null:
+		return
+	var definition: SwarmEventDefinition = simulation.catalog.manifest().swarm_event
+	var width: float = (float(definition.lateral_count - 1) + 0.5) * definition.lateral_pitch + 2.0 * definition.unit_definition.body_radius
+	var length: float = 2.0 * (warning.spawn_distance + float(definition.depth_count - 1) * definition.depth_pitch + definition.unit_definition.body_radius)
+	var transform := Transform3D(
+		Basis(Vector3.UP, -warning.direction.angle()).scaled_local(Vector3(length, 1.0, width)),
+		Vector3(warning.anchor.x, 0.07, warning.anchor.y),
+	)
+	if _visuals[&"SwarmWarningMarker"].is_visible(culler, transform):
+		# The band alone reveals an axis, not its travel sign; the arrows can
+		# be outside the view. Keep that unobservable sign out of the values.
+		var axis: Vector2 = warning.direction
+		if axis.x < 0.0 or (axis.x == 0.0 and axis.y < 0.0):
+			axis = -axis
+		var travel_direction := Vector2.ZERO
+		for arrow: int in 3:
+			var complete: bool = true
+			for wing: int in 2:
+				var arrow_transform: Transform3D = ArenaView.swarm_arrow_transform(warning.anchor, warning.direction, arrow * 2 + wing)
+				var projected: AABB = (culler.inverse * arrow_transform) * _visuals[&"SwarmWarningArrows"].bounds
+				if projected.position.x < -culler.half_width or projected.end.x > culler.half_width or projected.position.y < -culler.half_height or projected.end.y > culler.half_height or projected.end.z > -0.05 or projected.position.z < -4000.0:
+					complete = false
+			if complete:
+				travel_direction = warning.direction
+				break
+		observation.warnings.append({
+			"kind": &"swarm", "position": warning.anchor, "direction": axis,
+			"width": width, "travel_direction": travel_direction,
+		})
+
+
+static func _sort_bodies(bodies: Array[BotObservation.Body]) -> void:
+	# Native Vector4 sorting avoids a GDScript callback for every comparison.
+	var keys := PackedVector4Array()
+	keys.resize(bodies.size())
+	for index: int in bodies.size():
+		var body: BotObservation.Body = bodies[index]
+		keys[index] = Vector4(body.kind, body.position.x, body.position.y, index)
+	keys.sort()
+	var ordered: Array[BotObservation.Body] = []
+	ordered.resize(bodies.size())
+	for index: int in keys.size():
+		ordered[index] = bodies[int(keys[index].w)]
+	# Only ties need a script comparator. Distinct visible attributes must not
+	# inherit the pool order when objects happen to occupy the same position.
+	var first: int = 0
+	while first < ordered.size():
+		var end: int = first + 1
+		while end < ordered.size() and ordered[end].kind == ordered[first].kind and ordered[end].position == ordered[first].position:
+			end += 1
+		if end - first > 1:
+			var group: Array[BotObservation.Body] = ordered.slice(first, end)
+			group.sort_custom(_visible_body_less)
+			for index: int in group.size():
+				ordered[first + index] = group[index]
+		first = end
+	bodies.assign(ordered)
+
+
+static func _visible_body_less(left: BotObservation.Body, right: BotObservation.Body) -> bool:
+	if left.radius != right.radius:
+		return left.radius < right.radius
+	return not left.materializing and right.materializing

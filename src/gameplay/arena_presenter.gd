@@ -4,9 +4,7 @@ extends Node3D
 
 signal terminal_presentation_finished(phase: GameTypes.RunPhase)
 
-const CAMERA_FOLLOW_TAU_SECONDS: float = CombatEnvelope.CAMERA_FOLLOW_TAU_SECONDS
-const CAMERA_OFFSET: Vector3 = Vector3(8.912187, 18.0, 8.912187)
-const CAMERA_INPUT_AXIS_EPSILON_SQUARED: float = 0.000001
+const CAMERA_OFFSET: Vector3 = ArenaView.CAMERA_OFFSET
 const GRID_SPACING_M: float = 2.5
 const BOSS_DEFEAT_SECONDS: float = 0.80
 const PLAYER_DEFEAT_SECONDS: float = 0.45
@@ -58,8 +56,8 @@ const ABSORPTION_EVENT_SECONDS: float = 0.24
 @onready var _combat_hud: CombatHud = %CombatHUD
 
 var _simulation: RefCounted = null
-var _smoothed_camera_target: Vector3 = Vector3.ZERO
-var _camera_target_initialized: bool = false
+var view: ArenaView = ArenaView.new()
+var _external_view: bool = false
 var _reduce_motion: bool = false
 var _reduce_flashes: bool = false
 var _last_important_position: Vector2 = Vector2.ZERO
@@ -87,7 +85,8 @@ func _ready() -> void:
 
 func initialize(simulation: RefCounted) -> void:
 	_simulation = simulation
-	_camera_target_initialized = false
+	view = ArenaView.new()
+	_external_view = false
 	_apply_accessibility_settings()
 	if not is_node_ready():
 		return
@@ -130,6 +129,11 @@ func set_debug_overlay_visible(should_show: bool) -> void:
 
 func camera_relative_move_input(screen_input: Vector2) -> Vector2:
 	return _camera_relative_move_input(screen_input)
+
+
+func use_view(model: ArenaView) -> void:
+	view = model
+	_external_view = true
 
 
 func terminal_focus_position(prefer_important: bool) -> Vector2:
@@ -183,18 +187,7 @@ func _process(delta: float) -> void:
 
 
 func _camera_relative_move_input(screen_input: Vector2) -> Vector2:
-	if _camera == null:
-		return screen_input
-	var camera_right_3d: Vector3 = _camera.global_basis.x
-	var camera_right := Vector2(camera_right_3d.x, camera_right_3d.z)
-	if (
-		not camera_right.is_finite()
-		or camera_right.length_squared() <= CAMERA_INPUT_AXIS_EPSILON_SQUARED
-	):
-		return screen_input
-	camera_right = camera_right.normalized()
-	var camera_back := Vector2(-camera_right.y, camera_right.x)
-	return camera_right * screen_input.x + camera_back * screen_input.y
+	return view.screen_to_world_input(screen_input)
 
 
 func _apply_snapshot(snapshot: CombatSnapshot, delta: float) -> void:
@@ -351,15 +344,10 @@ func _copy_vfx_prefix(snapshot: CombatSnapshot, instance: MultiMeshInstance3D) -
 
 
 func _update_camera(player_position: Vector2, delta: float) -> void:
-	var target := Vector3(player_position.x, 0.0, player_position.y)
-	if not _camera_target_initialized:
-		_smoothed_camera_target = target
-		_camera_target_initialized = true
-	elif delta > 0.0:
-		var alpha := 1.0 - exp(-delta / CAMERA_FOLLOW_TAU_SECONDS)
-		_smoothed_camera_target = _smoothed_camera_target.lerp(target, alpha)
-	_camera.position = _smoothed_camera_target + CAMERA_OFFSET
-	_camera.look_at(_smoothed_camera_target, Vector3.UP)
+	if not _external_view:
+		view.viewport_size = Vector2i(get_viewport().get_visible_rect().size)
+	view.advance(player_position, delta)
+	_camera.transform = view.camera_transform
 
 
 func _update_snapshot_markers(snapshot: CombatSnapshot) -> void:
@@ -404,16 +392,8 @@ func _update_swarm_warning(snapshot: CombatSnapshot) -> void:
 		Vector3(snapshot.swarm_warning_anchor.x, 0.07, snapshot.swarm_warning_anchor.y),
 	)
 	_swarm_warning_marker.transparency = 0.78 if _reduce_flashes else 0.66
-	var tangent := Vector2(-direction.y, direction.x)
 	for index: int in range(6):
-		var side: float = -1.0 if index % 2 == 0 else 1.0
-		var tip: Vector2 = snapshot.swarm_warning_anchor + direction * (float(floori(float(index) / 2.0)) - 1.0) * 2.5
-		var wing: Vector2 = (direction + tangent * side).normalized()
-		var center: Vector2 = tip - wing * 0.6
-		arrows.set_instance_transform(index, Transform3D(
-			Basis(Vector3.UP, -wing.angle()).scaled_local(Vector3(1.2, 1.0, 0.10)),
-			Vector3(center.x, 0.09, center.y),
-		))
+		arrows.set_instance_transform(index, ArenaView.swarm_arrow_transform(snapshot.swarm_warning_anchor, direction, index))
 
 
 func _update_ring(
@@ -426,11 +406,7 @@ func _update_ring(
 	marker.visible = active
 	if not active:
 		return
-	marker.position = Vector3(world_position.x, marker.position.y, world_position.y)
-	var pulse: float = 1.0
-	if not _reduce_motion:
-		pulse = 0.92 + 0.08 * sin(clampf(progress, 0.0, 1.0) * TAU * 2.0)
-	marker.scale = Vector3.ONE * maxf(0.1, radius) * pulse
+	marker.transform = ArenaView.ring_transform(world_position, marker.position.y, radius, progress, _reduce_motion)
 	marker.transparency = 0.48 if _reduce_flashes else 0.18
 
 
@@ -450,16 +426,7 @@ func _update_boss_charge_spokes(snapshot: CombatSnapshot) -> void:
 			snapshot.boss_charge_angle_offset
 			+ TAU * float(spoke_index) / float(maxi(1, spoke_count))
 		)
-		var direction := Vector2.from_angle(angle)
-		var forward := Vector3(direction.x, 0.0, direction.y)
-		var side := Vector3(direction.y, 0.0, -direction.x)
-		var spoke_basis := Basis(side * 0.055, Vector3.UP * 0.025, forward * radius)
-		var origin := Vector3(
-			snapshot.boss_charge_position.x + direction.x * radius * 0.5,
-			0.055,
-			snapshot.boss_charge_position.y + direction.y * radius * 0.5,
-		)
-		multimesh.set_instance_transform(spoke_index, Transform3D(spoke_basis, origin))
+		multimesh.set_instance_transform(spoke_index, ArenaView.boss_spoke_transform(snapshot.boss_charge_position, radius, angle))
 	multimesh.visible_instance_count = spoke_count
 
 

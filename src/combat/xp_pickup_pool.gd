@@ -123,12 +123,16 @@ func transforms() -> Array[Transform3D]:
 	result.resize(_active_indices.size())
 	for active_position: int in range(_active_indices.size()):
 		var pickup: XpPickupState = slots[_active_indices[active_position]]
-		var value_scale: float = 1.0 + minf(1.0, log(float(maxi(1, pickup.value))) * 0.08)
-		result[active_position] = Transform3D(
-			Basis.IDENTITY.scaled(Vector3.ONE * value_scale),
-			Vector3(pickup.position.x, 0.22, pickup.position.y),
-		)
+		result[active_position] = visual_transform(pickup)
 	return result
+
+
+static func visual_transform(pickup: XpPickupState) -> Transform3D:
+	var value_scale: float = 1.0 + minf(1.0, log(float(maxi(1, pickup.value))) * 0.08)
+	return Transform3D(
+		Basis.IDENTITY.scaled(Vector3.ONE * value_scale),
+		Vector3(pickup.position.x, 0.22, pickup.position.y),
+	)
 
 
 func active_count() -> int:

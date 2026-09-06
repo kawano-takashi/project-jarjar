@@ -434,12 +434,7 @@ func build_snapshot() -> CombatSnapshot:
 		var enemy: EnemyEntity = enemy_system.enemy_store.get_by_id(entity_id)
 		if enemy == null:
 			continue
-		var diameter_scale: float = maxf(0.35, enemy.body_radius() / 0.4)
-		var height_scale: float = _enemy_height_scale(enemy.enemy_type)
-		enemy_transforms.append(Transform3D(
-			Basis.IDENTITY.scaled(Vector3(diameter_scale, height_scale, diameter_scale)),
-			Vector3(enemy.position.x, 0.5 * height_scale, enemy.position.y),
-		))
+		enemy_transforms.append(enemy_visual_transform(enemy))
 		enemy_visual_kinds.append(_enemy_entity_visual_kind(enemy))
 		enemy_visual_custom_data.append(Color(
 			enemy.materialization_progress(state.combat_tick),
@@ -452,15 +447,7 @@ func build_snapshot() -> CombatSnapshot:
 	var projectile_custom_data_values := PackedColorArray()
 	for pool_index: int in projectile_pool.active_indices_snapshot():
 		var projectile: ProjectileState = projectile_pool.slots[pool_index]
-		var projectile_scale: float = maxf(0.25, projectile.radius / 0.16)
-		projectile_transforms.append(Transform3D(
-			Basis.IDENTITY.scaled(Vector3.ONE * projectile_scale),
-			Vector3(
-				projectile.position.x,
-				projectile.visual_height(),
-				projectile.position.y,
-			),
-		))
+		projectile_transforms.append(projectile_visual_transform(projectile))
 		projectile_visual_kinds.append(_projectile_visual_kind(projectile))
 		projectile_custom_data_values.append(_projectile_custom_data(projectile))
 	var orbital_transforms: Array[Transform3D] = weapon_system.orbital_transforms(
@@ -1982,6 +1969,23 @@ func _enemy_kill_effect_kind(enemy_type: int) -> VfxState.EffectKind:
 		GameTypes.EnemyType.BULWARK, GameTypes.EnemyType.ELITE, GameTypes.EnemyType.BOSS:
 			return VfxState.EffectKind.AURA_PULSE
 	return VfxState.EffectKind.GENERIC
+
+
+func projectile_visual_transform(projectile: ProjectileState) -> Transform3D:
+	var projectile_scale: float = maxf(0.25, projectile.radius / 0.16)
+	return Transform3D(
+		Basis.IDENTITY.scaled(Vector3.ONE * projectile_scale),
+		Vector3(projectile.position.x, projectile.visual_height(), projectile.position.y),
+	)
+
+
+func enemy_visual_transform(enemy: EnemyEntity) -> Transform3D:
+	var diameter_scale: float = maxf(0.35, enemy.body_radius() / 0.4)
+	var height_scale: float = _enemy_height_scale(enemy.enemy_type)
+	return Transform3D(
+		Basis.IDENTITY.scaled(Vector3(diameter_scale, height_scale, diameter_scale)),
+		Vector3(enemy.position.x, 0.5 * height_scale, enemy.position.y),
+	)
 
 
 func _enemy_height_scale(enemy_type: GameTypes.EnemyType) -> float:
