@@ -1,111 +1,44 @@
 #include "bot_visual.h"
-#include <godot_cpp/classes/geometry2d.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <algorithm>
-#include <cmath>
 #include <godot_cpp/variant/packed_float64_array.hpp>
 
 using namespace godot;
 
 void JarjarBotVisual::_bind_methods() {
-    ClassDB::bind_method(D_METHOD("setup", "mesh", "convex"), &JarjarBotVisual::setup);
-    ClassDB::bind_method(D_METHOD("is_visible", "inverse", "half_width", "half_height", "world"), &JarjarBotVisual::is_visible);
-    ClassDB::bind_method(D_METHOD("visible_loot", "inverse", "half_width", "half_height", "transforms", "indices", "kind"), &JarjarBotVisual::visible_loot);
+    ClassDB::bind_method(D_METHOD("setup", "mesh"), &JarjarBotVisual::setup);
+    ClassDB::bind_method(D_METHOD("is_visible", "inverse", "projection", "world"), &JarjarBotVisual::is_visible);
+    ClassDB::bind_method(D_METHOD("visible_loot", "inverse", "projection", "transforms", "indices", "kind"), &JarjarBotVisual::visible_loot);
 }
 
-void JarjarBotVisual::setup(const Ref<Mesh> &p_mesh, bool p_convex) {
-    mesh = p_mesh;
-    bounds = mesh->get_aabb();
-    convex = p_convex;
-    outlines.clear();
-    triangles.clear();
-    hull_indices.clear();
-    hulls.clear();
+void JarjarBotVisual::setup(const Ref<Mesh> &p_mesh) {
+    ERR_FAIL_COND(p_mesh.is_null());
+    bounds = p_mesh->get_aabb();
+    // Cache mesh-local triangles only: perspective silhouettes also change
+    // when the mesh translates sideways or changes depth.
+    faces = p_mesh->get_faces();
 }
 
-bool JarjarBotVisual::contains_interior_witness(const Hull &hull, Vector2 lower, Vector2 upper) const {
-    // Only certify a disk strictly inside BOTH polygons. Uncertain edge/tangent
-    // cases still use Geometry2D. Godot's ClipperD precision is five decimals;
-    // this 0.001 m inset is much larger than its coordinate rounding.
-    // https://github.com/godotengine/godot/blob/master/core/math/geometry_2d.cpp
-    constexpr double inset = 0.001;
-    if (hull.planes.size() < 3 || upper.x - lower.x <= inset * 4 || upper.y - lower.y <= inset * 4 ||
-        std::max({std::abs(lower.x), std::abs(lower.y), std::abs(upper.x), std::abs(upper.y)}) > 10000.0f) return false;
-    double x = std::clamp(hull.x, double(lower.x) + inset * 2, double(upper.x) - inset * 2);
-    double y = std::clamp(hull.y, double(lower.y) + inset * 2, double(upper.y) - inset * 2);
-    for (const Plane &plane : hull.planes) {
-        double projected = plane.x * x + plane.y * y;
-        double margin = plane.length * inset;
-        if (projected <= plane.lower + margin || projected >= plane.upper - margin) return false;
-    }
-    return true;
+bool JarjarBotVisual::is_visible(const Transform3D &inverse, const Projection &projection, const Transform3D &world) const {
+    return visible_in_frustum(BotFrustum(inverse, projection), world);
 }
 
-bool JarjarBotVisual::is_visible(const Transform3D &inverse, double half_width, double half_height, const Transform3D &world) {
-    Transform3D local = inverse * world;
-    AABB projected = local.xform(bounds);
-    Vector3 end = projected.get_end();
-    if (!(projected.position.x <= half_width && end.x >= -half_width &&
-          projected.position.y <= half_height && end.y >= -half_height &&
-          projected.position.z <= -0.05 && end.z >= -4000.0)) return false;
-    if (projected.position.x >= -half_width && end.x <= half_width &&
-        projected.position.y >= -half_height && end.y <= half_height) return true;
-    Geometry2D *geometry = Geometry2D::get_singleton();
-    if (!outlines.has(local.basis)) {
-        PackedVector3Array faces = mesh->get_faces();
-        Transform3D basis_only(local.basis, Vector3());
-        for (int64_t i = 0; i < faces.size(); ++i) faces[i] = basis_only.xform(faces[i]);
-        PackedVector2Array points;
-        points.resize(faces.size());
-        for (int64_t i = 0; i < faces.size(); ++i) points[i] = Vector2(faces[i].x, faces[i].y);
-        PackedVector2Array outline = geometry->convex_hull(points);
-        outlines[local.basis] = outline;
-        if (convex) {
-            Hull hull;
-            for (int64_t i = 0; i < outline.size(); ++i) { hull.x += outline[i].x; hull.y += outline[i].y; }
-            if (!outline.is_empty()) { hull.x /= double(outline.size()); hull.y /= double(outline.size()); }
-            for (int64_t i = 0; i < outline.size(); ++i) {
-                Vector2 a = outline[i], b = outline[(i + 1) % outline.size()];
-                double nx = double(b.y) - double(a.y), ny = double(a.x) - double(b.x);
-                double length = std::sqrt(nx * nx + ny * ny);
-                if (length == 0.0) continue;
-                double lo = nx * outline[0].x + ny * outline[0].y, hi = lo;
-                for (int64_t j = 1; j < outline.size(); ++j) {
-                    double projection = nx * outline[j].x + ny * outline[j].y;
-                    lo = std::min(lo, projection); hi = std::max(hi, projection);
-                }
-                hull.planes.push_back({nx, ny, lo, hi, length});
-            }
-            hull_indices[local.basis] = int64_t(hulls.size());
-            hulls.push_back(std::move(hull));
-        }
-        if (!convex) triangles[local.basis] = points;
-    }
-    Vector2 offset(local.origin.x, local.origin.y);
-    Vector2 lower = Vector2(float(-half_width), float(-half_height)) - offset;
-    Vector2 upper = Vector2(float(half_width), float(half_height)) - offset;
-    if (convex && contains_interior_witness(hulls[size_t(int64_t(hull_indices[local.basis]))], lower, upper)) return true;
-    PackedVector2Array rectangle;
-    rectangle.push_back(lower);
-    rectangle.push_back(Vector2(upper.x, lower.y));
-    rectangle.push_back(upper);
-    rectangle.push_back(Vector2(lower.x, upper.y));
-    if (geometry->intersect_polygons(outlines[local.basis], rectangle).is_empty()) return false;
-    if (convex) return true;
-    // Keep holes in warning rings, using the same mesh triangles as rendering.
-    PackedVector2Array faces = triangles[local.basis];
-    for (int64_t i = 0; i < faces.size(); i += 3) {
-        Vector2 a = faces[i], b = faces[i+1], c = faces[i+2];
-        if (std::max(a.x, std::max(b.x, c.x)) < lower.x || std::min(a.x, std::min(b.x, c.x)) > upper.x ||
-            std::max(a.y, std::max(b.y, c.y)) < lower.y || std::min(a.y, std::min(b.y, c.y)) > upper.y) continue;
-        PackedVector2Array triangle;
-        triangle.push_back(a); triangle.push_back(b); triangle.push_back(c);
-        if (!geometry->intersect_polygons(triangle, rectangle).is_empty()) return true;
+bool JarjarBotVisual::visible_in_frustum(const BotFrustum &frustum, const Transform3D &world) const {
+    if (faces.is_empty()) return false;
+    Transform3D local = frustum.inverse * world;
+    BotFrustum::Coverage coverage = frustum.classify(local.xform(bounds));
+    if (coverage == BotFrustum::OUTSIDE) return false;
+    if (coverage == BotFrustum::INSIDE) return true;
+    // Clip the actual surfaces, preserving empty corners and ring holes.
+    const Vector3 *vertices = faces.ptr();
+    for (int64_t i = 0; i + 2 < faces.size(); i += 3) {
+        if (frustum.triangle_visible(local.xform(vertices[i]), local.xform(vertices[i + 1]), local.xform(vertices[i + 2]))) return true;
     }
     return false;
 }
 
-PackedVector4Array JarjarBotVisual::visible_loot(const Transform3D &inverse, double half_width, double half_height, const PackedVector3Array &transforms, const PackedInt32Array &indices, int kind) {
+PackedVector4Array JarjarBotVisual::visible_loot(const Transform3D &inverse, const Projection &projection, const PackedVector3Array &transforms, const PackedInt32Array &indices, int kind) const {
+    BotFrustum frustum(inverse, projection);
     PackedVector4Array result;
     const Vector3 *columns = transforms.ptr();
     const int32_t *slots = indices.ptr();
@@ -116,7 +49,7 @@ PackedVector4Array JarjarBotVisual::visible_loot(const Transform3D &inverse, dou
         int64_t offset = int64_t(slots[i]) * 4;
         ERR_FAIL_COND_V(offset < 0 || offset + 3 >= column_count, PackedVector4Array());
         Transform3D world(Basis(columns[offset], columns[offset + 1], columns[offset + 2]), columns[offset + 3]);
-        if (is_visible(inverse, half_width, half_height, world))
+        if (visible_in_frustum(frustum, world))
             visible.push_back(Vector4(float(kind), world.origin.x, world.origin.z, world.basis.get_column(0).length()));
     }
     result.resize(int64_t(visible.size()));
@@ -135,8 +68,7 @@ void JarjarBotObserver::configure(const TypedArray<JarjarBotVisual> &p_visuals) 
 }
 
 Dictionary JarjarBotObserver::observe_bodies(const Dictionary &frame) {
-    Transform3D inverse = frame["inverse"];
-    double width = frame["half_width"], height = frame["half_height"];
+    BotFrustum frustum(frame["inverse"], frame["projection"]);
     PackedVector2Array positions = frame["positions"];
     PackedInt32Array kinds = frame["kinds"], shapes = frame["shapes"];
     PackedByteArray materializing = frame["materializing"];
@@ -162,7 +94,7 @@ Dictionary JarjarBotObserver::observe_bodies(const Dictionary &frame) {
         Transform3D transform = transforms[size_t(shape[i])];
         transform.origin.x = position[i].x;
         transform.origin.z = position[i].y;
-        if (visuals[size_t(kind[i])]->is_visible(inverse, width, height, transform)) visible.push_back(int(i));
+        if (visuals[size_t(kind[i])]->visible_in_frustum(frustum, transform)) visible.push_back(int(i));
     }
     std::sort(visible.begin(), visible.end(), [&](int a, int b) {
         if (kind[a] != kind[b]) return kind[a] < kind[b];

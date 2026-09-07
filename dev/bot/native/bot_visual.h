@@ -1,4 +1,5 @@
 #pragma once
+#include "bot_view.h"
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/classes/mesh.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
@@ -11,21 +12,15 @@
 
 class JarjarBotVisual : public godot::RefCounted {
     GDCLASS(JarjarBotVisual, godot::RefCounted)
-    godot::Ref<godot::Mesh> mesh;
     godot::AABB bounds;
-    bool convex = false;
-    godot::Dictionary outlines, triangles;
-    struct Plane { double x, y, lower, upper, length; };
-    struct Hull { double x = 0.0, y = 0.0; std::vector<Plane> planes; };
-    godot::Dictionary hull_indices;
-    std::vector<Hull> hulls;
-    bool contains_interior_witness(const Hull &hull, godot::Vector2 lower, godot::Vector2 upper) const;
+    godot::PackedVector3Array faces;
 protected:
     static void _bind_methods();
 public:
-    void setup(const godot::Ref<godot::Mesh> &p_mesh, bool p_convex);
-    bool is_visible(const godot::Transform3D &inverse, double half_width, double half_height, const godot::Transform3D &world);
-    godot::PackedVector4Array visible_loot(const godot::Transform3D &inverse, double half_width, double half_height, const godot::PackedVector3Array &transforms, const godot::PackedInt32Array &indices, int kind);
+    void setup(const godot::Ref<godot::Mesh> &p_mesh);
+    bool is_visible(const godot::Transform3D &inverse, const godot::Projection &projection, const godot::Transform3D &world) const;
+    bool visible_in_frustum(const BotFrustum &frustum, const godot::Transform3D &world) const;
+    godot::PackedVector4Array visible_loot(const godot::Transform3D &inverse, const godot::Projection &projection, const godot::PackedVector3Array &transforms, const godot::PackedInt32Array &indices, int kind) const;
 };
 
 class JarjarBotObserver : public godot::RefCounted {

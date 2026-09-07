@@ -1,4 +1,5 @@
 #include "bot_navigation.h"
+#include "bot_view.h"
 #include <godot_cpp/core/class_db.hpp>
 #include <cmath>
 #include <map>
@@ -12,7 +13,7 @@ void JarjarBotNavigation::_bind_methods() {
     ClassDB::bind_method(D_METHOD("configure", "origin", "dimensions", "cell_size"), &JarjarBotNavigation::configure);
     ClassDB::bind_method(D_METHOD("route", "player", "goal", "positions", "radii", "player_radius"), &JarjarBotNavigation::route);
     ClassDB::bind_method(D_METHOD("match_tracks", "predicted", "old_kinds", "observed", "kinds", "track_cell"), &JarjarBotNavigation::match_tracks);
-    ClassDB::bind_method(D_METHOD("remember_loot", "loot", "inverse", "viewport", "tick", "camera_size", "xp_kind"), &JarjarBotNavigation::remember_loot);
+    ClassDB::bind_method(D_METHOD("remember_loot", "loot", "inverse", "viewport", "tick", "projection", "xp_kind"), &JarjarBotNavigation::remember_loot);
     ClassDB::bind_method(D_METHOD("choose_loot_goal", "frame"), &JarjarBotNavigation::choose_loot_goal);
     ClassDB::bind_method(D_METHOD("configure_tracking", "data"), &JarjarBotNavigation::configure_tracking);
     ClassDB::bind_method(D_METHOD("observe_tracks", "frame"), &JarjarBotNavigation::observe_tracks);
@@ -33,23 +34,19 @@ void JarjarBotNavigation::configure(const Vector2 &p_origin, const Vector2i &p_d
     grid->update();
 }
 
-void JarjarBotNavigation::remember_loot(const PackedVector4Array &loot, const Transform3D &inverse, const Vector2i &viewport, int64_t tick, double view_size, int xp_kind) {
+void JarjarBotNavigation::remember_loot(const PackedVector4Array &loot, const Transform3D &inverse, const Vector2i &viewport, int64_t tick, const Projection &projection, int xp_kind) {
     for (int64_t i = 0; i < loot.size(); ++i) {
         Vector4 entry = loot[i];
         Vector3i key(int(std::round(double(entry.y) * 2.0)), int(std::round(double(entry.z) * 2.0)), int(entry.x));
         loot_memory[key] = Vector4(entry.y, entry.z, entry.w, float(tick));
     }
     Array keys = loot_memory.keys();
-    double pixels_per_meter = double(viewport.y) / view_size;
-    Rect2 inner{Vector2(), Vector2(viewport)};
-    inner = inner.grow(-24.0f);
     for (int64_t i = 0; i < keys.size(); ++i) {
         Vector3i key = keys[i];
         Vector4 entry = loot_memory[key];
         if (int64_t(entry.w) == tick) continue;
-        Vector3 local = inverse.xform(Vector3(entry.x, 0.3f, entry.y));
-        Vector2 pixel = Vector2(viewport) * 0.5f + Vector2(local.x, -local.y) * float(pixels_per_meter);
-        if (inner.has_point(pixel) || (key.z == xp_kind && tick - int64_t(entry.w) > 300)) loot_memory.erase(key);
+        if (bot_point_inside_view(Vector3(entry.x, 0.3f, entry.y), inverse, projection, viewport, 24.0f) ||
+            (key.z == xp_kind && tick - int64_t(entry.w) > 300)) loot_memory.erase(key);
     }
 }
 
@@ -210,7 +207,7 @@ void JarjarBotNavigation::configure_tracking(const Dictionary &data) {
     enemy_speeds.clear();
     for (int64_t i = 0; i < kinds.size(); ++i) enemy_speeds[int(kinds[i])] = speeds[kinds[i]];
     tracking_cell = data["track_cell"]; memory_ticks = data["memory_ticks"];
-    swarm_speed = data["swarm_speed"]; camera_size = data["camera_size"];
+    swarm_speed = data["swarm_speed"];
     swarmer_kind = data["swarmer_kind"]; red_kind = data["red_kind"]; boss_kind = data["boss_kind"];
     enemies.clear(); bullets.clear();
 }
@@ -263,16 +260,12 @@ std::vector<JarjarBotNavigation::Track> JarjarBotNavigation::track_bodies(const 
         track.materializing = materializing[i] != 0; track.seen_tick = tick;
         result.push_back(track);
     }
-    Rect2 inner{Vector2(), Vector2(viewport)};
-    inner = inner.grow(-24.0f);
-    double pixels_per_meter = double(viewport.y) / camera_size;
+    Projection projection = frame["projection"];
     for (size_t i = 0; i < old.size(); ++i) {
         if (matched[i] || tick - old[i].seen_tick > memory_ticks) continue;
         Track track = old[i];
         track.position += track.velocity * float(elapsed);
-        Vector3 local = inverse.xform(Vector3(track.position.x, 0.35f, track.position.y));
-        Vector2 pixel = Vector2(viewport) * 0.5f + Vector2(local.x, -local.y) * float(pixels_per_meter);
-        if (!inner.has_point(pixel)) result.push_back(track);
+        if (!bot_point_inside_view(Vector3(track.position.x, 0.35f, track.position.y), inverse, projection, viewport, 24.0f)) result.push_back(track);
     }
     return result;
 }

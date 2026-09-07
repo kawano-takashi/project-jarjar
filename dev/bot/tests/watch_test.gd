@@ -95,7 +95,7 @@ func test_observer_projection_matches_following_camera_and_partial_edges(a: Vari
 	var arena := ARENA_SCENE.instantiate() as ArenaPresenter
 	var viewport: SubViewport = await _attach(arena, tree)
 	var camera := arena.get_node("%ArenaCamera") as Camera3D
-	for dimensions: Vector2i in [Vector2i(1920, 1080), Vector2i(1024, 768)]:
+	for dimensions: Vector2i in [Vector2i(1920, 1080), Vector2i(1280, 720), Vector2i(1024, 768)]:
 		viewport.size = dimensions
 		await tree.process_frame
 		var hud := arena.get_node("%CombatHUD") as CombatHud
@@ -105,14 +105,19 @@ func test_observer_projection_matches_following_camera_and_partial_edges(a: Vari
 		for point: Vector3 in [Vector3.ZERO, Vector3(4, 1, -2), Vector3(-3, 4, 5)]:
 			var expected: Vector2 = camera.unproject_position(point)
 			var actual: Vector2 = arena.view.project_position(point)
-			a.expect_true(expected.distance_to(actual) < 0.01, "headless projection follows the actual camera at both aspect ratios")
-		var half_width: float = camera.size * 0.5 * float(dimensions.x) / float(dimensions.y)
-		var edge: Vector3 = camera.transform * Vector3(half_width + 0.2, 0.0, -20.0)
+			a.expect_true(expected.distance_to(actual) < 0.01, "headless projection follows the actual camera at different world heights")
+		for depth: float in [camera.near * 2.0, camera.far * 0.15, camera.far * 0.8]:
+			for fraction: float in [0.1, 0.5, 0.9]:
+				var pixel: Vector2 = Vector2(dimensions) * fraction
+				var point: Vector3 = camera.project_position(pixel, depth)
+				a.expect_true(camera.unproject_position(point).distance_to(arena.view.project_position(point)) < 0.02, "camera projection at %s depth %.3f: rendered %s, bot %s" % [dimensions, depth, camera.unproject_position(point), arena.view.project_position(point)])
+		var boundary: Vector3 = camera.project_position(Vector2(dimensions.x, dimensions.y * 0.5), 20.0)
+		var edge: Vector3 = boundary + camera.basis.x * 0.2
 		var bounds := AABB(Vector3.ONE * -0.3, Vector3.ONE * 0.6)
 		a.expect_false(camera.is_position_in_frustum(edge), "the center is outside the screen")
-		a.expect_true(BotObserver.Culler.new(arena.view).contains_visual(Transform3D(Basis.IDENTITY, edge), bounds), "a partially visible object remains observable")
-		var outside: Vector3 = camera.transform * Vector3(half_width + 1.0, 0.0, -20.0)
-		a.expect_false(BotObserver.Culler.new(arena.view).contains_visual(Transform3D(Basis.IDENTITY, outside), bounds), "an entirely offscreen object is excluded")
+		a.expect_true(BotObserver.Culler.new(arena.view).contains_visual(Transform3D(camera.basis, edge), bounds), "a partially visible object remains observable")
+		var outside: Vector3 = boundary + camera.basis.x
+		a.expect_false(BotObserver.Culler.new(arena.view).contains_visual(Transform3D(camera.basis, outside), bounds), "an entirely offscreen object is excluded")
 	await _detach(arena, viewport, tree)
 
 

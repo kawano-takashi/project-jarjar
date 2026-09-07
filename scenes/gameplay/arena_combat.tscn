@@ -867,14 +867,7 @@ light_energy = 0.45
 
 [node name="ArenaCamera" type="Camera3D" parent="."]
 unique_name_in_owner = true
-position = Vector3(8.912187, 18, 8.912187)
-rotation_degrees = Vector3(-55, 45, 0)
-projection = 1
-keep_aspect = 1
 current = true
-size = 18.0
-near = 0.1
-far = 120.0
 
 [node name="HUDLayer" type="CanvasLayer" parent="."]
 layer = 10

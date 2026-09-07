@@ -53,7 +53,7 @@ func _init(knowledge: BotKnowledge) -> void:
 		_navigation.configure(_navigation_origin, dimensions, NAV_CELL)
 		_navigation.configure_tracking({
 			"enemy_speeds": _knowledge.enemy_speeds, "track_cell": TRACK_CELL, "memory_ticks": MEMORY_TICKS,
-			"swarm_speed": _knowledge.swarm_speed, "camera_size": ArenaView.CAMERA_SIZE,
+			"swarm_speed": _knowledge.swarm_speed,
 			"swarmer_kind": CombatSnapshot.EnemyVisualKind.SWARMER,
 			"red_kind": CombatSnapshot.EnemyVisualKind.SWARMER_EVENT_RED,
 			"boss_kind": CombatSnapshot.EnemyVisualKind.BOSS,
@@ -210,13 +210,14 @@ func _observe_bodies(observation: BotObservation) -> void:
 		"enemies": observation.enemy_values(), "bullets": BotObservation.pack_bodies(observation.bullets),
 		"player": observation.player_position, "tick": observation.tick,
 		"elapsed": float(maxi(1, observation.tick - _last_tick)) / 60.0,
-		"inverse": observation.camera_transform.affine_inverse(), "viewport": observation.viewport_size,
+		"inverse": observation.camera_transform.orthonormalized().inverse(), "viewport": observation.viewport_size,
+		"projection": observation.camera_projection,
 	})
 
 
 func _remember_loot(observation: BotObservation) -> void:
-	_navigation.remember_loot(observation.loot, observation.camera_transform.affine_inverse(),
-		observation.viewport_size, observation.tick, ArenaView.CAMERA_SIZE, BotObservation.LootKind.XP)
+	_navigation.remember_loot(observation.loot, observation.camera_transform.orthonormalized().inverse(),
+		observation.viewport_size, observation.tick, observation.camera_projection, BotObservation.LootKind.XP)
 
 
 func _remember_warnings(observation: BotObservation) -> void:

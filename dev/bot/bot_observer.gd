@@ -12,24 +12,34 @@ const ENEMY_MESH_NAMES: Array[StringName] = [
 class Culler:
 	extends RefCounted
 	var inverse: Transform3D
-	var half_width: float
-	var half_height: float
+	var projection: Projection
+	var planes: Array[Plane] = []
 
 	func _init(view: ArenaView) -> void:
-		inverse = view.camera_transform.affine_inverse()
-		half_height = ArenaView.CAMERA_SIZE * 0.5
-		half_width = half_height * float(view.viewport_size.x) / float(view.viewport_size.y)
+		inverse = view.camera_transform.orthonormalized().inverse()
+		projection = view.projection
+		for plane_index: int in 6:
+			planes.append(projection.get_projection_plane(plane_index))
 
 	func contains_visual(world_transform: Transform3D, bounds: AABB) -> bool:
 		var projected: AABB = (inverse * world_transform) * bounds
 		return contains_projected(projected)
 
 	func contains_projected(projected: AABB) -> bool:
-		return (
-			projected.position.x <= half_width and projected.end.x >= -half_width
-			and projected.position.y <= half_height and projected.end.y >= -half_height
-			and projected.position.z <= -0.05 and projected.end.z >= -4000.0
-		)
+		var center: Vector3 = projected.get_center()
+		var half_size: Vector3 = projected.size * 0.5
+		for plane: Plane in planes:
+			if plane.distance_to(center) > plane.normal.abs().dot(half_size):
+				return false
+		return true
+
+	func encloses_projected(projected: AABB) -> bool:
+		var center: Vector3 = projected.get_center()
+		var half_size: Vector3 = projected.size * 0.5
+		for plane: Plane in planes:
+			if plane.distance_to(center) > -plane.normal.abs().dot(half_size):
+				return false
+		return true
 
 
 ## Mesh culling accepts geometry only; it never reads combat state.
@@ -43,13 +53,13 @@ class Visual:
 		if not preload("res://dev/bot/native_loader.gd").ensure_loaded():
 			return
 		_native = ClassDB.instantiate(&"JarjarBotVisual") as RefCounted
-		_native.setup(mesh, mesh is BoxMesh or mesh is SphereMesh or mesh is CapsuleMesh or mesh is CylinderMesh)
+		_native.setup(mesh)
 
 	func is_visible(culler: Culler, world_transform: Transform3D) -> bool:
-		return _native.is_visible(culler.inverse, culler.half_width, culler.half_height, world_transform)
+		return _native.is_visible(culler.inverse, culler.projection, world_transform)
 
 	func visible_loot(culler: Culler, transforms: PackedVector3Array, indices: PackedInt32Array, kind: int) -> PackedVector4Array:
-		return _native.visible_loot(culler.inverse, culler.half_width, culler.half_height, transforms, indices, kind)
+		return _native.visible_loot(culler.inverse, culler.projection, transforms, indices, kind)
 
 var _visuals: Dictionary[StringName, Visual] = {}
 var _native_observer: RefCounted
@@ -85,6 +95,7 @@ func capture(simulation: CombatSimulation, view: ArenaView) -> BotObservation:
 	observation.phase = state.phase
 	observation.player_position = simulation.player_position
 	observation.camera_transform = view.camera_transform
+	observation.camera_projection = view.projection
 	observation.viewport_size = view.viewport_size
 	observation.hp = state.current_hp
 	observation.max_hp = state.max_hp
@@ -147,7 +158,7 @@ func _capture_enemies(simulation: CombatSimulation, culler: Culler, observation:
 		# Keep the original division/clamping only for entries still in progress.
 		materializing[index] = int(not enemy.alive or (observation.tick < enemy.activation_tick and enemy.materialization_progress(observation.tick) < 1.0))
 	var visible: Dictionary = _native_observer.observe_bodies({
-		"inverse": culler.inverse, "half_width": culler.half_width, "half_height": culler.half_height,
+		"inverse": culler.inverse, "projection": culler.projection,
 		"positions": positions, "kinds": kinds, "shapes": shapes, "materializing": materializing,
 		"templates": _enemy_templates, "radius_factor": 0.4,
 	})
@@ -247,7 +258,7 @@ func _capture_warnings(simulation: CombatSimulation, culler: Culler, observation
 			for wing: int in 2:
 				var arrow_transform: Transform3D = ArenaView.swarm_arrow_transform(warning.anchor, warning.direction, arrow * 2 + wing)
 				var projected: AABB = (culler.inverse * arrow_transform) * _visuals[&"SwarmWarningArrows"].bounds
-				if projected.position.x < -culler.half_width or projected.end.x > culler.half_width or projected.position.y < -culler.half_height or projected.end.y > culler.half_height or projected.end.z > -0.05 or projected.position.z < -4000.0:
+				if not culler.encloses_projected(projected):
 					complete = false
 			if complete:
 				travel_direction = warning.direction

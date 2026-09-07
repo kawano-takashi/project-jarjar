@@ -1,1 +1,1 @@
-{"enabled_classes":["RefCounted","Geometry2D","AStarGrid2D","Mesh","OS"]}
+{"enabled_classes":["RefCounted","AStarGrid2D","Mesh","OS"]}

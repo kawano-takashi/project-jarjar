@@ -14,6 +14,7 @@ var tick: int = 0
 var phase: GameTypes.RunPhase = GameTypes.RunPhase.COMBAT
 var player_position := Vector2.ZERO
 var camera_transform := Transform3D.IDENTITY
+var camera_projection := Projection.IDENTITY
 var viewport_size := Vector2i(1920, 1080)
 var hp: float = 0.0
 var max_hp: float = 0.0

@@ -23,6 +23,31 @@ func test_camera_relative_movement_matches_view(assertions: Variant, context: Di
 			arena.camera_relative_move_input(analog_input).length(),
 			"camera-relative mapping preserves analog magnitude",
 		)
+		assertions.expect_true(arena.view.world_to_screen_input(arena.camera_relative_move_input(analog_input)).is_equal_approx(analog_input), "bot and player movement mappings are inverse operations")
+	await _detach(arena, viewport, tree)
+
+
+func test_camera_keeps_combat_envelope_visible_while_following(assertions: Variant, context: Dictionary) -> void:
+	var tree: SceneTree = context["tree"]
+	var arena := ARENA_SCENE.instantiate() as ArenaPresenter
+	var viewport: SubViewport = await _attach(arena, tree)
+	var camera := arena.get_node("%ArenaCamera") as Camera3D
+	var move_speed: float = BalanceTestFixtures.catalog().manifest().player.move_speed
+	for dimensions: Vector2i in [Vector2i(1920, 1080), Vector2i(1280, 720), Vector2i(1024, 768)]:
+		viewport.size = dimensions
+		await tree.process_frame
+		for direction_index: int in 8:
+			var direction := Vector2.from_angle(TAU * float(direction_index) / 8.0)
+			var player := Vector2.ZERO
+			arena.view.reset(player)
+			for _tick: int in 120:
+				player += direction * move_speed / 60.0
+				arena._update_camera(player, 1.0 / 60.0)
+			var visible: bool = true
+			for sample: int in 72:
+				var point: Vector2 = player + Vector2.from_angle(TAU * float(sample) / 72.0) * 10.0
+				visible = visible and camera.is_position_in_frustum(Vector3(point.x, 0.0, point.y))
+			assertions.expect_true(visible, "the ten-metre ground radius remains visible after movement follow lag at %s, direction %d" % [dimensions, direction_index])
 	await _detach(arena, viewport, tree)
 
 
@@ -49,9 +74,8 @@ func test_survival_arena_dimensions_follow_validated_settings(assertions: Varian
 	var grid: MultiMesh = (arena.get_node("%GridLines") as MultiMeshInstance3D).multimesh
 	assertions.expect_equal(30, grid.instance_count, "grid line count follows rectangular dimensions")
 	var camera: Camera3D = arena.get_node("%ArenaCamera") as Camera3D
-	assertions.expect_equal(Camera3D.PROJECTION_ORTHOGONAL, camera.projection, "arena camera is orthographic")
+	assertions.expect_equal(Camera3D.PROJECTION_PERSPECTIVE, camera.projection, "arena camera uses perspective")
 	assertions.expect_equal(Camera3D.KEEP_HEIGHT, camera.keep_aspect, "arena camera preserves vertical coverage")
-	assertions.expect_float(CombatEnvelope.CAMERA_SIZE, camera.size, "camera retains its presentation setting")
 	assertions.expect_equal(3072, (arena.get_node("%XpInstances") as MultiMeshInstance3D).multimesh.instance_count, "render capacity follows the configured XP pool")
 	await _detach(arena, viewport, tree)
 

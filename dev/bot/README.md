@@ -37,4 +37,4 @@ godot --headless --path . --script res://dev/bot/test_runner.gd
 godot --headless --path . --script res://dev/bot/run.gd -- --bot=fast --run-seed=1 --bot-profile=1
 ```
 
-C++はメッシュの可視判定、観測済みの値による追跡・記憶・経路・移動候補評価を担当します。ゲーム状態や乱数を判断処理へ渡しません。GDScriptの実数は64bit、標準Vectorは32bitとして演算順を保ち、MSVCの `/fp:strict` でビルドします。画面端で確定できない可視判定とリングの穴は、ゲームと同じ `Geometry2D` のポリゴン交差を使います。
+C++はメッシュの可視判定、観測済みの値による追跡・記憶・経路・移動候補評価を担当します。ゲーム状態や乱数を判断処理へ渡しません。GDScriptの実数は64bit、標準Vectorは32bitとして演算順を保ち、MSVCの `/fp:strict` でビルドします。`ArenaView` の投影行列から視錐台の6面を求め、境界では描画メッシュの三角形をクリッピングします。部分表示・リングの穴・近遠クリップを扱い、記憶の消去にも同じ透視投影と画面端24pxの余白を使います。

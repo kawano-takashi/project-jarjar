@@ -3,8 +3,6 @@ extends RefCounted
 
 
 const BOT_AWARENESS_RADIUS: float = 10.0
-const CAMERA_SIZE: float = 18.0
-const CAMERA_FOLLOW_TAU_SECONDS: float = 0.12
 
 var arena_size: Vector2
 var arena_min: Vector2

@@ -4,7 +4,6 @@ extends Node3D
 
 signal terminal_presentation_finished(phase: GameTypes.RunPhase)
 
-const CAMERA_OFFSET: Vector3 = ArenaView.CAMERA_OFFSET
 const GRID_SPACING_M: float = 2.5
 const BOSS_DEFEAT_SECONDS: float = 0.80
 const PLAYER_DEFEAT_SECONDS: float = 0.45
@@ -348,6 +347,9 @@ func _update_camera(player_position: Vector2, delta: float) -> void:
 		view.viewport_size = Vector2i(get_viewport().get_visible_rect().size)
 	view.advance(player_position, delta)
 	_camera.transform = view.camera_transform
+	# Fixed-size Label3D still uses world units before perspective projection.
+	# Convert one label pixel to screen pixels at every viewport size.
+	_important_countdown.pixel_size = 2.0 / (view.projection.y.y * float(view.viewport_size.y))
 
 
 func _update_snapshot_markers(snapshot: CombatSnapshot) -> void:
@@ -462,7 +464,8 @@ func _configure_static_grid() -> void:
 	var extent: Vector2 = _simulation.envelope.arena_max
 	var dimensions: Vector2 = _simulation.envelope.arena_size
 	var exterior_mesh: BoxMesh = ($Exterior as MeshInstance3D).mesh.duplicate() as BoxMesh
-	exterior_mesh.size = Vector3(dimensions.x + 48.0, 0.08, dimensions.y + 48.0)
+	# The perspective ground corners reach about 28 m beyond the focus at 16:9.
+	exterior_mesh.size = Vector3(dimensions.x + 64.0, 0.08, dimensions.y + 64.0)
 	($Exterior as MeshInstance3D).mesh = exterior_mesh
 	var player_mesh: CapsuleMesh = _player_mesh.mesh.duplicate() as CapsuleMesh
 	player_mesh.radius = _simulation.catalog.manifest().player.body_radius
@@ -521,9 +524,7 @@ func _resize_multimesh(instance: MultiMeshInstance3D, capacity: int) -> void:
 
 
 func _configure_camera() -> void:
-	_camera.projection = Camera3D.PROJECTION_ORTHOGONAL
-	_camera.size = CombatEnvelope.CAMERA_SIZE
-	_camera.keep_aspect = Camera3D.KEEP_HEIGHT
+	view.configure_camera(_camera)
 
 
 func _register_absorption_event(world_position: Vector2) -> void:

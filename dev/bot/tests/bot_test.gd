@@ -121,7 +121,9 @@ func test_bot_observes_partial_telegraphs_and_escapes_swarm_lane(a: Variant, _co
 	var session := BotSession.new()
 	session.initialize(BalanceTestFixtures.catalog(), 774, Vector2i(1920, 1080))
 	var right: Vector3 = session.view.camera_transform.basis.x
-	var edge_position := Vector2(right.x, right.z) * 17.0
+	var focus_depth: float = session.view.camera_transform.origin.length()
+	var edge_distance: float = focus_depth / session.view.projection.x.x + 0.5
+	var edge_position := Vector2(right.x, right.z) * edge_distance
 	var boss: EnemyEntity = session.simulation.spawn_fixture_enemy(GameTypes.EnemyType.BOSS, edge_position, -1)
 	boss.boss_charge_active = true
 	boss.boss_charge_spoke_count = 8
@@ -189,22 +191,93 @@ func test_bot_reports_accepted_damage_without_changing_combat(a: Variant, _conte
 
 func test_bot_mesh_visibility_excludes_empty_corners_and_ring_holes(a: Variant, _context: Dictionary) -> void:
 	var view := ArenaView.new()
+	view.camera_transform = Transform3D.IDENTITY
+	# A simple test frustum keeps the geometry cases independent of camera tuning.
+	view.projection = Projection.create_perspective(90.0, 1.0, 1.0, 100.0)
 	var culler := BotObserver.Culler.new(view)
 	var sphere := SphereMesh.new()
 	sphere.radius = 1.0
 	sphere.height = 2.0
 	var sphere_visual := BotObserver.Visual.new(sphere)
-	var empty_corner := Transform3D(view.camera_transform.basis, view.camera_transform * Vector3(16.9, 9.9, -20.0))
-	a.expect_true(culler.contains_visual(empty_corner, sphere.get_aabb()), "the broad bounds overlap the viewport corner")
-	a.expect_false(sphere_visual.is_visible(culler, empty_corner), "an empty corner of a sphere's box does not reveal the sphere")
-	var partial := Transform3D(view.camera_transform.basis, view.camera_transform * Vector3(16.6, 9.6, -20.0))
-	a.expect_true(sphere_visual.is_visible(culler, partial), "a real part of the sphere at the corner is observed")
+	for depth: float in [5.0, 20.0, 70.0]:
+		var empty_corner := Transform3D(Basis.IDENTITY, Vector3(depth + 1.6, depth + 1.6, -depth))
+		a.expect_true(culler.contains_visual(empty_corner, sphere.get_aabb()), "the broad bounds overlap the viewport corner")
+		a.expect_false(sphere_visual.is_visible(culler, empty_corner), "an empty corner of a sphere's box does not reveal the sphere")
+		var partial := Transform3D(Basis.IDENTITY, Vector3(depth + 0.8, depth + 0.8, -depth))
+		a.expect_true(sphere_visual.is_visible(culler, partial), "a real part of the sphere at the corner is observed at each depth")
 	var ring := TorusMesh.new()
 	ring.inner_radius = 2.0
 	ring.outer_radius = 3.0
 	var ring_visual := BotObserver.Visual.new(ring)
-	var facing := Transform3D(view.camera_transform.basis * Basis(Vector3.RIGHT, PI * 0.5).scaled(Vector3.ONE * 10.0), view.camera_transform * Vector3(0.0, 0.0, -100.0))
+	var facing := Transform3D(Basis(Vector3.RIGHT, PI * 0.5).scaled(Vector3.ONE * 10.0), Vector3(0.0, 0.0, -10.0))
 	a.expect_false(ring_visual.is_visible(culler, facing), "a viewport entirely inside a ring's hole sees no ring")
+	facing.origin.x = 22.0
+	a.expect_true(ring_visual.is_visible(culler, facing), "translating the same ring exposes its surface")
+	var box := BoxMesh.new()
+	box.size = Vector3.ONE * 0.4
+	var box_visual := BotObserver.Visual.new(box)
+	for depth: float in [-1.0, 0.5, 100.5]:
+		a.expect_false(box_visual.is_visible(culler, Transform3D(Basis.IDENTITY, Vector3(0, 0, -depth))), "fully behind, near-clipped and far-clipped meshes remain hidden")
+	for depth: float in [0.9, 50.0, 99.9]:
+		a.expect_true(box_visual.is_visible(culler, Transform3D(Basis.IDENTITY, Vector3(0, 0, -depth))), "a mesh inside or crossing a depth clip plane remains visible")
+
+
+func test_bot_memory_uses_perspective_visibility_and_clip_planes(a: Variant, _context: Dictionary) -> void:
+	var projection := Projection.create_perspective(90.0, 1.0, 1.0, 100.0)
+	var viewport := Vector2i(200, 200)
+	var boss_kind: int = CombatSnapshot.EnemyVisualKind.BOSS
+	var body := BotObservation.Body.new()
+	body.position = Vector2(0, -10)
+	body.kind = boss_kind
+	body.radius = 0.4
+	var visible: Dictionary = BotObservation.pack_bodies([body])
+	var empty: Dictionary = BotObservation.pack_bodies([])
+	var goal_frame: Dictionary = {
+		"player": Vector2.ZERO, "last_move": Vector2.DOWN,
+		"arena_min": Vector2.ONE * -200.0, "arena_max": Vector2.ONE * 200.0,
+		"maxed": false, "evolution_ready": false, "hp": 100.0, "max_hp": 100.0,
+		"pickup_radius": 1.0, "loot_kinds": PackedInt32Array([0, 1, 2, 3, 4]),
+	}
+	# Camera translations put the remembered point at a known screen location.
+	# True means absence is unobservable, so the memory must survive.
+	for sample: Array in [
+		[Vector3(0, 0.35, 0), false, "center"],
+		[Vector3(30, 0.35, 0), true, "offscreen"],
+		[Vector3(8, 0.35, 0), true, "20px from left edge"],
+		[Vector3(7, 0.35, 0), false, "30px from left edge"],
+		[Vector3(8, 0.35, 10), false, "same lateral offset at greater depth"],
+		[Vector3(0, 0.35, -20), true, "behind camera"],
+		[Vector3(0, 0.35, -9.5), true, "before near plane"],
+		[Vector3(0, 0.35, 100), true, "beyond far plane"],
+	]:
+		for loot_only: bool in [false, true]:
+			var navigation: RefCounted = preload("res://dev/bot/native_loader.gd").create_kernel()
+			navigation.configure_tracking({
+				"enemy_speeds": {boss_kind: 0.0}, "track_cell": 0.75, "memory_ticks": 120,
+				"swarm_speed": 0.0, "swarmer_kind": -1, "red_kind": -1, "boss_kind": boss_kind,
+			})
+			var inverse := Transform3D(Basis.IDENTITY, Vector3(0, 0.35, 0)).affine_inverse()
+			var frame: Dictionary = {
+				"enemies": empty if loot_only else visible, "bullets": empty,
+				"player": Vector2.ZERO, "tick": 0, "elapsed": 1.0 / 60.0,
+				"inverse": inverse, "projection": projection, "viewport": viewport,
+			}
+			navigation.observe_tracks(frame)
+			if loot_only:
+				navigation.remember_loot(PackedVector4Array([Vector4(BotObservation.LootKind.XP, 0, -10, 1)]), inverse, viewport, 0, projection, BotObservation.LootKind.XP)
+			frame["enemies"] = empty
+			frame["tick"] = 1
+			frame["inverse"] = Transform3D(Basis.IDENTITY, sample[0]).affine_inverse()
+			navigation.observe_tracks(frame)
+			navigation.remember_loot(PackedVector4Array(), frame["inverse"], viewport, 1, projection, BotObservation.LootKind.XP)
+			var target: Vector3 = navigation.choose_loot_goal(goal_frame) if loot_only else navigation.first_boss_position()
+			a.expect_equal(sample[1], target.z != 0.0, "%s memory respects %s" % ["loot" if loot_only else "enemy", sample[2]])
+			if sample[1]:
+				frame["tick"] = 301 if loot_only else 121
+				navigation.observe_tracks(frame)
+				navigation.remember_loot(PackedVector4Array(), frame["inverse"], viewport, frame["tick"], projection, BotObservation.LootKind.XP)
+				target = navigation.choose_loot_goal(goal_frame) if loot_only else navigation.first_boss_position()
+				a.expect_equal(0.0, target.z, "unseen targets still expire without being refreshed by hidden state")
 
 
 func test_bot_handles_modal_chain_and_terminal_limits(a: Variant, _context: Dictionary) -> void:
@@ -246,6 +319,7 @@ func test_bot_reacts_to_observed_projectile_motion_and_keeps_legal_input(a: Vari
 	observation.max_hp = 100.0
 	var view := ArenaView.new()
 	observation.camera_transform = view.camera_transform
+	observation.camera_projection = view.projection
 	var bullet := BotObservation.Body.new()
 	bullet.position = Vector2(1.0, 0.0)
 	bullet.radius = 0.18
@@ -268,6 +342,7 @@ func test_bot_reacts_to_observed_projectile_motion_and_keeps_legal_input(a: Vari
 	firing.hp = 100.0
 	firing.max_hp = 100.0
 	firing.camera_transform = view.camera_transform
+	firing.camera_projection = view.projection
 	firing.weapons.append({"id": &"directional_needle", "level": 1, "evolved": false})
 	firing.needles.append(Vector2(0.1, 0.0))
 	var behind := BotObservation.Body.new()

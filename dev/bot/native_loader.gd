@@ -2,7 +2,7 @@ extends RefCounted
 
 const EXTENSION_PATH: String = "res://build/bot-native/jarjar_bot.gdextension"
 const KERNEL_CLASS: StringName = &"JarjarBotKernel"
-const API_VERSION: int = 4
+const API_VERSION: int = 5
 static var error_message: String = ""
 static var _attempted: bool = false
 static var _loaded: bool = false

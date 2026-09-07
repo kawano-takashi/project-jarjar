@@ -2,18 +2,47 @@ class_name ArenaView
 extends RefCounted
 
 ## Camera follow, projection and input mapping use the same tick-driven view.
-const CAMERA_OFFSET := Vector3(8.912187, 18.0, 8.912187)
-const CAMERA_SIZE: float = CombatEnvelope.CAMERA_SIZE
-const FOLLOW_TAU_SECONDS: float = CombatEnvelope.CAMERA_FOLLOW_TAU_SECONDS
+## Funguys Swarm-inspired view, selected by comparing rendered scenes.
+const PITCH_DEGREES: float = 55.0
+const YAW_DEGREES: float = 45.0
+## Metres from the ground focus. Includes the ten-metre combat envelope and
+## movement follow lag at 60 Hz, rounded up to the next tenth of a metre.
+const DISTANCE_METERS: float = 71.1
+const CAMERA_OFFSET := Vector3(
+	sin(deg_to_rad(YAW_DEGREES)) * cos(deg_to_rad(PITCH_DEGREES)),
+	sin(deg_to_rad(PITCH_DEGREES)),
+	cos(deg_to_rad(YAW_DEGREES)) * cos(deg_to_rad(PITCH_DEGREES)),
+) * DISTANCE_METERS
+## Vertical field of view in degrees; wider windows gain horizontal coverage.
+const VERTICAL_FOV_DEGREES: float = 15.0
+const NEAR_METERS: float = 0.1
+const FAR_METERS: float = 120.0
+const FOLLOW_TAU_SECONDS: float = 0.12
 
-var viewport_size := Vector2i(1920, 1080)
-var camera_transform := Transform3D(Basis.looking_at(-CAMERA_OFFSET), CAMERA_OFFSET):
+var viewport_size := Vector2i(1920, 1080):
 	set(value):
-		camera_transform = value
-		_projection_inverse = camera_transform.affine_inverse()
-var _projection_inverse: Transform3D = camera_transform.affine_inverse()
+		if viewport_size == value:
+			return
+		viewport_size = value
+		projection = _create_projection(value)
+var projection: Projection = _create_projection(viewport_size)
+var camera_transform := Transform3D(Basis.looking_at(-CAMERA_OFFSET), CAMERA_OFFSET)
 var _target := Vector3.ZERO
 var _initialized: bool = false
+
+
+func configure_camera(camera: Camera3D) -> void:
+	camera.keep_aspect = Camera3D.KEEP_HEIGHT
+	camera.set_perspective(VERTICAL_FOV_DEGREES, NEAR_METERS, FAR_METERS)
+	camera.transform = camera_transform
+
+
+static func _create_projection(dimensions: Vector2i) -> Projection:
+	return Projection.create_perspective(
+		VERTICAL_FOV_DEGREES, float(dimensions.x) / float(dimensions.y),
+		NEAR_METERS, FAR_METERS,
+	)
+
 
 func reset(player_position: Vector2) -> void:
 	_initialized = false
@@ -41,9 +70,13 @@ func world_to_screen_input(world_input: Vector2) -> Vector2:
 
 
 func project_position(world_position: Vector3) -> Vector2:
-	var local: Vector3 = _projection_inverse * world_position
-	var pixels_per_meter: float = float(viewport_size.y) / CAMERA_SIZE
-	return Vector2(viewport_size) * 0.5 + Vector2(local.x, -local.y) * pixels_per_meter
+	# Camera3D removes scale and subtracts the origin before rotating. Match
+	# that order to avoid cancellation for points close to a distant camera.
+	var local: Vector3 = world_position * camera_transform.orthonormalized()
+	var clip: Vector4 = projection * Vector4(local.x, local.y, local.z, 1.0)
+	if clip.w <= 0.0:
+		return Vector2(INF, INF)
+	return (Vector2(clip.x, -clip.y) / clip.w + Vector2.ONE) * Vector2(viewport_size) * 0.5
 
 
 static func ring_transform(position: Vector2, height: float, radius: float, progress: float, reduce_motion: bool = false) -> Transform3D:
