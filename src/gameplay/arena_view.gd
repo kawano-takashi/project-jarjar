@@ -2,9 +2,9 @@ class_name ArenaView
 extends RefCounted
 
 ## Camera follow, projection and input mapping use the same tick-driven view.
-## Funguys Swarm-inspired view, selected by comparing rendered scenes.
+## Face the arena squarely while keeping the elevated perspective.
 const PITCH_DEGREES: float = 55.0
-const YAW_DEGREES: float = 45.0
+const YAW_DEGREES: float = 0.0
 ## Metres from the ground focus. Includes the ten-metre combat envelope and
 ## movement follow lag at 60 Hz, rounded up to the next tenth of a metre.
 const DISTANCE_METERS: float = 71.1
