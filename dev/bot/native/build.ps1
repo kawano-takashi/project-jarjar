@@ -33,12 +33,19 @@ New-Item -ItemType Directory -Path $botRuntime -Force | Out-Null
 if (-not (Test-Path -LiteralPath (Join-Path $botRuntime $botLibraryName))) {
     Copy-Item -LiteralPath (Join-Path $botBuild 'bin/jarjar_bot.dll') -Destination (Join-Path $botRuntime $botLibraryName)
 }
-@"
+$botExtension = @"
 [configuration]
 entry_symbol = "jarjar_bot_init"
 compatibility_minimum = "4.5"
 reloadable = false
 [libraries]
 windows.x86_64 = "runtime/$botLibraryName"
-"@ | Set-Content -LiteralPath (Join-Path $botBuild 'jarjar_bot.gdextension') -Encoding utf8
+"@
+# Windows PowerShell 5.1 writes a BOM for -Encoding utf8. Godot's ConfigFile
+# parser can then miss the first section, including configuration/entry_symbol.
+[IO.File]::WriteAllText(
+    (Join-Path $botBuild 'jarjar_bot.gdextension'),
+    $botExtension + [Environment]::NewLine,
+    [Text.UTF8Encoding]::new($false)
+)
 Write-Output 'BOT_NATIVE_BUILD_OK'

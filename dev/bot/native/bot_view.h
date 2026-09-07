@@ -7,6 +7,7 @@
 #include <godot_cpp/variant/vector2i.hpp>
 #include <array>
 #include <cmath>
+#include <utility>
 
 // All inputs come from the observed camera, including its near/far clipping.
 struct BotFrustum {
@@ -33,15 +34,27 @@ struct BotFrustum {
 
     bool triangle_visible(godot::Vector3 a, godot::Vector3 b, godot::Vector3 c) const {
         // Clipping a triangle against six planes needs at most nine vertices.
-        std::array<godot::Vector3, 12> polygon{a, b, c}, clipped;
+        std::array<godot::Vector3, 12> buffer_a{a, b, c}, buffer_b;
+        godot::Vector3 *polygon = buffer_a.data(), *clipped = buffer_b.data();
+        std::array<double, 12> distances;
         int count = 3;
         for (const godot::Plane &plane : planes) {
+            int inside_count = 0;
+            for (int i = 0; i < count; ++i) {
+                distances[size_t(i)] = plane.distance_to(polygon[size_t(i)]);
+                if (distances[size_t(i)] <= 0.0) ++inside_count;
+            }
+            // An all-inside pass previously copied the same vertices in the
+            // same order. Keep that polygon without copying either buffer.
+            // Do not test later planes early: clipping can round new vertices.
+            if (inside_count == count) continue;
+            if (inside_count == 0) return false;
             int output_count = 0;
             godot::Vector3 previous = polygon[size_t(count - 1)];
-            double previous_distance = plane.distance_to(previous);
+            double previous_distance = distances[size_t(count - 1)];
             for (int i = 0; i < count; ++i) {
                 godot::Vector3 current = polygon[size_t(i)];
-                double distance = plane.distance_to(current);
+                double distance = distances[size_t(i)];
                 if ((previous_distance <= 0.0) != (distance <= 0.0)) {
                     clipped[size_t(output_count++)] = previous.lerp(current, float(previous_distance / (previous_distance - distance)));
                 }
@@ -50,7 +63,7 @@ struct BotFrustum {
                 previous_distance = distance;
             }
             if (output_count < 3) return false;
-            polygon.swap(clipped);
+            std::swap(polygon, clipped);
             count = output_count;
         }
         // Reject edge-on/tangent triangles. Divide only after near clipping.
