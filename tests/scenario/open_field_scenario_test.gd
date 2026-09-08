@@ -1,6 +1,31 @@
 extends RefCounted
 
 
+class WarningCounter extends Logger:
+
+
+	var _count: int = 0
+	var _mutex := Mutex.new()
+
+
+	func _log_error(
+		_function: String, _file: String, _line: int, _code: String,
+		_rationale: String, _editor_notify: bool, error_type: int,
+		_script_backtraces: Array[ScriptBacktrace],
+	) -> void:
+		if error_type == Logger.ERROR_TYPE_WARNING:
+			_mutex.lock()
+			_count += 1
+			_mutex.unlock()
+
+
+	func count() -> int:
+		_mutex.lock()
+		var result := _count
+		_mutex.unlock()
+		return result
+
+
 func test_origin_shift_preserves_hits_loot_and_vacuum_targets(a: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = BalanceTestFixtures.catalog()
 	for sign_value: float in [-1.0, 1.0]:
@@ -95,14 +120,21 @@ func test_chest_compass_tracks_nearest_hidden_chest_of_each_kind(a: Variant, _co
 	var normal_serial: int = catalog.elite_chest_kinds.find(GameTypes.ChestKind.NORMAL)
 	var evolution_serial: int = catalog.elite_chest_kinds.find(GameTypes.ChestKind.EVOLUTION_CAPABLE)
 	var near_chest: ArenaPickup = sim.arena_object_system.spawn_chest(Vector2(45, 0), normal_serial)
-	var far_chest: ArenaPickup = sim.arena_object_system.spawn_chest(Vector2(0, 80), normal_serial)
+	var far_chest: ArenaPickup = sim.arena_object_system.spawn_chest(Vector2(0, 200), normal_serial)
 	sim.arena_object_system.spawn_chest(Vector2(-60, 0), evolution_serial)
 	var cues: Array[Dictionary] = sim.build_snapshot().chest_guidance
 	a.expect_equal(2, cues.size(), "normal and evolution chests have separate cues")
-	a.expect_equal(sim.view.edge_guidance(near_chest.position)["direction"], cues[0]["direction"], "normal cue chooses the nearest hidden chest")
+	var near_direction: Vector2 = cues[0]["direction"]
+	a.expect_true(near_direction.x > 0.0, "normal cue chooses the nearest hidden chest to the right")
 	sim.arena_object_system.collect_at(near_chest.position)
+	var warnings := WarningCounter.new()
+	OS.add_logger(warnings)
 	cues = sim.build_snapshot().chest_guidance
-	a.expect_equal(sim.view.edge_guidance(far_chest.position)["direction"], cues[0]["direction"], "collecting the nearest chest reveals the next direction")
+	OS.remove_logger(warnings)
+	a.expect_equal(0, warnings.count(), "guidance for a chest behind the camera emits no warnings")
+	a.expect_equal(Vector2.DOWN, cues[0]["direction"], "collecting the nearest chest reveals the direction behind the camera")
+	var screen_position: Vector2 = cues[0]["screen_position"]
+	a.expect_true(screen_position.is_finite() and Rect2(Vector2.ZERO, Vector2(sim.view.viewport_size)).has_point(screen_position), "the chest behind the camera has a finite on-screen cue")
 	far_chest.position = Vector2(2, 0)
 	cues = sim.build_snapshot().chest_guidance
 	a.expect_equal(1, cues.size(), "a chest inside the screen no longer needs a cue")

@@ -412,17 +412,19 @@ func test_bot_keeps_memory_across_local_grid_and_origin_changes(a: Variant, _con
 
 func test_bot_observes_only_public_chest_directions(a: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = BalanceTestFixtures.catalog()
-	var sim := CombatSimulation.new()
-	sim.initialize(RunStateFactory.create(8801, catalog), catalog)
-	for node: ArenaNodeState in sim.arena_object_system.nodes:
-		node.deactivate()
 	var serial: int = catalog.elite_chest_kinds.find(GameTypes.ChestKind.NORMAL)
-	sim.arena_object_system.spawn_chest(Vector2(100, 0), serial)
-	var observation: BotObservation = BotObserver.new().capture(sim, sim.view)
-	a.expect_true(observation.loot.is_empty(), "the hidden chest's precise position is absent from visible loot")
-	a.expect_equal(sim.build_snapshot().chest_guidance, observation.chest_guidance, "the bot sees the same chest direction as the player")
-	a.expect_equal(3, observation.chest_guidance[0].size(), "the cue contains only kind, direction and screen-edge position")
-	var controller := BotController.new(BotKnowledge.new(catalog))
-	var action: BotAction = controller.decide(observation)
-	a.expect_equal(&"chest_direction", action.reason, "the bot explores toward a public chest cue")
-	a.expect_true(sim.view.screen_to_world_input(action.move_input).x > 0.0, "the cue leads toward the unseen chest")
+	for chest_position: Vector2 in [Vector2(100, 0), Vector2(0, 200)]:
+		var sim := CombatSimulation.new()
+		sim.initialize(RunStateFactory.create(8801, catalog), catalog)
+		for node: ArenaNodeState in sim.arena_object_system.nodes:
+			node.deactivate()
+		sim.arena_object_system.spawn_chest(chest_position, serial)
+		var observation: BotObservation = BotObserver.new().capture(sim, sim.view)
+		a.expect_true(observation.loot.is_empty(), "the hidden chest's precise position is absent from visible loot")
+		a.expect_equal(sim.build_snapshot().chest_guidance, observation.chest_guidance, "the bot sees the same chest direction as the player")
+		a.expect_equal(3, observation.chest_guidance[0].size(), "the cue contains only kind, direction and screen-edge position")
+		var controller := BotController.new(BotKnowledge.new(catalog))
+		var action: BotAction = controller.decide(observation)
+		a.expect_equal(&"chest_direction", action.reason, "the bot explores toward a public chest cue")
+		a.expect_true(action.is_valid_for(observation), "chest guidance produces a valid move input")
+		a.expect_true(sim.view.screen_to_world_input(action.move_input).dot(chest_position - sim.player_position) > 0.0, "the cue leads toward the unseen chest")

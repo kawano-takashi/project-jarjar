@@ -126,7 +126,8 @@ func sample_offscreen_position(rng: RandomNumberGenerator, band_width: float, bo
 
 ## Public on-screen guidance only: no hidden distance or target world position.
 func edge_guidance(position: Vector2) -> Dictionary:
-	var direction: Vector2 = (project_position(Vector3(position.x, 0.38, position.y)) - Vector2(viewport_size) * 0.5).normalized()
+	var projected_offset: Vector2 = project_position(Vector3(position.x, 0.38, position.y)) - Vector2(viewport_size) * 0.5
+	var direction: Vector2 = projected_offset.normalized() if projected_offset.is_finite() else Vector2.ZERO
 	if not direction.is_finite() or direction == Vector2.ZERO:
 		var focus := Vector2(camera_transform.origin.x - CAMERA_OFFSET.x, camera_transform.origin.z - CAMERA_OFFSET.z)
 		direction = world_to_screen_input(position - focus).normalized()
