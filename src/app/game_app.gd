@@ -141,12 +141,15 @@ func _physics_process(_delta: float) -> void:
 	_advance_terminal_hold_tick()
 	if run_state == null or combat_simulation == null:
 		return
+	var dimensions := Vector2i(get_viewport().get_visible_rect().size)
+	if combat_simulation.view.viewport_size != dimensions:
+		combat_simulation.set_viewport_size(dimensions)
+		_present_snapshot(combat_simulation.build_snapshot(), 0.0)
 	_resolve_terminal_state()
 	if run_state.phase != GameTypes.RunPhase.COMBAT or _manual_paused:
 		_sync_run_phase()
 		return
 
-	var player_position_before: Vector2 = combat_simulation.player_position
 	var screen_input := Input.get_vector(
 		&"move_left",
 		&"move_right",
@@ -159,7 +162,7 @@ func _physics_process(_delta: float) -> void:
 		if camera_input is Vector2:
 			move_input = camera_input
 	var snapshot: CombatSnapshot = combat_simulation.step(move_input)
-	var actual_movement: Vector2 = combat_simulation.player_position - player_position_before
+	var actual_movement: Vector2 = combat_simulation.last_player_displacement
 	_tutorial_controller.advance_movement(actual_movement, FIXED_TICK_SECONDS)
 	_present_snapshot(snapshot, FIXED_TICK_SECONDS)
 	_consume_snapshot_events(snapshot)
@@ -228,6 +231,7 @@ func start_new_run_with_seed(run_seed: int) -> bool:
 		_definition_catalog,
 	)
 	combat_simulation = CombatSimulation.new()
+	combat_simulation.set_viewport_size(Vector2i(get_viewport().get_visible_rect().size))
 	combat_simulation.initialize(run_state, _definition_catalog)
 	if _audio_pool != null:
 		_audio_pool.reset_admission_metrics()

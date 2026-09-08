@@ -1,56 +1,12 @@
-[gd_scene load_steps=79 format=3]
+[gd_scene load_steps=67 format=3]
 
 [ext_resource type="Script" path="res://src/gameplay/arena_presenter.gd" id="1_presenter"]
 [ext_resource type="PackedScene" path="res://scenes/ui/combat_hud.tscn" id="2_hud"]
 [ext_resource type="Shader" path="res://src/gameplay/melee_trail.gdshader" id="3_melee_trail"]
 
-[sub_resource type="StandardMaterial3D" id="ExteriorMaterial"]
-albedo_color = Color(0.025, 0.04, 0.052, 1)
-roughness = 1.0
+[ext_resource type="BoxMesh" path="res://scenes/gameplay/chest_mesh.tres" id="4_chest"]
 
-[sub_resource type="BoxMesh" id="ExteriorMesh"]
-material = SubResource("ExteriorMaterial")
-size = Vector3(1, 0.08, 1)
-
-[sub_resource type="StandardMaterial3D" id="FloorMaterial"]
-albedo_color = Color(0.105, 0.165, 0.16, 1)
-roughness = 0.9
-
-[sub_resource type="BoxMesh" id="FloorMesh"]
-material = SubResource("FloorMaterial")
-size = Vector3(1, 0.1, 1)
-
-[sub_resource type="StandardMaterial3D" id="GridMaterial"]
-albedo_color = Color(0.2, 0.43, 0.4, 0.44)
-emission_enabled = true
-emission = Color(0.025, 0.11, 0.1, 1)
-emission_energy_multiplier = 0.55
-transparency = 1
-
-[sub_resource type="BoxMesh" id="GridLineMesh"]
-material = SubResource("GridMaterial")
-size = Vector3(0.035, 0.012, 0.035)
-
-[sub_resource type="MultiMesh" id="GridMultiMesh"]
-transform_format = 1
-mesh = SubResource("GridLineMesh")
-instance_count = 0
-visible_instance_count = 0
-
-[sub_resource type="StandardMaterial3D" id="BoundaryMaterial"]
-albedo_color = Color(0.28, 0.72, 0.59, 1)
-emission_enabled = true
-emission = Color(0.04, 0.28, 0.18, 1)
-emission_energy_multiplier = 2.0
-roughness = 0.55
-
-[sub_resource type="BoxMesh" id="BoundaryHorizontalMesh"]
-material = SubResource("BoundaryMaterial")
-size = Vector3(1, 0.28, 0.24)
-
-[sub_resource type="BoxMesh" id="BoundaryVerticalMesh"]
-material = SubResource("BoundaryMaterial")
-size = Vector3(0.24, 0.28, 1)
+[ext_resource type="CylinderMesh" path="res://scenes/gameplay/evolution_chest_mesh.tres" id="5_evolution_chest"]
 
 [sub_resource type="StandardMaterial3D" id="PlayerMaterial"]
 albedo_color = Color(0.3, 0.78, 0.96, 1)
@@ -462,7 +418,7 @@ size = Vector3(0.7, 0.48, 0.5)
 
 [sub_resource type="MultiMesh" id="ChestMultiMesh"]
 transform_format = 1
-mesh = SubResource("ChestMesh")
+mesh = ExtResource("4_chest")
 instance_count = 0
 visible_instance_count = 0
 
@@ -482,7 +438,7 @@ radial_segments = 4
 
 [sub_resource type="MultiMesh" id="EvolutionChestMultiMesh"]
 transform_format = 1
-mesh = SubResource("EvolutionChestMesh")
+mesh = ExtResource("5_evolution_chest")
 instance_count = 0
 visible_instance_count = 0
 
@@ -643,35 +599,6 @@ ring_segments = 24
 
 [node name="ArenaCombat" type="Node3D"]
 script = ExtResource("1_presenter")
-
-[node name="Exterior" type="MeshInstance3D" parent="."]
-position = Vector3(0, -0.13, 0)
-mesh = SubResource("ExteriorMesh")
-
-[node name="Floor" type="MeshInstance3D" parent="."]
-position = Vector3(0, -0.05, 0)
-mesh = SubResource("FloorMesh")
-
-[node name="GridLines" type="MultiMeshInstance3D" parent="."]
-unique_name_in_owner = true
-cast_shadow = 0
-multimesh = SubResource("GridMultiMesh")
-
-[node name="BoundaryNorth" type="MeshInstance3D" parent="."]
-position = Vector3(0, 0.14, 0)
-mesh = SubResource("BoundaryHorizontalMesh")
-
-[node name="BoundarySouth" type="MeshInstance3D" parent="."]
-position = Vector3(0, 0.14, 0)
-mesh = SubResource("BoundaryHorizontalMesh")
-
-[node name="BoundaryWest" type="MeshInstance3D" parent="."]
-position = Vector3(0, 0.14, 0)
-mesh = SubResource("BoundaryVerticalMesh")
-
-[node name="BoundaryEast" type="MeshInstance3D" parent="."]
-position = Vector3(0, 0.14, 0)
-mesh = SubResource("BoundaryVerticalMesh")
 
 [node name="PlayerMesh" type="MeshInstance3D" parent="."]
 unique_name_in_owner = true

@@ -36,6 +36,8 @@ protected:
     static void _bind_methods();
 public:
     void configure(const godot::Vector2 &p_origin, const godot::Vector2i &p_dimensions, double p_cell_size);
+    void recenter(const godot::Vector2 &p_origin);
+    void shift_origin(const godot::Vector2 &displacement);
     godot::Vector2 route(const godot::Vector2 &player, const godot::Vector2 &goal, const godot::PackedVector2Array &positions, const godot::PackedFloat64Array &radii, double player_radius);
     godot::PackedInt32Array match_tracks(const godot::PackedVector2Array &predicted, const godot::PackedInt32Array &old_kinds, const godot::PackedVector2Array &observed, const godot::PackedInt32Array &kinds, double track_cell) const;
     void remember_loot(const godot::PackedVector4Array &loot, const godot::Transform3D &inverse, const godot::Vector2i &viewport, int64_t tick, const godot::Projection &projection, int xp_kind);

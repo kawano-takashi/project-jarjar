@@ -94,6 +94,8 @@ func capture(simulation: CombatSimulation, view: ArenaView) -> BotObservation:
 	observation.tick = state.combat_tick
 	observation.phase = state.phase
 	observation.player_position = simulation.player_position
+	observation.world_origin = simulation.world_origin
+	observation.chest_guidance = simulation.arena_object_system.chest_guidance(simulation.player_position)
 	observation.camera_transform = view.camera_transform
 	observation.camera_projection = view.projection
 	observation.viewport_size = view.viewport_size

@@ -101,7 +101,7 @@ func test_boss_transition_absorbs_normals_and_hostile_projectiles_without_reward
 	assertions.expect_true(boss != null, "the boss boundary production scheduler creates the boss")
 	if boss == null:
 		return
-	assertions.expect_equal(Vector2.ZERO, boss.position, "boss entry starts at the exact arena center")
+	assertions.expect_false(simulation.view.is_body_visible(boss.position, boss.body_radius()), "boss entry starts beyond the current camera")
 	assertions.expect_equal(boss_start_tick, boss.spawn_tick, "boss records the entry-start tick")
 	assertions.expect_equal(boss_start_tick + BalanceTestFixtures.catalog().envelope.boss_entry_ticks, boss.activation_tick, "boss materializes for exactly sixty ticks")
 	assertions.expect_true(boss.is_materializing(boss_start_tick + 59), "boss is still materializing on the last entry tick")
@@ -526,7 +526,7 @@ func _hostile_projectile_count(simulation: CombatSimulation) -> int:
 func _arena_object_digest(arena: ArenaObjectSystem) -> Array:
 	var node_entries: Array = []
 	for node: ArenaNodeState in arena.nodes:
-		node_entries.append([node.site_index, node.position, node.hp, node.active])
+		node_entries.append([node.node_id, node.position, node.hp, node.active])
 	var pickup_entries: Array = []
 	for pickup: ArenaPickup in arena.pickups:
 		pickup_entries.append([

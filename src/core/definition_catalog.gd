@@ -221,19 +221,10 @@ func _validate_settings() -> void:
 			if xp <= 0:
 				_error(progression, "required_xp(level=%d)" % level, xp, "positive XP at every reachable level")
 	var arena: ArenaBalanceDefinition = _manifest.arena
-	_require(arena, "size", arena.size.is_finite() and arena.size.x > player.body_radius * 2.0 and arena.size.y > player.body_radius * 2.0, "finite dimensions larger than player diameter (m)")
-	_positive(arena, "node_max_hp")
-	_positive(arena, "node_body_radius")
-	_positive(arena, "node_respawn_ticks")
-	var half: Vector2 = arena.size * 0.5 - Vector2.ONE * arena.node_body_radius
-	for index: int in range(arena.node_site_positions.size()):
-		var position: Vector2 = arena.node_site_positions[index]
-		if not position.is_finite() or absf(position.x) > half.x or absf(position.y) > half.y:
-			_error(arena, "node_site_positions[%d]" % index, position, "finite position inside arena including node radius")
-	var used: Dictionary[int, bool] = {}
-	for index: int in arena.initial_active_sites:
-		_require(arena, "initial_active_sites", index >= 0 and index < arena.node_site_positions.size() and not used.has(index), "unique indices into node_site_positions")
-		used[index] = true
+	for key: String in ["node_max_hp", "node_body_radius", "node_capacity", "node_spawn_interval_ticks"]:
+		_positive(arena, key)
+	_require(arena, "node_initial_count", arena.node_initial_count <= arena.node_capacity, "<= node_capacity")
+	_require(arena, "node_spawn_chance_max", arena.node_spawn_chance <= arena.node_spawn_chance_max and arena.node_spawn_chance_max <= 1.0, "node_spawn_chance <= maximum <= 1")
 	_validate_weights(arena, "node_drop_weights", GameTypes.NodeDropType.size())
 	var combat: CombatBalanceDefinition = _manifest.combat
 	for key: String in ["boss_hp_multiplier", "boss_action_rate_multiplier", "boss_enrage_interval_ticks", "min_cooldown_multiplier", "min_duration_multiplier", "min_projectile_speed_multiplier", "min_area_multiplier", "target_center_radius", "effect_outer_radius", "damage_center_radius", "boss_phase_interval_multiplier", "boss_min_interval_multiplier", "orbital_damage_interval_ticks", "homing_burst_interval_ticks"]:
@@ -246,7 +237,8 @@ func _validate_settings() -> void:
 	_require(combat, "boss_stop_time_scale", combat.boss_stop_time_scale <= 1.0, "time multiplier in [0, 1]")
 	var spawn: SpawnBalanceDefinition = _manifest.spawn
 	_positive(spawn, "target_ramp_ticks")
-	_require(spawn, "outer_half_extent", spawn.outer_half_extent >= spawn.inner_half_extent and spawn.outer_half_extent < spawn.normal_despawn_half_extent, "inner_half_extent <= outer < normal_despawn_half_extent")
+	_positive(spawn, "offscreen_band_width")
+	_positive(spawn, "despawn_margin")
 
 
 func _validate_passives() -> void:
@@ -347,7 +339,6 @@ func _validate_enemy(definition: EnemyDefinition) -> void:
 		_positive(definition, key)
 	_require(definition, "enemy_id", definition.enemy_id != &"", "nonempty ID")
 	_require(definition, "enemy_type", int(definition.enemy_type) in GameTypes.EnemyType.values(), "supported enemy type")
-	_require(definition, "body_radius", definition.body_radius * 2.0 < minf(_manifest.arena.size.x, _manifest.arena.size.y), "diameter smaller than arena dimensions")
 	maximum_enemy_body_radius = maxf(maximum_enemy_body_radius, definition.body_radius)
 	if definition.enemy_type != GameTypes.EnemyType.BOSS:
 		for key: String in ["special_interval_ticks", "telegraph_ticks", "projectile_damage", "projectile_speed", "projectile_radius", "projectile_lifetime_ticks", "volley_count"]:

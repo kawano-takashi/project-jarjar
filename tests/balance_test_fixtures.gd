@@ -20,7 +20,6 @@ static func manifest() -> SurvivalContentManifest:
 
 static func grid() -> UniformGrid:
 	var result := UniformGrid.new()
-	result.configure(catalog().manifest().arena.size)
 	return result
 
 

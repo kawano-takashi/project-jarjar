@@ -40,9 +40,9 @@ func initialize(catalog: DefinitionCatalog, seed_value: int, viewport_size: Vect
 	if detailed_profile:
 		profile = BotProfile.new()
 	simulation = profile.create_simulation() if profile != null else RecordedSimulation.new()
+	simulation.set_viewport_size(viewport_size)
 	simulation.initialize(state, catalog)
-	view.viewport_size = viewport_size
-	view.reset(simulation.player_position)
+	view = simulation.view
 	var knowledge := BotKnowledge.new(catalog)
 	controller = profile.create_controller(knowledge) if profile != null else BotController.new(knowledge)
 	observer = profile.create_observer() if profile != null else BotObserver.new()
@@ -70,8 +70,6 @@ func advance() -> bool:
 	match last_action.kind:
 		BotAction.Kind.MOVE:
 			succeeded = simulation.advance_tick(view.screen_to_world_input(last_action.move_input))
-			if succeeded:
-				view.advance(simulation.player_position, CombatSimulation.FIXED_DELTA_SECONDS)
 		BotAction.Kind.CHOOSE_UPGRADE:
 			var queued_before: int = simulation.state.pending_level_ups
 			succeeded = simulation.apply_upgrade_choice(last_action.choice_index)

@@ -2,13 +2,6 @@ class_name ArenaObjectSystem
 extends RefCounted
 
 
-const POWERUP_CAPACITY: int = 32
-const POWERUP_KINDS: Array[ArenaPickup.Kind] = [
-	ArenaPickup.Kind.HEAL,
-	ArenaPickup.Kind.VACUUM,
-	ArenaPickup.Kind.STOP,
-]
-
 var nodes: Array[ArenaNodeState] = []
 var pickups: Array[ArenaPickup] = []
 var destroyed_node_count: int = 0
@@ -16,40 +9,72 @@ var destroyed_node_count: int = 0
 var _state: RunState = null
 var _catalog: DefinitionCatalog = null
 var _manifest: SurvivalContentManifest = null
-var _powerup_rng: RandomNumberGenerator = null
-var _pending_respawn_ticks: Array[int] = []
+var _view: ArenaView = null
+var _spawn_rng: RandomNumberGenerator = null
+var _next_node_id: int = 0
 var _next_pickup_id: int = 0
-var _free_powerup_slots: Array[ArenaPickup] = []
+var _last_spawn_tick: int = 0
 
 
-func initialize(state: RunState, catalog: DefinitionCatalog) -> void:
+func initialize(state: RunState, catalog: DefinitionCatalog, view: ArenaView = null) -> void:
 	_state = state
 	_catalog = catalog
 	_manifest = catalog.manifest()
-	_powerup_rng = state.rng_streams.powerup_rng
+	_view = view if view != null else ArenaView.new()
+	_spawn_rng = state.rng_streams.node_spawn_rng
 	nodes.clear()
 	pickups.clear()
-	_pending_respawn_ticks.clear()
-	_free_powerup_slots.clear()
+	_next_node_id = 0
 	_next_pickup_id = 0
+	_last_spawn_tick = state.combat_tick
 	destroyed_node_count = 0
-	for _slot_index: int in range(POWERUP_CAPACITY):
-		var pickup_slot := ArenaPickup.new()
-		pickup_slot.deactivate()
-		_free_powerup_slots.append(pickup_slot)
-	for site_index: int in range(_manifest.arena.node_site_positions.size()):
-		var node := ArenaNodeState.new()
-		node.site_index = site_index
-		node.position = _manifest.arena.node_site_positions[site_index]
-		if site_index in _manifest.arena.initial_active_sites:
-			node.activate(site_index, node.position, _manifest.arena.node_max_hp)
-		nodes.append(node)
+	for _index: int in range(_manifest.arena.node_initial_count):
+		_spawn_node()
 
 
-func advance(current_tick: int) -> void:
-	while not _pending_respawn_ticks.is_empty() and _pending_respawn_ticks[0] <= current_tick:
-		_pending_respawn_ticks.pop_front()
-		_respawn_one_node()
+func advance(current_tick: int, player_position: Vector2 = Vector2.ZERO) -> void:
+	if _state.phase != GameTypes.RunPhase.COMBAT:
+		return
+	if current_tick - _last_spawn_tick < _manifest.arena.node_spawn_interval_ticks:
+		return
+	_last_spawn_tick = current_tick
+	var full: bool = active_node_count() >= _manifest.arena.node_capacity
+	var chance: float = _manifest.arena.node_spawn_chance
+	if not full:
+		var luck: float = 1.0 + ProgressionService.passive_stat_total(_state, _catalog, &"luck_pct") / 100.0
+		chance = minf(chance * luck, _manifest.arena.node_spawn_chance_max)
+	if _spawn_rng.randf() >= chance:
+		return
+	if full:
+		var farthest: ArenaNodeState = null
+		var distance: float = -1.0
+		for node: ArenaNodeState in nodes:
+			if not node.active or _view.is_body_visible(node.position, _manifest.arena.node_body_radius):
+				continue
+			var candidate_distance: float = node.position.distance_squared_to(player_position)
+			if candidate_distance > distance:
+				farthest = node
+				distance = candidate_distance
+		if farthest == null:
+			return
+		farthest.deactivate()
+	_spawn_node()
+
+
+func _spawn_node() -> void:
+	var slot: ArenaNodeState = null
+	for node: ArenaNodeState in nodes:
+		if not node.active:
+			slot = node
+			break
+	if slot == null:
+		slot = ArenaNodeState.new()
+		nodes.append(slot)
+	var position: Vector2 = _view.sample_offscreen_position(
+		_spawn_rng, _manifest.spawn.offscreen_band_width, _manifest.arena.node_body_radius,
+	)
+	slot.activate(_next_node_id, position, _manifest.arena.node_max_hp)
+	_next_node_id += 1
 
 
 func damage_nodes_circle(
@@ -82,13 +107,13 @@ func damage_nodes_segment(
 	projectile_radius: float,
 	damage: float,
 	current_tick: int,
-	hit_site_indices: Dictionary[int, bool],
+	hit_node_ids: Dictionary[int, bool],
 ) -> int:
 	if damage <= 0.0:
 		return 0
 	var destroyed: int = 0
 	for node: ArenaNodeState in nodes:
-		if not node.active or hit_site_indices.has(node.site_index):
+		if not node.active or hit_node_ids.has(node.node_id):
 			continue
 		var intersection_t: float = CombatGeometry.segment_circle_first_t(
 			segment_start,
@@ -98,7 +123,7 @@ func damage_nodes_segment(
 		)
 		if intersection_t < 0.0:
 			continue
-		hit_site_indices[node.site_index] = true
+		hit_node_ids[node.node_id] = true
 		node.hp = maxf(0.0, node.hp - damage)
 		if node.hp <= 0.0:
 			_destroy_node(node, current_tick)
@@ -116,13 +141,8 @@ func collect_at(player_position: Vector2) -> Array[ArenaPickup]:
 			index += 1
 			continue
 		pickups.remove_at(index)
-		if pickup.kind == ArenaPickup.Kind.CHEST:
-			pickup.active = false
-			collected.append(pickup)
-			continue
-		_append_collected_powerup_effects(collected, pickup)
-		pickup.deactivate()
-		_free_powerup_slots.append(pickup)
+		pickup.active = false
+		collected.append(pickup)
 	return collected
 
 
@@ -171,126 +191,53 @@ func active_node_count() -> int:
 
 
 func active_powerup_count() -> int:
-	return POWERUP_CAPACITY - _free_powerup_slots.size()
-
-
-func total_powerup_effect_count() -> int:
-	var total: int = 0
+	var count: int = 0
 	for pickup: ArenaPickup in pickups:
 		if pickup.active and pickup.kind != ArenaPickup.Kind.CHEST:
-			total += pickup.total_effect_count()
-	return total
+			count += 1
+	return count
 
 
-func _destroy_node(node: ArenaNodeState, current_tick: int) -> void:
+func _destroy_node(node: ArenaNodeState, _current_tick: int) -> void:
 	var drop_position: Vector2 = node.position
 	node.deactivate()
 	destroyed_node_count += 1
-	_pending_respawn_ticks.append(current_tick + _manifest.arena.node_respawn_ticks)
-	_pending_respawn_ticks.sort()
 	var drop_type: GameTypes.NodeDropType = NodeDropService.roll_drop(_state, _catalog)
 	match drop_type:
 		GameTypes.NodeDropType.HEAL:
-			_spawn_pickup(ArenaPickup.Kind.HEAL, drop_position, node.site_index)
+			_spawn_pickup(ArenaPickup.Kind.HEAL, drop_position, node.node_id)
 		GameTypes.NodeDropType.VACUUM:
-			_spawn_pickup(ArenaPickup.Kind.VACUUM, drop_position, node.site_index)
+			_spawn_pickup(ArenaPickup.Kind.VACUUM, drop_position, node.node_id)
 		GameTypes.NodeDropType.STOP:
-			_spawn_pickup(ArenaPickup.Kind.STOP, drop_position, node.site_index)
+			_spawn_pickup(ArenaPickup.Kind.STOP, drop_position, node.node_id)
 
 
 func _spawn_pickup(kind: ArenaPickup.Kind, position: Vector2, source_serial: int) -> ArenaPickup:
-	var pickup_id: int = _next_pickup_id
+	var pickup := ArenaPickup.new(_next_pickup_id, kind, position, source_serial)
 	_next_pickup_id += 1
-	if kind != ArenaPickup.Kind.CHEST and _free_powerup_slots.is_empty():
-		var merge_target: ArenaPickup = _powerup_merge_target(kind, position)
-		if merge_target != null:
-			merge_target.add_effect(kind)
-			return merge_target
-		return null
-	var pickup: ArenaPickup
-	if kind == ArenaPickup.Kind.CHEST:
-		pickup = ArenaPickup.new(pickup_id, kind, position, source_serial)
-	else:
-		pickup = _free_powerup_slots.pop_back()
-		pickup.activate(pickup_id, kind, position, source_serial)
 	pickups.append(pickup)
 	return pickup
 
 
-func _powerup_merge_target(
-	kind: ArenaPickup.Kind,
-	position: Vector2,
-) -> ArenaPickup:
-	var same_kind_target: ArenaPickup = null
-	var same_kind_distance: float = INF
-	var fallback_target: ArenaPickup = null
-	var fallback_distance: float = INF
-	for pickup: ArenaPickup in pickups:
-		if not pickup.active or pickup.kind == ArenaPickup.Kind.CHEST:
-			continue
-		var distance_squared: float = pickup.position.distance_squared_to(position)
-		if (
-			distance_squared < fallback_distance
-			or (
-				is_equal_approx(distance_squared, fallback_distance)
-				and fallback_target != null
-				and pickup.pickup_id < fallback_target.pickup_id
-			)
-		):
-			fallback_target = pickup
-			fallback_distance = distance_squared
-		if pickup.effect_count(kind) <= 0:
-			continue
-		if (
-			distance_squared < same_kind_distance
-			or (
-				is_equal_approx(distance_squared, same_kind_distance)
-				and same_kind_target != null
-				and pickup.pickup_id < same_kind_target.pickup_id
-			)
-		):
-			same_kind_target = pickup
-			same_kind_distance = distance_squared
-	return same_kind_target if same_kind_target != null else fallback_target
-
-
-func _append_collected_powerup_effects(
-	collected: Array[ArenaPickup],
-	pickup: ArenaPickup,
-) -> void:
-	for effect_kind: ArenaPickup.Kind in POWERUP_KINDS:
-		var count: int = pickup.effect_count(effect_kind)
-		if count <= 0:
-			continue
-		# Multiple heals retain their complete numeric value. Vacuum and stop are
-		# idempotent when collected on the same tick, so one returned effect is
-		# gameplay-equivalent to every stacked copy.
-		if effect_kind == ArenaPickup.Kind.HEAL and count > 1:
-			_state.current_hp = minf(
-				_state.max_hp,
-				_state.current_hp + _manifest.arena.node_heal_amount * float(count - 1),
-			)
-		var collected_effect := ArenaPickup.new(
-			pickup.pickup_id,
-			effect_kind,
-			pickup.position,
-			pickup.source_serial,
-		)
-		collected_effect.active = false
-		collected.append(collected_effect)
-
-
-func _respawn_one_node() -> void:
-	if active_node_count() >= _manifest.arena.initial_active_sites.size():
-		return
-	var inactive_sites: Array[int] = []
+func shift_origin(displacement: Vector2) -> void:
 	for node: ArenaNodeState in nodes:
-		if not node.active:
-			inactive_sites.append(node.site_index)
-	if inactive_sites.is_empty():
-		return
-	var selected_index: int = 0
-	if _powerup_rng != null:
-		selected_index = _powerup_rng.randi_range(0, inactive_sites.size() - 1)
-	var site_index: int = inactive_sites[selected_index]
-	nodes[site_index].activate(site_index, _manifest.arena.node_site_positions[site_index], _manifest.arena.node_max_hp)
+		node.position -= displacement
+	for pickup: ArenaPickup in pickups:
+		pickup.position -= displacement
+
+
+func chest_guidance(player_position: Vector2) -> Array[Dictionary]:
+	var nearest: Dictionary[int, ArenaPickup] = {}
+	for pickup: ArenaPickup in pickups:
+		if not pickup.active or pickup.kind != ArenaPickup.Kind.CHEST or _view.is_bounds_visible(pickup.chest_visual_bounds()):
+			continue
+		var kind: int = int(pickup.chest_kind)
+		if not nearest.has(kind) or pickup.position.distance_squared_to(player_position) < nearest[kind].position.distance_squared_to(player_position):
+			nearest[kind] = pickup
+	var result: Array[Dictionary] = []
+	for kind: int in [GameTypes.ChestKind.NORMAL, GameTypes.ChestKind.EVOLUTION_CAPABLE]:
+		if nearest.has(kind):
+			var cue: Dictionary = _view.edge_guidance(nearest[kind].position)
+			cue["kind"] = kind
+			result.append(cue)
+	return result

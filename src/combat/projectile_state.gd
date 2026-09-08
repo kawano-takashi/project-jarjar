@@ -28,7 +28,7 @@ var target_position: Vector2 = Vector2.ZERO
 var pierce_remaining: int = 0
 var born_tick: int = 0
 var hit_entity_ids: Dictionary[int, bool] = {}
-var hit_node_sites: Dictionary[int, bool] = {}
+var hit_node_ids: Dictionary[int, bool] = {}
 var source_effect_id: StringName = &""
 var movement_kind: MovementKind = MovementKind.STRAIGHT
 var target_entity_id: int = -1
@@ -94,7 +94,7 @@ func activate(
 	pierce_remaining = p_pierce_remaining
 	born_tick = p_born_tick
 	hit_entity_ids.clear()
-	hit_node_sites.clear()
+	hit_node_ids.clear()
 	source_effect_id = p_source_effect_id
 	movement_kind = p_movement_kind
 	target_entity_id = p_target_entity_id
@@ -126,7 +126,7 @@ func deactivate() -> void:
 	pierce_remaining = 0
 	born_tick = 0
 	hit_entity_ids.clear()
-	hit_node_sites.clear()
+	hit_node_ids.clear()
 	source_effect_id = &""
 	movement_kind = MovementKind.STRAIGHT
 	target_entity_id = -1

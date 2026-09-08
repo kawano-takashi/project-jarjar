@@ -18,6 +18,7 @@ var _active_position_by_pool_index: PackedInt32Array = PackedInt32Array()
 var _cells: Dictionary[Vector2i, Array] = {}
 var _cell_by_pool_index: Array[Vector2i] = []
 var _visual_columns: PackedVector3Array = []
+var _vacuum_indices: Dictionary[int, bool] = {}
 
 
 func configure(balance: ProgressionBalanceDefinition) -> void:
@@ -30,6 +31,7 @@ func configure(balance: ProgressionBalanceDefinition) -> void:
 
 
 func _rebuild_storage() -> void:
+	_vacuum_indices.clear()
 	for slot: XpPickupState in slots:
 		slot.visual_changed.disconnect(_pickup_changed)
 	slots.clear()
@@ -79,13 +81,12 @@ func advance_and_collect(
 	player_position: Vector2,
 	delta: float,
 	current_tick: int,
-	vacuum_active: bool = false,
 ) -> int:
 	var collected_xp: int = 0
 	var attract_radius_squared: float = attract_radius * attract_radius
 	var collect_radius_squared: float = collect_radius * collect_radius
 	var candidates: Array[int] = []
-	if vacuum_active:
+	if not _vacuum_indices.is_empty():
 		candidates.assign(_active_indices)
 	else:
 		# A generous broad phase keeps rounding at attraction/collection edges
@@ -110,7 +111,7 @@ func advance_and_collect(
 			if pickup.born_tick >= current_tick:
 				break
 			var distance_squared: float = pickup.position.distance_squared_to(player_position)
-			if vacuum_active or distance_squared <= attract_radius_squared:
+			if _vacuum_indices.has(pool_index) or distance_squared <= attract_radius_squared:
 				pickup.position = pickup.position.move_toward(player_position, step)
 				distance_squared = pickup.position.distance_squared_to(player_position)
 			if distance_squared > collect_radius_squared:
@@ -130,6 +131,7 @@ func release(pool_index: int, generation: int = -1) -> bool:
 	if active_position < 0 or active_position >= _active_indices.size():
 		return false
 	_remove_from_cell(pool_index)
+	_vacuum_indices.erase(pool_index)
 	pickup.deactivate()
 	var last_position: int = _active_indices.size() - 1
 	if active_position != last_position:
@@ -225,6 +227,7 @@ func total_value() -> int:
 
 
 func clear() -> void:
+	_vacuum_indices.clear()
 	for pool_index: int in _active_indices:
 		slots[pool_index].deactivate()
 		_active_position_by_pool_index[pool_index] = -1
@@ -238,6 +241,16 @@ func clear() -> void:
 
 func _cell_for(position: Vector2) -> Vector2i:
 	return Vector2i(floori(position.x / CELL_SIZE), floori(position.y / CELL_SIZE))
+
+
+func begin_vacuum() -> void:
+	for pool_index: int in _active_indices:
+		_vacuum_indices[pool_index] = true
+
+
+func shift_origin(displacement: Vector2) -> void:
+	for pool_index: int in _active_indices:
+		slots[pool_index].position -= displacement
 
 
 func _add_to_cell(pool_index: int) -> void:

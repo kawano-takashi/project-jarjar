@@ -11,7 +11,7 @@ const HORIZON_SECONDS: float = 1.0
 const MEMORY_TICKS: int = 120
 const TRACK_CELL: float = 0.75
 const NAV_CELL: float = 1.0
-const ROUTE_WALL_MARGIN: float = 4.0
+const NAV_DIMENSIONS := Vector2i(65, 65)
 const ENGAGEMENT_DISTANCE: float = 4.0
 const SWARM_MEMORY_TICKS: int = 600
 
@@ -22,6 +22,8 @@ var _swarm_warnings: Array[Dictionary] = []
 var _view := ArenaView.new()
 var _last_tick: int = -1
 var _last_move := Vector2.RIGHT
+var _explore_direction := Vector2.RIGHT
+var _world_origin := Vector2i.ZERO
 var _goal := Vector2.ZERO
 var _next_goal_tick: int = 0
 var _engagement_distance: float = ENGAGEMENT_DISTANCE
@@ -46,11 +48,10 @@ var last_reason: StringName = &""
 func _init(knowledge: BotKnowledge) -> void:
 	_knowledge = knowledge
 	_kernel = NativeLoader.create_kernel()
-	_navigation_origin = knowledge.arena_min + Vector2.ONE * ROUTE_WALL_MARGIN
-	var dimensions := Vector2i((knowledge.arena_max - _navigation_origin - Vector2.ONE * ROUTE_WALL_MARGIN) / NAV_CELL) + Vector2i.ONE
+	_navigation_origin = -Vector2(NAV_DIMENSIONS - Vector2i.ONE) * NAV_CELL * 0.5
 	if _kernel != null:
 		_navigation = _kernel
-		_navigation.configure(_navigation_origin, dimensions, NAV_CELL)
+		_navigation.configure(_navigation_origin, NAV_DIMENSIONS, NAV_CELL)
 		_navigation.configure_tracking({
 			"enemy_speeds": _knowledge.enemy_speeds, "track_cell": TRACK_CELL, "memory_ticks": MEMORY_TICKS,
 			"swarm_speed": _knowledge.swarm_speed,
@@ -66,6 +67,7 @@ func _init(knowledge: BotKnowledge) -> void:
 
 
 func decide(observation: BotObservation) -> BotAction:
+	_shift_observed_origin(observation.world_origin)
 	if observation.phase == GameTypes.RunPhase.COMBAT:
 		if _previous_hp >= 0.0 and observation.hp < _previous_hp - 0.001:
 			_escape_until_tick = observation.tick + 60
@@ -86,6 +88,8 @@ func decide(observation: BotObservation) -> BotAction:
 		return action
 	_view.camera_transform = observation.camera_transform
 	_view.viewport_size = observation.viewport_size
+	_navigation_origin = observation.player_position.round() - Vector2(NAV_DIMENSIONS - Vector2i.ONE) * NAV_CELL * 0.5
+	_navigation.recenter(_navigation_origin)
 	if observation.tick != _last_tick:
 		_observe_bodies(observation)
 		_remember_loot(observation)
@@ -99,6 +103,8 @@ func decide(observation: BotObservation) -> BotAction:
 		_refresh_equipment(observation)
 	var best_move: Vector2 = _choose_move(observation)
 	_last_move = best_move
+	if best_move != Vector2.ZERO:
+		_explore_direction = best_move.normalized()
 	if _needle_next_tick == observation.tick + 1 and not _needle_definition.is_empty():
 		best_move = _kernel.aim_needles(_directions, DIRECTION_COUNT, best_move, float(_needle_definition["range"][_needle_level - 1]))
 	action.move_input = _view.world_to_screen_input(best_move)
@@ -106,23 +112,33 @@ func decide(observation: BotObservation) -> BotAction:
 	return action
 
 
+func _shift_observed_origin(origin: Vector2i) -> void:
+	var displacement := Vector2(origin - _world_origin) * CombatSimulation.ORIGIN_STEP_METERS
+	if displacement == Vector2.ZERO:
+		return
+	_world_origin = origin
+	_goal -= displacement
+	_navigation_origin -= displacement
+	_navigation.shift_origin(displacement)
+	for warning: Dictionary in _swarm_warnings:
+		warning["position"] -= displacement
+
+
 func _choose_move(observation: BotObservation) -> Vector2:
 	if _kernel == null:
 		return Vector2(INF, INF)
 	var swarms: Array = []
 	for warning: Dictionary in _swarm_warnings:
-		swarms.append([warning["direction"], warning["position"], warning.get("travel_direction", Vector2.ZERO), float(warning["width"]), float(observation.tick - int(warning["seen"])) / 60.0])
+		swarms.append([warning["direction"], warning["position"], warning.get("travel_direction", Vector2.ZERO), float(warning["width"]), float(observation.tick - int(warning["seen"])) / 60.0, warning["spawn_min"], warning["spawn_max"]])
 	var bosses: Array = []
 	for warning: Dictionary in observation.warnings:
 		if warning["kind"] == &"boss":
 			bosses.append([warning["position"], warning["directions"]])
 	return _kernel.choose_move({
 		"player": observation.player_position, "goal": _goal, "last_move": _last_move,
-		"arena_min": _knowledge.arena_min, "arena_max": _knowledge.arena_max,
 		"move_speed": _knowledge.move_speed, "horizon": HORIZON_SECONDS, "player_radius": _knowledge.player_radius,
 		"engagement": _engagement_distance, "slow_clearance": _slow_clearance,
 		"boss_active": observation.boss_active, "escape_active": observation.tick <= _escape_until_tick,
-		"swarm_min": _knowledge.swarm_spawn_min, "swarm_max": _knowledge.swarm_spawn_max,
 		"swarm_speed": _knowledge.swarm_speed, "swarm_depth": _knowledge.swarm_depth,
 		"boss_kind": CombatSnapshot.EnemyVisualKind.BOSS,
 		"elite_kind": CombatSnapshot.EnemyVisualKind.ELITE,
@@ -231,6 +247,11 @@ func _remember_warnings(observation: BotObservation) -> void:
 				break
 		if remembered.is_empty():
 			remembered = warning.duplicate(true)
+			var bounds: Rect2 = _view.body_view_rect(_knowledge.swarm_radius)
+			var anchor: Vector2 = warning["position"]
+			var extent: Vector2 = (bounds.position - anchor).abs().max((bounds.end - anchor).abs())
+			remembered["spawn_min"] = extent.dot((warning["direction"] as Vector2).abs())
+			remembered["spawn_max"] = float(remembered["spawn_min"]) + _knowledge.spawn_band_width
 			_swarm_warnings.append(remembered)
 		# A disappearing telegraph announces an approaching wave; it does not
 		# announce safety. This expiry uses only the last visible observation.
@@ -262,7 +283,7 @@ func _choose_target(observation: BotObservation) -> void:
 			last_reason = &"boss"
 			return
 	var target: Vector3 = _navigation.choose_loot_goal({
-		"player": player, "last_move": _last_move, "arena_min": _knowledge.arena_min, "arena_max": _knowledge.arena_max,
+		"player": player, "last_move": _last_move,
 		"maxed": observation.build_maxed, "evolution_ready": _knowledge.evolution_ready(observation),
 		"hp": observation.hp, "max_hp": observation.max_hp, "pickup_radius": _knowledge.pickup_radius,
 		"loot_kinds": PackedInt32Array([BotObservation.LootKind.XP, BotObservation.LootKind.CHEST,
@@ -272,11 +293,13 @@ func _choose_target(observation: BotObservation) -> void:
 		_goal = Vector2(target.x, target.y)
 		last_reason = &"collect"
 		return
-	var radius: float = minf(_knowledge.arena_max.x, _knowledge.arena_max.y) * 0.52
-	var radial: Vector2 = player.normalized()
-	if radial == Vector2.ZERO:
-		radial = Vector2.RIGHT
-	_goal = radial.rotated(0.65) * radius
+	for cue: Dictionary in observation.chest_guidance:
+		if int(cue["kind"]) == GameTypes.ChestKind.EVOLUTION_CAPABLE and not _knowledge.evolution_ready(observation) and not observation.build_maxed:
+			continue
+		_goal = player + _view.screen_to_world_input(cue["direction"]).normalized() * 24.0
+		last_reason = &"chest_direction"
+		return
+	_goal = player + _explore_direction * 24.0
 	last_reason = &"explore"
 
 

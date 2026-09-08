@@ -39,6 +39,9 @@ func test_bot_watch_and_fast_paths_share_decisions_and_gameplay(a: Variant, cont
 			a.expect_true(viewport_bounds.encloses(field.get_global_rect()), "watch HUD keeps %s on screen at %s" % [field_name, app.dimensions])
 		var fast := BotSession.new()
 		a.expect_true(fast.initialize(app._definition_catalog, 778, app.dimensions), "comparison run starts with the same initial state")
+		for sim: CombatSimulation in [app.combat_simulation, fast.simulation]:
+			sim.player_position = Vector2(1023.99, 0)
+			sim.view.reset(sim.player_position)
 		for frame_index: int in 30:
 			if frame_index in [0, 12]:
 				for sim: CombatSimulation in [app.combat_simulation, fast.simulation]:
@@ -52,6 +55,7 @@ func test_bot_watch_and_fast_paths_share_decisions_and_gameplay(a: Variant, cont
 		a.expect_equal(fast.action_digest, app._bot_session.action_digest, "watch speed does not change movement or modal choices")
 		a.expect_equal(_gameplay_digest(fast.simulation), _gameplay_digest(app.combat_simulation), "rendering does not change gameplay or random streams")
 		a.expect_equal(fast.view.camera_transform, app._bot_session.view.camera_transform, "camera advances exactly once per combat tick")
+		a.expect_equal(Vector2i(1, 0), fast.simulation.world_origin, "fast and watch both continue across an origin shift")
 		app._manual_paused = true
 		var actions_before: int = app._bot_session.action_count
 		app._process_watched_bot()
@@ -101,7 +105,9 @@ func test_observer_projection_matches_following_camera_and_partial_edges(a: Vari
 		var hud := arena.get_node("%CombatHUD") as CombatHud
 		a.expect_equal(Vector2.ONE, hud.scale, "ordinary play keeps its HUD scale at either viewport size")
 		for step_index: int in 30:
-			arena._update_camera(Vector2(step_index, -step_index) * 0.06, 1.0 / 60.0)
+			arena.view.viewport_size = dimensions
+			arena.view.advance(Vector2(step_index, -step_index) * 0.06, 1.0 / 60.0)
+			arena._update_camera()
 		for point: Vector3 in [Vector3.ZERO, Vector3(4, 1, -2), Vector3(-3, 4, 5)]:
 			var expected: Vector2 = camera.unproject_position(point)
 			var actual: Vector2 = arena.view.project_position(point)

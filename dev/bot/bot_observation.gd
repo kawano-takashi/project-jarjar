@@ -13,6 +13,9 @@ class Body:
 var tick: int = 0
 var phase: GameTypes.RunPhase = GameTypes.RunPhase.COMBAT
 var player_position := Vector2.ZERO
+var world_origin := Vector2i.ZERO
+## The same compass cues as the HUD, without hidden target positions or distance.
+var chest_guidance: Array[Dictionary] = []
 var camera_transform := Transform3D.IDENTITY
 var camera_projection := Projection.IDENTITY
 var viewport_size := Vector2i(1920, 1080)

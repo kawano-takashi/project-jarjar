@@ -285,9 +285,8 @@ func test_balance_external_resources_are_isolated_between_runs(a: Variant, _cont
 func test_balance_arena_and_scrollable_variable_ui(a: Variant, context: Dictionary) -> void:
 	var tree: SceneTree = context["tree"]
 	var content: SurvivalContentManifest = BalanceTestFixtures.manifest()
-	content.arena.size = Vector2(50.0, 28.0)
-	content.arena.node_site_positions = PackedVector2Array([Vector2(-10, 0), Vector2(10, 0), Vector2(0, 5)])
-	content.arena.initial_active_sites = PackedInt32Array([1])
+	content.arena.node_initial_count = 1
+	content.arena.node_capacity = 3
 	content.progression.xp_pool_capacity = 2377
 	content.segments[0].elite_spawns = BalanceTestFixtures.elite_spawns([1, 2, 3, 4, 5, 6])
 	content.progression.weapon_slot_count = 7
@@ -296,13 +295,11 @@ func test_balance_arena_and_scrollable_variable_ui(a: Variant, context: Dictiona
 	_set_levels(_find_weapon(content, content.progression.starter_weapon_id), 3)
 	var catalog: DefinitionCatalog = _catalog(content, a)
 	var simulation: CombatSimulation = _simulation(catalog, 123)
-	a.expect_equal(25, simulation.enemy_system.uniform_grid.column_count, "grid width follows arena")
-	a.expect_equal(14, simulation.enemy_system.uniform_grid.row_count, "grid height follows arena")
-	a.expect_equal(3, simulation.arena_object_system.nodes.size(), "node count derives from site positions")
-	a.expect_equal(1, simulation.arena_object_system.active_node_count(), "active node count derives from selected site indices")
+	a.expect_equal(1, simulation.arena_object_system.nodes.size(), "initial nodes use configured count")
+	a.expect_equal(1, simulation.arena_object_system.active_node_count(), "initial active count is configurable")
 	simulation.player_position = Vector2(100, 100)
 	simulation._move_player(Vector2.ZERO)
-	a.expect_equal(Vector2(25, 14) - Vector2.ONE * content.player.body_radius, simulation.player_position, "movement uses each arena dimension")
+	a.expect_equal(Vector2(100, 100), simulation.player_position, "stationary movement preserves distant world coordinates")
 	var arena: ArenaPresenter = (load("res://scenes/gameplay/arena_combat.tscn") as PackedScene).instantiate() as ArenaPresenter
 	arena.initialize(simulation)
 	tree.root.add_child(arena)
@@ -313,7 +310,7 @@ func test_balance_arena_and_scrollable_variable_ui(a: Variant, context: Dictiona
 	var hud: CombatHud = arena.get_node("%CombatHUD") as CombatHud
 	hud.update_from_snapshot(simulation.build_snapshot())
 	a.expect_equal(2377, (arena.get_node("%XpInstances") as MultiMeshInstance3D).multimesh.instance_count, "XP drawing covers the configured pool")
-	a.expect_equal(3, (arena.get_node("%NodeInstances") as MultiMeshInstance3D).multimesh.instance_count, "node drawing follows site count")
+	a.expect_equal(3, (arena.get_node("%NodeInstances") as MultiMeshInstance3D).multimesh.instance_count, "node drawing reserves the configured capacity")
 	a.expect_equal(catalog.elite_spawn_ticks.size(), (arena.get_node("%ChestInstances") as MultiMeshInstance3D).multimesh.instance_count, "chest drawing covers every configured elite")
 	var boss_snapshot := CombatSnapshot.new()
 	boss_snapshot.boss_charge_active = true
@@ -323,7 +320,6 @@ func test_balance_arena_and_scrollable_variable_ui(a: Variant, context: Dictiona
 	hud.update_from_snapshot(simulation.build_snapshot())
 	a.expect_equal(7, hud.debug_state()["weapons"].size(), "HUD renders all configured weapon slots")
 	a.expect_equal(9, hud.debug_state()["passives"].size(), "HUD renders all configured passive slots")
-	a.expect_equal(Vector3(50, 0.1, 28), ((arena.get_node("Floor") as MeshInstance3D).mesh as BoxMesh).size, "floor drawing follows arena dimensions")
 	simulation.state.pending_level_ups = 1
 	var offer: LevelOffer = ProgressionService.create_offer(simulation.state, catalog)
 	overlay.show_level_offer(offer)

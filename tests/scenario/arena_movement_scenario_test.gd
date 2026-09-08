@@ -42,7 +42,9 @@ func test_camera_keeps_combat_envelope_visible_while_following(assertions: Varia
 			arena.view.reset(player)
 			for _tick: int in 120:
 				player += direction * move_speed / 60.0
-				arena._update_camera(player, 1.0 / 60.0)
+				arena.view.viewport_size = dimensions
+				arena.view.advance(player, 1.0 / 60.0)
+				arena._update_camera()
 			var visible: bool = true
 			for sample: int in 72:
 				var point: Vector2 = player + Vector2.from_angle(TAU * float(sample) / 72.0) * 10.0
@@ -51,32 +53,40 @@ func test_camera_keeps_combat_envelope_visible_while_following(assertions: Varia
 	await _detach(arena, viewport, tree)
 
 
-func test_survival_arena_dimensions_follow_validated_settings(assertions: Variant, context: Dictionary) -> void:
+func test_ground_revisits_and_rendering_share_the_simulation_camera(a: Variant, context: Dictionary) -> void:
 	var tree: SceneTree = context["tree"]
-	var content: SurvivalContentManifest = BalanceTestFixtures.manifest()
-	content.arena.size = Vector2(44.0, 30.0)
-	content.progression.xp_pool_capacity = 3072
-	var catalog := DefinitionCatalog.new()
-	assertions.expect_true(catalog.validate_manifest(content), catalog.error_text)
+	var catalog: DefinitionCatalog = BalanceTestFixtures.catalog()
 	var simulation := CombatSimulation.new()
 	simulation.initialize(RunStateFactory.create(17, catalog), catalog)
-	var arena: ArenaPresenter = ARENA_SCENE.instantiate() as ArenaPresenter
+	var arena := ARENA_SCENE.instantiate() as ArenaPresenter
 	arena.initialize(simulation)
 	var viewport: SubViewport = await _attach(arena, tree)
-	var exterior: BoxMesh = (arena.get_node("Exterior") as MeshInstance3D).mesh as BoxMesh
-	var floor_mesh: BoxMesh = (arena.get_node("Floor") as MeshInstance3D).mesh as BoxMesh
-	assertions.expect_true(exterior.size.x > floor_mesh.size.x and exterior.size.z > floor_mesh.size.z, "non-colliding exterior surrounds the configured arena")
-	assertions.expect_equal(Vector3(44.0, 0.1, 30.0), floor_mesh.size, "floor follows both configured dimensions")
-	assertions.expect_float(-15.0, (arena.get_node("BoundaryNorth") as MeshInstance3D).position.z, "north boundary follows height")
-	assertions.expect_float(15.0, (arena.get_node("BoundarySouth") as MeshInstance3D).position.z, "south boundary follows height")
-	assertions.expect_float(-22.0, (arena.get_node("BoundaryWest") as MeshInstance3D).position.x, "west boundary follows width")
-	assertions.expect_float(22.0, (arena.get_node("BoundaryEast") as MeshInstance3D).position.x, "east boundary follows width")
-	var grid: MultiMesh = (arena.get_node("%GridLines") as MultiMeshInstance3D).multimesh
-	assertions.expect_equal(30, grid.instance_count, "grid line count follows rectangular dimensions")
-	var camera: Camera3D = arena.get_node("%ArenaCamera") as Camera3D
-	assertions.expect_equal(Camera3D.PROJECTION_PERSPECTIVE, camera.projection, "arena camera uses perspective")
-	assertions.expect_equal(Camera3D.KEEP_HEIGHT, camera.keep_aspect, "arena camera preserves vertical coverage")
-	assertions.expect_equal(3072, (arena.get_node("%XpInstances") as MultiMeshInstance3D).multimesh.instance_count, "render capacity follows the configured XP pool")
+	a.expect_true(arena.view == simulation.view, "rendering uses the simulation's camera")
+	var original_chunk: Vector2i = arena._ground._chunks.keys()[0]
+	var layout: Dictionary = arena._ground._chunks[original_chunk].duplicate(true)
+	simulation.player_position = Vector2(1023.99, -1023.99)
+	simulation.view.reset(simulation.player_position)
+	simulation.state.weapons.clear()
+	simulation.advance_tick(Vector2(1, -1))
+	var before: Transform3D = simulation.view.camera_transform
+	arena.present_snapshot(simulation.build_snapshot(), 1.0 / 60.0)
+	arena.present_snapshot(simulation.build_snapshot(), 1.0 / 60.0)
+	a.expect_equal(before, simulation.view.camera_transform, "repeated presentation never advances camera follow")
+	a.expect_equal(Vector2i(1, -1), simulation.world_origin, "a long move rebases both axes in 1024m steps")
+	a.expect_true(simulation.last_player_displacement.length() < 0.1, "distance measurement excludes origin changes")
+	a.expect_false(arena._ground._chunks.has(original_chunk), "distant chunks are discarded from rendering")
+	simulation.player_position = -Vector2(simulation.world_origin) * CombatSimulation.ORIGIN_STEP_METERS
+	simulation.view.reset(simulation.player_position)
+	simulation.advance_tick(Vector2.ZERO)
+	arena.present_snapshot(simulation.build_snapshot(), 1.0 / 60.0)
+	a.expect_equal(layout, arena._ground._chunks[original_chunk], "returning to a chunk restores its landmarks")
+	a.expect_true(arena._ground._chunks.size() < 100, "ground storage stays local after a long move and return")
+	simulation.set_viewport_size(Vector2i(1024, 768))
+	a.expect_equal(Vector2i(1024, 768), arena.view.viewport_size, "viewport changes reach the same camera model")
+	simulation.state.phase = GameTypes.RunPhase.LEVEL_UP
+	var paused_camera: Transform3D = simulation.view.camera_transform
+	a.expect_false(simulation.advance_tick(Vector2.RIGHT), "selection screens do not advance the shared camera")
+	a.expect_equal(paused_camera, arena.view.camera_transform, "resizing a paused view does not move its camera")
 	await _detach(arena, viewport, tree)
 
 

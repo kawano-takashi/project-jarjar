@@ -286,7 +286,7 @@ func test_exact_overlap_is_deterministic_and_wall_clamp_allows_temporary_overlap
 	var wall_state: RunState = RunStateFactory.create(14_005, catalog)
 	var wall_system := EnemySystem.new()
 	wall_system.initialize(wall_state, catalog)
-	var wall_player := Vector2(BalanceTestFixtures.catalog().envelope.player_center_max.x, 0.0)
+	var wall_player := Vector2(500.0, 0.0)
 	var wall_enemy: EnemyEntity = wall_system.enemy_store.try_spawn(
 		wall_state,
 		GameTypes.EnemyType.PURSUER,
@@ -296,16 +296,17 @@ func test_exact_overlap_is_deterministic_and_wall_clamp_allows_temporary_overlap
 		1.0,
 		0,
 	)
+	wall_system._view.reset(wall_player)
 	wall_state.combat_tick = 1
 	wall_system.advance_snapshot([wall_enemy.entity_id], wall_player, 1)
 	assertions.expect_float(
-		BalanceTestFixtures.catalog().envelope.enemy_center_limit(definition.body_radius).x,
+		wall_player.x + contact_radius,
 		wall_enemy.position.x,
-		"wall-constrained separation holds the enemy at its arena boundary",
+		"separation works in a distant part of the field",
 	)
 	assertions.expect_true(
-		wall_enemy.position.distance_to(wall_player) < contact_radius,
-		"the arena edge permits temporary overlap when full separation is impossible",
+		absf(wall_enemy.position.distance_to(wall_player) - contact_radius) < 0.0001,
+		"full contact separation is preserved at distant coordinates",
 	)
 	assertions.expect_equal(
 		1,

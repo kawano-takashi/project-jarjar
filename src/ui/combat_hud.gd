@@ -29,6 +29,7 @@ var _kill_chain_count: int = 0
 var _last_total_kills: int = -1
 var _reduce_motion: bool = false
 var _reduce_flashes: bool = false
+var _chest_guidance: Array[Dictionary] = []
 
 
 func _ready() -> void:
@@ -53,6 +54,8 @@ func _process(delta: float) -> void:
 
 
 func update_from_snapshot(snapshot: Variant) -> void:
+	_chest_guidance.assign(_read_property(snapshot, &"chest_guidance", []))
+	queue_redraw()
 	var values: Variant = _read_property(snapshot, &"hud_values", {})
 	if values is Dictionary:
 		update_from_values(values as Dictionary)
@@ -105,6 +108,29 @@ func update_from_values(values: Dictionary) -> void:
 	_update_build_slots(_passive_slots, values.get("passives", []), false)
 	_update_boss(values, boss_active)
 	_update_debug(values)
+
+
+func _draw() -> void:
+	for cue: Dictionary in _chest_guidance:
+		var cue_position: Vector2 = cue["screen_position"]
+		var direction: Vector2 = cue["direction"]
+		var tangent := Vector2(-direction.y, direction.x)
+		var evolution: bool = int(cue["kind"]) == GameTypes.ChestKind.EVOLUTION_CAPABLE
+		var color := Color(0.48, 0.92, 1.0) if evolution else Color(1.0, 0.8, 0.3)
+		draw_circle(cue_position, 22.0, Color(0.02, 0.03, 0.04, 0.92))
+		draw_colored_polygon(PackedVector2Array([
+			cue_position + direction * 17.0,
+			cue_position - direction * 4.0 + tangent * 9.0,
+			cue_position - direction * 4.0 - tangent * 9.0,
+		]), color)
+		var icon_center: Vector2 = cue_position - direction * 10.0
+		if evolution:
+			draw_colored_polygon(PackedVector2Array([
+				icon_center + Vector2(0, -5), icon_center + Vector2(5, 0),
+				icon_center + Vector2(0, 5), icon_center + Vector2(-5, 0),
+			]), color)
+		else:
+			draw_rect(Rect2(icon_center - Vector2(6, 4), Vector2(12, 8)), color, false, 2.0)
 
 
 func present_damage(reduce_motion: bool = false, reduce_flashes: bool = false) -> void:

@@ -198,7 +198,6 @@ func _start_bot_session() -> void:
 		if not _show_combat_arena():
 			_quit_deferred(2)
 			return
-		_arena.use_view(_bot_session.view)
 		var hud := _arena.get_node("%CombatHUD") as CombatHud
 		hud.add_child(WatchHudLayout.new())
 		_present_snapshot(combat_simulation.build_snapshot(), 0.0)

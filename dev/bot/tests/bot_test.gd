@@ -234,7 +234,6 @@ func test_bot_memory_uses_perspective_visibility_and_clip_planes(a: Variant, _co
 	var empty: Dictionary = BotObservation.pack_bodies([])
 	var goal_frame: Dictionary = {
 		"player": Vector2.ZERO, "last_move": Vector2.DOWN,
-		"arena_min": Vector2.ONE * -200.0, "arena_max": Vector2.ONE * 200.0,
 		"maxed": false, "evolution_ready": false, "hp": 100.0, "max_hp": 100.0,
 		"pickup_radius": 1.0, "loot_kinds": PackedInt32Array([0, 1, 2, 3, 4]),
 	}
@@ -333,10 +332,12 @@ func test_bot_reacts_to_observed_projectile_motion_and_keeps_legal_input(a: Vari
 	a.expect_true(movement.x < 0.1, "an approaching projectile does not cause a move directly into it")
 	observation.tick = 2
 	observation.bullets.clear()
-	observation.player_position = knowledge.arena_max - Vector2.ONE * 0.01
+	observation.player_position = Vector2(500, -400)
+	view.reset(observation.player_position)
+	observation.camera_transform = view.camera_transform
 	var wall_action: BotAction = controller.decide(observation)
 	var next_position: Vector2 = observation.player_position + view.screen_to_world_input(wall_action.move_input) * knowledge.move_speed / 60.0
-	a.expect_true(next_position.x <= knowledge.arena_max.x and next_position.y <= knowledge.arena_max.y, "wall escape uses a legal movement into the arena")
+	a.expect_true(next_position.distance_to(observation.player_position) > 0.0, "the bot moves freely far from the starting point")
 	var aiming := BotController.new(knowledge)
 	var firing := BotObservation.new()
 	firing.hp = 100.0
@@ -375,3 +376,53 @@ func _body_values(bodies: Array[BotObservation.Body]) -> Array:
 	for body: BotObservation.Body in bodies:
 		result.append([body.position, body.kind, body.radius, body.materializing])
 	return result
+
+
+func test_bot_keeps_memory_across_local_grid_and_origin_changes(a: Variant, _context: Dictionary) -> void:
+	var knowledge := BotKnowledge.new(BalanceTestFixtures.catalog())
+	var controller := BotController.new(knowledge)
+	var observation := BotObservation.new()
+	observation.hp = 100.0
+	observation.max_hp = 100.0
+	observation.player_position = Vector2(1000, 0)
+	var view := ArenaView.new()
+	view.reset(observation.player_position)
+	observation.camera_transform = view.camera_transform
+	observation.camera_projection = view.projection
+	var boss := BotObservation.Body.new()
+	boss.kind = CombatSnapshot.EnemyVisualKind.BOSS
+	boss.radius = 1.0
+	boss.position = Vector2(1003, 0)
+	observation.enemies.append(boss)
+	observation.loot.append(Vector4(BotObservation.LootKind.CHEST, 1000, 3, 1))
+	controller.decide(observation)
+	var remembered: Vector3 = controller._navigation.first_boss_position()
+	controller._navigation.recenter(Vector2(1010, -32))
+	a.expect_equal(remembered, controller._navigation.first_boss_position(), "moving the local grid retains observed enemies")
+	controller._shift_observed_origin(Vector2i(1, 0))
+	var shifted: Vector3 = controller._navigation.first_boss_position()
+	a.expect_true(Vector2(shifted.x, shifted.y).distance_to(Vector2(remembered.x - 1024, remembered.y)) < 0.001, "origin changes translate remembered enemies")
+	var loot: Vector3 = controller._navigation.choose_loot_goal({
+		"player": Vector2(-24, 0), "last_move": Vector2.DOWN,
+		"maxed": false, "evolution_ready": false, "hp": 100.0, "max_hp": 100.0,
+		"pickup_radius": 1.0, "loot_kinds": PackedInt32Array([0, 1, 2, 3, 4]),
+	})
+	a.expect_equal(Vector3(-24, 3, 1), loot, "origin changes retain the original observed chest")
+
+
+func test_bot_observes_only_public_chest_directions(a: Variant, _context: Dictionary) -> void:
+	var catalog: DefinitionCatalog = BalanceTestFixtures.catalog()
+	var sim := CombatSimulation.new()
+	sim.initialize(RunStateFactory.create(8801, catalog), catalog)
+	for node: ArenaNodeState in sim.arena_object_system.nodes:
+		node.deactivate()
+	var serial: int = catalog.elite_chest_kinds.find(GameTypes.ChestKind.NORMAL)
+	sim.arena_object_system.spawn_chest(Vector2(100, 0), serial)
+	var observation: BotObservation = BotObserver.new().capture(sim, sim.view)
+	a.expect_true(observation.loot.is_empty(), "the hidden chest's precise position is absent from visible loot")
+	a.expect_equal(sim.build_snapshot().chest_guidance, observation.chest_guidance, "the bot sees the same chest direction as the player")
+	a.expect_equal(3, observation.chest_guidance[0].size(), "the cue contains only kind, direction and screen-edge position")
+	var controller := BotController.new(BotKnowledge.new(catalog))
+	var action: BotAction = controller.decide(observation)
+	a.expect_equal(&"chest_direction", action.reason, "the bot explores toward a public chest cue")
+	a.expect_true(sim.view.screen_to_world_input(action.move_input).x > 0.0, "the cue leads toward the unseen chest")

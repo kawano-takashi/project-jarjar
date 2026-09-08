@@ -4,13 +4,14 @@
 
 [resource]
 script = ExtResource("1")
-size = Vector2(32, 32)
-node_site_positions = PackedVector2Array(-9.75, -9.75, 0, -11.25, 9.75, -9.75, 11.25, 0, 9.75, 9.75, 0, 11.25, -9.75, 9.75, -11.25, 0)
-initial_active_sites = PackedInt32Array(0, 2, 4, 6)
+node_initial_count = 4
+node_capacity = 10
+node_spawn_interval_ticks = 60
+node_spawn_chance = 0.1
+node_spawn_chance_max = 0.5
 node_max_hp = 18.0
 node_body_radius = 0.55
 pickup_collect_radius = 0.8
-node_respawn_ticks = 1800
 node_heal_amount = 30.0
 node_stop_ticks = 300
 node_drop_weights = PackedFloat32Array(0.55, 0.35, 0.07, 0.03)

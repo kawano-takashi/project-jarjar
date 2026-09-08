@@ -37,11 +37,7 @@ func test_swarm_scheduler_is_isolated_repeatable_and_atomic(assertions: Variant,
 	var first_spawn_distance: float = -(
 		first_group[0].position - Vector2(2.0, -1.0)
 	).dot(first_direction)
-	assertions.expect_true(
-		first_spawn_distance >= BalanceTestFixtures.catalog().envelope.spawn_inner_half_extent
-		and first_spawn_distance <= BalanceTestFixtures.catalog().envelope.spawn_outer_half_extent,
-		"successful attempt samples the shared ten-to-twelve-metre spawn frame",
-	)
+	assertions.expect_false(first_system._view.is_body_visible(first_group[0].position, first_group[0].body_radius()), "the wave starts outside the camera")
 	var front_row_center := Vector2.ZERO
 	for front_index: int in range(event_definition.lateral_count):
 		front_row_center += first_group[front_index].position
@@ -61,32 +57,6 @@ func test_swarm_scheduler_is_isolated_repeatable_and_atomic(assertions: Variant,
 		first_group[0].remaining_travel_distance,
 		"attempt derives crossing distance from its sampled frame and formation depth",
 	)
-	var sampling_rng := RandomNumberGenerator.new()
-	sampling_rng.seed = 8003
-	var side_counts := PackedInt32Array([0, 0, 0, 0])
-	var sample_count: int = 4096
-	var all_distances_in_frame: bool = true
-	for _sample_index: int in range(sample_count):
-		var outward_direction: Vector2 = first_system._sample_spawn_outward_direction(
-			sampling_rng
-		)
-		var side_index: int = EnemySystem.SPAWN_OUTWARD_DIRECTIONS.find(outward_direction)
-		side_counts[side_index] += 1
-		var sampled_distance: float = first_system._sample_spawn_distance(sampling_rng)
-		all_distances_in_frame = all_distances_in_frame and (
-			sampled_distance >= BalanceTestFixtures.catalog().envelope.spawn_inner_half_extent
-			and sampled_distance <= BalanceTestFixtures.catalog().envelope.spawn_outer_half_extent
-		)
-	assertions.expect_true(
-		all_distances_in_frame,
-		"swarm distance sampler remains inside the shared frame",
-	)
-	for count: int in side_counts:
-		assertions.expect_true(
-			count >= floori(float(sample_count) * 0.20)
-			and count <= ceili(float(sample_count) * 0.30),
-			"dedicated attempt sampler selects each screen side at twenty-five percent",
-		)
 	assertions.expect_float(7.25, first_state.spawn_credit, "swarm attempt consumes no spawn credit")
 	assertions.expect_equal(0, first_system._normal_enemy_count(), "event members do not count toward the normal target")
 	assertions.expect_equal(0, _spawn_scheduled(first_system, Vector2.ZERO, 7500).size(), "one attempt cannot execute twice")
@@ -154,7 +124,7 @@ func test_swarm_formation_crosses_player_relative_frame_and_uses_two_visuals(ass
 	state.combat_tick = 7500
 	var captured_player := Vector2(14.0, 14.0)
 	simulation.player_position = captured_player
-	var direction: Vector2 = EnemySystem.SCREEN_RIGHT_WORLD
+	var direction: Vector2 = Vector2(0.70710678, -0.70710678)
 	var group: Array[EnemyEntity] = simulation.enemy_system._spawn_swarm_group(
 		captured_player,
 		direction,
@@ -169,7 +139,6 @@ func test_swarm_formation_crosses_player_relative_frame_and_uses_two_visuals(ass
 	var maximum_depth: float = -INF
 	var minimum_lateral: float = INF
 	var maximum_lateral: float = -INF
-	var has_outside_member: bool = false
 	var lateral_direction := Vector2(-direction.y, direction.x)
 	for enemy: EnemyEntity in group:
 		red_count += 1 if enemy.swarm_red_variant else 0
@@ -180,17 +149,12 @@ func test_swarm_formation_crosses_player_relative_frame_and_uses_two_visuals(ass
 		maximum_depth = maxf(maximum_depth, depth)
 		minimum_lateral = minf(minimum_lateral, lateral)
 		maximum_lateral = maxf(maximum_lateral, lateral)
-		has_outside_member = has_outside_member or (
-			absf(enemy.position.x) > BalanceTestFixtures.catalog().envelope.enemy_center_limit(enemy.body_radius()).x
-			or absf(enemy.position.y) > BalanceTestFixtures.catalog().envelope.enemy_center_limit(enemy.body_radius()).x
-		)
 		assertions.expect_equal(1, enemy.swarm_group_id, "all members share one group id")
 		assertions.expect_equal(EnemyEntity.MovementKind.FIXED_DIRECTION, enemy.movement_kind, "every member uses fixed movement")
 	assertions.expect_equal(25, red_count, "checker pattern contains twenty-five red members")
 	assertions.expect_float(11.0, minimum_depth, "leading row starts on the sampled spawn frame")
 	assertions.expect_float(13.8, maximum_depth, "rear row may extend 2.8 metres beyond the frame")
 	assertions.expect_float(6.3333333, maximum_lateral - minimum_lateral, "staggered band spans about 6.33 metres")
-	assertions.expect_true(has_outside_member, "event formation is not clamped to the arena")
 	var snapshot: CombatSnapshot = simulation.build_snapshot()
 	var orange_visuals: int = 0
 	var red_visuals: int = 0
@@ -316,7 +280,7 @@ func test_swarm_contact_damage_and_kill_accounting_are_separate(assertions: Vari
 	assertions.expect_equal(0, simulation.arena_object_system.pickups.size(), "event kill creates no chest or power-up drop")
 
 
-func test_swarm_push_is_capped_clamped_and_paused(assertions: Variant, _context: Dictionary) -> void:
+func test_swarm_push_is_capped_and_paused(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
@@ -374,7 +338,7 @@ func test_swarm_push_is_capped_clamped_and_paused(assertions: Variant, _context:
 	var boundary_system := EnemySystem.new()
 	boundary_system.initialize(boundary_state, catalog)
 	var target_definition: EnemyDefinition = catalog.enemy(&"pursuer")
-	var center_limit: float = BalanceTestFixtures.catalog().envelope.enemy_center_limit(target_definition.body_radius).x
+	var center_limit: float = 200.0
 	var boundary_target: EnemyEntity = boundary_system.enemy_store.try_spawn(
 		boundary_state,
 		GameTypes.EnemyType.PURSUER,
@@ -400,7 +364,7 @@ func test_swarm_push_is_capped_clamped_and_paused(assertions: Variant, _context:
 		boundary_system.snapshot_ids(),
 		boundary_sweeps,
 	)
-	assertions.expect_float(center_limit, boundary_target.position.x, "pushed enemy remains inside its arena radius")
+	assertions.expect_true(absf(boundary_target.position.x - (center_limit + event_step * 0.5)) < 0.0001, "the full push is preserved at distant coordinates")
 
 	var stop_state: RunState = RunStateFactory.create(8010, catalog)
 	var stop_system := EnemySystem.new()

@@ -375,6 +375,10 @@ func _prepare_replay(simulation: CombatSimulation, reduce_motion: bool) -> Dicti
 		),
 	)
 	simulation.state.weapons.append(mass_weapon)
+	for target_position: Vector2 in [Vector2(3, 0), Vector2(-3, 0)]:
+		var target: EnemyEntity = simulation.spawn_fixture_enemy(GameTypes.EnemyType.BULWARK, target_position, -1)
+		target.hp = 1_000_000.0
+		target.max_hp = target.hp
 	ProgressionService.add_xp(
 		simulation.state,
 		ProgressionService.xp_required_for_level(simulation.state.level, BalanceTestFixtures.catalog().manifest().progression),
@@ -382,7 +386,7 @@ func _prepare_replay(simulation: CombatSimulation, reduce_motion: bool) -> Dicti
 	)
 	simulation.state.pending_chest_sources.append(0)
 	simulation.arena_object_system.damage_nodes_circle(
-		BalanceTestFixtures.catalog().manifest().arena.node_site_positions[0],
+		simulation.arena_object_system.nodes[0].position,
 		1.0,
 		BalanceTestFixtures.catalog().manifest().arena.node_max_hp,
 		simulation.state.combat_tick,

@@ -184,9 +184,9 @@ class ProfiledWeapons extends WeaponSystem:
 class ProfiledXp extends XpPickupPool:
 	var timer: RefCounted
 
-	func advance_and_collect(player_position: Vector2, delta: float, current_tick: int, vacuum_active: bool = false,) -> int:
+	func advance_and_collect(player_position: Vector2, delta: float, current_tick: int) -> int:
 		var started: int = Time.get_ticks_usec()
-		var result: int = super(player_position, delta, current_tick, vacuum_active)
+		var result: int = super(player_position, delta, current_tick)
 		timer.record(&"xp_pickup_pool.advance_and_collect", started)
 		return result
 

@@ -2,14 +2,20 @@ class_name ArenaBalanceDefinition
 extends Resource
 
 
-## アリーナの幅と奥行。m、両成分が有限かつ正。全配置と身体が収まる寸法。
-@export var size: Vector2 = Vector2.ZERO
+## 開始時に画面外へ配置する破壊物の数。個、0以上かつnode_capacity以下。
+@export_range(0, 100, 1, "or_greater") var node_initial_count: int = 0
 
-## 破壊可能ノードの配置座標。m、各ノードがアリーナ内に収まる位置。
-@export var node_site_positions: PackedVector2Array = PackedVector2Array()
+## 同時に存在できる破壊物の数。個、正整数。上限時は画面外の個体を入れ替える。
+@export_range(1, 100, 1, "or_greater") var node_capacity: int = 0
 
-## 初期に有効な配置番号。重複なし、配置配列の範囲内。以後もこの個数まで再配置する。
-@export_range(0, 100, 1, "or_greater") var initial_active_sites: PackedInt32Array = PackedInt32Array()
+## 破壊物の出現抽選間隔。正整数tick（60/秒）。戦闘中だけ進行する。
+@export_range(1, 3600, 1, "or_greater", "suffix:tick") var node_spawn_interval_ticks: int = 0
+
+## 1回の抽選で出現する基本確率。0〜1、node_spawn_chance_max以下。
+@export_range(0, 1, 0.001) var node_spawn_chance: float = 0.0
+
+## Luck補正後の出現確率の上限。0〜1。個数上限時は基本確率だけを使う。
+@export_range(0, 1, 0.001) var node_spawn_chance_max: float = 0.0
 
 ## 破壊可能ノードのHP。有限かつ正。
 @export_range(0, 100, 0.001, "or_greater") var node_max_hp: float = 0.0
@@ -19,9 +25,6 @@ extends Resource
 
 ## 宝箱・パワーアップの回収半径。m、有限かつ0以上。
 @export_range(0, 100, 0.001, "or_greater", "suffix:m") var pickup_collect_radius: float = 0.0
-
-## ノード破壊から再配置までの時間。正整数tick（60/秒）。
-@export_range(0, 100, 1, "or_greater", "suffix:tick") var node_respawn_ticks: int = 0
 
 ## 回復HP。有限かつ0以上。
 @export_range(0, 100, 0.001, "or_greater") var node_heal_amount: float = 0.0

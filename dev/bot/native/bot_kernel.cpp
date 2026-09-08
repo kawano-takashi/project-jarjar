@@ -35,7 +35,6 @@ struct V2 {
     double cross(V2 b) const { return value().cross(b.value()); }
     double distance_to(V2 b) const { return value().distance_to(b.value()); }
     V2 normalized() const { return value().normalized(); }
-    V2 clamp(V2 a, V2 b) const { return value().clamp(a.value(), b.value()); }
 };
 struct Body {
     V2 position, relative, avoidance, velocity;
@@ -45,11 +44,11 @@ struct Body {
     bool materializing = false;
 };
 struct Bullet { V2 relative, velocity; double radius; };
-struct Swarm { V2 axis, position, travel; double width, age; };
+struct Swarm { V2 axis, position, travel; double width, age, spawn_min, spawn_max; };
 struct Boss { V2 position; PackedVector2Array spokes; };
 struct Frame {
-    V2 player, goal, last_move, arena_min, arena_max;
-    double move_speed, radius, engagement, swarm_min, swarm_max, swarm_speed, swarm_depth, horizon;
+    V2 player, goal, last_move;
+    double move_speed, radius, engagement, swarm_speed, swarm_depth, horizon;
     bool boss_active, slow_safe, escape_active;
     int boss_kind, elite_kind, bulwark_kind;
     std::vector<Body> enemies;
@@ -76,7 +75,7 @@ double escape_score(V2 direction, const Frame &f, double baseline) {
         V2 position = enemy.position;
         double radius = enemy.radius + f.radius;
         for (int step = 1; step <= 60; ++step) {
-            V2 player = (f.player + velocity * (double(step) / 60.0)).clamp(f.arena_min, f.arena_max);
+            V2 player = f.player + velocity * (double(step) / 60.0);
             if (enemy.fixed) {
                 position += enemy.velocity / 60.0;
             } else {
@@ -90,26 +89,16 @@ double escape_score(V2 direction, const Frame &f, double baseline) {
             else if (clearance < 0.4) danger += (0.4 - clearance) * 0.1;
         }
     }
-    V2 destination = f.player + velocity;
-    double wall_cost = destination.distance_to(destination.clamp(f.arena_min, f.arena_max));
-    return -danger * 1000.0 - wall_cost * 1.0e6 + direction.dot(f.last_move.normalized()) * 100.0 + direction.dot((f.goal - f.player).normalized()) * 10.0;
+    return -danger * 1000.0 + direction.dot(f.last_move.normalized()) * 100.0 + direction.dot((f.goal - f.player).normalized()) * 10.0;
 }
 
 double movement_score(V2 direction, const Frame &f) {
     V2 player = f.player;
     V2 velocity = direction * f.move_speed;
     double travel_time = f.horizon;
-    if (velocity.x > 0.0) travel_time = minimum(travel_time, (f.arena_max.x - player.x) / velocity.x);
-    else if (velocity.x < 0.0) travel_time = minimum(travel_time, (f.arena_min.x - player.x) / velocity.x);
-    if (velocity.y > 0.0) travel_time = minimum(travel_time, (f.arena_max.y - player.y) / velocity.y);
-    else if (velocity.y < 0.0) travel_time = minimum(travel_time, (f.arena_min.y - player.y) / velocity.y);
-    if (travel_time < 1.0 / 60.0) return -1.0e12 + direction.dot(V2(-player.x, -player.y)) * 100.0;
     V2 destination = player + velocity * travel_time;
     double score = direction.dot((f.goal - player).normalized()) * 1000.0;
     score += direction.normalized().dot(f.last_move.normalized()) * 1002.0;
-    score -= (f.horizon - travel_time) * 1000.0;
-    double wall_distance = minimum(minimum(destination.x - f.arena_min.x, f.arena_max.x - destination.x), minimum(destination.y - f.arena_min.y, f.arena_max.y - destination.y));
-    score -= 20.0 / maximum(0.15, wall_distance);
     double immediate_clearance = INF, body_clearance = INF, engagement_distance = INF;
     for (const Body &enemy : f.enemies) {
         V2 relative = enemy.relative;
@@ -145,8 +134,8 @@ double movement_score(V2 direction, const Frame &f) {
         V2 relative = warning_destination - warning.position;
         double side_distance = std::abs(relative.dot(tangent));
         if (side_distance >= width) continue;
-        double front = -f.swarm_min + f.swarm_speed * (warning.age + f.horizon) + f.radius;
-        double back = -f.swarm_max - f.swarm_depth + f.swarm_speed * maximum(0.0, warning.age - f.horizon) - f.radius;
+        double front = -warning.spawn_min + f.swarm_speed * (warning.age + f.horizon) + f.radius;
+        double back = -warning.spawn_max - f.swarm_depth + f.swarm_speed * maximum(0.0, warning.age - f.horizon) - f.radius;
         double along = relative.dot(warning.travel.zero() ? warning.axis : warning.travel);
         if ((along >= back && along <= front) || (warning.travel.zero() && -along >= back && -along <= front)) score -= (width - side_distance) * 5000.0;
     }
@@ -190,7 +179,7 @@ protected:
         ClassDB::bind_method(D_METHOD("api_version"), &JarjarBotKernel::api_version);
     }
 public:
-    int api_version() const { return 5; }
+    int api_version() const { return 6; }
     Vector2 choose_move(const Dictionary &data, const PackedVector2Array &directions) {
         PackedFloat64Array scores = score_moves(data, directions);
         ERR_FAIL_COND_V(scores.size() != directions.size(), Vector2(float(INF), float(INF)));
@@ -207,10 +196,9 @@ public:
     PackedFloat64Array score_moves(const Dictionary &data, const PackedVector2Array &directions) {
         Frame f;
         f.player = Vector2(data["player"]); f.goal = Vector2(data["goal"]); f.last_move = Vector2(data["last_move"]);
-        f.arena_min = Vector2(data["arena_min"]); f.arena_max = Vector2(data["arena_max"]);
         f.move_speed = data["move_speed"]; f.radius = data["player_radius"]; f.engagement = data["engagement"];
         f.horizon = data["horizon"];
-        f.swarm_min = data["swarm_min"]; f.swarm_max = data["swarm_max"]; f.swarm_speed = data["swarm_speed"]; f.swarm_depth = data["swarm_depth"];
+        f.swarm_speed = data["swarm_speed"]; f.swarm_depth = data["swarm_depth"];
         f.boss_active = data["boss_active"]; f.slow_safe = true; f.escape_active = data["escape_active"];
         f.boss_kind = data["boss_kind"]; f.elite_kind = data["elite_kind"]; f.bulwark_kind = data["bulwark_kind"];
         double slow_clearance = data["slow_clearance"];
@@ -231,7 +219,7 @@ public:
         Array swarms = data["swarms"];
         for (int64_t i = 0; i < swarms.size(); ++i) {
             Array row = swarms[i];
-            f.swarms.push_back({Vector2(row[0]), Vector2(row[1]), Vector2(row[2]), row[3], row[4]});
+            f.swarms.push_back({Vector2(row[0]), Vector2(row[1]), Vector2(row[2]), row[3], row[4], row[5], row[6]});
         }
         Array bosses = data["bosses"];
         for (int64_t i = 0; i < bosses.size(); ++i) {

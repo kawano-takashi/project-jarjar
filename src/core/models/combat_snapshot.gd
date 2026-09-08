@@ -33,6 +33,10 @@ enum ImportantMarkerKind {
 
 
 var player_position: Vector2 = Vector2.ZERO
+## Integer count of 1024m origin shifts. All positions in this snapshot are local.
+var world_origin: Vector2i = Vector2i.ZERO
+## Up to two visible compass cues: kind, direction, screen_position only.
+var chest_guidance: Array[Dictionary] = []
 var enemy_transforms: Array[Transform3D] = []
 var enemy_visual_kinds: PackedInt32Array = PackedInt32Array()
 var enemy_visual_custom_data: PackedColorArray = PackedColorArray()

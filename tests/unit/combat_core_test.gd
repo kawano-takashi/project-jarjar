@@ -89,17 +89,12 @@ func test_xp_collection_keeps_swap_order_and_tracks_relocated_pickups(a: Variant
 	a.expect_equal(Vector2(1.0, 0.0), reused.position, "a newly born pickup is not advanced")
 	pool.advance_and_collect(Vector2.ZERO, 0.5, 3)
 	a.expect_equal(Vector2(0.5, 0.0), reused.position, "a swapped survivor moves once per tick")
-	a.expect_equal(20, pool.advance_and_collect(Vector2.ZERO, 100.0, 4, true), "vacuum collection reaches every remaining slot")
+	pool.begin_vacuum()
+	a.expect_equal(20, pool.advance_and_collect(Vector2.ZERO, 100.0, 4), "vacuum collection reaches every remaining slot")
 	a.expect_equal(0, pool.orphan_count(), "spatial collection preserves active/free pool ownership")
 
 
-func test_thirty_two_meter_grid_boundaries(assertions: Variant, _context: Dictionary) -> void:
-	var grid := BalanceTestFixtures.grid()
-	assertions.expect_equal(Vector2(-16.0, -16.0), grid.arena_min, "grid begins at the 32m arena corner")
-	assertions.expect_equal(Vector2(16.0, 16.0), grid.arena_max, "grid ends at the 32m arena corner")
-	assertions.expect_equal(Vector2i.ZERO, grid.cell_indices_for_position(Vector2(-100.0, -100.0)), "outside negative positions clamp to first cell")
-	assertions.expect_equal(Vector2i(15, 15), grid.cell_indices_for_position(Vector2(100.0, 100.0)), "outside positive positions clamp to last cell")
-	assertions.expect_equal(256, grid.cell_count, "2m cells cover the complete 32 by 32 arena")
+
 
 
 func test_segment_tick_boundaries(assertions: Variant, _context: Dictionary) -> void:
@@ -114,26 +109,52 @@ func test_segment_tick_boundaries(assertions: Variant, _context: Dictionary) -> 
 		assertions.expect_equal(index + 1 if index + 1 < catalog.segments.size() else -1, catalog.segment_index_for_tick(end_tick), "exclusive end selects the next segment or boss phase")
 
 
-func test_arena_nodes_hold_four_active_and_respawn(assertions: Variant, _context: Dictionary) -> void:
-	var catalog: DefinitionCatalog = _catalog(assertions)
-	if catalog == null:
-		return
+func test_node_spawning_replaces_only_hidden_objects_and_uses_unique_ids(a: Variant, _context: Dictionary) -> void:
+	var content: SurvivalContentManifest = BalanceTestFixtures.manifest()
+	content.arena.node_initial_count = 2
+	content.arena.node_capacity = 3
+	content.arena.node_spawn_interval_ticks = 3
+	content.arena.node_spawn_chance = 1.0
+	content.arena.node_spawn_chance_max = 1.0
+	var catalog := DefinitionCatalog.new()
+	a.expect_true(catalog.validate_manifest(content), catalog.error_text)
 	var state: RunState = RunStateFactory.create(7201, catalog)
 	var nodes := ArenaObjectSystem.new()
 	nodes.initialize(state, catalog)
-	assertions.expect_equal(4, nodes.active_node_count(), "four of eight geometric node sites begin active")
-	var destroyed: int = nodes.damage_nodes_circle(
-		BalanceTestFixtures.catalog().manifest().arena.node_site_positions[0],
-		1.0,
-		BalanceTestFixtures.catalog().manifest().arena.node_max_hp,
-		1,
-	)
-	assertions.expect_equal(1, destroyed, "weapon damage destroys one arena node")
-	assertions.expect_equal(3, nodes.active_node_count(), "destroyed node leaves three active during respawn delay")
-	nodes.advance(catalog.manifest().arena.node_respawn_ticks)
-	assertions.expect_equal(3, nodes.active_node_count(), "node does not respawn one tick early")
-	nodes.advance(catalog.manifest().arena.node_respawn_ticks + 1)
-	assertions.expect_equal(4, nodes.active_node_count(), "node respawns at an empty site after thirty seconds")
+	var reward_rng: int = state.rng_streams.powerup_rng.state
+	nodes.advance(2)
+	a.expect_equal(2, nodes.active_node_count(), "no attempt occurs before its tick interval")
+	nodes.advance(3)
+	a.expect_equal(3, nodes.active_node_count(), "a successful timed attempt fills the remaining capacity")
+	for index: int in nodes.nodes.size():
+		nodes.nodes[index].position = Vector2(index * 2.0, 0)
+	var ids: Array[int] = []
+	for node: ArenaNodeState in nodes.nodes:
+		ids.append(node.node_id)
+	nodes.advance(6)
+	for index: int in ids.size():
+		a.expect_equal(ids[index], nodes.nodes[index].node_id, "visible objects are never replaced at capacity")
+	nodes.nodes[0].position = Vector2(100, 0)
+	nodes.nodes[1].position = Vector2(200, 0)
+	nodes.advance(9)
+	a.expect_equal(ids[0], nodes.nodes[0].node_id, "nearer hidden object stays")
+	a.expect_not_equal(ids[1], nodes.nodes[1].node_id, "farthest hidden object is replaced")
+	a.expect_equal(0, nodes.destroyed_node_count, "replacement is not destruction")
+	a.expect_equal(reward_rng, state.rng_streams.powerup_rng.state, "spawning consumes no drop RNG")
+	var node: ArenaNodeState = nodes.nodes[1]
+	node.position = Vector2.ZERO
+	var hits: Dictionary[int, bool] = {node.node_id: true}
+	nodes.damage_nodes_circle(Vector2.ZERO, 0.0, content.arena.node_max_hp, 10)
+	nodes.advance(12)
+	var fresh: ArenaNodeState = nodes.nodes[1]
+	fresh.position = Vector2(50, 50)
+	var hp: float = fresh.hp
+	nodes.damage_nodes_segment(Vector2(49, 50), Vector2(51, 50), 0.1, 1.0, 13, hits)
+	a.expect_float(hp - 1.0, fresh.hp, "a projectile can hit a new individual in a reused slot")
+	var spawn_rng: int = state.rng_streams.node_spawn_rng.state
+	state.phase = GameTypes.RunPhase.LEVEL_UP
+	nodes.advance(15)
+	a.expect_equal(spawn_rng, state.rng_streams.node_spawn_rng.state, "selection screens do not advance spawn RNG")
 
 
 func test_all_weapon_behaviors_generate_attacks(assertions: Variant, _context: Dictionary) -> void:
@@ -645,13 +666,13 @@ func test_arc_node_damage_uses_single_resolved_impact(assertions: Variant, _cont
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
-	var node_position: Vector2 = BalanceTestFixtures.catalog().manifest().arena.node_site_positions[4]
+	var node_position: Vector2 = Vector2(9.75, 9.75)
 
 	var collision_simulation: CombatSimulation = _node_projectile_simulation(
 		catalog,
 		7351,
 	)
-	var collision_node: ArenaNodeState = collision_simulation.arena_object_system.nodes[4]
+	var collision_node: ArenaNodeState = collision_simulation.arena_object_system.nodes[0]
 	var blocker: EnemyEntity = collision_simulation.spawn_fixture_enemy(
 		GameTypes.EnemyType.BULWARK,
 		Vector2(8.0, node_position.y),
@@ -684,7 +705,7 @@ func test_arc_node_damage_uses_single_resolved_impact(assertions: Variant, _cont
 		catalog,
 		7354,
 	)
-	var impact_node: ArenaNodeState = impact_simulation.arena_object_system.nodes[4]
+	var impact_node: ArenaNodeState = impact_simulation.arena_object_system.nodes[0]
 	var impact_height: float = node_position.y - 0.7
 	var impact_blocker: EnemyEntity = impact_simulation.spawn_fixture_enemy(
 		GameTypes.EnemyType.BULWARK,
@@ -718,7 +739,7 @@ func test_arc_node_damage_uses_single_resolved_impact(assertions: Variant, _cont
 		catalog,
 		7352,
 	)
-	var landing_node: ArenaNodeState = landing_simulation.arena_object_system.nodes[4]
+	var landing_node: ArenaNodeState = landing_simulation.arena_object_system.nodes[0]
 	_acquire_node_probe(
 		landing_simulation,
 		ProjectileState.MovementKind.ARC,
@@ -744,7 +765,7 @@ func test_arc_node_damage_uses_single_resolved_impact(assertions: Variant, _cont
 		catalog,
 		7353,
 	)
-	var straight_node: ArenaNodeState = straight_simulation.arena_object_system.nodes[4]
+	var straight_node: ArenaNodeState = straight_simulation.arena_object_system.nodes[0]
 	_acquire_node_probe(
 		straight_simulation,
 		ProjectileState.MovementKind.STRAIGHT,
@@ -1155,7 +1176,11 @@ func _node_projectile_simulation(
 		runtime.cooldown_remaining_ticks = 10_000
 	var simulation := CombatSimulation.new()
 	simulation.initialize(state, catalog)
-	simulation.player_position = Vector2(6.0, BalanceTestFixtures.catalog().manifest().arena.node_site_positions[4].y)
+	for node: ArenaNodeState in simulation.arena_object_system.nodes:
+		node.deactivate()
+	simulation.arena_object_system.nodes[0].activate(0, Vector2(9.75, 9.75), catalog.manifest().arena.node_max_hp)
+	simulation.player_position = Vector2(6.0, 9.75)
+	simulation.view.reset(simulation.player_position)
 	return simulation
 
 

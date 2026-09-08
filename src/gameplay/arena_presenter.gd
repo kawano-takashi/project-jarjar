@@ -4,7 +4,6 @@ extends Node3D
 
 signal terminal_presentation_finished(phase: GameTypes.RunPhase)
 
-const GRID_SPACING_M: float = 2.5
 const BOSS_DEFEAT_SECONDS: float = 0.80
 const PLAYER_DEFEAT_SECONDS: float = 0.45
 const ABSORPTION_EVENT_SECONDS: float = 0.24
@@ -43,7 +42,6 @@ const ABSORPTION_EVENT_SECONDS: float = 0.24
 @onready var _xp_instances: MultiMeshInstance3D = %XpInstances
 @onready var _pickup_instances: MultiMeshInstance3D = %PickupInstances
 @onready var _node_instances: MultiMeshInstance3D = %NodeInstances
-@onready var _grid_lines: MultiMeshInstance3D = %GridLines
 @onready var _important_marker: MeshInstance3D = %ImportantMarker
 @onready var _important_countdown: Label3D = %ImportantCountdown
 @onready var _boss_charge_marker: MeshInstance3D = %BossChargeMarker
@@ -56,7 +54,8 @@ const ABSORPTION_EVENT_SECONDS: float = 0.24
 
 var _simulation: RefCounted = null
 var view: ArenaView = ArenaView.new()
-var _external_view: bool = false
+var _world_origin := Vector2i.ZERO
+var _ground: OpenFieldGround = null
 var _reduce_motion: bool = false
 var _reduce_flashes: bool = false
 var _last_important_position: Vector2 = Vector2.ZERO
@@ -77,21 +76,21 @@ func _ready() -> void:
 	_configure_camera()
 	_hide_presentation_markers()
 	if _simulation != null:
-		_configure_static_grid()
+		_configure_ground()
 		_configure_render_capacity()
 		_apply_snapshot(_simulation.build_snapshot(), 0.0)
 
 
 func initialize(simulation: RefCounted) -> void:
 	_simulation = simulation
-	view = ArenaView.new()
-	_external_view = false
+	view = simulation.view
+	_world_origin = simulation.world_origin
 	_apply_accessibility_settings()
 	if not is_node_ready():
 		return
 	set_physics_process(false)
 	if _simulation != null:
-		_configure_static_grid()
+		_configure_ground()
 		_configure_render_capacity()
 		_apply_snapshot(_simulation.build_snapshot(), 0.0)
 
@@ -128,11 +127,6 @@ func set_debug_overlay_visible(should_show: bool) -> void:
 
 func camera_relative_move_input(screen_input: Vector2) -> Vector2:
 	return _camera_relative_move_input(screen_input)
-
-
-func use_view(model: ArenaView) -> void:
-	view = model
-	_external_view = true
 
 
 func terminal_focus_position(prefer_important: bool) -> Vector2:
@@ -189,9 +183,17 @@ func _camera_relative_move_input(screen_input: Vector2) -> Vector2:
 	return view.screen_to_world_input(screen_input)
 
 
-func _apply_snapshot(snapshot: CombatSnapshot, delta: float) -> void:
+func _apply_snapshot(snapshot: CombatSnapshot, _delta: float) -> void:
 	if snapshot == null:
 		return
+	var displacement := Vector2(snapshot.world_origin - _world_origin) * CombatSimulation.ORIGIN_STEP_METERS
+	if displacement != Vector2.ZERO:
+		_last_important_position -= displacement
+		_terminal_position -= displacement
+		for index: int in _absorption_event_positions.size():
+			_absorption_event_positions[index] -= displacement
+		_world_origin = snapshot.world_origin
+		_refresh_absorption_event_instances()
 	_player_mesh.position = Vector3(
 		snapshot.player_position.x,
 		_player_mesh.position.y,
@@ -223,7 +225,8 @@ func _apply_snapshot(snapshot: CombatSnapshot, delta: float) -> void:
 	_copy_transform_prefix(snapshot.node_transforms, _node_instances)
 	_update_snapshot_markers(snapshot)
 	_combat_hud.update_from_snapshot(snapshot)
-	_update_camera(snapshot.player_position, delta)
+	_update_camera()
+	_ground.update_view(view, snapshot.world_origin)
 
 
 func _copy_visual_buckets(
@@ -342,10 +345,7 @@ func _copy_vfx_prefix(snapshot: CombatSnapshot, instance: MultiMeshInstance3D) -
 	multimesh.visible_instance_count = visible_count
 
 
-func _update_camera(player_position: Vector2, delta: float) -> void:
-	if not _external_view:
-		view.viewport_size = Vector2i(get_viewport().get_visible_rect().size)
-	view.advance(player_position, delta)
+func _update_camera() -> void:
 	_camera.transform = view.camera_transform
 	# Fixed-size Label3D still uses world units before perspective projection.
 	# Convert one label pixel to screen pixels at every viewport size.
@@ -458,57 +458,24 @@ func _update_important_countdown(snapshot: CombatSnapshot) -> void:
 	_important_countdown.modulate.a = 0.78 if _reduce_flashes else 1.0
 
 
-func _configure_static_grid() -> void:
+func _configure_ground() -> void:
 	if _simulation == null:
 		return
-	var extent: Vector2 = _simulation.envelope.arena_max
-	var dimensions: Vector2 = _simulation.envelope.arena_size
-	var exterior_mesh: BoxMesh = ($Exterior as MeshInstance3D).mesh.duplicate() as BoxMesh
-	# The perspective ground corners reach about 28 m beyond the focus at 16:9.
-	exterior_mesh.size = Vector3(dimensions.x + 64.0, 0.08, dimensions.y + 64.0)
-	($Exterior as MeshInstance3D).mesh = exterior_mesh
+	if _ground != null:
+		_ground.free()
+	_ground = OpenFieldGround.new()
+	_ground.run_seed = _simulation.state.run_seed
+	add_child(_ground)
 	var player_mesh: CapsuleMesh = _player_mesh.mesh.duplicate() as CapsuleMesh
 	player_mesh.radius = _simulation.catalog.manifest().player.body_radius
 	player_mesh.height = maxf(1.2, player_mesh.radius * 2.0)
 	_player_mesh.mesh = player_mesh
-	var floor_mesh: BoxMesh = ($Floor as MeshInstance3D).mesh.duplicate() as BoxMesh
-	floor_mesh.size = Vector3(dimensions.x, 0.1, dimensions.y)
-	($Floor as MeshInstance3D).mesh = floor_mesh
-	for name_key: String in ["BoundaryNorth", "BoundarySouth", "BoundaryWest", "BoundaryEast"]:
-		var wall: MeshInstance3D = get_node(name_key) as MeshInstance3D
-		var mesh: BoxMesh = wall.mesh.duplicate() as BoxMesh
-		if name_key in ["BoundaryNorth", "BoundarySouth"]:
-			mesh.size = Vector3(dimensions.x + 0.5, 0.28, 0.24)
-			wall.position.z = -extent.y if name_key == "BoundaryNorth" else extent.y
-		else:
-			mesh.size = Vector3(0.24, 0.28, dimensions.y)
-			wall.position.x = -extent.x if name_key == "BoundaryWest" else extent.x
-		wall.mesh = mesh
-	var multimesh: MultiMesh = _grid_lines.multimesh.duplicate() as MultiMesh
-	_grid_lines.multimesh = multimesh
-	var half_x_lines: int = floori(extent.x / GRID_SPACING_M)
-	var half_y_lines: int = floori(extent.y / GRID_SPACING_M)
-	multimesh.instance_count = (half_x_lines + half_y_lines) * 2 + 2
-	var line_index: int = 0
-	for grid_index: int in range(-half_y_lines, half_y_lines + 1):
-		multimesh.set_instance_transform(line_index, Transform3D(
-			Basis.IDENTITY.scaled(Vector3(dimensions.x, 1.0, 1.0)),
-			Vector3(0.0, 0.006, float(grid_index) * GRID_SPACING_M),
-		))
-		line_index += 1
-	for grid_index: int in range(-half_x_lines, half_x_lines + 1):
-		multimesh.set_instance_transform(line_index, Transform3D(
-			Basis.IDENTITY.scaled(Vector3(1.0, 1.0, dimensions.y)),
-			Vector3(float(grid_index) * GRID_SPACING_M, 0.006, 0.0),
-		))
-		line_index += 1
-	multimesh.visible_instance_count = line_index
 
 
 func _configure_render_capacity() -> void:
 	var catalog: DefinitionCatalog = _simulation.catalog
 	_resize_multimesh(_xp_instances, catalog.manifest().progression.xp_pool_capacity)
-	_resize_multimesh(_node_instances, catalog.manifest().arena.node_site_positions.size())
+	_resize_multimesh(_node_instances, catalog.manifest().arena.node_capacity)
 	_resize_multimesh(_chest_instances, catalog.elite_spawn_ticks.size())
 	_resize_multimesh(_evolution_chest_instances, catalog.elite_spawn_ticks.size())
 	_resize_multimesh(_swarm_warning_arrows, 6)

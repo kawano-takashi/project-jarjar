@@ -1,0 +1,11 @@
+[gd_resource type="BoxMesh" load_steps=2 format=3]
+
+[sub_resource type="StandardMaterial3D" id="ChestMaterial"]
+albedo_color = Color(0.86, 0.58, 0.2, 1)
+metallic = 0.18
+roughness = 0.42
+
+
+[resource]
+material = SubResource("ChestMaterial")
+size = Vector3(0.7, 0.48, 0.5)

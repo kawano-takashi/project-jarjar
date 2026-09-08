@@ -5,8 +5,6 @@ const BotObservation = preload("res://dev/bot/bot_observation.gd")
 ## Public game rules copied from the validated catalog, without run state.
 var move_speed: float
 var player_radius: float
-var arena_min: Vector2
-var arena_max: Vector2
 var pickup_radius: float
 var weapon_slots: int
 var passive_slots: int
@@ -16,8 +14,8 @@ var passives: Dictionary[StringName, Dictionary] = {}
 var evolutions: Dictionary[StringName, Dictionary] = {}
 var enemy_speeds: Dictionary[int, float] = {}
 var swarm_speed: float
-var swarm_spawn_min: float
-var swarm_spawn_max: float
+var swarm_radius: float
+var spawn_band_width: float
 var swarm_depth: float
 var minimum_cooldown_multiplier: float
 
@@ -26,15 +24,13 @@ func _init(catalog: DefinitionCatalog) -> void:
 	var content: SurvivalContentManifest = catalog.manifest()
 	move_speed = content.player.move_speed
 	player_radius = content.player.body_radius
-	arena_min = catalog.envelope.player_center_min
-	arena_max = catalog.envelope.player_center_max
 	pickup_radius = content.progression.xp_pickup_attract_radius
 	weapon_slots = content.progression.weapon_slot_count
 	passive_slots = content.progression.passive_slot_count
 	starter_weapon_id = content.progression.starter_weapon_id
 	swarm_speed = content.swarm_event.unit_definition.move_speed
-	swarm_spawn_min = content.spawn.inner_half_extent
-	swarm_spawn_max = content.spawn.outer_half_extent
+	swarm_radius = content.swarm_event.unit_definition.body_radius
+	spawn_band_width = content.spawn.offscreen_band_width
 	swarm_depth = float(content.swarm_event.depth_count - 1) * content.swarm_event.depth_pitch
 	minimum_cooldown_multiplier = content.combat.min_cooldown_multiplier
 	for definition: WeaponDefinition in content.weapons:

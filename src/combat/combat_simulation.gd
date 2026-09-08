@@ -3,6 +3,7 @@ extends RefCounted
 
 
 const FIXED_DELTA_SECONDS: float = 1.0 / 60.0
+const ORIGIN_STEP_METERS: int = 1024
 const VFX_HEIGHT_M: float = 0.03
 const DEATH_VFX_LIFETIME: float = 0.22
 const ATTACK_VFX_LIFETIME: float = 0.12
@@ -26,6 +27,9 @@ var envelope: CombatEnvelope = null
 var state: RunState = null
 var catalog: DefinitionCatalog = null
 var player_position: Vector2 = Vector2.ZERO
+var world_origin: Vector2i = Vector2i.ZERO
+var last_player_displacement: Vector2 = Vector2.ZERO
+var view: ArenaView = ArenaView.new()
 var enemy_system: EnemySystem = EnemySystem.new()
 var projectile_pool: ProjectilePool = ProjectilePool.new()
 var vfx_pool: VfxPool = VfxPool.new()
@@ -48,10 +52,11 @@ var _hit_feedback_by_source: Dictionary[StringName, Dictionary] = {}
 var _kill_feedback_by_key: Dictionary[String, Dictionary] = {}
 var _player_hit_this_tick: bool = false
 var _absorption_started_tick: int = -1
+var _absorption_position: Vector2 = Vector2.ZERO
+var _absorption_radius: float = 0.0
 var _absorption_enemy_count: int = 0
 var _absorption_swarm_count: int = 0
 var _absorption_projectile_count: int = 0
-var _vacuum_collecting: bool = false
 var _performance_fixture_active: bool = false
 var _performance_enemy_target: int = 0
 var _performance_projectile_target: int = 0
@@ -76,6 +81,9 @@ func initialize(p_state: RunState, p_catalog: DefinitionCatalog) -> void:
 	_manifest = catalog.manifest()
 	envelope = catalog.envelope
 	player_position = Vector2.ZERO
+	world_origin = Vector2i.ZERO
+	last_player_displacement = Vector2.ZERO
+	view.reset(player_position)
 	freeze_all_updates = false
 	projectile_pool.clear()
 	vfx_pool.clear()
@@ -83,11 +91,11 @@ func initialize(p_state: RunState, p_catalog: DefinitionCatalog) -> void:
 	xp_pickup_pool.clear()
 	event_router = CombatEventRouter.new()
 	enemy_system = EnemySystem.new()
-	enemy_system.initialize(state, catalog)
+	enemy_system.initialize(state, catalog, view)
 	weapon_system = WeaponSystem.new()
 	weapon_system.initialize(state, catalog, projectile_pool, event_router)
 	arena_object_system = ArenaObjectSystem.new()
-	arena_object_system.initialize(state, catalog)
+	arena_object_system.initialize(state, catalog, view)
 	_pending_deaths.clear()
 	_pending_death_ids.clear()
 	_step_events.clear()
@@ -100,7 +108,6 @@ func initialize(p_state: RunState, p_catalog: DefinitionCatalog) -> void:
 	_absorption_enemy_count = 0
 	_absorption_swarm_count = 0
 	_absorption_projectile_count = 0
-	_vacuum_collecting = false
 	_reset_performance_fixture_state()
 	_refresh_derived_player_stats()
 
@@ -111,6 +118,7 @@ func step(move_input: Vector2, _delta: float = FIXED_DELTA_SECONDS) -> CombatSna
 
 
 func advance_tick(move_input: Vector2) -> bool:
+	last_player_displacement = Vector2.ZERO
 	_step_events.clear()
 	_presentation_events.clear()
 	_hit_feedback_by_source.clear()
@@ -126,6 +134,9 @@ func advance_tick(move_input: Vector2) -> bool:
 	_pending_death_ids.clear()
 	# Boss entry is a tick-boundary operation. Removing the old combatants before
 	# snapshots are taken guarantees they cannot move, attack, or collide on the boundary.
+	_move_player(move_input)
+	_rebase_if_needed()
+	view.advance(player_position, FIXED_DELTA_SECONDS)
 	_begin_boss_transition_if_due(current_tick)
 	var enemy_snapshot: Array[int] = enemy_system.snapshot_ids()
 	var projectile_snapshot: Array[Vector2i] = projectile_pool.snapshot_active()
@@ -149,13 +160,11 @@ func advance_tick(move_input: Vector2) -> bool:
 			tracked_projectile_position = tracked_projectile.position
 
 	# 1. Player movement and pickups.
-	_move_player(move_input)
 	_collect_arena_pickups(current_tick)
 	var collected_xp: int = xp_pickup_pool.advance_and_collect(
 		player_position,
 		FIXED_DELTA_SECONDS,
 		current_tick,
-		_vacuum_collecting,
 	)
 	if collected_xp > 0:
 		ProgressionService.add_xp(state, collected_xp, catalog)
@@ -167,9 +176,7 @@ func advance_tick(move_input: Vector2) -> bool:
 			CombatPresentationEvent.Priority.AMBIENT,
 			collected_xp,
 		))
-	if _vacuum_collecting and xp_pickup_pool.active_count() == 0:
-		_vacuum_collecting = false
-	arena_object_system.advance(current_tick)
+	arena_object_system.advance(current_tick, player_position)
 
 	# 2. Enemy update and time-driven spawns.
 	var boss_phase_before: int = state.boss_phase
@@ -503,6 +510,8 @@ func build_snapshot() -> CombatSnapshot:
 		snapshot_events,
 	)
 	_apply_snapshot_markers(snapshot)
+	snapshot.world_origin = world_origin
+	snapshot.chest_guidance = arena_object_system.chest_guidance(player_position)
 	snapshot.normal_chest_transforms = arena_object_system.chest_transforms(GameTypes.ChestKind.NORMAL)
 	snapshot.evolution_chest_transforms = arena_object_system.chest_transforms(GameTypes.ChestKind.EVOLUTION_CAPABLE)
 	var warning: SwarmWarningState = enemy_system.swarm_warning
@@ -666,7 +675,6 @@ func prepare_performance_fixture(
 	state.weapon_damage_by_lineage.clear()
 	state.recent_damage_samples.clear()
 	enemy_system._elite_spawned.fill(1)
-	_vacuum_collecting = false
 	for index: int in range(enemy_count):
 		if not _spawn_performance_enemy(index, state.combat_tick - 1):
 			return false
@@ -751,11 +759,35 @@ func _move_player(move_input: Vector2) -> void:
 	var normalized_input: Vector2 = move_input
 	if normalized_input.length_squared() > 1.0:
 		normalized_input = normalized_input.normalized()
+	var before: Vector2 = player_position
 	player_position += normalized_input * _manifest.player.move_speed * FIXED_DELTA_SECONDS
-	player_position = Vector2(
-		clampf(player_position.x, envelope.player_center_min.x, envelope.player_center_max.x),
-		clampf(player_position.y, envelope.player_center_min.y, envelope.player_center_max.y),
-	)
+	last_player_displacement = player_position - before
+
+
+func set_viewport_size(size: Vector2i) -> void:
+	if size.x > 0 and size.y > 0:
+		view.viewport_size = size
+
+
+func _rebase_if_needed() -> void:
+	var steps := Vector2i(int(player_position.x / ORIGIN_STEP_METERS), int(player_position.y / ORIGIN_STEP_METERS))
+	if steps == Vector2i.ZERO:
+		return
+	var displacement := Vector2(steps) * ORIGIN_STEP_METERS
+	world_origin += steps
+	player_position -= displacement
+	view.shift_origin(displacement)
+	enemy_system.shift_origin(displacement)
+	arena_object_system.shift_origin(displacement)
+	xp_pickup_pool.shift_origin(displacement)
+	for index: int in projectile_pool.active_indices_snapshot():
+		var projectile: ProjectileState = projectile_pool.slots[index]
+		projectile.position -= displacement
+		projectile.previous_position -= displacement
+		projectile.target_position -= displacement
+	for index: int in vfx_pool.active_indices_snapshot():
+		vfx_pool.slots[index].position -= displacement
+	_absorption_position -= displacement
 
 
 func _begin_boss_transition_if_due(current_tick: int) -> void:
@@ -768,6 +800,8 @@ func _begin_boss_transition_if_due(current_tick: int) -> void:
 	enemy_system.cancel_swarm_warning()
 	state.spawn_credit = 0.0
 	_absorption_started_tick = current_tick
+	_absorption_position = player_position
+	_absorption_radius = view.ground_rect().size.length() * 0.5
 	_absorption_enemy_count = 0
 	_absorption_swarm_count = 0
 	_absorption_projectile_count = 0
@@ -801,13 +835,13 @@ func _begin_boss_transition_if_due(current_tick: int) -> void:
 	_queue_presentation_event(_make_presentation_event(
 		CombatPresentationEvent.Kind.ABSORPTION,
 		&"absorption",
-		Vector2.ZERO,
+		_absorption_position,
 		CombatPresentationEvent.Priority.IMPORTANT,
 		absorbed_total,
 	))
 	vfx_pool.request(
-		Vector2.ZERO,
-		maxf(envelope.arena_max.x, envelope.arena_max.y),
+		_absorption_position,
+		_absorption_radius,
 		float(envelope.boss_entry_ticks) / float(RunState.TICKS_PER_SECOND),
 		Color(0.55, 0.08, 0.11, 0.62),
 		current_tick,
@@ -869,7 +903,8 @@ func _collect_arena_pickups(_current_tick: int) -> void:
 					catalog,
 					GameTypes.NodeDropType.VACUUM,
 				)
-				_vacuum_collecting = bool(vacuum_result.get(&"vacuum", false))
+				if bool(vacuum_result.get(&"vacuum", false)):
+					xp_pickup_pool.begin_vacuum()
 			ArenaPickup.Kind.STOP:
 				NodeDropService.apply_drop(state, catalog, GameTypes.NodeDropType.STOP)
 				_step_events.append(&"stop_pickup")
@@ -1392,7 +1427,7 @@ func _damage_nodes_from_projectiles(entries: Array[Vector2i], current_tick: int)
 			projectile.radius,
 			projectile.damage,
 			current_tick,
-			projectile.hit_node_sites,
+			projectile.hit_node_ids,
 		)
 
 
@@ -1802,8 +1837,8 @@ func _performance_position(index: int, count: int, offset: float) -> Vector2:
 	var x_ratio: float = float(column) / float(COLUMN_COUNT - 1)
 	var y_ratio: float = float(row) / float(maxi(1, row_count - 1))
 	return Vector2(
-		lerpf(envelope.player_center_min.x + 0.25, envelope.player_center_max.x - 0.25, x_ratio) + offset,
-		lerpf(envelope.player_center_min.y + 0.25, envelope.player_center_max.y - 0.25, y_ratio),
+		player_position.x + lerpf(-15.35, 15.35, x_ratio) + offset,
+		player_position.y + lerpf(-15.35, 15.35, y_ratio),
 	)
 
 
@@ -1870,10 +1905,10 @@ func _apply_snapshot_markers(snapshot: CombatSnapshot) -> void:
 			1.0,
 		)
 		snapshot.absorption_active = true
-		snapshot.absorption_position = Vector2.ZERO
+		snapshot.absorption_position = _absorption_position
 		snapshot.absorption_progress = progress
 		snapshot.absorption_radius = lerpf(
-			maxf(envelope.arena_max.x, envelope.arena_max.y),
+			_absorption_radius,
 			0.8,
 			progress * progress * (3.0 - 2.0 * progress),
 		)

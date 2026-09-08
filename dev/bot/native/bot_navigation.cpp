@@ -10,6 +10,8 @@
 using namespace godot;
 
 void JarjarBotNavigation::_bind_methods() {
+    ClassDB::bind_method(D_METHOD("recenter", "origin"), &JarjarBotNavigation::recenter);
+    ClassDB::bind_method(D_METHOD("shift_origin", "displacement"), &JarjarBotNavigation::shift_origin);
     ClassDB::bind_method(D_METHOD("configure", "origin", "dimensions", "cell_size"), &JarjarBotNavigation::configure);
     ClassDB::bind_method(D_METHOD("route", "player", "goal", "positions", "radii", "player_radius"), &JarjarBotNavigation::route);
     ClassDB::bind_method(D_METHOD("match_tracks", "predicted", "old_kinds", "observed", "kinds", "track_cell"), &JarjarBotNavigation::match_tracks);
@@ -34,6 +36,31 @@ void JarjarBotNavigation::configure(const Vector2 &p_origin, const Vector2i &p_d
     grid->update();
 }
 
+void JarjarBotNavigation::recenter(const Vector2 &p_origin) {
+    ERR_FAIL_COND(grid.is_null());
+    if (origin == p_origin) return;
+    origin = p_origin;
+    grid->set_offset(origin);
+    grid->update();
+}
+
+void JarjarBotNavigation::shift_origin(const Vector2 &displacement) {
+    for (Track &track : enemies) track.position -= displacement;
+    for (Track &track : bullets) track.position -= displacement;
+    Dictionary shifted;
+    Array keys = loot_memory.keys();
+    for (int64_t i = 0; i < keys.size(); ++i) {
+        Vector3i key = keys[i];
+        Vector4 entry = loot_memory[key];
+        entry.x -= displacement.x;
+        entry.y -= displacement.y;
+        Vector3i shifted_key(int(std::round(double(entry.x) * 2.0)), int(std::round(double(entry.y) * 2.0)), key.z);
+        shifted[shifted_key] = entry;
+    }
+    loot_memory = shifted;
+    recenter(origin - displacement);
+}
+
 void JarjarBotNavigation::remember_loot(const PackedVector4Array &loot, const Transform3D &inverse, const Vector2i &viewport, int64_t tick, const Projection &projection, int xp_kind) {
     for (int64_t i = 0; i < loot.size(); ++i) {
         Vector4 entry = loot[i];
@@ -51,7 +78,7 @@ void JarjarBotNavigation::remember_loot(const PackedVector4Array &loot, const Tr
 }
 
 Vector3 JarjarBotNavigation::choose_loot_goal(const Dictionary &frame) const {
-    Vector2 player = frame["player"], last_move = frame["last_move"], arena_min = frame["arena_min"], arena_max = frame["arena_max"];
+    Vector2 player = frame["player"], last_move = frame["last_move"];
     PackedVector2Array enemy_positions;
     enemy_positions.resize(int64_t(enemies.size()));
     for (size_t i = 0; i < enemies.size(); ++i) enemy_positions[int64_t(i)] = enemies[i].position;
@@ -69,8 +96,6 @@ Vector3 JarjarBotNavigation::choose_loot_goal(const Dictionary &frame) const {
         if (enemy.distance_squared_to(player) < 25.0) avoid_reverse = true;
     }
     auto open = [&](Vector2 position) {
-        if (double(position.x) < double(arena_min.x) + 3.0 || double(position.x) > double(arena_max.x) - 3.0 ||
-            double(position.y) < double(arena_min.y) + 3.0 || double(position.y) > double(arena_max.y) - 3.0) return false;
         if (avoid_reverse && (position - player).normalized().dot(last_move.normalized()) < -0.75) return false;
         auto [x, y] = cell_key(position);
         for (int dx = -1; dx <= 1; ++dx) {

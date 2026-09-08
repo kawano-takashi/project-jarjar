@@ -165,7 +165,7 @@ func test_swarm_warning_pauses_and_is_cancelled_at_short_boss_boundary(a: Varian
 	a.expect_equal(1, sim.state.boss_kills, "boss victory records one kill")
 
 
-func test_swarm_kills_open_a_gap_and_walls_leave_an_escape_route(a: Variant, _context: Dictionary) -> void:
+func test_swarm_kills_open_a_gap(a: Variant, _context: Dictionary) -> void:
 	var sim: CombatSimulation = _simulation(_catalog(_content(), a))
 	sim.state.combat_tick = 20
 	var group: Array[EnemyEntity] = sim.enemy_system._spawn_swarm_group(Vector2.ZERO, Vector2.RIGHT, 20, 2.0, 3.0, 4.0)
@@ -175,23 +175,6 @@ func test_swarm_kills_open_a_gap_and_walls_leave_an_escape_route(a: Variant, _co
 	a.expect_equal(2, sim.enemy_system.enemy_store.active_count(), "killing a member leaves a physical gap")
 	a.expect_equal(1, sim.state.swarm_event_kill_count, "breaking through counts as a swarm kill")
 	a.expect_equal(0, sim.enemy_system.resolve_contact_damage_candidates(sim.enemy_system.snapshot_ids(), gap_position, 20).size(), "player can occupy the killed member's gap without contact")
-	var production: DefinitionCatalog = BalanceTestFixtures.catalog()
-	var swarm: SwarmEventDefinition = production.manifest().swarm_event
-	var limit: Vector2 = production.envelope.player_center_max
-	var half_band: float = (float(swarm.lateral_count - 1) * 0.5 + 0.25) * swarm.lateral_pitch + swarm.unit_definition.body_radius
-	var escape_ticks: int = swarm.telegraph_ticks + floori((production.envelope.spawn_inner_half_extent - production.envelope.player_body_radius - swarm.unit_definition.body_radius) / swarm.unit_definition.move_speed * 60.0)
-	var wall_positions: Array[Vector2] = [Vector2(limit.x, 0), Vector2(-limit.x, 0), Vector2(0, limit.y), Vector2(0, -limit.y), limit, -limit, Vector2(limit.x, -limit.y), Vector2(-limit.x, limit.y)]
-	var escape_sim: CombatSimulation = _simulation(production)
-	for outward: Vector2 in EnemySystem.SPAWN_OUTWARD_DIRECTIONS:
-		var tangent := Vector2(-outward.y, outward.x)
-		for origin: Vector2 in wall_positions:
-			var clearance: float = 0.0
-			for sign_value: float in [-1.0, 1.0]:
-				escape_sim.player_position = origin
-				for _tick: int in range(escape_ticks):
-					escape_sim._move_player(tangent * sign_value)
-				clearance = maxf(clearance, absf((escape_sim.player_position - origin).dot(tangent)))
-			a.expect_true(clearance > half_band + production.envelope.player_body_radius, "each wall and corner has a reachable exit from the warned band before contact")
 
 
 func test_chest_shapes_and_swarm_warning_match_gameplay_snapshot(a: Variant, context: Dictionary) -> void:

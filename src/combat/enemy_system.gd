@@ -16,8 +16,6 @@ const NORMAL_ENEMY_IDS: Array[StringName] = [
 ]
 const MAXIMUM_SPAWNS_PER_TICK: int = 16
 const EMPTY_SWEEP: Dictionary = {}
-const SCREEN_RIGHT_WORLD: Vector2 = Vector2(0.70710678, -0.70710678)
-const SCREEN_DOWN_WORLD: Vector2 = Vector2(0.70710678, 0.70710678)
 const CONTACT_SEPARATION_DIRECTIONS: Array[Vector2] = [
 	Vector2.RIGHT,
 	Vector2.DOWN,
@@ -25,12 +23,6 @@ const CONTACT_SEPARATION_DIRECTIONS: Array[Vector2] = [
 	Vector2.UP,
 ]
 const CONTACT_DISTANCE_EPSILON: float = 0.000001
-const SPAWN_OUTWARD_DIRECTIONS: Array[Vector2] = [
-	-SCREEN_DOWN_WORLD,
-	SCREEN_DOWN_WORLD,
-	-SCREEN_RIGHT_WORLD,
-	SCREEN_RIGHT_WORLD,
-]
 
 const CANDIDATE_PLAYER_DAMAGE: StringName = &"player_damage"
 const DAMAGE_SOURCE_CONTACT: StringName = &"enemy_contact"
@@ -42,6 +34,7 @@ var _swarm_sweep_grid: UniformGrid = UniformGrid.new()
 var _state: RunState = null
 var _catalog: DefinitionCatalog = null
 var _manifest: SurvivalContentManifest = null
+var _view: ArenaView = null
 var _spawn_rng: RandomNumberGenerator = null
 var _swarm_rng: RandomNumberGenerator = null
 var _elite_spawned: PackedByteArray = PackedByteArray()
@@ -53,15 +46,16 @@ var _swarm_attempt_consumed: PackedByteArray = PackedByteArray()
 var swarm_warning: SwarmWarningState = null
 
 
-func initialize(state: RunState, catalog: DefinitionCatalog) -> void:
+func initialize(state: RunState, catalog: DefinitionCatalog, view: ArenaView = null) -> void:
 	_state = state
 	_catalog = catalog
 	_manifest = catalog.manifest()
+	_view = view if view != null else ArenaView.new()
 	_spawn_rng = state.rng_streams.spawn_rng if state.rng_streams != null else null
 	_swarm_rng = state.rng_streams.swarm_event_rng if state.rng_streams != null else null
 	enemy_store.clear()
-	uniform_grid.configure(_manifest.arena.size)
-	_swarm_sweep_grid.configure(_manifest.arena.size)
+	uniform_grid.clear()
+	_swarm_sweep_grid.clear()
 	_elite_spawned.resize(_catalog.elite_spawn_ticks.size())
 	_elite_spawned.fill(0)
 	cancel_swarm_warning()
@@ -91,6 +85,7 @@ func advance_snapshot(
 			if enemy_store.remove(entity_id):
 				_state.normal_far_despawn_count += 1
 			continue
+		_reposition_important_enemy(enemy, current_tick)
 		if not enemy.is_targetable(current_tick):
 			continue
 		var time_scale: float = 1.0
@@ -149,7 +144,7 @@ func resolve_scheduled_spawns(_player_position: Vector2, current_tick: int) -> A
 		):
 			var elite: EnemyEntity = _spawn_enemy(
 				GameTypes.EnemyType.ELITE,
-				Vector2.ZERO,
+				_spawn_position_for_type(GameTypes.EnemyType.ELITE),
 				current_tick,
 			)
 			if elite != null:
@@ -160,7 +155,7 @@ func resolve_scheduled_spawns(_player_position: Vector2, current_tick: int) -> A
 	if not _state.boss_spawned and current_tick >= _catalog.boss_start_tick:
 		var boss: EnemyEntity = _spawn_enemy(
 			GameTypes.EnemyType.BOSS,
-			Vector2.ZERO,
+			_spawn_position_for_type(GameTypes.EnemyType.BOSS),
 			current_tick,
 		)
 		if boss != null:
@@ -173,7 +168,7 @@ func resolve_scheduled_spawns(_player_position: Vector2, current_tick: int) -> A
 	return spawned
 
 
-func resolve_normal_spawns(player_position: Vector2, current_tick: int) -> Array[EnemyEntity]:
+func resolve_normal_spawns(_player_position: Vector2, current_tick: int) -> Array[EnemyEntity]:
 	var spawned: Array[EnemyEntity] = []
 	if current_tick >= _catalog.boss_start_tick:
 		return spawned
@@ -189,7 +184,7 @@ func resolve_normal_spawns(player_position: Vector2, current_tick: int) -> Array
 		var enemy_type: GameTypes.EnemyType = _select_normal_enemy_type(segment)
 		var enemy: EnemyEntity = _spawn_enemy(
 			enemy_type,
-			_choose_normal_spawn_position(player_position),
+			_spawn_position_for_type(enemy_type),
 			current_tick,
 		)
 		if enemy == null:
@@ -239,7 +234,7 @@ func resolve_swarm_event_spawns(
 			_state.swarm_event_skipped_busy_count += 1
 			continue
 		var outward_direction: Vector2 = _sample_spawn_outward_direction(attempt_rng)
-		var spawn_distance: float = _sample_spawn_distance(attempt_rng)
+		var spawn_distance: float = _sample_spawn_distance(attempt_rng, player_position, outward_direction)
 		swarm_warning = SwarmWarningState.new()
 		swarm_warning.anchor = player_position
 		swarm_warning.direction = -outward_direction
@@ -350,8 +345,7 @@ func _move_enemy(
 	var contact_radius: float = _catalog.envelope.player_body_radius + body_radius
 	var next_position: Vector2 = enemy.position
 	if distance_to_player < contact_radius:
-		# Player motion is authoritative. Resolve only the current penetration and
-		# let arena clamping retain an unavoidable overlap at a wall.
+		# Player motion is authoritative. Resolve only the current penetration.
 		next_position = player_position + separation_direction * contact_radius
 	elif distance_to_player > contact_radius:
 		var maximum_step: float = (
@@ -361,9 +355,6 @@ func _move_enemy(
 		)
 		var travel_step: float = minf(maximum_step, distance_to_player - contact_radius)
 		next_position -= separation_direction * travel_step
-	var center_limit: Vector2 = _catalog.envelope.enemy_center_limit(body_radius)
-	if absf(enemy.position.x) <= center_limit.x and absf(enemy.position.y) <= center_limit.y:
-		next_position = next_position.clamp(-center_limit, center_limit)
 	enemy.position = next_position
 	return EMPTY_SWEEP
 
@@ -429,8 +420,6 @@ func _apply_swarm_pushes(ids: Array[int], swarm_sweeps: Array[Dictionary]) -> vo
 		):
 			total_displacement = total_displacement.normalized() * push_distance_per_tick
 		var pushed_position: Vector2 = target.position + total_displacement
-		if _is_enemy_center_inside_arena(target.position, body_radius):
-			pushed_position = _clamp_enemy_center(pushed_position, body_radius)
 		target.position = pushed_position
 
 
@@ -641,14 +630,11 @@ func _spawn_enemy(
 		damage_multiplier = _manifest.combat.boss_damage_multiplier
 	elif enemy_type in NORMAL_ENEMY_TYPES:
 		damage_multiplier *= _manifest.combat.normal_enemy_damage_scale
-	var resolved_position: Vector2 = position
-	if enemy_type not in NORMAL_ENEMY_TYPES:
-		resolved_position = _clamp_enemy_center(position, definition.body_radius)
 	return enemy_store.try_spawn(
 		_state,
 		enemy_type,
 		definition,
-		resolved_position,
+		position,
 		hp_multiplier,
 		damage_multiplier,
 		current_tick,
@@ -754,55 +740,55 @@ func _select_normal_enemy_type(segment: EnemySegmentDefinition) -> GameTypes.Ene
 	return last_positive
 
 
-func _choose_normal_spawn_position(player_position: Vector2) -> Vector2:
-	var outward_direction: Vector2 = _sample_spawn_outward_direction(_spawn_rng)
-	var spawn_distance: float = _sample_spawn_distance(_spawn_rng)
-	var tangent_direction := Vector2(-outward_direction.y, outward_direction.x)
-	var lateral_offset: float = _spawn_rng.randf_range(-spawn_distance, spawn_distance)
-	return (
-		player_position
-		+ outward_direction * spawn_distance
-		+ tangent_direction * lateral_offset
-	)
+func _spawn_position_for_type(enemy_type: GameTypes.EnemyType) -> Vector2:
+	return _view.sample_offscreen_position(_spawn_rng, _manifest.spawn.offscreen_band_width, _catalog.enemy_for_type(enemy_type).body_radius)
 
 
 func _sample_spawn_outward_direction(rng: RandomNumberGenerator) -> Vector2:
-	if rng == null:
-		return -SCREEN_DOWN_WORLD
-	return SPAWN_OUTWARD_DIRECTIONS[rng.randi_range(0, SPAWN_OUTWARD_DIRECTIONS.size() - 1)]
+	return _view.screen_to_world_input(CONTACT_SEPARATION_DIRECTIONS[rng.randi_range(0, 3)])
 
 
-func _sample_spawn_distance(rng: RandomNumberGenerator) -> float:
-	return rng.randf_range(
-		_catalog.envelope.spawn_inner_half_extent,
-		_catalog.envelope.spawn_outer_half_extent,
-	)
+func _sample_spawn_distance(rng: RandomNumberGenerator, anchor: Vector2, outward: Vector2) -> float:
+	var bounds: Rect2 = _view.body_view_rect(_manifest.swarm_event.unit_definition.body_radius)
+	var extent: Vector2 = (bounds.position - anchor).abs().max((bounds.end - anchor).abs())
+	return extent.dot(outward.abs()) + rng.randf_range(0.0, _manifest.spawn.offscreen_band_width)
 
 
-func _should_far_despawn_normal(
-	enemy: EnemyEntity,
-	player_position: Vector2,
-	current_tick: int,
-) -> bool:
-	if (
-		current_tick >= _catalog.boss_start_tick
-		or not enemy.alive
-		or enemy.is_swarm_event
-		or enemy.enemy_type not in NORMAL_ENEMY_TYPES
-	):
-		return false
-	var player_offset: Vector2 = enemy.position - player_position
+func _outside_retention(enemy: EnemyEntity) -> bool:
+	return not _view.body_view_rect(enemy.body_radius()).grow(
+		_manifest.spawn.offscreen_band_width + _manifest.spawn.despawn_margin,
+	).has_point(enemy.position)
+
+
+func _should_far_despawn_normal(enemy: EnemyEntity, _player_position: Vector2, current_tick: int) -> bool:
 	return (
-		absf(player_offset.dot(SCREEN_RIGHT_WORLD))
-		> _catalog.envelope.normal_despawn_half_extent
-		or absf(player_offset.dot(SCREEN_DOWN_WORLD))
-		> _catalog.envelope.normal_despawn_half_extent
+		current_tick < _catalog.boss_start_tick and enemy.alive and not enemy.is_swarm_event
+		and enemy.enemy_type in NORMAL_ENEMY_TYPES and _outside_retention(enemy)
 	)
 
 
-func _is_enemy_center_inside_arena(position: Vector2, body_radius: float) -> bool:
-	var center_limit: Vector2 = _catalog.envelope.enemy_center_limit(body_radius)
-	return absf(position.x) <= center_limit.x and absf(position.y) <= center_limit.y
+func _reposition_important_enemy(enemy: EnemyEntity, current_tick: int) -> void:
+	if not enemy.alive or enemy.enemy_type not in [GameTypes.EnemyType.ELITE, GameTypes.EnemyType.BOSS] or not _outside_retention(enemy):
+		return
+	enemy.position = _spawn_position_for_type(enemy.enemy_type)
+	enemy.spawn_tick = current_tick
+	enemy.activation_tick = current_tick + _catalog.envelope.entry_ticks_for_enemy_type(enemy.enemy_type)
+	enemy.telegraph_active = false
+	enemy.telegraph_elapsed_ticks = 0.0
+	enemy.telegraph_position = enemy.position
+	enemy.special_elapsed_ticks = 0.0
+	enemy.boss_charge_active = false
+	enemy.boss_charge_elapsed_ticks = 0.0
+
+
+func shift_origin(displacement: Vector2) -> void:
+	for enemy: EnemyEntity in enemy_store.entities:
+		enemy.position -= displacement
+		enemy.telegraph_position -= displacement
+	if swarm_warning != null:
+		swarm_warning.anchor -= displacement
+	_rebuild_grid(_state.combat_tick)
+	_swarm_sweep_grid.clear()
 
 
 func _normal_enemy_count() -> int:
@@ -841,11 +827,3 @@ func _damage_candidate(
 		"raw_damage": raw_damage,
 		"position": position,
 	}
-
-
-func _clamp_enemy_center(position: Vector2, body_radius: float) -> Vector2:
-	var center_limit: Vector2 = _catalog.envelope.enemy_center_limit(body_radius)
-	return Vector2(
-		clampf(position.x, -center_limit.x, center_limit.x),
-		clampf(position.y, -center_limit.y, center_limit.y),
-	)
