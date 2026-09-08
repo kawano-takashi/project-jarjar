@@ -5,8 +5,8 @@
 [resource]
 script = ExtResource("1")
 target_ramp_ticks = 180
-offscreen_band_width = 2.0
-despawn_margin = 6.0
+offscreen_band_width = 0.5
+despawn_margin = 1.5
 normal_entry_ticks = 21
 elite_entry_ticks = 36
 boss_entry_ticks = 60

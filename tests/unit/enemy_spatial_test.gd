@@ -30,7 +30,7 @@ func test_spawn_bodies_remain_offscreen_after_movement_and_resize(a: Variant, _c
 			var all_hidden: bool = true
 			for sample: int in 64:
 				var position: Vector2 = system._spawn_position_for_type(type)
-				all_hidden = all_hidden and not view.is_body_visible(position, catalog.enemy_for_type(type).body_radius)
+				all_hidden = all_hidden and not _body_intersects_screen(view, position, catalog.enemy_for_type(type).body_radius)
 			a.expect_true(all_hidden, "the complete body spawns outside the current camera at %s" % dimensions)
 		var rng := RandomNumberGenerator.new()
 		rng.seed = 88
@@ -220,6 +220,26 @@ func _assert_entry_contract(assertions: Variant, entry_ticks: int) -> void:
 		100,
 	)
 	assertions.expect_true(immediate.is_targetable(100), "direct fixture spawn activates immediately by default")
+
+
+func _body_intersects_screen(view: ArenaView, position: Vector2, body_radius: float) -> bool:
+	var bounds := AABB(
+		Vector3(position.x - body_radius, 0.0, position.y - body_radius),
+		Vector3(body_radius * 2.0, body_radius * 2.0 + 1.0, body_radius * 2.0),
+	)
+	var points := PackedVector2Array()
+	for index: int in 8:
+		var point: Vector2 = view.project_position(bounds.get_endpoint(index))
+		if not point.is_finite():
+			return true
+		points.append(point)
+	var dimensions := Vector2(view.viewport_size)
+	var screen := PackedVector2Array([
+		Vector2.ZERO, Vector2(dimensions.x, 0.0), dimensions, Vector2(0.0, dimensions.y),
+	])
+	# The projected body's bounding rectangle can overlap a screen corner while
+	# the entire body stays outside. Check its convex silhouette instead.
+	return not Geometry2D.intersect_polygons(Geometry2D.convex_hull(points), screen).is_empty()
 
 
 func _catalog(assertions: Variant) -> DefinitionCatalog:
