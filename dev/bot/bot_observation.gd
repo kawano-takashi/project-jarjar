@@ -47,6 +47,10 @@ var needles: PackedVector2Array = []
 var loot: PackedVector4Array = []
 ## Visible warning geometry, not enemy action timers or future spawns.
 var warnings: Array[Dictionary] = []
+## Clipped visible line endpoints (start X/Z, end X/Z) and inward unit normals.
+## No enclosure center, radius, lifetime or invisible edges enter this frame.
+var boundary_segments: PackedVector4Array = []
+var boundary_normals: PackedVector2Array = []
 
 
 ## The fast consumer uses packed values directly. Body objects are created only

@@ -7,9 +7,7 @@ func test_boss_transition_absorbs_normals_and_hostile_projectiles_without_reward
 		return
 	var boss_start_tick: int = simulation.catalog.boss_start_tick
 	simulation.state.combat_tick = boss_start_tick - 1
-	# This fixture jumps directly to the boss boundary, so mark all earlier scheduled
-	# elites handled. The elite below represents an already-active survivor.
-	simulation.enemy_system._elite_spawned.fill(1)
+	# Unconsumed earlier schedules must not recreate elites during boss entry.
 	var contact_enemy: EnemyEntity = simulation.spawn_fixture_enemy(
 		GameTypes.EnemyType.PURSUER,
 		simulation.player_position,
@@ -38,6 +36,7 @@ func test_boss_transition_absorbs_normals_and_hostile_projectiles_without_reward
 	var contact_enemy_id: int = contact_enemy.entity_id
 	var shooter_id: int = shooter.entity_id
 	var elite_id: int = elite.entity_id
+	simulation.enemy_system.encounters.spawn_ring(elite, simulation.player_position, simulation.state, simulation.enemy_system.enemy_store, 1.0)
 	shooter.special_elapsed_ticks = float(shooter.definition.special_interval_ticks)
 	_spawn_hostile_projectile(simulation, contact_enemy_id, &"enemy_projectile")
 	_spawn_hostile_projectile(simulation, -1, &"boss_projectile")
@@ -80,13 +79,14 @@ func test_boss_transition_absorbs_normals_and_hostile_projectiles_without_reward
 	assertions.expect_true(simulation.state.boss_transition_started, "boss transition latches once")
 	assertions.expect_true(not simulation.enemy_system.enemy_store.has_entity(contact_enemy_id), "contact enemy is removed before its ready attack")
 	assertions.expect_true(not simulation.enemy_system.enemy_store.has_entity(shooter_id), "shooter is absorbed before its ready projectile action")
-	assertions.expect_true(simulation.enemy_system.enemy_store.has_entity(elite_id), "existing elite remains in combat")
+	assertions.expect_false(simulation.enemy_system.enemy_store.has_entity(elite_id), "existing elite is retired before boss combat")
+	assertions.expect_equal(1, simulation.enemy_system.enemy_store.active_count(), "old elite schedules cannot respawn during boss entry")
 	assertions.expect_equal(0, _hostile_projectile_count(simulation), "all pre-existing hostile projectiles are harmless in the transition tick")
 	assertions.expect_float(hp_before, simulation.state.current_hp, "absorbed contact and projectile threats deal no transition-tick damage")
 	assertions.expect_equal(xp_before, simulation.state.xp, "absorption grants no direct XP")
 	assertions.expect_equal(total_kills_before, simulation.state.total_kills, "absorption grants no kills")
 	assertions.expect_equal(normal_kills_before, simulation.state.normal_kills, "absorption does not enter the normal death path")
-	assertions.expect_equal(elite_kills_before, simulation.state.elite_kills, "preserved elite is not counted as killed")
+	assertions.expect_equal(elite_kills_before, simulation.state.elite_kills, "retired elite is not counted as killed")
 	assertions.expect_equal(chain_before, [
 		simulation.state.kill_chain_count,
 		simulation.state.kill_chain_last_tick,
@@ -101,7 +101,8 @@ func test_boss_transition_absorbs_normals_and_hostile_projectiles_without_reward
 	assertions.expect_true(boss != null, "the boss boundary production scheduler creates the boss")
 	if boss == null:
 		return
-	assertions.expect_false(simulation.view.is_body_visible(boss.position, boss.body_radius()), "boss entry starts beyond the current camera")
+	assertions.expect_true(simulation.enemy_system.encounters.boss_active, "boss entry starts its boundary immediately")
+	assertions.expect_true(boss.position.distance_to(simulation.player_position) + boss.body_radius() < simulation.enemy_system.encounters.boss_radius, "boss starts inside the player-centered boundary")
 	assertions.expect_equal(boss_start_tick, boss.spawn_tick, "boss records the entry-start tick")
 	assertions.expect_equal(boss_start_tick + BalanceTestFixtures.catalog().envelope.boss_entry_ticks, boss.activation_tick, "boss materializes for exactly sixty ticks")
 	assertions.expect_true(boss.is_materializing(boss_start_tick + 59), "boss is still materializing on the last entry tick")

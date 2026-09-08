@@ -134,6 +134,7 @@ func advance_tick(move_input: Vector2) -> bool:
 	_pending_death_ids.clear()
 	# Boss entry is a tick-boundary operation. Removing the old combatants before
 	# snapshots are taken guarantees they cannot move, attack, or collide on the boundary.
+	enemy_system.encounters.advance(current_tick, enemy_system.enemy_store)
 	_move_player(move_input)
 	_rebase_if_needed()
 	view.advance(player_position, FIXED_DELTA_SECONDS)
@@ -314,6 +315,8 @@ func advance_tick(move_input: Vector2) -> bool:
 
 	# 5. Death drops, passive recovery, and terminal/modal priority.
 	_process_pending_deaths(current_tick)
+	# Resolve actual kills first, so a member killed with its owner still drops XP.
+	enemy_system.encounters.retire_finished_groups(current_tick, enemy_system.enemy_store)
 	_flush_transient_feedback()
 	_apply_passive_recovery()
 	var victory: bool = state.boss_defeated
@@ -326,6 +329,8 @@ func advance_tick(move_input: Vector2) -> bool:
 			CombatPresentationEvent.Priority.TERMINAL,
 		))
 	RunStateMachine.resolve_terminal(state, player_dead, victory)
+	if state.phase in [GameTypes.RunPhase.RESULT, GameTypes.RunPhase.FAILED]:
+		enemy_system.encounters.clear(enemy_system.enemy_store)
 	if state.phase == GameTypes.RunPhase.COMBAT:
 		_resolve_modal_priority()
 	_record_audio_cue_metrics()
@@ -761,6 +766,7 @@ func _move_player(move_input: Vector2) -> void:
 		normalized_input = normalized_input.normalized()
 	var before: Vector2 = player_position
 	player_position += normalized_input * _manifest.player.move_speed * FIXED_DELTA_SECONDS
+	player_position = enemy_system.encounters.constrain_body(player_position, _manifest.player.body_radius)
 	last_player_displacement = player_position - before
 
 
@@ -798,6 +804,7 @@ func _begin_boss_transition_if_due(current_tick: int) -> void:
 		return
 	state.boss_transition_started = true
 	enemy_system.cancel_swarm_warning()
+	enemy_system._elite_spawned.fill(1)
 	state.spawn_credit = 0.0
 	_absorption_started_tick = current_tick
 	_absorption_position = player_position
@@ -805,12 +812,16 @@ func _begin_boss_transition_if_due(current_tick: int) -> void:
 	_absorption_enemy_count = 0
 	_absorption_swarm_count = 0
 	_absorption_projectile_count = 0
+	var absorbed_normals: int = 0
 	for entity_id: int in enemy_system.enemy_store.snapshot_ids_sorted():
 		var enemy: EnemyEntity = enemy_system.enemy_store.get_by_id(entity_id)
-		if enemy == null or enemy.enemy_type not in EnemySystem.NORMAL_ENEMY_TYPES:
+		if enemy == null:
 			continue
 		var is_swarm_event: bool = enemy.is_swarm_event
+		var is_normal: bool = enemy.enemy_type in EnemySystem.NORMAL_ENEMY_TYPES and not is_swarm_event and enemy.encounter_owner_id < 0
 		if enemy_system.enemy_store.remove(entity_id):
+			if is_normal:
+				absorbed_normals += 1
 			if is_swarm_event:
 				_absorption_swarm_count += 1
 			else:
@@ -821,7 +832,8 @@ func _begin_boss_transition_if_due(current_tick: int) -> void:
 			continue
 		if projectile_pool.release(pool_index, projectile.generation):
 			_absorption_projectile_count += 1
-	state.absorbed_normal_count += _absorption_enemy_count
+	enemy_system.encounters.clear(enemy_system.enemy_store)
+	state.absorbed_normal_count += absorbed_normals
 	state.swarm_event_absorbed_count += _absorption_swarm_count
 	state.absorbed_enemy_projectile_count += _absorption_projectile_count
 	_rebuild_uniform_grid(current_tick)
@@ -867,7 +879,7 @@ func _record_visible_enemy_sample(current_tick: int) -> void:
 			visible_count += 1
 		if targetable and distance_squared <= engaged_radius_squared:
 			engaged_count += 1
-		if enemy.enemy_type in EnemySystem.NORMAL_ENEMY_TYPES and not enemy.is_swarm_event:
+		if enemy.enemy_type in EnemySystem.NORMAL_ENEMY_TYPES and not enemy.is_swarm_event and enemy.encounter_owner_id < 0:
 			active_normal_count += 1
 			if targetable:
 				engaged_normal_count += 1
@@ -993,6 +1005,7 @@ func _record_enemy_death(
 		"source_effect_id": source_effect_id,
 		"center_distance": maxf(0.0, center_distance),
 		"is_swarm_event": enemy.is_swarm_event,
+		"is_encircler": enemy.encounter_owner_id >= 0,
 		"swarm_group_id": enemy.swarm_group_id,
 		"swarm_red_variant": enemy.swarm_red_variant,
 	})
@@ -1050,7 +1063,7 @@ func _process_pending_deaths(current_tick: int) -> void:
 		if is_swarm_event:
 			state.swarm_event_kill_count += 1
 			state.swarm_event_xp += int(death["xp_value"])
-		else:
+		elif not bool(death["is_encircler"]):
 			match enemy_type:
 				GameTypes.EnemyType.ELITE:
 					state.elite_kills += 1
@@ -1870,6 +1883,10 @@ func _rebuild_uniform_grid(current_tick: int) -> void:
 
 
 func _apply_snapshot_markers(snapshot: CombatSnapshot) -> void:
+	snapshot.boss_boundary_active = enemy_system.encounters.boss_active
+	snapshot.boss_boundary_center = enemy_system.encounters.boss_center
+	snapshot.boss_boundary_radius = enemy_system.encounters.boss_radius
+	snapshot.boss_boundary_progress = enemy_system.encounters.boss_progress
 	var boss: EnemyEntity = enemy_system.boss_entity()
 	if boss != null and boss.boss_charge_active:
 		snapshot.boss_charge_active = true
@@ -1945,6 +1962,8 @@ func _enemy_visual_kind(enemy_type: int) -> int:
 
 
 func _enemy_entity_visual_kind(enemy: EnemyEntity) -> int:
+	if enemy.encounter_owner_id >= 0:
+		return CombatSnapshot.EnemyVisualKind.ENCIRCLER
 	if enemy.is_swarm_event and enemy.swarm_red_variant:
 		return CombatSnapshot.EnemyVisualKind.SWARMER_EVENT_RED
 	return _enemy_visual_kind(enemy.enemy_type)

@@ -47,7 +47,7 @@ func validate_manifest(content: SurvivalContentManifest) -> bool:
 	if content == null:
 		validation_errors.append("<manifest>: resource=null; SurvivalContentManifest is required")
 		return _finish_validation()
-	for key: String in ["player", "progression", "arena", "combat", "spawn", "swarm_event"]:
+	for key: String in ["player", "progression", "arena", "combat", "spawn", "swarm_event", "encounters"]:
 		_require(content, key, content.get(key) != null, "required Resource reference")
 	if not validation_errors.is_empty():
 		return _finish_validation()
@@ -61,6 +61,7 @@ func validate_manifest(content: SurvivalContentManifest) -> bool:
 	for enemy_type: int in GameTypes.EnemyType.values():
 		_require(content, "enemies", _enemies_by_type.has(enemy_type), "one definition for enemy type %d" % enemy_type)
 	_validate_swarm()
+	_validate_encounters()
 	_validate_segments()
 	if validation_errors.is_empty():
 		envelope = CombatEnvelope.new(content)
@@ -359,6 +360,27 @@ func _validate_swarm() -> void:
 	if swarm.unit_definition != null:
 		_validate_enemy(swarm.unit_definition)
 		_require(swarm.unit_definition, "enemy_type", swarm.unit_definition.enemy_type == GameTypes.EnemyType.SWARMER, "swarm event unit is SWARMER")
+
+
+func _validate_encounters() -> void:
+	var encounter: EncounterBalanceDefinition = _manifest.encounters
+	_validate_numbers(encounter)
+	for key: String in ["member_count", "elite_radius_x", "elite_radius_y", "elite_lifetime_ticks", "opponent_distance", "boss_initial_radius", "boss_final_radius", "boss_shrink_ticks"]:
+		_positive(encounter, key)
+	_require(encounter, "member_count", encounter.member_count < EnemyStore.CAPACITY, "members and opponent fit enemy pool")
+	_require(encounter, "unit_definition", encounter.unit_definition != null, "required enemy Resource")
+	if encounter.unit_definition == null:
+		return
+	_validate_enemy(encounter.unit_definition)
+	_require(encounter.unit_definition, "enemy_type", encounter.unit_definition.enemy_type == GameTypes.EnemyType.PURSUER, "encircler is a pursuing contact enemy")
+	var elite: EnemyDefinition = enemy_for_type(GameTypes.EnemyType.ELITE)
+	var boss: EnemyDefinition = enemy_for_type(GameTypes.EnemyType.BOSS)
+	if elite == null or boss == null:
+		return
+	_require(encounter, "opponent_distance", encounter.opponent_distance > _manifest.player.body_radius + maxf(elite.body_radius, boss.body_radius), "opponent starts clear of player")
+	_require(encounter, "elite_radius_x", minf(encounter.elite_radius_x, encounter.elite_radius_y) > encounter.opponent_distance + elite.body_radius + encounter.unit_definition.body_radius, "opponent fits inside ring")
+	_require(encounter, "boss_initial_radius", encounter.boss_initial_radius > encounter.opponent_distance + boss.body_radius and encounter.boss_initial_radius >= encounter.boss_final_radius, "opponent fits initial boundary; shrink cannot expand")
+	_require(encounter, "boss_final_radius", encounter.boss_final_radius > boss.body_radius + _manifest.player.body_radius, "both bodies fit final boundary")
 
 
 func _validate_segments() -> void:

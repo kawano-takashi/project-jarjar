@@ -2,15 +2,18 @@ extends RefCounted
 
 const EXTENSION_PATH: String = "res://build/bot-native/jarjar_bot.gdextension"
 const KERNEL_CLASS: StringName = &"JarjarBotKernel"
-const API_VERSION: int = 6
+const API_VERSION: int = 7
 static var error_message: String = ""
 static var _attempted: bool = false
 static var _loaded: bool = false
+static var _validated_api_version: int = 0
 
 static func ensure_loaded() -> bool:
-	if _attempted:
+	if _attempted and _validated_api_version == API_VERSION:
 		return _loaded
 	_attempted = true
+	_validated_api_version = API_VERSION
+	_loaded = false
 	if not ClassDB.class_exists(KERNEL_CLASS):
 		var config := ConfigFile.new()
 		if config.load(EXTENSION_PATH) != OK:

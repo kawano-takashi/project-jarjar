@@ -42,6 +42,7 @@ var fixed_direction: Vector2 = Vector2.ZERO
 var remaining_travel_distance: float = 0.0
 var swarm_red_variant: bool = false
 var is_swarm_event: bool = false
+var encounter_owner_id: int = -1
 
 
 func body_radius() -> float:
@@ -127,6 +128,7 @@ func activate(
 	remaining_travel_distance = 0.0
 	swarm_red_variant = false
 	is_swarm_event = false
+	encounter_owner_id = -1
 
 
 func configure_swarm_event(
@@ -176,3 +178,4 @@ func deactivate() -> void:
 	remaining_travel_distance = 0.0
 	swarm_red_variant = false
 	is_swarm_event = false
+	encounter_owner_id = -1

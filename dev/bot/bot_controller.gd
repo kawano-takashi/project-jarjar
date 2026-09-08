@@ -42,6 +42,7 @@ var _previous_hp: float = -1.0
 var _escape_until_tick: int = -1
 var _navigation: RefCounted
 var _navigation_origin := Vector2.ZERO
+var _boss_was_active: bool = false
 var last_reason: StringName = &""
 
 
@@ -68,11 +69,41 @@ func _init(knowledge: BotKnowledge) -> void:
 
 func decide(observation: BotObservation) -> BotAction:
 	_shift_observed_origin(observation.world_origin)
+	if observation.tick < _last_tick:
+		_navigation.configure(_navigation_origin, NAV_DIMENSIONS, NAV_CELL)
+		_navigation.clear_combat_memory()
+		_boss_was_active = false
+		_swarm_warnings.clear()
+		_last_tick = -1
+		_previous_hp = -1.0
+		_next_goal_tick = 0
+		_needle_next_tick = -1
+		_needle_last_near_tick = -1000
+		_needle_weapons.clear()
+		_equipment_ready = false
+		_resume_fire = false
+		_escape_until_tick = -1
+		_last_move = Vector2.RIGHT
+		_explore_direction = Vector2.RIGHT
+	if observation.boss_active != _boss_was_active:
+		_navigation.clear_combat_memory()
+		_swarm_warnings.clear()
+		_goal = observation.player_position
+		_last_move = Vector2.RIGHT
+		_explore_direction = Vector2.RIGHT
+		_next_goal_tick = 0
+		_escape_until_tick = -1
+		_boss_was_active = observation.boss_active
 	if observation.phase == GameTypes.RunPhase.COMBAT:
 		if _previous_hp >= 0.0 and observation.hp < _previous_hp - 0.001:
 			_escape_until_tick = observation.tick + 60
 		_previous_hp = observation.hp
 	var action := BotAction.new()
+	if observation.phase in [GameTypes.RunPhase.RESULT, GameTypes.RunPhase.FAILED]:
+		_navigation.clear_combat_memory()
+		_swarm_warnings.clear()
+		_next_goal_tick = 0
+		return action
 	if observation.phase == GameTypes.RunPhase.LEVEL_UP:
 		_resume_fire = true
 		action.kind = BotAction.Kind.CHOOSE_UPGRADE
@@ -91,6 +122,7 @@ func decide(observation: BotObservation) -> BotAction:
 	_navigation_origin = observation.player_position.round() - Vector2(NAV_DIMENSIONS - Vector2i.ONE) * NAV_CELL * 0.5
 	_navigation.recenter(_navigation_origin)
 	if observation.tick != _last_tick:
+		_navigation.observe_boundaries(observation.boundary_segments, observation.boundary_normals, observation.tick)
 		_observe_bodies(observation)
 		_remember_loot(observation)
 		_remember_warnings(observation)
@@ -143,6 +175,8 @@ func _choose_move(observation: BotObservation) -> Vector2:
 		"boss_kind": CombatSnapshot.EnemyVisualKind.BOSS,
 		"elite_kind": CombatSnapshot.EnemyVisualKind.ELITE,
 		"bulwark_kind": CombatSnapshot.EnemyVisualKind.BULWARK,
+		"encircler_kind": CombatSnapshot.EnemyVisualKind.ENCIRCLER,
+		"contact_damage": _knowledge.contact_damage_for_tick(observation.tick),
 		"swarms": swarms, "bosses": bosses,
 	}, _directions)
 
@@ -228,6 +262,7 @@ func _observe_bodies(observation: BotObservation) -> void:
 		"elapsed": float(maxi(1, observation.tick - _last_tick)) / 60.0,
 		"inverse": observation.camera_transform.orthonormalized().inverse(), "viewport": observation.viewport_size,
 		"projection": observation.camera_projection,
+		"contact_damage": _knowledge.contact_damage_for_tick(observation.tick),
 	})
 
 
@@ -286,6 +321,7 @@ func _choose_target(observation: BotObservation) -> void:
 		"player": player, "last_move": _last_move,
 		"maxed": observation.build_maxed, "evolution_ready": _knowledge.evolution_ready(observation),
 		"hp": observation.hp, "max_hp": observation.max_hp, "pickup_radius": _knowledge.pickup_radius,
+		"player_radius": _knowledge.player_radius, "object_collect_radius": _knowledge.object_collect_radius,
 		"loot_kinds": PackedInt32Array([BotObservation.LootKind.XP, BotObservation.LootKind.CHEST,
 			BotObservation.LootKind.EVOLUTION_CHEST, BotObservation.LootKind.POWERUP, BotObservation.LootKind.NODE]),
 	})
@@ -294,6 +330,8 @@ func _choose_target(observation: BotObservation) -> void:
 		last_reason = &"collect"
 		return
 	for cue: Dictionary in observation.chest_guidance:
+		if observation.boss_active:
+			break
 		if int(cue["kind"]) == GameTypes.ChestKind.EVOLUTION_CAPABLE and not _knowledge.evolution_ready(observation) and not observation.build_maxed:
 			continue
 		_goal = player + _view.screen_to_world_input(cue["direction"]).normalized() * 24.0

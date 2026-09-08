@@ -20,6 +20,9 @@ extends Resource
 ## 区間の群れ予定が使う個体・隊列設定。必須。
 @export var swarm_event: SwarmEventDefinition = null
 
+## エリート包囲・ボス囲いの設定。必須。
+@export var encounters: EncounterBalanceDefinition = null
+
 ## 全武器。必須参照のみ、ID重複不可。通常武器の重み合計は正。
 @export var weapons: Array[WeaponDefinition] = []
 

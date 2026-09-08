@@ -7,6 +7,7 @@ const ENEMY_MESH_NAMES: Array[StringName] = [
 	&"EnemyInstances", &"EnemySwarmerInstances", &"EnemyBulwarkInstances",
 	&"EnemyShooterInstances", &"EnemyEliteInstances", &"EnemyBossInstances",
 	&"EnemySwarmerEventRedInstances",
+	&"EnemyEncirclerInstances",
 ]
 ## A frame-local culler shares the inverse camera matrix across all objects.
 class Culler:
@@ -143,9 +144,10 @@ func _capture_enemies(simulation: CombatSimulation, culler: Culler, observation:
 	for index: int in enemies.size():
 		var enemy: EnemyEntity = enemies[index]
 		var radius: float = enemy.body_radius()
-		if not _enemy_shape_indices.has(enemy.enemy_type):
-			_enemy_shape_indices[enemy.enemy_type] = {}
-		var by_radius: Dictionary = _enemy_shape_indices[enemy.enemy_type]
+		var kind: int = simulation._enemy_entity_visual_kind(enemy)
+		if not _enemy_shape_indices.has(kind):
+			_enemy_shape_indices[kind] = {}
+		var by_radius: Dictionary = _enemy_shape_indices[kind]
 		var shape: int = by_radius.get(radius, -1)
 		if shape < 0:
 			shape = _enemy_templates.size()
@@ -154,7 +156,7 @@ func _capture_enemies(simulation: CombatSimulation, culler: Culler, observation:
 			# and body radius. Keep exact doubles as keys, including custom data.
 			_enemy_templates.append(simulation.enemy_visual_transform(enemy))
 		positions[index] = enemy.position
-		kinds[index] = simulation._enemy_entity_visual_kind(enemy)
+		kinds[index] = kind
 		shapes[index] = shape
 		# Completed entries have progress 1 regardless of their entry duration.
 		# Keep the original division/clamping only for entries still in progress.
@@ -216,9 +218,41 @@ func _add_loot(
 	observation.loot.append(Vector4(kind, transform.origin.x, transform.origin.z, transform.basis.x.length()))
 
 
+func _capture_boundary(snapshot: CombatSnapshot, culler: Culler, observation: BotObservation) -> void:
+	var points: PackedVector2Array = EncounterGeometry.points(snapshot.boss_boundary_center, snapshot.boss_boundary_radius)
+	for index: int in points.size():
+		var start: Vector2 = points[index]
+		var end: Vector2 = points[(index + 1) % points.size()]
+		var local_start: Vector3 = culler.inverse * Vector3(start.x, EncounterGeometry.BOUNDARY_HEIGHT, start.y)
+		var local_end: Vector3 = culler.inverse * Vector3(end.x, EncounterGeometry.BOUNDARY_HEIGHT, end.y)
+		var lower: float = 0.0
+		var upper: float = 1.0
+		for plane: Plane in culler.planes:
+			var first: float = plane.distance_to(local_start)
+			var last: float = plane.distance_to(local_end)
+			if first > 0.0 and last > 0.0:
+				upper = -1.0
+				break
+			if (first > 0.0) != (last > 0.0):
+				var fraction: float = first / (first - last)
+				if first > 0.0:
+					lower = maxf(lower, fraction)
+				else:
+					upper = minf(upper, fraction)
+		if upper <= lower:
+			continue
+		var clipped_start: Vector2 = start.lerp(end, lower)
+		var clipped_end: Vector2 = start.lerp(end, upper)
+		var tangent: Vector2 = (end - start).normalized()
+		observation.boundary_segments.append(Vector4(clipped_start.x, clipped_start.y, clipped_end.x, clipped_end.y))
+		observation.boundary_normals.append(Vector2(-tangent.y, tangent.x))
+
+
 func _capture_warnings(simulation: CombatSimulation, culler: Culler, observation: BotObservation) -> void:
 	var snapshot := CombatSnapshot.new()
 	simulation._apply_snapshot_markers(snapshot)
+	if snapshot.boss_boundary_active:
+		_capture_boundary(snapshot, culler, observation)
 	var reduce_motion: bool = simulation.vfx_pool.reduce_motion
 	if snapshot.important_marker_active:
 		var entry_transform: Transform3D = ArenaView.ring_transform(snapshot.important_marker_position, 0.05, snapshot.important_marker_radius, snapshot.important_marker_progress, reduce_motion)

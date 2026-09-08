@@ -6,6 +6,11 @@ const BotObservation = preload("res://dev/bot/bot_observation.gd")
 var move_speed: float
 var player_radius: float
 var pickup_radius: float
+var object_collect_radius: float
+var enemy_contact_damage: Dictionary[int, float] = {}
+var _segment_damage: Array[Vector2] = []
+var _normal_damage_scale: float
+var _boss_damage_scale: float
 var weapon_slots: int
 var passive_slots: int
 var starter_weapon_id: StringName
@@ -25,6 +30,13 @@ func _init(catalog: DefinitionCatalog) -> void:
 	move_speed = content.player.move_speed
 	player_radius = content.player.body_radius
 	pickup_radius = content.progression.xp_pickup_attract_radius
+	object_collect_radius = content.arena.pickup_collect_radius
+	_normal_damage_scale = content.combat.normal_enemy_damage_scale
+	_boss_damage_scale = content.combat.boss_damage_multiplier
+	var end_tick: int = 0
+	for segment: EnemySegmentDefinition in content.segments:
+		end_tick += segment.duration_ticks
+		_segment_damage.append(Vector2(end_tick, segment.damage_multiplier))
 	weapon_slots = content.progression.weapon_slot_count
 	passive_slots = content.progression.passive_slot_count
 	starter_weapon_id = content.progression.starter_weapon_id
@@ -54,6 +66,28 @@ func _init(catalog: DefinitionCatalog) -> void:
 		}
 	for definition: EnemyDefinition in content.enemies:
 		enemy_speeds[int(definition.enemy_type)] = definition.move_speed
+		enemy_contact_damage[int(definition.enemy_type)] = definition.contact_damage
+	enemy_speeds[CombatSnapshot.EnemyVisualKind.SWARMER_EVENT_RED] = swarm_speed
+	enemy_contact_damage[CombatSnapshot.EnemyVisualKind.SWARMER_EVENT_RED] = content.swarm_event.unit_definition.contact_damage
+	enemy_speeds[CombatSnapshot.EnemyVisualKind.ENCIRCLER] = content.encounters.unit_definition.move_speed
+	enemy_contact_damage[CombatSnapshot.EnemyVisualKind.ENCIRCLER] = content.encounters.unit_definition.contact_damage
+
+
+func contact_damage_for_tick(tick: int) -> Dictionary[int, float]:
+	var multiplier: float = _segment_damage.back().y
+	for segment: Vector2 in _segment_damage:
+		if tick < int(segment.x):
+			multiplier = segment.y
+			break
+	var result: Dictionary[int, float] = {}
+	for kind: int in enemy_contact_damage:
+		var scale: float = multiplier
+		if kind == CombatSnapshot.EnemyVisualKind.BOSS:
+			scale = _boss_damage_scale
+		elif kind not in [CombatSnapshot.EnemyVisualKind.ELITE, CombatSnapshot.EnemyVisualKind.SWARMER_EVENT_RED]:
+			scale *= _normal_damage_scale
+		result[kind] = enemy_contact_damage[kind] * scale
+	return result
 
 
 func evolution_ready(observation: BotObservation) -> bool:

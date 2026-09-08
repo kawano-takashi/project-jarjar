@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="EnemyDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/enemy_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+enemy_id = &"encircler"
+display_name = "包囲花"
+enemy_type = 0
+base_hp = 30.0
+move_speed = 0.405
+body_radius = 0.65
+contact_damage = 1.0
+xp_value = 2

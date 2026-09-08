@@ -2,6 +2,7 @@
 #include "bot_view.h"
 #include <godot_cpp/core/class_db.hpp>
 #include <cmath>
+#include <algorithm>
 #include <map>
 #include <limits>
 #include <tuple>
@@ -10,6 +11,8 @@
 using namespace godot;
 
 void JarjarBotNavigation::_bind_methods() {
+    ClassDB::bind_method(D_METHOD("observe_boundaries", "segments", "normals", "tick"), &JarjarBotNavigation::observe_boundaries);
+    ClassDB::bind_method(D_METHOD("clear_combat_memory"), &JarjarBotNavigation::clear_combat_memory);
     ClassDB::bind_method(D_METHOD("recenter", "origin"), &JarjarBotNavigation::recenter);
     ClassDB::bind_method(D_METHOD("shift_origin", "displacement"), &JarjarBotNavigation::shift_origin);
     ClassDB::bind_method(D_METHOD("configure", "origin", "dimensions", "cell_size"), &JarjarBotNavigation::configure);
@@ -28,6 +31,7 @@ void JarjarBotNavigation::configure(const Vector2 &p_origin, const Vector2i &p_d
     dimensions = p_dimensions;
     cell_size = p_cell_size;
     loot_memory.clear();
+    clear_combat_memory();
     grid.instantiate();
     grid->set_region(Rect2i(Vector2i(), dimensions));
     grid->set_offset(origin);
@@ -45,6 +49,7 @@ void JarjarBotNavigation::recenter(const Vector2 &p_origin) {
 }
 
 void JarjarBotNavigation::shift_origin(const Vector2 &displacement) {
+    for (BotBoundary &wall : boundaries) wall.point -= displacement;
     for (Track &track : enemies) track.position -= displacement;
     for (Track &track : bullets) track.position -= displacement;
     Dictionary shifted;
@@ -86,6 +91,8 @@ Vector3 JarjarBotNavigation::choose_loot_goal(const Dictionary &frame) const {
     ERR_FAIL_COND_V(kinds.size() != 5, Vector3());
     bool maxed = frame["maxed"], evolution_ready = frame["evolution_ready"];
     double hp = frame["hp"], max_hp = frame["max_hp"], pickup_radius = frame["pickup_radius"];
+    double player_radius = frame.get("player_radius", 0.0), collect_radius = frame.get("object_collect_radius", 0.0);
+    const auto walls = predicted_boundaries();
     using Cell = std::pair<int, int>;
     auto cell_key = [](Vector2 p) -> Cell { return {int(std::floor(double(p.x) / 2.0)), int(std::floor(double(p.y) / 2.0))}; };
     std::map<Cell, std::vector<Vector2>> danger_cells;
@@ -118,6 +125,10 @@ Vector3 JarjarBotNavigation::choose_loot_goal(const Dictionary &frame) const {
         Vector4 entry = loot_memory[key];
         Vector2 position(entry.x, entry.y);
         int kind = key.z;
+        Vector2 reachable = bot_constrain(position, player_radius + 0.02, walls);
+        double reach = kind == kinds[0] ? pickup_radius : (kind == kinds[4] ? 0.0 : collect_radius);
+        if (!bot_inside(reachable, player_radius, walls) || reachable.distance_to(position) > reach) continue;
+        if (kind != kinds[0]) position = reachable;
         if (kind != kinds[0] && !open(position)) continue;
         double distance = player.distance_to(position);
         double value = 0.0;
@@ -149,6 +160,8 @@ Vector3 JarjarBotNavigation::choose_loot_goal(const Dictionary &frame) const {
         double weight = cluster.weight;
         Vector2 position = cluster.sum / float(weight);
         Vector2 approach = position + (player - position).normalized() * float(std::min(pickup_radius - 0.5, double(player.distance_to(position))));
+        approach = bot_constrain(approach, player_radius + 0.02, walls);
+        if (approach.distance_to(position) > pickup_radius || !bot_inside(approach, player_radius, walls)) continue;
         if (!open(approach)) continue;
         double score = (5.0 + std::sqrt(weight) * 4.0) / (double(player.distance_to(position)) + 2.0);
         if (score > best) { best = score; best_position = approach; }
@@ -161,9 +174,18 @@ Vector2i JarjarBotNavigation::cell(const Vector2 &position) const {
 }
 
 Vector2 JarjarBotNavigation::route(const Vector2 &player, const Vector2 &goal, const PackedVector2Array &positions, const PackedFloat64Array &radii, double player_radius) {
-    ERR_FAIL_COND_V(grid.is_null() || positions.size() != radii.size(), goal);
+    ERR_FAIL_COND_V(grid.is_null() || positions.size() != radii.size(), player);
+    const auto walls = predicted_boundaries();
     Vector2 bounded_goal = goal.clamp(origin, grid->get_point_position(dimensions - Vector2i(1, 1)));
+    bounded_goal = bot_constrain(bounded_goal, player_radius + 0.05, walls, 0.25);
     grid->fill_weight_scale_region(grid->get_region(), 1.0f);
+    grid->fill_solid_region(grid->get_region(), false);
+    for (int x = 0; !walls.empty() && x < dimensions.x; ++x) {
+        for (int y = 0; y < dimensions.y; ++y) {
+            Vector2i id(x, y);
+            if (!bot_inside(grid->get_point_position(id), player_radius + 0.02, walls, 0.25)) grid->set_point_solid(id, true);
+        }
+    }
     for (int64_t i = 0; i < positions.size(); ++i) {
         Vector2 position = positions[i];
         double contact_radius = radii[i] + player_radius;
@@ -175,14 +197,66 @@ Vector2 JarjarBotNavigation::route(const Vector2 &player, const Vector2 &goal, c
                 Vector2i id(x, y);
                 double clearance = double(grid->get_point_position(id).distance_to(position)) - contact_radius;
                 if (clearance < 2.0) {
-                    double danger = 20.0 * (2.0 - clearance) * (2.0 - clearance);
+                    double risk = route_risk.size() == size_t(positions.size()) ? route_risk[size_t(i)] : 1.0;
+                    double danger = 20.0 * (2.0 - clearance) * (2.0 - clearance) * risk;
                     grid->set_point_weight_scale(id, float(double(grid->get_point_weight_scale(id)) + danger));
                 }
             }
         }
     }
-    PackedVector2Array path = grid->get_point_path(cell(player), cell(bounded_goal));
-    return path.size() >= 2 ? path[std::min(int64_t(3), path.size() - 1)] : bounded_goal;
+    // Rounding must not make a valid position on the wall an unusable start cell.
+    auto nearest_open = [&](Vector2 point) {
+        Vector2i nearest = cell(point);
+        if (!grid->is_point_solid(nearest)) return nearest;
+        double best = std::numeric_limits<double>::infinity();
+        nearest = Vector2i(-1, -1);
+        for (int x = 0; x < dimensions.x; ++x) for (int y = 0; y < dimensions.y; ++y) {
+            Vector2i id(x, y);
+            if (grid->is_point_solid(id)) continue;
+            double distance = grid->get_point_position(id).distance_squared_to(point);
+            if (distance < best) { best = distance; nearest = id; }
+        }
+        return nearest;
+    };
+    Vector2i start = nearest_open(player), finish = nearest_open(bounded_goal);
+    if (start.x < 0 || finish.x < 0) return bot_constrain(player, player_radius, walls);
+    PackedVector2Array path = grid->get_point_path(start, finish);
+    if (path.is_empty()) return bot_constrain(player, player_radius, walls);
+    if (path.size() >= 2) return path[std::min(int64_t(3), path.size() - 1)];
+    return bounded_goal;
+}
+
+void JarjarBotNavigation::clear_combat_memory() {
+    enemies.clear(); bullets.clear(); boundaries.clear(); contact_damage.clear(); route_risk.clear(); boundary_tick = 0;
+}
+
+void JarjarBotNavigation::observe_boundaries(const PackedVector4Array &segments, const PackedVector2Array &normals, int64_t tick) {
+    ERR_FAIL_COND(segments.size() != normals.size());
+    if (tick < boundary_tick) boundaries.clear();
+    boundary_tick = tick;
+    boundaries.erase(std::remove_if(boundaries.begin(), boundaries.end(), [&](const BotBoundary &wall) {
+        return tick - wall.seen_tick > memory_ticks;
+    }), boundaries.end());
+    for (int64_t i = 0; i < segments.size(); ++i) {
+        Vector4 line = segments[i];
+        Vector2 point((line.x + line.z) * 0.5f, (line.y + line.w) * 0.5f), normal = normals[i].normalized();
+        if (normal.is_zero_approx()) continue;
+        auto found = std::find_if(boundaries.begin(), boundaries.end(), [&](const BotBoundary &wall) {
+            return wall.normal.dot(normal) > 0.99999f;
+        });
+        if (found == boundaries.end()) boundaries.push_back({point, normal, 0.0, tick});
+        else {
+            double elapsed = double(tick - found->seen_tick) / 60.0;
+            if (elapsed > 0.0) found->speed = std::max(0.0, double((point - found->point).dot(normal)) / elapsed);
+            found->point = point; found->normal = normal; found->seen_tick = tick;
+        }
+    }
+}
+
+std::vector<BotBoundary> JarjarBotNavigation::predicted_boundaries() const {
+    auto result = boundaries;
+    for (BotBoundary &wall : result) wall.point += wall.normal * float(wall.speed * double(boundary_tick - wall.seen_tick) / 60.0);
+    return result;
 }
 
 PackedInt32Array JarjarBotNavigation::match_tracks(const PackedVector2Array &predicted, const PackedInt32Array &old_kinds, const PackedVector2Array &observed, const PackedInt32Array &kinds, double track_cell) const {
@@ -296,6 +370,12 @@ std::vector<JarjarBotNavigation::Track> JarjarBotNavigation::track_bodies(const 
 }
 
 void JarjarBotNavigation::observe_tracks(const Dictionary &frame) {
+    Dictionary damage = frame.get("contact_damage", Dictionary());
+    Array damage_kinds = damage.keys();
+    for (int64_t i = 0; i < damage_kinds.size(); ++i) {
+        int kind = damage_kinds[i];
+        contact_damage[kind] = damage[kind];
+    }
     enemies = track_bodies(frame["enemies"], enemies, frame, false);
     bullets = track_bodies(frame["bullets"], bullets, frame, true);
 }
@@ -309,9 +389,14 @@ Vector2 JarjarBotNavigation::route_tracked(const Vector2 &player, const Vector2 
     PackedVector2Array positions;
     PackedFloat64Array radii;
     positions.resize(int64_t(enemies.size())); radii.resize(int64_t(enemies.size()));
+    route_risk.resize(enemies.size());
     for (size_t i = 0; i < enemies.size(); ++i) {
         positions[int64_t(i)] = enemies[i].position + enemies[i].velocity * 0.3f;
         radii[int64_t(i)] = enemies[i].radius;
+        auto damage = contact_damage.find(enemies[i].kind);
+        route_risk[i] = damage == contact_damage.end() ? 1.0 : std::clamp(damage->second, 0.05, 4.0);
     }
-    return route(player, goal, positions, radii, player_radius);
+    Vector2 result = route(player, goal, positions, radii, player_radius);
+    route_risk.clear();
+    return result;
 }

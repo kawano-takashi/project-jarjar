@@ -42,7 +42,11 @@ func test_bot_watch_and_fast_paths_share_decisions_and_gameplay(a: Variant, cont
 		for sim: CombatSimulation in [app.combat_simulation, fast.simulation]:
 			sim.player_position = Vector2(1023.99, 0)
 			sim.view.reset(sim.player_position)
+			sim.state.combat_tick = sim.catalog.elite_spawn_ticks[0] - 1
 		for frame_index: int in 30:
+			if frame_index == 20:
+				for sim: CombatSimulation in [app.combat_simulation, fast.simulation]:
+					sim.state.combat_tick = sim.catalog.boss_start_tick - 1
 			if frame_index in [0, 12]:
 				for sim: CombatSimulation in [app.combat_simulation, fast.simulation]:
 					sim.state.pending_level_ups = 1
@@ -65,6 +69,9 @@ func test_bot_watch_and_fast_paths_share_decisions_and_gameplay(a: Variant, cont
 		app._retry_same_seed()
 		a.expect_equal(778, app.run_state.run_seed, "watched retry preserves the requested seed")
 		a.expect_equal(0, app.run_state.combat_tick, "watched retry starts a fresh ordinary run")
+		a.expect_false(app.combat_simulation.enemy_system.encounters.boss_active, "watched retry removes the old boss boundary")
+		var restarted_route: Vector2 = app._bot_session.controller._navigation.route_tracked(Vector2.ZERO, Vector2(24, 0), 0.45)
+		a.expect_true(restarted_route.x > 0.0, "watched retry starts with freely traversable navigation")
 		app.run_state.combat_tick = BotSession.MAX_COMBAT_TICKS
 		app._bot_session.advance()
 		app._finish_bot_session()
@@ -91,6 +98,10 @@ func _gameplay_digest(simulation: CombatSimulation) -> String:
 		state.current_hp, state.level, state.xp, state.total_kills,
 		state.pending_level_ups, state.pending_chest_count(),
 		state.weapon_damage_by_lineage, state.rng_streams.state_digest(),
+		simulation.enemy_system.encounters.boss_active,
+		simulation.enemy_system.encounters.boss_center,
+		simulation.enemy_system.encounters.boss_radius,
+		simulation.build_snapshot().enemy_visual_kinds,
 	])
 
 

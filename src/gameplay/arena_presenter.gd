@@ -18,6 +18,7 @@ const ABSORPTION_EVENT_SECONDS: float = 0.24
 	%EnemyEliteInstances,
 	%EnemyBossInstances,
 	%EnemySwarmerEventRedInstances,
+	%EnemyEncirclerInstances,
 ]
 @onready var _projectile_instances: Array[MultiMeshInstance3D] = [
 	%ProjectileInstances,
@@ -56,6 +57,7 @@ var _simulation: RefCounted = null
 var view: ArenaView = ArenaView.new()
 var _world_origin := Vector2i.ZERO
 var _ground: OpenFieldGround = null
+var _boss_boundary: MeshInstance3D = null
 var _reduce_motion: bool = false
 var _reduce_flashes: bool = false
 var _last_important_position: Vector2 = Vector2.ZERO
@@ -73,6 +75,7 @@ func _ready() -> void:
 	set_physics_process(false)
 	set_process(false)
 	_player_base_scale = _player_mesh.scale
+	_create_boss_boundary()
 	_configure_camera()
 	_hide_presentation_markers()
 	if _simulation != null:
@@ -352,7 +355,30 @@ func _update_camera() -> void:
 	_important_countdown.pixel_size = 2.0 / (view.projection.y.y * float(view.viewport_size.y))
 
 
+func _create_boss_boundary() -> void:
+	_boss_boundary = MeshInstance3D.new()
+	_boss_boundary.name = &"BossBoundary"
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	material.albedo_color = Color(1.0, 0.32, 0.18)
+	var mesh := ImmediateMesh.new()
+	mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES, material)
+	var points: PackedVector2Array = EncounterGeometry.points(Vector2.ZERO, 1.0)
+	for index: int in points.size():
+		var start: Vector2 = points[index]
+		var end: Vector2 = points[(index + 1) % points.size()]
+		for point: Vector2 in [start * 0.994, end * 0.994, end * 1.006, start * 0.994, end * 1.006, start * 1.006]:
+			mesh.surface_add_vertex(Vector3(point.x, 0.0, point.y))
+	mesh.surface_end()
+	_boss_boundary.mesh = mesh
+	add_child(_boss_boundary)
+
+
 func _update_snapshot_markers(snapshot: CombatSnapshot) -> void:
+	_boss_boundary.visible = snapshot.boss_boundary_active
+	_boss_boundary.position = Vector3(snapshot.boss_boundary_center.x, EncounterGeometry.BOUNDARY_HEIGHT, snapshot.boss_boundary_center.y)
+	_boss_boundary.scale = Vector3(snapshot.boss_boundary_radius, 1.0, snapshot.boss_boundary_radius)
 	_update_swarm_warning(snapshot)
 	if snapshot.important_marker_active:
 		_last_important_position = snapshot.important_marker_position
@@ -553,6 +579,7 @@ func _apply_accessibility_settings() -> void:
 
 
 func _hide_presentation_markers() -> void:
+	_boss_boundary.visible = false
 	for marker: MeshInstance3D in [
 		_important_marker,
 		_boss_charge_marker,

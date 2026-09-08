@@ -1,4 +1,5 @@
 #pragma once
+#include "bot_boundary.h"
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/classes/a_star_grid2d.hpp>
 #include <godot_cpp/variant/packed_float64_array.hpp>
@@ -28,13 +29,20 @@ protected:
         bool materializing = false, fixed = false;
     };
     std::vector<Track> enemies, bullets;
+    std::vector<BotBoundary> boundaries;
+    int64_t boundary_tick = 0;
+    std::vector<BotBoundary> predicted_boundaries() const;
     std::map<int, double> enemy_speeds;
+    std::map<int, double> contact_damage;
+    std::vector<double> route_risk;
     double tracking_cell = 0.75, swarm_speed = 0.0;
     int64_t memory_ticks = 120;
     int swarmer_kind = 0, red_kind = 0, boss_kind = 0;
     std::vector<Track> track_bodies(const godot::Dictionary &data, const std::vector<Track> &old, const godot::Dictionary &frame, bool bullet) const;
     static void _bind_methods();
 public:
+    void observe_boundaries(const godot::PackedVector4Array &segments, const godot::PackedVector2Array &normals, int64_t tick);
+    void clear_combat_memory();
     void configure(const godot::Vector2 &p_origin, const godot::Vector2i &p_dimensions, double p_cell_size);
     void recenter(const godot::Vector2 &p_origin);
     void shift_origin(const godot::Vector2 &displacement);

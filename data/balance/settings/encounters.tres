@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="EncounterBalanceDefinition" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://src/definitions/encounter_balance_definition.gd" id="1"]
+[ext_resource type="Resource" path="res://data/balance/enemies/encircler.tres" id="2"]
+
+[resource]
+script = ExtResource("1")
+unit_definition = ExtResource("2")
+member_count = 50
+elite_radius_x = 14.0
+elite_radius_y = 10.0
+elite_lifetime_ticks = 1800
+opponent_distance = 6.0
+boss_initial_radius = 12.0
+boss_final_radius = 8.0
+boss_shrink_ticks = 3600

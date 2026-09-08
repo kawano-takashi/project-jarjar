@@ -10,6 +10,7 @@ enum EnemyVisualKind {
 	ELITE,
 	BOSS,
 	SWARMER_EVENT_RED,
+	ENCIRCLER,
 }
 
 enum ProjectileVisualKind {
@@ -70,6 +71,10 @@ var swarm_warning_width: float = 0.0
 var swarm_warning_length: float = 0.0
 
 var boss_charge_active: bool = false
+var boss_boundary_active: bool = false
+var boss_boundary_center: Vector2 = Vector2.ZERO
+var boss_boundary_radius: float = 0.0
+var boss_boundary_progress: float = 0.0
 var boss_charge_position: Vector2 = Vector2.ZERO
 var boss_charge_progress: float = 0.0
 var boss_charge_radius: float = 1.0

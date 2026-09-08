@@ -29,6 +29,7 @@ const DAMAGE_SOURCE_CONTACT: StringName = &"enemy_contact"
 
 var enemy_store: EnemyStore = EnemyStore.new()
 var uniform_grid: UniformGrid = UniformGrid.new()
+var encounters: EncounterSystem = EncounterSystem.new()
 var _swarm_sweep_grid: UniformGrid = UniformGrid.new()
 
 var _state: RunState = null
@@ -50,6 +51,7 @@ func initialize(state: RunState, catalog: DefinitionCatalog, view: ArenaView = n
 	_state = state
 	_catalog = catalog
 	_manifest = catalog.manifest()
+	encounters.initialize(_manifest.encounters)
 	_view = view if view != null else ArenaView.new()
 	_spawn_rng = state.rng_streams.spawn_rng if state.rng_streams != null else null
 	_swarm_rng = state.rng_streams.swarm_event_rng if state.rng_streams != null else null
@@ -94,6 +96,8 @@ func advance_snapshot(
 		if time_scale <= 0.0:
 			continue
 		var sweep: Dictionary = _move_enemy(enemy, player_position, time_scale)
+		if enemy.enemy_type == GameTypes.EnemyType.BOSS:
+			enemy.position = encounters.constrain_body(enemy.position, enemy.body_radius())
 		if not sweep.is_empty():
 			swarm_sweeps.append(sweep)
 			if enemy.remaining_travel_distance <= 0.0:
@@ -135,16 +139,20 @@ func accrue_spawn_credit() -> void:
 	)
 
 
-func resolve_scheduled_spawns(_player_position: Vector2, current_tick: int) -> Array[EnemyEntity]:
+func resolve_scheduled_spawns(player_position: Vector2, current_tick: int) -> Array[EnemyEntity]:
 	var spawned: Array[EnemyEntity] = []
+	if current_tick >= _catalog.boss_start_tick:
+		_elite_spawned.fill(1)
 	for elite_index: int in range(_catalog.elite_spawn_ticks.size()):
 		if (
 			_elite_spawned[elite_index] == 0
 			and current_tick >= _catalog.elite_spawn_ticks[elite_index]
 		):
+			if not _reserve_encounter_capacity(_manifest.encounters.member_count + 1, player_position):
+				continue
 			var elite: EnemyEntity = _spawn_enemy(
 				GameTypes.EnemyType.ELITE,
-				_spawn_position_for_type(GameTypes.EnemyType.ELITE),
+				_encounter_opponent_position(player_position),
 				current_tick,
 			)
 			if elite != null:
@@ -152,13 +160,15 @@ func resolve_scheduled_spawns(_player_position: Vector2, current_tick: int) -> A
 				elite.elite_serial = elite_index
 				_state.elite_spawn_ticks[elite_index] = current_tick
 				spawned.append(elite)
+				encounters.spawn_ring(elite, player_position, _state, enemy_store, current_segment().damage_multiplier * _manifest.combat.normal_enemy_damage_scale)
 	if not _state.boss_spawned and current_tick >= _catalog.boss_start_tick:
 		var boss: EnemyEntity = _spawn_enemy(
 			GameTypes.EnemyType.BOSS,
-			_spawn_position_for_type(GameTypes.EnemyType.BOSS),
+			_encounter_opponent_position(player_position),
 			current_tick,
 		)
 		if boss != null:
+			encounters.begin_boss(player_position, boss.activation_tick)
 			_state.boss_spawned = true
 			_state.boss_spawn_tick = current_tick
 			_state.boss_phase = 1
@@ -166,6 +176,31 @@ func resolve_scheduled_spawns(_player_position: Vector2, current_tick: int) -> A
 			_state.boss_max_hp = boss.max_hp
 			spawned.append(boss)
 	return spawned
+
+
+func _encounter_opponent_position(center: Vector2) -> Vector2:
+	return center + Vector2.from_angle(_spawn_rng.randf() * TAU) * _manifest.encounters.opponent_distance
+
+
+func _reserve_encounter_capacity(count: int, center: Vector2) -> bool:
+	if enemy_store.free_count() >= count:
+		return true
+	var candidates: Array[EnemyEntity] = []
+	for enemy: EnemyEntity in enemy_store.entities:
+		if enemy.enemy_type in NORMAL_ENEMY_TYPES and not enemy.is_swarm_event and enemy.encounter_owner_id < 0:
+			candidates.append(enemy)
+	if candidates.size() + enemy_store.free_count() < count:
+		return false
+	candidates.sort_custom(func(left: EnemyEntity, right: EnemyEntity) -> bool:
+		var left_distance: float = left.position.distance_squared_to(center)
+		var right_distance: float = right.position.distance_squared_to(center)
+		return left_distance > right_distance if left_distance != right_distance else left.entity_id < right.entity_id
+	)
+	for enemy: EnemyEntity in candidates:
+		if enemy_store.free_count() >= count:
+			break
+		enemy_store.remove(enemy.entity_id)
+	return true
 
 
 func resolve_normal_spawns(_player_position: Vector2, current_tick: int) -> Array[EnemyEntity]:
@@ -344,6 +379,10 @@ func _move_enemy(
 	var body_radius: float = enemy.body_radius()
 	var contact_radius: float = _catalog.envelope.player_body_radius + body_radius
 	var next_position: Vector2 = enemy.position
+	if enemy.encounter_owner_id >= 0:
+		# Ring members pursue independently; player motion can cross their body.
+		enemy.position = enemy.position.move_toward(player_position, enemy.definition.move_speed * time_scale / RunState.TICKS_PER_SECOND)
+		return EMPTY_SWEEP
 	if distance_to_player < contact_radius:
 		# Player motion is authoritative. Resolve only the current penetration.
 		next_position = player_position + separation_direction * contact_radius
@@ -762,12 +801,14 @@ func _outside_retention(enemy: EnemyEntity) -> bool:
 
 func _should_far_despawn_normal(enemy: EnemyEntity, _player_position: Vector2, current_tick: int) -> bool:
 	return (
-		current_tick < _catalog.boss_start_tick and enemy.alive and not enemy.is_swarm_event
+		current_tick < _catalog.boss_start_tick and enemy.alive and not enemy.is_swarm_event and enemy.encounter_owner_id < 0
 		and enemy.enemy_type in NORMAL_ENEMY_TYPES and _outside_retention(enemy)
 	)
 
 
 func _reposition_important_enemy(enemy: EnemyEntity, current_tick: int) -> void:
+	if enemy.enemy_type == GameTypes.EnemyType.BOSS and encounters.boss_active:
+		return
 	if not enemy.alive or enemy.enemy_type not in [GameTypes.EnemyType.ELITE, GameTypes.EnemyType.BOSS] or not _outside_retention(enemy):
 		return
 	enemy.position = _spawn_position_for_type(enemy.enemy_type)
@@ -782,6 +823,7 @@ func _reposition_important_enemy(enemy: EnemyEntity, current_tick: int) -> void:
 
 
 func shift_origin(displacement: Vector2) -> void:
+	encounters.shift_origin(displacement)
 	for enemy: EnemyEntity in enemy_store.entities:
 		enemy.position -= displacement
 		enemy.telegraph_position -= displacement
@@ -794,7 +836,7 @@ func shift_origin(displacement: Vector2) -> void:
 func _normal_enemy_count() -> int:
 	var count: int = 0
 	for enemy: EnemyEntity in enemy_store.entities:
-		if enemy.enemy_type in NORMAL_ENEMY_TYPES and not enemy.is_swarm_event:
+		if enemy.enemy_type in NORMAL_ENEMY_TYPES and not enemy.is_swarm_event and enemy.encounter_owner_id < 0:
 			count += 1
 	return count
 

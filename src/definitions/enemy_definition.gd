@@ -8,7 +8,7 @@ extends Resource
 @export var display_name: String = ""
 ## 敵の動作種別。EnemyTypeの列挙値、manifest内で各種別に1定義。
 @export var enemy_type: GameTypes.EnemyType = GameTypes.EnemyType.PURSUER
-## 敵の基礎HP。有限かつ正。区間倍率またはボス専用倍率を掛ける。
+## 敵の基礎HP。有限かつ正。通常は区間倍率、ボスは専用倍率、包囲個体は出現時プレイヤーレベルを掛ける。
 @export_range(0, 100, 0.001, "or_greater") var base_hp: float = 0.0
 ## 移動速度。m/秒、有限かつ0以上。
 @export_range(0, 100, 0.001, "or_greater", "suffix:m/s") var move_speed: float = 0.0

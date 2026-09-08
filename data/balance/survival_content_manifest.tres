@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="SurvivalContentManifest" load_steps=71 format=3]
+[gd_resource type="Resource" script_class="SurvivalContentManifest" load_steps=72 format=3]
 
 [ext_resource type="Script" path="res://src/definitions/survival_content_manifest.gd" id="1_manifest"]
 [ext_resource type="Resource" path="res://data/balance/weapons/resonance_wave.tres" id="3_w01"]
@@ -71,6 +71,7 @@
 [ext_resource type="Resource" path="res://data/balance/settings/arena.tres" id="balance_arena"]
 [ext_resource type="Resource" path="res://data/balance/settings/combat.tres" id="balance_combat"]
 [ext_resource type="Resource" path="res://data/balance/settings/spawn.tres" id="balance_spawn"]
+[ext_resource type="Resource" path="res://data/balance/settings/encounters.tres" id="balance_encounters"]
 
 [resource]
 script = ExtResource("1_manifest")
@@ -85,3 +86,4 @@ progression = ExtResource("balance_progression")
 arena = ExtResource("balance_arena")
 combat = ExtResource("balance_combat")
 spawn = ExtResource("balance_spawn")
+encounters = ExtResource("balance_encounters")
