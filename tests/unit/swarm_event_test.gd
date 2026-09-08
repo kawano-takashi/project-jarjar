@@ -280,92 +280,60 @@ func test_swarm_contact_damage_and_kill_accounting_are_separate(assertions: Vari
 	assertions.expect_equal(0, simulation.arena_object_system.pickups.size(), "event kill creates no chest or power-up drop")
 
 
-func test_swarm_push_is_capped_and_paused(assertions: Variant, _context: Dictionary) -> void:
-	var catalog: DefinitionCatalog = _catalog(assertions)
-	if catalog == null:
-		return
+func test_swarm_collisions_deflect_without_retargeting_and_resolve_before_exit(a: Variant, _context: Dictionary) -> void:
+	var catalog: DefinitionCatalog = _catalog(a)
+	var unit: EnemyDefinition = catalog.manifest().swarm_event.unit_definition
+	unit.move_speed = 60.0
+	unit.body_radius = 0.5
+	var target_definition: EnemyDefinition = catalog.enemy(&"pursuer")
+	target_definition.move_speed = 0.0
+	target_definition.body_radius = 0.5
 	var state: RunState = RunStateFactory.create(8008, catalog)
 	var system := EnemySystem.new()
 	system.initialize(state, catalog)
-	var event_step: float = (
-		catalog.manifest().swarm_event.unit_definition.move_speed
-		/ float(RunState.TICKS_PER_SECOND)
+	var member: EnemyEntity = _spawn_swarm_member(system, state, catalog, Vector2(3.0, 0.0), Vector2.RIGHT, 1)
+	var member_id: int = member.entity_id
+	var target: EnemyEntity = system.enemy_store.try_spawn(
+		state, target_definition.enemy_type, target_definition, Vector2(4.5, 0.5), 1.0, 1.0, 0,
 	)
-	var event_a: EnemyEntity = _spawn_swarm_member(system, state, catalog, Vector2.ZERO, Vector2.RIGHT, 1)
-	var event_b: EnemyEntity = _spawn_swarm_member(system, state, catalog, Vector2.ZERO, Vector2.RIGHT, 1)
-	var event_c: EnemyEntity = _spawn_swarm_member(system, state, catalog, Vector2.ZERO, Vector2.RIGHT, 2)
-	var targets: Array[EnemyEntity] = []
-	for enemy_type: GameTypes.EnemyType in [
-		GameTypes.EnemyType.PURSUER,
-		GameTypes.EnemyType.ELITE,
-		GameTypes.EnemyType.BOSS,
-	]:
-		var target: EnemyEntity = system.enemy_store.try_spawn(
-			state,
-			enemy_type,
-			catalog.enemy_for_type(enemy_type),
-			Vector2(0.3, 0.0),
-			1.0,
-			1.0,
-			0,
-		)
-		targets.append(target)
-	var target_start := Vector2(0.3, 0.0)
 	state.combat_tick = 1
-	var swarm_sweeps: Array[Dictionary] = [
-		system._move_enemy(event_a, target_start, 1.0),
-		system._move_enemy(event_b, target_start, 1.0),
-		system._move_enemy(event_c, target_start, 1.0),
-	]
-	system._apply_swarm_pushes(system.snapshot_ids(), swarm_sweeps)
-	for target: EnemyEntity in targets:
-		assertions.expect_float(
-			event_step,
-			target.position.distance_to(target_start),
-			"normal, elite, and boss pushes share the speed-derived per-target cap",
-		)
-	assertions.expect_float(event_step, event_a.position.x, "first event member advances normally")
-	assertions.expect_float(event_step, event_b.position.x, "overlapping same-group member advances normally")
-	assertions.expect_float(event_step, event_c.position.x, "overlapping second-group member advances normally")
-	var pushed_damage: Array[Dictionary] = system.resolve_contact_damage_candidates(
-		system.snapshot_ids(),
-		targets[0].position,
-		1,
-	)
-	assertions.expect_true(pushed_damage.size() >= 3, "pushed enemies can resolve contact in the same tick")
+	system.advance_snapshot(system.snapshot_ids(), Vector2.ZERO, 1)
+	a.expect_true(member.position.x < 4.0 and member.position.y < 0.0, "a glancing contact deflects the moving member")
+	a.expect_true(target.position.x > 4.5 and target.position.y > 0.5, "the same contact pushes the ordinary enemy away")
+	a.expect_equal(Vector2.RIGHT, member.fixed_direction, "collision does not retarget the fixed direction")
+	a.expect_float(9.0, member.remaining_travel_distance, "only the one-metre self-propelled step consumes travel")
 
-	var boundary_state: RunState = RunStateFactory.create(8009, catalog)
-	var boundary_system := EnemySystem.new()
-	boundary_system.initialize(boundary_state, catalog)
-	var target_definition: EnemyDefinition = catalog.enemy(&"pursuer")
-	var center_limit: float = 200.0
-	var boundary_target: EnemyEntity = boundary_system.enemy_store.try_spawn(
-		boundary_state,
-		GameTypes.EnemyType.PURSUER,
-		target_definition,
-		Vector2(center_limit - event_step * 0.5, 0.0),
-		1.0,
-		1.0,
-		0,
-	)
-	var boundary_event: EnemyEntity = _spawn_swarm_member(
-		boundary_system,
-		boundary_state,
-		catalog,
-		boundary_target.position - Vector2.RIGHT * 0.2,
-		Vector2.RIGHT,
-		1,
-	)
-	boundary_state.combat_tick = 1
-	var boundary_sweeps: Array[Dictionary] = [
-		boundary_system._move_enemy(boundary_event, boundary_target.position, 1.0),
-	]
-	boundary_system._apply_swarm_pushes(
-		boundary_system.snapshot_ids(),
-		boundary_sweeps,
-	)
-	assertions.expect_true(absf(boundary_target.position.x - (center_limit + event_step * 0.5)) < 0.0001, "the full push is preserved at distant coordinates")
+	member.remaining_travel_distance = 0.5
+	target.position = member.position + Vector2(0.75, 0.0)
+	var before_exit: Vector2 = target.position
+	state.combat_tick = 2
+	system.advance_snapshot(system.snapshot_ids(), Vector2.ZERO, 2)
+	a.expect_true(target.position.x > before_exit.x, "the last half-metre step still pushes before removal")
+	a.expect_false(system.enemy_store.has_entity(member_id), "the member exits after its final collision")
+	a.expect_equal(1, state.swarm_event_exit_count, "exit is counted once")
+	a.expect_equal(0, state.total_kills, "exit grants no kill")
 
+
+func test_swarm_members_collide_within_and_between_groups(a: Variant, _context: Dictionary) -> void:
+	var catalog: DefinitionCatalog = _catalog(a)
+	for second_group: int in [1, 2]:
+		var state: RunState = RunStateFactory.create(8009, catalog)
+		var system := EnemySystem.new()
+		system.initialize(state, catalog)
+		var first: EnemyEntity = _spawn_swarm_member(system, state, catalog, Vector2(3.0, 3.0), Vector2.RIGHT, 1)
+		var second: EnemyEntity = _spawn_swarm_member(system, state, catalog, Vector2(3.0, 3.0), Vector2.RIGHT, second_group)
+		state.combat_tick = 1
+		system.advance_snapshot(system.snapshot_ids(), Vector2.ZERO, 1)
+		a.expect_float(first.body_radius() + second.body_radius(), first.position.distance_to(second.position), "coincident members separate regardless of group")
+		var step: float = first.definition.move_speed / RunState.TICKS_PER_SECOND
+		a.expect_true(((first.position + second.position) * 0.5).is_equal_approx(Vector2(3.0 + step, 3.0)), "both members receive equal and opposite displacement")
+		a.expect_float(10.0 - step, second.remaining_travel_distance, "passive displacement does not consume travel")
+
+
+func test_swarm_stop_and_modal_pause_preserve_travel(assertions: Variant, _context: Dictionary) -> void:
+	var catalog: DefinitionCatalog = _catalog(assertions)
+	if catalog == null:
+		return
 	var stop_state: RunState = RunStateFactory.create(8010, catalog)
 	var stop_system := EnemySystem.new()
 	stop_system.initialize(stop_state, catalog)

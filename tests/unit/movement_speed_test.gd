@@ -25,11 +25,11 @@ func test_player_and_regular_enemies_travel_their_configured_sixty_tick_distance
 		"player travels its configured distance in sixty ticks",
 	)
 
-	var state: RunState = RunStateFactory.create(11001, catalog)
-	var system := EnemySystem.new()
-	system.initialize(state, catalog)
-	var enemies_by_id: Dictionary[StringName, EnemyEntity] = {}
 	for enemy_id: StringName in ENEMY_IDS:
+		# Measure free travel independently from crowd displacement.
+		var state: RunState = RunStateFactory.create(11001, catalog)
+		var system := EnemySystem.new()
+		system.initialize(state, catalog)
 		var definition: EnemyDefinition = catalog.enemy(enemy_id)
 		var enemy: EnemyEntity = system.enemy_store.try_spawn(
 			state,
@@ -41,16 +41,12 @@ func test_player_and_regular_enemies_travel_their_configured_sixty_tick_distance
 			0,
 		)
 		assertions.expect_true(enemy != null, "%s distance fixture spawns" % enemy_id)
-		if enemy != null:
-			enemies_by_id[enemy_id] = enemy
-	var ids: Array[int] = system.snapshot_ids()
-	for tick: int in range(1, RunState.TICKS_PER_SECOND + 1):
-		state.combat_tick = tick
-		system.advance_snapshot(ids, Vector2(5.0, 0.0), tick)
-	for enemy_id: StringName in ENEMY_IDS:
-		var enemy: EnemyEntity = enemies_by_id.get(enemy_id) as EnemyEntity
 		if enemy == null:
 			continue
+		var ids: Array[int] = system.snapshot_ids()
+		for tick: int in range(1, RunState.TICKS_PER_SECOND + 1):
+			state.combat_tick = tick
+			system.advance_snapshot(ids, Vector2(5.0, 0.0), tick)
 		assertions.expect_float(
 			enemy.definition.move_speed,
 			enemy.position.x + 5.0,

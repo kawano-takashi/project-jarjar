@@ -8,6 +8,8 @@ func test_sparse_grid_queries_distant_cells_without_aliasing(a: Variant, _contex
 	grid.insert(43, Vector2(-0.1, 0.1))
 	a.expect_equal([41], grid.query_circle_candidates(Vector2(5000, -3000), 0.1, 0.0), "far cells do not alias nearer objects")
 	a.expect_equal([43], grid.query_segment_candidates(Vector2(-0.2, 0.1), Vector2(0.2, 0.1), 0.0), "negative cells remain queryable across zero")
+	grid.insert(43, Vector2(0.1, 0.1))
+	a.expect_equal([43], grid.query_segment_candidates(Vector2(-0.2, 0.1), Vector2(0.2, 0.1), 0.0), "an identity inserted into multiple cells is returned only once")
 	grid.clear()
 	a.expect_true(grid.query_circle_candidates(Vector2(5000, -3000), 1.0, 0.0).is_empty(), "cleared cells return no stale IDs")
 

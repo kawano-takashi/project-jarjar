@@ -35,6 +35,8 @@ func test_elite_encounter_reserves_capacity_once_and_expires_during_stop(a: Vari
 	a.expect_equal(definition.member_count, _members(sim).size(), "no replacement members are added")
 	sim.state.combat_tick = expiry - 2
 	sim.state.stop_until_tick = expiry + 100
+	# Isolate self-propelled pursuit: stopped bodies can still be pushed.
+	members[0].position = Vector2(0.0, 4.0)
 	var member_position: Vector2 = members[0].position
 	sim.advance_tick(Vector2.ZERO)
 	a.expect_equal(member_position, members[0].position, "STOP freezes ring pursuit")

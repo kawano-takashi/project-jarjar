@@ -5,24 +5,26 @@ extends RefCounted
 const CELL_SIZE: float = 2.0
 
 var _cells: Dictionary[Vector2i, Array] = {}
-var _unique_enemy_ids: bool = false
+var _unique_enemy_ids: bool = true
+var _inserted_ids: Dictionary[int, bool] = {}
 ## Negative means an insertion omitted its radius; callers then use catalog bounds.
 var maximum_body_radius: float = 0.0
 
 
 func clear() -> void:
 	_cells.clear()
+	_inserted_ids.clear()
 	maximum_body_radius = 0.0
-	_unique_enemy_ids = false
+	_unique_enemy_ids = true
 
 
 func rebuild_enemies(store: EnemyStore, current_tick: int) -> void:
 	clear()
-	_unique_enemy_ids = true
 	for enemy: EnemyEntity in store.entities:
 		if not enemy.is_targetable(current_tick):
 			continue
 		maximum_body_radius = maxf(maximum_body_radius, enemy.body_radius())
+		_inserted_ids[enemy.entity_id] = true
 		var key: Vector2i = cell_indices_for_position(enemy.position)
 		if not _cells.has(key):
 			_cells[key] = []
@@ -33,7 +35,8 @@ func rebuild_enemies(store: EnemyStore, current_tick: int) -> void:
 
 func insert(entity_id: int, position: Vector2) -> void:
 	maximum_body_radius = -1.0
-	_unique_enemy_ids = false
+	_unique_enemy_ids = _unique_enemy_ids and not _inserted_ids.has(entity_id)
+	_inserted_ids[entity_id] = true
 	var key: Vector2i = cell_indices_for_position(position)
 	if not _cells.has(key):
 		_cells[key] = []
@@ -63,10 +66,12 @@ func query_aabb_candidates(aabb_min: Vector2, aabb_max: Vector2) -> Array[int]:
 	for row: int in range(lower.y, upper.y + 1):
 		for column: int in range(lower.x, upper.x + 1):
 			var cell: Array = _cells.get(Vector2i(column, row), [])
+			if _unique_enemy_ids:
+				result.append_array(cell)
+				continue
 			for raw_id: Variant in cell:
 				var entity_id: int = int(raw_id)
-				if _unique_enemy_ids or not seen.has(entity_id):
+				if not seen.has(entity_id):
 					result.append(entity_id)
-					if not _unique_enemy_ids:
-						seen[entity_id] = true
+					seen[entity_id] = true
 	return result

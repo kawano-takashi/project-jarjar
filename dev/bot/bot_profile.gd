@@ -139,10 +139,10 @@ class ProfiledEnemies extends EnemySystem:
 		super(ids, _player_position, current_tick, projectile_pool)
 		timer.record(&"enemy_system.resolve_ready_enemy_special_actions", started)
 
-	func _apply_swarm_pushes(ids: Array[int], swarm_sweeps: Array[Dictionary]) -> void:
+	func _resolve_enemy_collisions(ids: Array[int], current_tick: int) -> void:
 		var started: int = Time.get_ticks_usec()
-		super(ids, swarm_sweeps)
-		timer.record(&"enemy_system._apply_swarm_pushes", started)
+		super(ids, current_tick)
+		timer.record(&"enemy_system._resolve_enemy_collisions", started)
 
 	func _rebuild_grid(current_tick: int) -> void:
 		var started: int = Time.get_ticks_usec()
