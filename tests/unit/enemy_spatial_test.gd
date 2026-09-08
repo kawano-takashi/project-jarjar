@@ -81,6 +81,48 @@ func test_far_enemies_despawn_or_reenter_without_rewards(a: Variant, _context: D
 	a.expect_equal(1, sim.arena_object_system.chest_transforms().size(), "the relocated elite leaves one chest on its actual death")
 
 
+func test_enemy_retention_follows_body_radius_and_camera_changes(a: Variant, _context: Dictionary) -> void:
+	var catalog: DefinitionCatalog = _catalog(a)
+	catalog.enemy_for_type(GameTypes.EnemyType.PURSUER).body_radius = 0.25
+	catalog.enemy_for_type(GameTypes.EnemyType.BULWARK).body_radius = 2.0
+	var state: RunState = RunStateFactory.create(8110, catalog)
+	state.stop_until_tick = 100
+	var view := ArenaView.new()
+	var system := EnemySystem.new()
+	system.initialize(state, catalog, view)
+	var margin: float = catalog.manifest().spawn.offscreen_band_width + catalog.manifest().spawn.despawn_margin
+	# Reuse the system across translation, resize, origin shift and another resize.
+	for frame: Array in [
+		[Vector2i(1920, 1080), Vector2.ZERO, Vector2.ZERO],
+		[Vector2i(1920, 1080), Vector2(120, -80), Vector2.ZERO],
+		[Vector2i(1080, 1920), Vector2(120, -80), Vector2.ZERO],
+		[Vector2i(1080, 1920), Vector2(120, -80), Vector2(1024, -1024)],
+		[Vector2i(2560, 1080), Vector2(-400, 800), Vector2.ZERO],
+	]:
+		system.enemy_store.clear()
+		view.viewport_size = frame[0]
+		view.reset(frame[1])
+		view.shift_origin(frame[2])
+		var player: Vector2 = frame[1] - frame[2]
+		var small_bounds: Rect2 = view.body_view_rect(0.25).grow(margin)
+		var large_bounds: Rect2 = view.body_view_rect(2.0).grow(margin)
+		var between_edges := Vector2((small_bounds.end.x + large_bounds.end.x) * 0.5, player.y)
+		var ids: Array[int] = []
+		for entry: Array in [
+			[GameTypes.EnemyType.PURSUER, between_edges],
+			[GameTypes.EnemyType.BULWARK, between_edges],
+			[GameTypes.EnemyType.PURSUER, player],
+		]:
+			var kind: GameTypes.EnemyType = entry[0]
+			var enemy: EnemyEntity = system.enemy_store.try_spawn(state, kind, catalog.enemy_for_type(kind), entry[1], 1.0, 1.0, 0)
+			ids.append(enemy.entity_id)
+		# Separate updates can occur at the same tick after changing the view.
+		system.advance_snapshot(ids, player, 1)
+		a.expect_false(system.enemy_store.has_entity(ids[0]), "a small body beyond its current retention edge despawns")
+		a.expect_true(system.enemy_store.has_entity(ids[1]), "a larger body at the same position remains within its own edge")
+		a.expect_true(system.enemy_store.has_entity(ids[2]), "another small body inside the view remains active")
+
+
 func test_boss_charge_cadence_and_latches(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:

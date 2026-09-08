@@ -121,10 +121,12 @@ func decide(observation: BotObservation) -> BotAction:
 	_view.viewport_size = observation.viewport_size
 	_navigation_origin = observation.player_position.round() - Vector2(NAV_DIMENSIONS - Vector2i.ONE) * NAV_CELL * 0.5
 	_navigation.recenter(_navigation_origin)
+	var contact_damage: Dictionary[int, float] = _knowledge.contact_damage_for_tick(observation.tick)
 	if observation.tick != _last_tick:
+		var inverse: Transform3D = observation.camera_transform.orthonormalized().inverse()
 		_navigation.observe_boundaries(observation.boundary_segments, observation.boundary_normals, observation.tick)
-		_observe_bodies(observation)
-		_remember_loot(observation)
+		_observe_bodies(observation, inverse, contact_damage)
+		_remember_loot(observation, inverse)
 		_remember_warnings(observation)
 		_observe_needles(observation)
 		_last_tick = observation.tick
@@ -133,7 +135,7 @@ func decide(observation: BotObservation) -> BotAction:
 		_next_goal_tick = observation.tick + 15
 	if not _equipment_ready or observation.weapons != _equipment_weapons or observation.passives != _equipment_passives or _equipment_has_needles != (not _needle_definition.is_empty()):
 		_refresh_equipment(observation)
-	var best_move: Vector2 = _choose_move(observation)
+	var best_move: Vector2 = _choose_move(observation, contact_damage)
 	_last_move = best_move
 	if best_move != Vector2.ZERO:
 		_explore_direction = best_move.normalized()
@@ -156,7 +158,7 @@ func _shift_observed_origin(origin: Vector2i) -> void:
 		warning["position"] -= displacement
 
 
-func _choose_move(observation: BotObservation) -> Vector2:
+func _choose_move(observation: BotObservation, contact_damage: Dictionary[int, float]) -> Vector2:
 	if _kernel == null:
 		return Vector2(INF, INF)
 	var swarms: Array = []
@@ -176,7 +178,7 @@ func _choose_move(observation: BotObservation) -> Vector2:
 		"elite_kind": CombatSnapshot.EnemyVisualKind.ELITE,
 		"bulwark_kind": CombatSnapshot.EnemyVisualKind.BULWARK,
 		"encircler_kind": CombatSnapshot.EnemyVisualKind.ENCIRCLER,
-		"contact_damage": _knowledge.contact_damage_for_tick(observation.tick),
+		"contact_damage": contact_damage,
 		"swarms": swarms, "bosses": bosses,
 	}, _directions)
 
@@ -255,19 +257,19 @@ func _observe_needles(observation: BotObservation) -> void:
 		_resume_fire = false
 
 
-func _observe_bodies(observation: BotObservation) -> void:
+func _observe_bodies(observation: BotObservation, inverse: Transform3D, contact_damage: Dictionary[int, float]) -> void:
 	_navigation.observe_tracks({
 		"enemies": observation.enemy_values(), "bullets": BotObservation.pack_bodies(observation.bullets),
 		"player": observation.player_position, "tick": observation.tick,
 		"elapsed": float(maxi(1, observation.tick - _last_tick)) / 60.0,
-		"inverse": observation.camera_transform.orthonormalized().inverse(), "viewport": observation.viewport_size,
+		"inverse": inverse, "viewport": observation.viewport_size,
 		"projection": observation.camera_projection,
-		"contact_damage": _knowledge.contact_damage_for_tick(observation.tick),
+		"contact_damage": contact_damage,
 	})
 
 
-func _remember_loot(observation: BotObservation) -> void:
-	_navigation.remember_loot(observation.loot, observation.camera_transform.orthonormalized().inverse(),
+func _remember_loot(observation: BotObservation, inverse: Transform3D) -> void:
+	_navigation.remember_loot(observation.loot, inverse,
 		observation.viewport_size, observation.tick, observation.camera_projection, BotObservation.LootKind.XP)
 
 

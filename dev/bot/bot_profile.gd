@@ -222,14 +222,14 @@ class ProfiledVfx extends VfxPool:
 class ProfiledController extends "res://dev/bot/bot_controller.gd":
 	var timer: RefCounted
 
-	func _observe_bodies(observation: BotObservation) -> void:
+	func _observe_bodies(observation: BotObservation, inverse: Transform3D, contact_damage: Dictionary[int, float]) -> void:
 		var started: int = Time.get_ticks_usec()
-		super(observation)
+		super(observation, inverse, contact_damage)
 		timer.record(&"bot_controller._observe_bodies", started)
 
-	func _remember_loot(observation: BotObservation) -> void:
+	func _remember_loot(observation: BotObservation, inverse: Transform3D) -> void:
 		var started: int = Time.get_ticks_usec()
-		super(observation)
+		super(observation, inverse)
 		timer.record(&"bot_controller._remember_loot", started)
 
 	func _choose_target(observation: BotObservation) -> void:
@@ -242,9 +242,9 @@ class ProfiledController extends "res://dev/bot/bot_controller.gd":
 		super(player)
 		timer.record(&"bot_controller._route_to_goal", started)
 
-	func _choose_move(observation: BotObservation) -> Vector2:
+	func _choose_move(observation: BotObservation, contact_damage: Dictionary[int, float]) -> Vector2:
 		var started: int = Time.get_ticks_usec()
-		var result: Vector2 = super(observation)
+		var result: Vector2 = super(observation, contact_damage)
 		timer.record(&"bot_controller._choose_move", started)
 		return result
 

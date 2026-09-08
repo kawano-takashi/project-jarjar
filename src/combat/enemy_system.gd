@@ -77,17 +77,19 @@ func advance_snapshot(
 	var exited_swarm_ids: Array[int] = []
 	var special_ids: Array[int] = []
 	var stop_active: bool = _state.is_stop_active()
+	# The camera is fixed during this update; each body radius shares its bounds.
+	var retention_rects: Dictionary[float, Rect2] = {}
 	for entity_id: int in ids:
 		var enemy: EnemyEntity = enemy_store.get_by_id(entity_id)
 		if enemy == null:
 			continue
 		if enemy.enemy_type == GameTypes.EnemyType.BOSS:
 			special_ids.append(entity_id)
-		if _should_far_despawn_normal(enemy, player_position, current_tick):
+		if _should_far_despawn_normal(enemy, player_position, current_tick, retention_rects):
 			if enemy_store.remove(entity_id):
 				_state.normal_far_despawn_count += 1
 			continue
-		_reposition_important_enemy(enemy, current_tick)
+		_reposition_important_enemy(enemy, current_tick, retention_rects)
 		if not enemy.is_targetable(current_tick):
 			continue
 		var time_scale: float = 1.0
@@ -369,6 +371,10 @@ func _move_enemy(
 			"group_id": enemy.swarm_group_id,
 			"displacement": enemy.fixed_direction * travel_step,
 		}
+	if enemy.encounter_owner_id >= 0:
+		# Ring members pursue independently; player motion can cross their body.
+		enemy.position = enemy.position.move_toward(player_position, enemy.definition.move_speed * time_scale / RunState.TICKS_PER_SECOND)
+		return EMPTY_SWEEP
 	var from_player: Vector2 = enemy.position - player_position
 	var distance_to_player: float = from_player.length()
 	var separation_direction: Vector2 = (
@@ -379,10 +385,6 @@ func _move_enemy(
 	var body_radius: float = enemy.body_radius()
 	var contact_radius: float = _catalog.envelope.player_body_radius + body_radius
 	var next_position: Vector2 = enemy.position
-	if enemy.encounter_owner_id >= 0:
-		# Ring members pursue independently; player motion can cross their body.
-		enemy.position = enemy.position.move_toward(player_position, enemy.definition.move_speed * time_scale / RunState.TICKS_PER_SECOND)
-		return EMPTY_SWEEP
 	if distance_to_player < contact_radius:
 		# Player motion is authoritative. Resolve only the current penetration.
 		next_position = player_position + separation_direction * contact_radius
@@ -793,23 +795,26 @@ func _sample_spawn_distance(rng: RandomNumberGenerator, anchor: Vector2, outward
 	return extent.dot(outward.abs()) + rng.randf_range(0.0, _manifest.spawn.offscreen_band_width)
 
 
-func _outside_retention(enemy: EnemyEntity) -> bool:
-	return not _view.body_view_rect(enemy.body_radius()).grow(
-		_manifest.spawn.offscreen_band_width + _manifest.spawn.despawn_margin,
-	).has_point(enemy.position)
+func _outside_retention(enemy: EnemyEntity, retention_rects: Dictionary[float, Rect2]) -> bool:
+	var radius: float = enemy.body_radius()
+	if not retention_rects.has(radius):
+		retention_rects[radius] = _view.body_view_rect(radius).grow(
+			_manifest.spawn.offscreen_band_width + _manifest.spawn.despawn_margin,
+		)
+	return not retention_rects[radius].has_point(enemy.position)
 
 
-func _should_far_despawn_normal(enemy: EnemyEntity, _player_position: Vector2, current_tick: int) -> bool:
+func _should_far_despawn_normal(enemy: EnemyEntity, _player_position: Vector2, current_tick: int, retention_rects: Dictionary[float, Rect2]) -> bool:
 	return (
 		current_tick < _catalog.boss_start_tick and enemy.alive and not enemy.is_swarm_event and enemy.encounter_owner_id < 0
-		and enemy.enemy_type in NORMAL_ENEMY_TYPES and _outside_retention(enemy)
+		and enemy.enemy_type in NORMAL_ENEMY_TYPES and _outside_retention(enemy, retention_rects)
 	)
 
 
-func _reposition_important_enemy(enemy: EnemyEntity, current_tick: int) -> void:
+func _reposition_important_enemy(enemy: EnemyEntity, current_tick: int, retention_rects: Dictionary[float, Rect2]) -> void:
 	if enemy.enemy_type == GameTypes.EnemyType.BOSS and encounters.boss_active:
 		return
-	if not enemy.alive or enemy.enemy_type not in [GameTypes.EnemyType.ELITE, GameTypes.EnemyType.BOSS] or not _outside_retention(enemy):
+	if not enemy.alive or enemy.enemy_type not in [GameTypes.EnemyType.ELITE, GameTypes.EnemyType.BOSS] or not _outside_retention(enemy, retention_rects):
 		return
 	enemy.position = _spawn_position_for_type(enemy.enemy_type)
 	enemy.spawn_tick = current_tick
