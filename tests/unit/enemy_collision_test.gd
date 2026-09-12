@@ -112,7 +112,7 @@ func test_rebased_collision_positions_feed_rendering_contact_and_weapons(a: Vari
 		impact, Vector2.ZERO, 0.05, 1.0, 1.0, 1.0, impact, 1, 0,
 	)
 	var hits: Array[Dictionary] = sim.weapon_system.resolve_ally_projectile(
-		Vector2i(projectile.pool_index, projectile.generation), sim.enemy_system.enemy_store,
+		PackedInt64Array([projectile.pool_index, projectile.generation]), sim.enemy_system.enemy_store,
 		sim.enemy_system.uniform_grid, sim.player_position, sim.state.combat_tick,
 	)
 	a.expect_equal(1, hits.size(), "a weapon hits the corrected body beyond its old collision circle")

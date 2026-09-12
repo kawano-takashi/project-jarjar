@@ -15,81 +15,9 @@
 
 using namespace godot;
 
-namespace {
+#include "combat_geometry.h"
+void register_combat_world();
 
-// GDScript scalars are double, but each Vector2 operation rounds to real_t.
-// Keep intermediate scalar results double and cast at vector operator boundaries.
-struct Grid {
-    double cell_size = 1.0;
-    std::unordered_map<uint64_t, std::vector<int64_t>> cells;
-    std::unordered_set<int64_t> inserted;
-    bool unique = true;
-
-    static uint64_t key(int32_t x, int32_t y) {
-        return (uint64_t(uint32_t(x)) << 32) | uint32_t(y);
-    }
-
-    Vector2i cell(const Vector2 &position) const {
-        return Vector2i(int32_t(std::floor(double(position.x) / cell_size)),
-                        int32_t(std::floor(double(position.y) / cell_size)));
-    }
-
-    void clear() {
-        cells.clear();
-        inserted.clear();
-        unique = true;
-    }
-
-    void insert(int64_t id, const Vector2 &position) {
-        if (!inserted.insert(id).second) unique = false;
-        const Vector2i location = cell(position);
-        auto &values = cells[key(location.x, location.y)];
-        values.insert(std::upper_bound(values.begin(), values.end(), id), id);
-    }
-
-    void query(const Vector2 &first, const Vector2 &second, std::vector<int64_t> &result) const {
-        result.clear();
-        const Vector2i lower = cell(first.min(second));
-        const Vector2i upper = cell(first.max(second));
-        std::unordered_set<int64_t> seen;
-        // This traversal and the sorted IDs within a cell are observable hit order.
-        for (int64_t row = lower.y; row <= upper.y; ++row) {
-            for (int64_t column = lower.x; column <= upper.x; ++column) {
-                const auto found = cells.find(key(int32_t(column), int32_t(row)));
-                if (found == cells.end()) continue;
-                for (int64_t id : found->second) {
-                    if (unique || seen.insert(id).second) result.push_back(id);
-                }
-            }
-        }
-    }
-};
-
-// Same scalar evaluation order and inclusive tolerances as CombatGeometry.
-double segment_circle_first_t(const Vector2 &start, const Vector2 &end,
-                              const Vector2 &center, double combined_radius, double epsilon) {
-    const Vector2 delta = end - start;
-    const double length_squared = delta.length_squared();
-    const double radius = std::max(0.0, combined_radius) + epsilon;
-    if (length_squared <= epsilon) {
-        return double(start.distance_squared_to(center)) <= radius * radius ? 0.0 : -1.0;
-    }
-    const Vector2 offset = start - center;
-    const double a = length_squared;
-    const double b = 2.0 * double(offset.dot(delta));
-    const double c = double(offset.length_squared()) - radius * radius;
-    if (c <= 0.0) return 0.0;
-    const double discriminant = b * b - 4.0 * a * c;
-    if (discriminant < -epsilon) return -1.0;
-    const double root = std::sqrt(std::max(0.0, discriminant));
-    const double first = (-b - root) / (2.0 * a);
-    if (first >= -epsilon && first <= 1.0 + epsilon) return std::clamp(first, 0.0, 1.0);
-    const double second = (-b + root) / (2.0 * a);
-    if (second >= -epsilon && second <= 1.0 + epsilon) return std::clamp(second, 0.0, 1.0);
-    return -1.0;
-}
-
-} // namespace
 
 class JarjarCombatKernel : public RefCounted {
     GDCLASS(JarjarCombatKernel, RefCounted)
@@ -115,7 +43,7 @@ protected:
     }
 
 public:
-    int64_t api_version() const { return 1; }
+    int64_t api_version() const { return 2; }
 
     void clear_index(double cell_size) {
         index.clear();
@@ -228,7 +156,10 @@ public:
 };
 
 static void initialize_combat(ModuleInitializationLevel level) {
-    if (level == MODULE_INITIALIZATION_LEVEL_SCENE) GDREGISTER_CLASS(JarjarCombatKernel);
+    if (level == MODULE_INITIALIZATION_LEVEL_SCENE) {
+        GDREGISTER_CLASS(JarjarCombatKernel);
+        register_combat_world();
+    }
 }
 static void uninitialize_combat(ModuleInitializationLevel) {}
 

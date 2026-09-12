@@ -64,8 +64,6 @@ class Visual:
 
 var _visuals: Dictionary[StringName, Visual] = {}
 var _native_observer: RefCounted
-var _enemy_shape_indices: Dictionary[int, Dictionary] = {}
-var _enemy_templates: Array[Transform3D] = []
 
 
 func _init() -> void:
@@ -125,65 +123,24 @@ func capture(simulation: CombatSimulation, view: ArenaView) -> BotObservation:
 	_capture_arena_loot(simulation, culler, observation)
 	_capture_warnings(simulation, culler, observation)
 	# Internal pool/spawn order is not observable, even when hidden objects change.
-	_sort_bodies(observation.bullets)
 	observation.needles.sort()
 	observation.loot.sort()
 	return observation
 
 
 func _capture_enemies(simulation: CombatSimulation, culler: Culler, observation: BotObservation) -> void:
-	var enemies: Array[EnemyEntity] = simulation.enemy_system.enemy_store.entities
-	var positions := PackedVector2Array()
-	var kinds := PackedInt32Array()
-	var shapes := PackedInt32Array()
-	var materializing := PackedByteArray()
-	positions.resize(enemies.size())
-	kinds.resize(enemies.size())
-	shapes.resize(enemies.size())
-	materializing.resize(enemies.size())
-	for index: int in enemies.size():
-		var enemy: EnemyEntity = enemies[index]
-		var radius: float = enemy.body_radius()
-		var kind: int = simulation._enemy_entity_visual_kind(enemy)
-		if not _enemy_shape_indices.has(kind):
-			_enemy_shape_indices[kind] = {}
-		var by_radius: Dictionary = _enemy_shape_indices[kind]
-		var shape: int = by_radius.get(radius, -1)
-		if shape < 0:
-			shape = _enemy_templates.size()
-			by_radius[radius] = shape
-			# The shared render transform's basis and height depend only on type
-			# and body radius. Keep exact doubles as keys, including custom data.
-			_enemy_templates.append(simulation.enemy_visual_transform(enemy))
-		positions[index] = enemy.position
-		kinds[index] = kind
-		shapes[index] = shape
-		# Completed entries have progress 1 regardless of their entry duration.
-		# Keep the original division/clamping only for entries still in progress.
-		materializing[index] = int(not enemy.alive or (observation.tick < enemy.activation_tick and enemy.materialization_progress(observation.tick) < 1.0))
-	var visible: Dictionary = _native_observer.observe_bodies({
-		"inverse": culler.inverse, "projection": culler.projection,
-		"positions": positions, "kinds": kinds, "shapes": shapes, "materializing": materializing,
-		"templates": _enemy_templates, "radius_factor": 0.4,
-	})
-	observation.set_enemy_values(visible)
+	var geometry: Dictionary = simulation.world.public_enemy_geometry(observation.tick)
+	geometry["inverse"] = culler.inverse
+	geometry["projection"] = culler.projection
+	observation.set_enemy_values(_native_observer.observe_bodies(geometry))
 
 
 func _capture_projectiles(simulation: CombatSimulation, culler: Culler, observation: BotObservation) -> void:
-	for pool_index: int in simulation.projectile_pool.active_indices_snapshot():
-		var projectile: ProjectileState = simulation.projectile_pool.slots[pool_index]
-		if projectile.faction != ProjectileState.FACTION_ENEMY:
-			if simulation._projectile_visual_kind(projectile) == CombatSnapshot.ProjectileVisualKind.DIRECTIONAL_NEEDLE:
-				if _visuals[&"ProjectileNeedleInstances"].is_visible(culler, simulation.projectile_visual_transform(projectile)):
-					observation.needles.append(projectile.position)
-			continue
-		var transform: Transform3D = simulation.projectile_visual_transform(projectile)
-		if not _visuals[&"ProjectileEnemyInstances"].is_visible(culler, transform):
-			continue
-		var body := BotObservation.Body.new()
-		body.position = projectile.position
-		body.radius = transform.basis.x.length() * 0.18
-		observation.bullets.append(body)
+	var geometry: Dictionary = simulation.world.public_projectile_geometry()
+	observation.set_bullet_values(_visuals[&"ProjectileEnemyInstances"]._native.visible_bodies(
+		culler.inverse, culler.projection, geometry.hostile, geometry.hostile_indices, 0.18))
+	for needle: Vector4 in _visuals[&"ProjectileNeedleInstances"].visible_loot(culler, geometry.needles, geometry.needle_indices, 0):
+		observation.needles.append(Vector2(needle.y, needle.z))
 
 
 func _capture_xp(simulation: CombatSimulation, culler: Culler, observation: BotObservation) -> void:

@@ -259,7 +259,7 @@ func _observe_needles(observation: BotObservation) -> void:
 
 func _observe_bodies(observation: BotObservation, inverse: Transform3D, contact_damage: Dictionary[int, float]) -> void:
 	_navigation.observe_tracks({
-		"enemies": observation.enemy_values(), "bullets": BotObservation.pack_bodies(observation.bullets),
+		"enemies": observation.enemy_values(), "bullets": observation.bullet_values(),
 		"player": observation.player_position, "tick": observation.tick,
 		"elapsed": float(maxi(1, observation.tick - _last_tick)) / 60.0,
 		"inverse": inverse, "viewport": observation.viewport_size,

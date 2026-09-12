@@ -333,81 +333,81 @@ visible_instance_count = 0
 transform_format = 1
 use_custom_data = true
 mesh = SubResource("ProjectileResonanceMesh")
-instance_count = 4096
+instance_count = 0
 visible_instance_count = 0
 
 [sub_resource type="MultiMesh" id="ProjectileHomingMultiMesh"]
 transform_format = 1
 use_custom_data = true
 mesh = SubResource("ProjectileHomingMesh")
-instance_count = 4096
+instance_count = 0
 visible_instance_count = 0
 
 [sub_resource type="MultiMesh" id="ProjectileNeedleMultiMesh"]
 transform_format = 1
 use_custom_data = true
 mesh = SubResource("ProjectileNeedleMesh")
-instance_count = 4096
+instance_count = 0
 visible_instance_count = 0
 
 [sub_resource type="MultiMesh" id="ProjectileArcMultiMesh"]
 transform_format = 1
 use_custom_data = true
 mesh = SubResource("ProjectileArcMesh")
-instance_count = 4096
+instance_count = 0
 visible_instance_count = 0
 
 [sub_resource type="MultiMesh" id="ProjectileReturningMultiMesh"]
 transform_format = 1
 use_custom_data = true
 mesh = SubResource("ProjectileReturningMesh")
-instance_count = 4096
+instance_count = 0
 visible_instance_count = 0
 
 [sub_resource type="MultiMesh" id="ProjectileOrbitalMultiMesh"]
 transform_format = 1
 use_custom_data = true
 mesh = SubResource("ProjectileOrbitalMesh")
-instance_count = 4096
+instance_count = 0
 visible_instance_count = 0
 
 [sub_resource type="MultiMesh" id="ProjectileMassMultiMesh"]
 transform_format = 1
 use_custom_data = true
 mesh = SubResource("ProjectileMassMesh")
-instance_count = 4096
+instance_count = 0
 visible_instance_count = 0
 
 [sub_resource type="MultiMesh" id="ProjectileFieldMultiMesh"]
 transform_format = 1
 use_custom_data = true
 mesh = SubResource("ProjectileFieldMesh")
-instance_count = 4096
+instance_count = 0
 visible_instance_count = 0
 
 [sub_resource type="MultiMesh" id="ProjectileEnemyMultiMesh"]
 transform_format = 1
 use_custom_data = true
 mesh = SubResource("ProjectileEnemyMesh")
-instance_count = 4096
+instance_count = 0
 visible_instance_count = 0
 
 [sub_resource type="MultiMesh" id="EvolvedOutlineInnerMultiMesh"]
 transform_format = 1
 mesh = SubResource("EvolvedOutlineInnerMesh")
-instance_count = 4096
+instance_count = 0
 visible_instance_count = 0
 
 [sub_resource type="MultiMesh" id="EvolvedOutlineOuterMultiMesh"]
 transform_format = 1
 mesh = SubResource("EvolvedOutlineOuterMesh")
-instance_count = 4096
+instance_count = 0
 visible_instance_count = 0
 
 [sub_resource type="MultiMesh" id="EvolvedCoreMultiMesh"]
 transform_format = 1
 mesh = SubResource("EvolvedCoreMesh")
-instance_count = 4096
+instance_count = 0
 visible_instance_count = 0
 
 [sub_resource type="ShaderMaterial" id="VfxMaterial"]

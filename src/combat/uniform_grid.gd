@@ -5,31 +5,29 @@ extends RefCounted
 const CELL_SIZE: float = 2.0
 
 var _kernel: RefCounted = null
+var _world: RefCounted = null
 ## Negative means an insertion omitted its radius; callers then use catalog bounds.
 var maximum_body_radius: float = 0.0
 
 
 func clear() -> void:
+	_world = null
 	_native().clear_index(CELL_SIZE)
 	maximum_body_radius = 0.0
 
 
 func rebuild_enemies(store: EnemyStore, current_tick: int) -> void:
-	var ids := PackedInt64Array()
-	var positions := PackedVector2Array()
-	maximum_body_radius = 0.0
-	for enemy: EnemyEntity in store.entities:
-		if not enemy.is_targetable(current_tick):
-			continue
-		maximum_body_radius = maxf(maximum_body_radius, enemy.body_radius())
-		ids.append(enemy.entity_id)
-		positions.append(enemy.position)
-	_native().rebuild_index(ids, positions, CELL_SIZE)
+	_world = store.world
+	_world.rebuild_grid(current_tick)
+	maximum_body_radius = _world.grid_maximum_radius()
 
 
 func insert(entity_id: int, position: Vector2) -> void:
 	maximum_body_radius = -1.0
-	_native().insert_id(entity_id, position)
+	if _world != null:
+		_world.insert_enemy_index(entity_id, position)
+	else:
+		_native().insert_id(entity_id, position)
 
 
 func cell_indices_for_position(position: Vector2) -> Vector2i:
@@ -47,7 +45,9 @@ func query_segment_candidates(segment_start: Vector2, segment_end: Vector2, padd
 
 
 func query_aabb_candidates(aabb_min: Vector2, aabb_max: Vector2) -> Array[int]:
-	return _native().query_aabb(aabb_min, aabb_max)
+	var result: Array[int] = []
+	result.assign(_world.query_enemies(aabb_min, aabb_max) if _world != null else _native().query_aabb(aabb_min, aabb_max))
+	return result
 
 
 ## Numerical positions/radii for one projectile stage; HP remains in EnemyStore.

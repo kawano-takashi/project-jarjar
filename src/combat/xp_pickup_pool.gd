@@ -1,298 +1,115 @@
 class_name XpPickupPool
 extends RefCounted
 
-const CELL_SIZE: float = 4.0
-
-
+## Native storage owns all numeric state. Slots are inspection/control views.
+var world: RefCounted = CombatNative.create_world()
 var slots: Array[XpPickupState] = []
-var overflow_merge_count: int = 0
-var reuse_count: int = 0
 var capacity: int = 0
-var attract_radius: float = 0
-var collect_radius: float = 0
-var attract_speed: float = 0
-
-var _free_indices: Array[int] = []
-var _active_indices: Array[int] = []
-var _active_position_by_pool_index: PackedInt32Array = PackedInt32Array()
-var _cells: Dictionary[Vector2i, Array] = {}
-var _cell_by_pool_index: Array[Vector2i] = []
-var _visual_columns: PackedVector3Array = []
-var _vacuum_indices: Dictionary[int, bool] = {}
+var overflow_count: int:
+	get:
+		return int(world.pool_stats(2).overflow)
+var reuse_count: int:
+	get:
+		return int(world.pool_stats(2).reused)
 
 
-func configure(balance: ProgressionBalanceDefinition) -> void:
+func _configure_storage(count: int, shared_world: RefCounted = null) -> void:
+	if shared_world != null:
+		world = shared_world
+	if not world.configure_pool(2, count):
+		push_error("Capacity cannot discard active native handles")
+		return
+	capacity = count
+	var previous_size: int = slots.size()
+	slots.resize(capacity)
+	for index: int in range(capacity):
+		if index >= previous_size or slots[index] == null or slots[index]._world != world:
+			var slot := XpPickupState.new()
+			slot.pool_index = index
+			slot._world = world
+			slots[index] = slot
+
+
+func active_indices_snapshot() -> Array[int]:
+	var result: Array[int] = []
+	result.assign(world.pool_indices(2))
+	return result
+
+
+func active_count() -> int:
+	return int(world.pool_stats(2).active)
+
+
+func free_count() -> int:
+	return int(world.pool_stats(2).free)
+
+
+func reset_reuse_count() -> void:
+	world.reset_reuse(2)
+
+
+func orphan_count() -> int:
+	return world.pool_orphans(2)
+
+
+func clear() -> void:
+	world.clear_pool(2)
+
+
+func shift_origin(displacement: Vector2) -> void:
+	world.shift_pool(2, displacement)
+
+
+var attract_radius: float = 0.0
+var collect_radius: float = 0.0
+var attract_speed: float = 0.0
+var overflow_merge_count: int:
+	get:
+		return int(world.pool_stats(2).overflow_merges)
+
+
+func configure(balance: ProgressionBalanceDefinition, shared_world: RefCounted = null) -> void:
+	_configure_storage(balance.xp_pool_capacity, shared_world)
 	attract_radius = balance.xp_pickup_attract_radius
 	collect_radius = balance.xp_pickup_collect_radius
 	attract_speed = balance.xp_pickup_speed
-	if balance.xp_pool_capacity != capacity:
-		capacity = balance.xp_pool_capacity
-		_rebuild_storage()
-
-
-func _rebuild_storage() -> void:
-	_vacuum_indices.clear()
-	for slot: XpPickupState in slots:
-		slot.visual_changed.disconnect(_pickup_changed)
-	slots.clear()
-	_free_indices.clear()
-	_active_indices.clear()
-	_cells.clear()
-	_cell_by_pool_index.resize(capacity)
-	_visual_columns.resize(capacity * 4)
-	_active_position_by_pool_index = PackedInt32Array()
-	slots.resize(capacity)
-	_active_position_by_pool_index.resize(capacity)
-	for index: int in range(capacity):
-		var slot := XpPickupState.new()
-		slot.pool_index = index
-		slot.visual_changed.connect(_pickup_changed)
-		slots[index] = slot
-		_store_visual(index, slot.visual_transform)
-		_active_position_by_pool_index[index] = -1
-	for index: int in range(capacity - 1, -1, -1):
-		_free_indices.append(index)
-	overflow_merge_count = 0
-	reuse_count = 0
+	world.configure_xp(attract_radius, collect_radius, attract_speed)
 
 
 func acquire(position: Vector2, value: int, born_tick: int, player_position: Vector2) -> XpPickupState:
-	if value <= 0:
-		return null
-	if _free_indices.is_empty():
-		var merge_target: XpPickupState = _farthest_from(player_position)
-		if merge_target != null:
-			merge_target.value += value
-			overflow_merge_count += 1
-		return merge_target
-	var pool_index: int = _free_indices.pop_back()
-	var pickup: XpPickupState = slots[pool_index]
-	if pickup.generation > 0:
-		reuse_count += 1
-	pickup.generation += 1
-	pickup.activate(position, value, born_tick)
-	_active_position_by_pool_index[pool_index] = _active_indices.size()
-	_active_indices.append(pool_index)
-	_add_to_cell(pool_index)
-	return pickup
+	var index: int = world.spawn_xp(position, value, born_tick, player_position)
+	return slots[index] if index >= 0 else null
 
 
-func advance_and_collect(
-	player_position: Vector2,
-	delta: float,
-	current_tick: int,
-) -> int:
-	var collected_xp: int = 0
-	var attract_radius_squared: float = attract_radius * attract_radius
-	var collect_radius_squared: float = collect_radius * collect_radius
-	var candidates: Array[int] = []
-	if not _vacuum_indices.is_empty():
-		candidates.assign(_active_indices)
-	else:
-		# A generous broad phase keeps rounding at attraction/collection edges
-		# in the original distance check below.
-		var extent := Vector2.ONE * (ceilf(maxf(absf(attract_radius), absf(collect_radius))) + 1.0)
-		var lower: Vector2i = _cell_for(player_position - extent)
-		var upper: Vector2i = _cell_for(player_position + extent)
-		for x: int in range(lower.x, upper.x + 1):
-			for y: int in range(lower.y, upper.y + 1):
-				candidates.append_array(_cells.get(Vector2i(x, y), []))
-	var positions: Array[int] = []
-	for pool_index: int in candidates:
-		positions.append(_active_position_by_pool_index[pool_index])
-	positions.sort()
-	var step: float = attract_speed * maxf(0.0, delta)
-	for active_position: int in positions:
-		# Release swaps the last active slot into this position. Process that
-		# slot immediately, exactly as the original dense-array traversal did.
-		while active_position < _active_indices.size():
-			var pool_index: int = _active_indices[active_position]
-			var pickup: XpPickupState = slots[pool_index]
-			if pickup.born_tick >= current_tick:
-				break
-			var distance_squared: float = pickup.position.distance_squared_to(player_position)
-			if _vacuum_indices.has(pool_index) or distance_squared <= attract_radius_squared:
-				pickup.position = pickup.position.move_toward(player_position, step)
-				distance_squared = pickup.position.distance_squared_to(player_position)
-			if distance_squared > collect_radius_squared:
-				break
-			collected_xp += pickup.value
-			release(pool_index, pickup.generation)
-	return collected_xp
+func advance_and_collect(player_position: Vector2, delta: float, current_tick: int) -> int:
+	return world.collect_xp(player_position, delta, current_tick)
 
 
 func release(pool_index: int, generation: int = -1) -> bool:
-	if pool_index < 0 or pool_index >= capacity:
-		return false
-	var pickup: XpPickupState = slots[pool_index]
-	if not pickup.active or (generation >= 0 and pickup.generation != generation):
-		return false
-	var active_position: int = _active_position_by_pool_index[pool_index]
-	if active_position < 0 or active_position >= _active_indices.size():
-		return false
-	_remove_from_cell(pool_index)
-	_vacuum_indices.erase(pool_index)
-	pickup.deactivate()
-	var last_position: int = _active_indices.size() - 1
-	if active_position != last_position:
-		var moved_pool_index: int = _active_indices[last_position]
-		_active_indices[active_position] = moved_pool_index
-		_active_position_by_pool_index[moved_pool_index] = active_position
-	_active_indices.pop_back()
-	_active_position_by_pool_index[pool_index] = -1
-	_free_indices.append(pool_index)
-	return true
+	return world.release_xp(pool_index, generation)
 
 
 func transforms() -> Array[Transform3D]:
 	var result: Array[Transform3D] = []
-	result.resize(_active_indices.size())
-	for active_position: int in range(_active_indices.size()):
-		var pickup: XpPickupState = slots[_active_indices[active_position]]
-		result[active_position] = pickup.visual_transform
+	result.assign(world.xp_transforms())
 	return result
 
 
-## Read-only working buffer for synchronous rendering/culling. Observations must
-## copy their visible values before the next simulation update.
-## Each slot stores the three basis columns followed by its origin.
 func visual_columns_by_slot() -> PackedVector3Array:
-	return _visual_columns
+	return world.xp_columns()
 
 
 func visual_slot_indices() -> PackedInt32Array:
-	return PackedInt32Array(_active_indices)
+	return PackedInt32Array(world.pool_indices(2))
 
 
 static func visual_transform(pickup: XpPickupState) -> Transform3D:
 	return pickup.visual_transform
 
 
-func active_count() -> int:
-	return _active_indices.size()
-
-
-func active_indices_snapshot() -> Array[int]:
-	return _active_indices.duplicate()
-
-
-func reset_reuse_count() -> void:
-	reuse_count = 0
-
-
-func orphan_count() -> int:
-	var invalid_count: int = 0
-	if slots.size() != capacity or _active_position_by_pool_index.size() != capacity:
-		return capacity
-	if _active_indices.size() + _free_indices.size() != capacity:
-		invalid_count += absi(
-			_active_indices.size() + _free_indices.size() - capacity
-		)
-	var seen := PackedByteArray()
-	seen.resize(capacity)
-	seen.fill(0)
-	for active_position: int in range(_active_indices.size()):
-		var pool_index: int = _active_indices[active_position]
-		if pool_index < 0 or pool_index >= capacity:
-			invalid_count += 1
-			continue
-		if seen[pool_index] != 0:
-			invalid_count += 1
-		seen[pool_index] = 1
-		if (
-			not slots[pool_index].active
-			or _active_position_by_pool_index[pool_index] != active_position
-		):
-			invalid_count += 1
-	for pool_index: int in _free_indices:
-		if pool_index < 0 or pool_index >= capacity:
-			invalid_count += 1
-			continue
-		if seen[pool_index] != 0:
-			invalid_count += 1
-		seen[pool_index] = 1
-		if slots[pool_index].active or _active_position_by_pool_index[pool_index] != -1:
-			invalid_count += 1
-	for pool_index: int in range(capacity):
-		if seen[pool_index] == 0:
-			invalid_count += 1
-	return invalid_count
+func begin_vacuum() -> void:
+	world.vacuum_xp()
 
 
 func total_value() -> int:
-	var total: int = 0
-	for pool_index: int in _active_indices:
-		total += slots[pool_index].value
-	return total
-
-
-func clear() -> void:
-	_vacuum_indices.clear()
-	for pool_index: int in _active_indices:
-		slots[pool_index].deactivate()
-		_active_position_by_pool_index[pool_index] = -1
-	_active_indices.clear()
-	_cells.clear()
-	_free_indices.clear()
-	for index: int in range(capacity - 1, -1, -1):
-		_free_indices.append(index)
-	overflow_merge_count = 0
-
-
-func _cell_for(position: Vector2) -> Vector2i:
-	return Vector2i(floori(position.x / CELL_SIZE), floori(position.y / CELL_SIZE))
-
-
-func begin_vacuum() -> void:
-	for pool_index: int in _active_indices:
-		_vacuum_indices[pool_index] = true
-
-
-func shift_origin(displacement: Vector2) -> void:
-	for pool_index: int in _active_indices:
-		slots[pool_index].position -= displacement
-
-
-func _add_to_cell(pool_index: int) -> void:
-	var cell: Vector2i = _cell_for(slots[pool_index].position)
-	_cell_by_pool_index[pool_index] = cell
-	if not _cells.has(cell):
-		_cells[cell] = []
-	_cells[cell].append(pool_index)
-
-
-func _remove_from_cell(pool_index: int) -> void:
-	var cell: Vector2i = _cell_by_pool_index[pool_index]
-	_cells[cell].erase(pool_index)
-	if _cells[cell].is_empty():
-		_cells.erase(cell)
-
-
-func _pickup_changed(pool_index: int) -> void:
-	_store_visual(pool_index, slots[pool_index].visual_transform)
-	if _active_position_by_pool_index[pool_index] < 0:
-		return
-	if _cell_by_pool_index[pool_index] == _cell_for(slots[pool_index].position):
-		return
-	_remove_from_cell(pool_index)
-	_add_to_cell(pool_index)
-
-
-func _store_visual(pool_index: int, transform: Transform3D) -> void:
-	var offset: int = pool_index * 4
-	_visual_columns[offset] = transform.basis.x
-	_visual_columns[offset + 1] = transform.basis.y
-	_visual_columns[offset + 2] = transform.basis.z
-	_visual_columns[offset + 3] = transform.origin
-
-
-func _farthest_from(player_position: Vector2) -> XpPickupState:
-	var farthest: XpPickupState = null
-	var farthest_distance_squared: float = -1.0
-	for pool_index: int in _active_indices:
-		var pickup: XpPickupState = slots[pool_index]
-		var distance_squared: float = pickup.position.distance_squared_to(player_position)
-		if distance_squared > farthest_distance_squared:
-			farthest = pickup
-			farthest_distance_squared = distance_squared
-	return farthest
+	return world.xp_total_value()

@@ -136,6 +136,10 @@ func _initialize_presentation() -> void:
 	_feedback.initialize(_audio_pool, _settings_store())
 
 
+var _render_dirty: bool = true
+var _last_render_frame: int = -1
+
+
 func _process(delta: float) -> void:
 	if (
 		run_state != null
@@ -144,6 +148,7 @@ func _process(delta: float) -> void:
 	):
 		_tutorial_controller.advance(maxf(0.0, delta))
 	_refresh_tutorial_overlay()
+	_render_current_snapshot(delta)
 
 
 func _physics_process(_delta: float) -> void:
@@ -154,7 +159,7 @@ func _physics_process(_delta: float) -> void:
 	var dimensions := Vector2i(get_viewport().get_visible_rect().size)
 	if combat_simulation.view.viewport_size != dimensions:
 		combat_simulation.set_viewport_size(dimensions)
-		_present_snapshot(combat_simulation.build_snapshot(), 0.0)
+		_render_dirty = true
 	_resolve_terminal_state()
 	if run_state.phase != GameTypes.RunPhase.COMBAT or _manual_paused:
 		_sync_run_phase()
@@ -171,11 +176,11 @@ func _physics_process(_delta: float) -> void:
 		var camera_input: Variant = _arena.call(&"camera_relative_move_input", screen_input)
 		if camera_input is Vector2:
 			move_input = camera_input
-	var snapshot: CombatSnapshot = combat_simulation.step(move_input)
+	combat_simulation.advance_tick(move_input)
+	_render_dirty = true
 	var actual_movement: Vector2 = combat_simulation.last_player_displacement
 	_tutorial_controller.advance_movement(actual_movement, FIXED_TICK_SECONDS)
-	_present_snapshot(snapshot, FIXED_TICK_SECONDS)
-	_consume_snapshot_events(snapshot)
+	_consume_snapshot_events(combat_simulation.take_events())
 	_resolve_terminal_state()
 	_sync_run_phase()
 
@@ -194,8 +199,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		_on_pause_resume_requested()
 	elif _survival_overlay.open_pause():
 		_manual_paused = true
-		if _arena != null:
-			_arena.set_simulation_paused(true)
+		_render_dirty = true
 	get_viewport().set_input_as_handled()
 
 
@@ -311,7 +315,8 @@ func _show_combat_arena() -> bool:
 	_survival_overlay.settings_changed.connect(_on_settings_changed)
 	add_child(_survival_overlay)
 	_logical_phase = run_state.phase
-	_present_snapshot(combat_simulation.build_snapshot(), 0.0)
+	_render_dirty = true
+	_render_current_snapshot(0.0)
 	_sync_run_phase()
 	_raise_persistent_overlays()
 	return true
@@ -383,6 +388,7 @@ func _on_level_choice_requested(choice_index: int) -> void:
 		_present_level_offer()
 		return
 	_survival_overlay.hide_automatic_modal()
+	_render_dirty = true
 	_sync_run_phase()
 
 
@@ -399,6 +405,7 @@ func _on_chest_continue_requested() -> void:
 		_present_chest_outcome()
 		return
 	_survival_overlay.hide_automatic_modal()
+	_render_dirty = true
 	_sync_run_phase()
 
 
@@ -406,13 +413,13 @@ func _on_pause_resume_requested() -> void:
 	if not _manual_paused:
 		return
 	_manual_paused = false
-	if _arena != null:
-		_arena.set_simulation_paused(false)
+	_render_dirty = true
 	if _survival_overlay != null and _survival_overlay.pause_visible():
 		_survival_overlay.close_pause()
 
 
 func _on_settings_changed(_values: Dictionary) -> void:
+	_render_dirty = true
 	if _arena != null:
 		_arena.refresh_accessibility()
 
@@ -614,6 +621,7 @@ func _start_performance_mode() -> void:
 	var initialize_error: Error = runner.call(
 		"initialize",
 		combat_simulation,
+		str(_launch.get("performance", "full_hd_500_2000")),
 	)
 	if initialize_error != OK:
 		print("PERFORMANCE_FAILED reasons=%s" % str(runner.get("last_error_message")))
@@ -723,3 +731,14 @@ func _quit_deferred(exit_code: int) -> void:
 
 func _exit_game() -> void:
 	get_tree().quit(0)
+
+
+func _render_current_snapshot(delta: float) -> void:
+	if combat_simulation == null or not _render_dirty:
+		return
+	var frame: int = Engine.get_process_frames()
+	if frame == _last_render_frame:
+		return
+	_last_render_frame = frame
+	_render_dirty = false
+	_present_snapshot(combat_simulation.build_snapshot(), delta)

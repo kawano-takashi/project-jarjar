@@ -1,6 +1,9 @@
 class_name EnemyEntity
 extends RefCounted
 
+## A view of native storage; numeric state has one owner.
+var _world: RefCounted
+
 
 enum MovementKind {
 	SEEK_PLAYER,
@@ -9,40 +12,168 @@ enum MovementKind {
 
 
 var pool_index: int = -1
-var generation: int = 0
-var entity_id: int = -1
-var enemy_type: GameTypes.EnemyType = GameTypes.EnemyType.PURSUER
+var generation: int:
+	get:
+		return int(_world.enemy_get(pool_index, &"generation"))
+	set(value):
+		_world.enemy_set(pool_index, &"generation", value)
+var entity_id: int:
+	get:
+		return int(_world.enemy_get(pool_index, &"entity_id"))
+	set(value):
+		_world.enemy_set(pool_index, &"entity_id", value)
+var enemy_type: GameTypes.EnemyType:
+	get:
+		return int(_world.enemy_get(pool_index, &"enemy_type")) as GameTypes.EnemyType
+	set(value):
+		_world.enemy_set(pool_index, &"enemy_type", value)
 var definition: EnemyDefinition = null
-var position: Vector2 = Vector2.ZERO
-var hp: float = 0.0
-var max_hp: float = 0.0
-var damage_multiplier: float = 1.0
-var born_tick: int = 0
-var spawn_tick: int = 0
-var activation_tick: int = 0
-var special_elapsed_ticks: float = 0.0
-var telegraph_elapsed_ticks: float = 0.0
-var telegraph_active: bool = false
-var telegraph_position: Vector2 = Vector2.ZERO
-var barrage_alternate: bool = false
-var boss_charge_active: bool = false
-var boss_charge_elapsed_ticks: float = 0.0
-var boss_charge_interval_ticks: int = 0
-var boss_charge_spoke_count: int = 0
-var boss_charge_half_step: bool = false
-var boss_action_age_ticks: float = 0.0
-var hit_flash_until_tick: int = -1
-var alive: bool = true
-var elite_serial: int = -1
-var boss_phase: int = 0
+var position: Vector2:
+	get:
+		return _world.enemy_get(pool_index, &"position")
+	set(value):
+		_world.enemy_set(pool_index, &"position", value)
+var hp: float:
+	get:
+		return float(_world.enemy_get(pool_index, &"hp"))
+	set(value):
+		_world.enemy_set(pool_index, &"hp", value)
+var max_hp: float:
+	get:
+		return float(_world.enemy_get(pool_index, &"max_hp"))
+	set(value):
+		_world.enemy_set(pool_index, &"max_hp", value)
+var damage_multiplier: float:
+	get:
+		return float(_world.enemy_get(pool_index, &"damage_multiplier"))
+	set(value):
+		_world.enemy_set(pool_index, &"damage_multiplier", value)
+var born_tick: int:
+	get:
+		return int(_world.enemy_get(pool_index, &"born_tick"))
+	set(value):
+		_world.enemy_set(pool_index, &"born_tick", value)
+var spawn_tick: int:
+	get:
+		return int(_world.enemy_get(pool_index, &"spawn_tick"))
+	set(value):
+		_world.enemy_set(pool_index, &"spawn_tick", value)
+var activation_tick: int:
+	get:
+		return int(_world.enemy_get(pool_index, &"activation_tick"))
+	set(value):
+		_world.enemy_set(pool_index, &"activation_tick", value)
+var special_elapsed_ticks: float:
+	get:
+		return float(_world.enemy_get(pool_index, &"special_elapsed_ticks"))
+	set(value):
+		_world.enemy_set(pool_index, &"special_elapsed_ticks", value)
+var telegraph_elapsed_ticks: float:
+	get:
+		return float(_world.enemy_get(pool_index, &"telegraph_elapsed_ticks"))
+	set(value):
+		_world.enemy_set(pool_index, &"telegraph_elapsed_ticks", value)
+var telegraph_active: bool:
+	get:
+		return bool(_world.enemy_get(pool_index, &"telegraph_active"))
+	set(value):
+		_world.enemy_set(pool_index, &"telegraph_active", value)
+var telegraph_position: Vector2:
+	get:
+		return _world.enemy_get(pool_index, &"telegraph_position")
+	set(value):
+		_world.enemy_set(pool_index, &"telegraph_position", value)
+var barrage_alternate: bool:
+	get:
+		return bool(_world.enemy_get(pool_index, &"barrage_alternate"))
+	set(value):
+		_world.enemy_set(pool_index, &"barrage_alternate", value)
+var boss_charge_active: bool:
+	get:
+		return bool(_world.enemy_get(pool_index, &"boss_charge_active"))
+	set(value):
+		_world.enemy_set(pool_index, &"boss_charge_active", value)
+var boss_charge_elapsed_ticks: float:
+	get:
+		return float(_world.enemy_get(pool_index, &"boss_charge_elapsed_ticks"))
+	set(value):
+		_world.enemy_set(pool_index, &"boss_charge_elapsed_ticks", value)
+var boss_charge_interval_ticks: int:
+	get:
+		return int(_world.enemy_get(pool_index, &"boss_charge_interval_ticks"))
+	set(value):
+		_world.enemy_set(pool_index, &"boss_charge_interval_ticks", value)
+var boss_charge_spoke_count: int:
+	get:
+		return int(_world.enemy_get(pool_index, &"boss_charge_spoke_count"))
+	set(value):
+		_world.enemy_set(pool_index, &"boss_charge_spoke_count", value)
+var boss_charge_half_step: bool:
+	get:
+		return bool(_world.enemy_get(pool_index, &"boss_charge_half_step"))
+	set(value):
+		_world.enemy_set(pool_index, &"boss_charge_half_step", value)
+var boss_action_age_ticks: float:
+	get:
+		return float(_world.enemy_get(pool_index, &"boss_action_age_ticks"))
+	set(value):
+		_world.enemy_set(pool_index, &"boss_action_age_ticks", value)
+var hit_flash_until_tick: int:
+	get:
+		return int(_world.enemy_get(pool_index, &"hit_flash_until_tick"))
+	set(value):
+		_world.enemy_set(pool_index, &"hit_flash_until_tick", value)
+var alive: bool:
+	get:
+		return bool(_world.enemy_get(pool_index, &"alive"))
+	set(value):
+		_world.enemy_set(pool_index, &"alive", value)
+var elite_serial: int:
+	get:
+		return int(_world.enemy_get(pool_index, &"elite_serial"))
+	set(value):
+		_world.enemy_set(pool_index, &"elite_serial", value)
+var boss_phase: int:
+	get:
+		return int(_world.enemy_get(pool_index, &"boss_phase"))
+	set(value):
+		_world.enemy_set(pool_index, &"boss_phase", value)
 var rng: RandomNumberGenerator = null
-var movement_kind: MovementKind = MovementKind.SEEK_PLAYER
-var swarm_group_id: int = -1
-var fixed_direction: Vector2 = Vector2.ZERO
-var remaining_travel_distance: float = 0.0
-var swarm_red_variant: bool = false
-var is_swarm_event: bool = false
-var encounter_owner_id: int = -1
+var movement_kind: MovementKind:
+	get:
+		return int(_world.enemy_get(pool_index, &"movement_kind")) as MovementKind
+	set(value):
+		_world.enemy_set(pool_index, &"movement_kind", value)
+var swarm_group_id: int:
+	get:
+		return int(_world.enemy_get(pool_index, &"swarm_group_id"))
+	set(value):
+		_world.enemy_set(pool_index, &"swarm_group_id", value)
+var fixed_direction: Vector2:
+	get:
+		return _world.enemy_get(pool_index, &"fixed_direction")
+	set(value):
+		_world.enemy_set(pool_index, &"fixed_direction", value)
+var remaining_travel_distance: float:
+	get:
+		return float(_world.enemy_get(pool_index, &"remaining_travel_distance"))
+	set(value):
+		_world.enemy_set(pool_index, &"remaining_travel_distance", value)
+var swarm_red_variant: bool:
+	get:
+		return bool(_world.enemy_get(pool_index, &"swarm_red_variant"))
+	set(value):
+		_world.enemy_set(pool_index, &"swarm_red_variant", value)
+var is_swarm_event: bool:
+	get:
+		return bool(_world.enemy_get(pool_index, &"is_swarm_event"))
+	set(value):
+		_world.enemy_set(pool_index, &"is_swarm_event", value)
+var encounter_owner_id: int:
+	get:
+		return int(_world.enemy_get(pool_index, &"encounter_owner_id"))
+	set(value):
+		_world.enemy_set(pool_index, &"encounter_owner_id", value)
 
 
 func body_radius() -> float:
@@ -84,53 +215,6 @@ func is_hit_flashing(current_tick: int) -> bool:
 	return alive and current_tick < hit_flash_until_tick
 
 
-func activate(
-	p_entity_id: int,
-	p_enemy_type: GameTypes.EnemyType,
-	p_definition: EnemyDefinition,
-	p_position: Vector2,
-	hp_multiplier: float,
-	p_damage_multiplier: float,
-	p_spawn_tick: int,
-	p_entry_ticks: int,
-	p_rng: RandomNumberGenerator,
-) -> void:
-	generation += 1
-	entity_id = p_entity_id
-	enemy_type = p_enemy_type
-	definition = p_definition
-	position = p_position
-	max_hp = p_definition.base_hp * hp_multiplier
-	hp = max_hp
-	damage_multiplier = p_damage_multiplier
-	born_tick = p_spawn_tick
-	spawn_tick = p_spawn_tick
-	activation_tick = p_spawn_tick + maxi(0, p_entry_ticks)
-	special_elapsed_ticks = 0.0
-	telegraph_elapsed_ticks = 0.0
-	telegraph_active = false
-	telegraph_position = Vector2.ZERO
-	barrage_alternate = false
-	boss_charge_active = false
-	boss_charge_elapsed_ticks = 0.0
-	boss_charge_interval_ticks = 0
-	boss_charge_spoke_count = 0
-	boss_charge_half_step = false
-	boss_action_age_ticks = 0.0
-	hit_flash_until_tick = -1
-	alive = true
-	elite_serial = -1
-	boss_phase = 0
-	rng = p_rng
-	movement_kind = MovementKind.SEEK_PLAYER
-	swarm_group_id = -1
-	fixed_direction = Vector2.ZERO
-	remaining_travel_distance = 0.0
-	swarm_red_variant = false
-	is_swarm_event = false
-	encounter_owner_id = -1
-
-
 func configure_swarm_event(
 	p_group_id: int,
 	p_fixed_direction: Vector2,
@@ -143,39 +227,3 @@ func configure_swarm_event(
 	remaining_travel_distance = maxf(0.0, p_travel_distance)
 	swarm_red_variant = p_red_variant
 	is_swarm_event = true
-
-
-func deactivate() -> void:
-	entity_id = -1
-	enemy_type = GameTypes.EnemyType.PURSUER
-	definition = null
-	position = Vector2.ZERO
-	hp = 0.0
-	max_hp = 0.0
-	damage_multiplier = 1.0
-	born_tick = 0
-	spawn_tick = 0
-	activation_tick = 0
-	special_elapsed_ticks = 0.0
-	telegraph_elapsed_ticks = 0.0
-	telegraph_active = false
-	telegraph_position = Vector2.ZERO
-	barrage_alternate = false
-	boss_charge_active = false
-	boss_charge_elapsed_ticks = 0.0
-	boss_charge_interval_ticks = 0
-	boss_charge_spoke_count = 0
-	boss_charge_half_step = false
-	boss_action_age_ticks = 0.0
-	hit_flash_until_tick = -1
-	alive = false
-	elite_serial = -1
-	boss_phase = 0
-	rng = null
-	movement_kind = MovementKind.SEEK_PLAYER
-	swarm_group_id = -1
-	fixed_direction = Vector2.ZERO
-	remaining_travel_distance = 0.0
-	swarm_red_variant = false
-	is_swarm_event = false
-	encounter_owner_id = -1

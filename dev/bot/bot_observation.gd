@@ -39,7 +39,17 @@ var enemies: Array[Body]:
 	set(value):
 		_enemies = value
 		_packed_enemies = {}
-var bullets: Array[Body] = []
+var _bullets: Array[Body] = []
+var _packed_bullets: Dictionary = {}
+var bullets: Array[Body]:
+	get:
+		if not _packed_bullets.is_empty():
+			_bullets = unpack_bodies(_packed_bullets)
+			_packed_bullets = {}
+		return _bullets
+	set(value):
+		_bullets = value
+		_packed_bullets = {}
 ## Visible allied needles let the controller estimate firing cadence.
 var needles: PackedVector2Array = []
 ## Each entry is (visual kind, world X, world Z, rendered scale).
@@ -95,3 +105,12 @@ static func unpack_bodies(values: Dictionary) -> Array[Body]:
 		body.materializing = materializing[index] != 0
 		bodies.append(body)
 	return bodies
+
+
+func set_bullet_values(values: Dictionary) -> void:
+	_packed_bullets = values
+	_bullets = []
+
+
+func bullet_values() -> Dictionary:
+	return _packed_bullets if not _packed_bullets.is_empty() else pack_bodies(_bullets)

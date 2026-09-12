@@ -142,6 +142,7 @@ func test_boss_charge_cadence_and_latches(assertions: Variant, _context: Diction
 	var spawn_position: Vector2 = boss.position
 	var boss_ids: Array[int] = [boss.entity_id]
 	var projectile_pool := ProjectilePool.new()
+	projectile_pool.configure(catalog.manifest().combat.projectile_pool_capacity, system.enemy_store.world)
 	var phase_one_interval: int = system._boss_action_interval_ticks(120, 1)
 	var phase_two_interval: int = system._boss_action_interval_ticks(120, 2)
 	var phase_three_interval: int = system._boss_action_interval_ticks(120, 3)
@@ -169,7 +170,7 @@ func test_boss_charge_cadence_and_latches(assertions: Variant, _context: Diction
 			assertions.expect_false(boss.boss_charge_half_step, "first volley latches the unshifted pattern")
 	assertions.expect_equal(8, projectile_pool.active_count(), "thirty action ticks of charge emit eight projectiles")
 	assertions.expect_true(boss.position.distance_to(Vector2(6, 0)) < spawn_position.distance_to(Vector2(6, 0)), "active boss directly pursues the player while charging")
-	for entry: Vector2i in projectile_pool.snapshot_active():
+	for entry: PackedInt64Array in projectile_pool.snapshot_active():
 		var projectile: ProjectileState = projectile_pool.resolve_snapshot_entry(entry)
 		assertions.expect_equal(boss.position, projectile.position, "volley projectile originates at the moving boss fire position")
 
@@ -195,7 +196,7 @@ func test_boss_charge_cadence_and_latches(assertions: Variant, _context: Diction
 		if charge_index == 0:
 			assertions.expect_equal(12, boss.boss_charge_spoke_count, "phase change does not mutate a latched charge")
 	assertions.expect_equal(20, projectile_pool.active_count(), "latched phase-two charge emits twelve additional projectiles")
-	var shifted_entry: Vector2i = projectile_pool.snapshot_active()[8]
+	var shifted_entry: PackedInt64Array = projectile_pool.snapshot_active()[8]
 	var shifted_projectile: ProjectileState = projectile_pool.resolve_snapshot_entry(shifted_entry)
 	assertions.expect_true(
 		shifted_projectile.velocity.normalized().dot(Vector2.from_angle(PI / 12.0)) > 0.9999,
@@ -232,6 +233,7 @@ func _assert_entry_contract(assertions: Variant, entry_ticks: int) -> void:
 		return
 	var state: RunState = RunStateFactory.create(8101, catalog)
 	var store := EnemyStore.new()
+	store.configure(8)
 	var definition: EnemyDefinition = catalog.enemy(&"pursuer")
 	var materializing: EnemyEntity = store.try_spawn(
 		state,

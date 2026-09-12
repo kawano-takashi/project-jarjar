@@ -228,7 +228,7 @@ func _validate_settings() -> void:
 	_require(arena, "node_spawn_chance_max", arena.node_spawn_chance <= arena.node_spawn_chance_max and arena.node_spawn_chance_max <= 1.0, "node_spawn_chance <= maximum <= 1")
 	_validate_weights(arena, "node_drop_weights", GameTypes.NodeDropType.size())
 	var combat: CombatBalanceDefinition = _manifest.combat
-	for key: String in ["boss_hp_multiplier", "boss_action_rate_multiplier", "boss_enrage_interval_ticks", "min_cooldown_multiplier", "min_duration_multiplier", "min_projectile_speed_multiplier", "min_area_multiplier", "target_center_radius", "effect_outer_radius", "damage_center_radius", "boss_phase_interval_multiplier", "boss_min_interval_multiplier", "orbital_damage_interval_ticks", "homing_burst_interval_ticks"]:
+	for key: String in ["enemy_pool_capacity", "projectile_pool_capacity", "boss_hp_multiplier", "boss_action_rate_multiplier", "boss_enrage_interval_ticks", "min_cooldown_multiplier", "min_duration_multiplier", "min_projectile_speed_multiplier", "min_area_multiplier", "target_center_radius", "effect_outer_radius", "damage_center_radius", "boss_phase_interval_multiplier", "boss_min_interval_multiplier", "orbital_damage_interval_ticks", "homing_burst_interval_ticks"]:
 		_positive(combat, key)
 	_require(combat, "target_center_radius", combat.target_center_radius <= combat.effect_outer_radius, "<= effect_outer_radius")
 	_require(combat, "effect_outer_radius", combat.effect_outer_radius <= combat.damage_center_radius, "<= damage_center_radius")
@@ -355,7 +355,7 @@ func _validate_swarm() -> void:
 	for key: String in ["lateral_count", "depth_count", "lateral_pitch", "depth_pitch", "telegraph_ticks"]:
 		_positive(swarm, key)
 	_require(swarm, "event_id", swarm.event_id != &"", "nonempty ID")
-	_require(swarm, "member_count", swarm.member_count > 0 and swarm.member_count <= EnemyStore.CAPACITY, "formation product in [1, enemy pool capacity %d]" % EnemyStore.CAPACITY)
+	_require(swarm, "member_count", swarm.member_count > 0 and swarm.member_count <= _manifest.combat.enemy_pool_capacity, "formation product in [1, enemy pool capacity %d]" % _manifest.combat.enemy_pool_capacity)
 	_require(swarm, "unit_definition", swarm.unit_definition != null, "required enemy Resource")
 	if swarm.unit_definition != null:
 		_validate_enemy(swarm.unit_definition)
@@ -367,7 +367,7 @@ func _validate_encounters() -> void:
 	_validate_numbers(encounter)
 	for key: String in ["member_count", "elite_radius_x", "elite_radius_y", "elite_lifetime_ticks", "opponent_distance", "boss_initial_radius", "boss_final_radius", "boss_shrink_ticks"]:
 		_positive(encounter, key)
-	_require(encounter, "member_count", encounter.member_count < EnemyStore.CAPACITY, "members and opponent fit enemy pool")
+	_require(encounter, "member_count", encounter.member_count < _manifest.combat.enemy_pool_capacity, "members and opponent fit enemy pool")
 	_require(encounter, "unit_definition", encounter.unit_definition != null, "required enemy Resource")
 	if encounter.unit_definition == null:
 		return
@@ -392,7 +392,7 @@ func _validate_segments() -> void:
 		_validate_numbers(definition)
 		_positive(definition, "duration_ticks")
 		_positive(definition, "hp_multiplier")
-		_require(definition, "target_active", definition.target_active <= EnemyStore.CAPACITY, "0..enemy pool capacity %d" % EnemyStore.CAPACITY)
+		_require(definition, "target_active", definition.target_active <= _manifest.combat.enemy_pool_capacity, "0..enemy pool capacity %d" % _manifest.combat.enemy_pool_capacity)
 		_validate_weights(definition, "spawn_weights", GameTypes.EnemyType.size())
 		for enemy_type: int in [GameTypes.EnemyType.ELITE, GameTypes.EnemyType.BOSS]:
 			if enemy_type < definition.spawn_weights.size():

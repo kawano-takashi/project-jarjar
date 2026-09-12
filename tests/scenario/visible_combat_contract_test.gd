@@ -253,7 +253,7 @@ func test_boss_volley_event_preserves_latched_phase_spokes(assertions: Variant, 
 	boss.boss_phase = 3
 	boss.barrage_alternate = true
 	simulation._record_boss_action_feedback(true, false, 12)
-	var snapshot: CombatSnapshot = simulation.build_snapshot()
+	var snapshot: CombatSnapshot = simulation.take_events()
 	var volley_event: CombatPresentationEvent = null
 	for event: CombatPresentationEvent in snapshot.presentation_events:
 		if event.kind == CombatPresentationEvent.Kind.BOSS_VOLLEY:

@@ -2,6 +2,7 @@ class_name ArenaObjectSystem
 extends RefCounted
 
 
+var world: RefCounted = CombatNative.create_world()
 var nodes: Array[ArenaNodeState] = []
 var pickups: Array[ArenaPickup] = []
 var destroyed_node_count: int = 0
@@ -16,12 +17,15 @@ var _next_pickup_id: int = 0
 var _last_spawn_tick: int = 0
 
 
-func initialize(state: RunState, catalog: DefinitionCatalog, view: ArenaView = null) -> void:
+func initialize(state: RunState, catalog: DefinitionCatalog, view: ArenaView = null, shared_world: RefCounted = null) -> void:
 	_state = state
 	_catalog = catalog
 	_manifest = catalog.manifest()
 	_view = view if view != null else ArenaView.new()
 	_spawn_rng = state.rng_streams.node_spawn_rng
+	if shared_world != null:
+		world = shared_world
+	world.clear_nodes()
 	nodes.clear()
 	pickups.clear()
 	_next_node_id = 0
@@ -69,6 +73,8 @@ func _spawn_node() -> void:
 			break
 	if slot == null:
 		slot = ArenaNodeState.new()
+		slot._world = world
+		slot.pool_index = world.add_node()
 		nodes.append(slot)
 	var position: Vector2 = _view.sample_offscreen_position(
 		_spawn_rng, _manifest.spawn.offscreen_band_width, _manifest.arena.node_body_radius,
@@ -241,3 +247,10 @@ func chest_guidance(player_position: Vector2) -> Array[Dictionary]:
 			cue["kind"] = kind
 			result.append(cue)
 	return result
+
+
+func resolve_native_destructions(indices: Array, current_tick: int) -> void:
+	for index: int in indices:
+		var node: ArenaNodeState = nodes[index]
+		if node.active and node.hp <= 0.0:
+			_destroy_node(node, current_tick)

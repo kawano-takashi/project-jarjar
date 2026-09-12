@@ -1,6 +1,11 @@
 class_name CombatBalanceDefinition
 extends Resource
 
+## 群れ・包囲・ボスを含む敵の同時存在上限。単位は体、正の整数。
+## 包囲の人数と対戦相手の合計、および群れの人数がそれぞれ収まること。
+@export_range(1, 65536, 1, "or_greater") var enemy_pool_capacity: int = 0
+## 味方と敵を合わせた弾の同時存在上限。単位は発、正の整数。
+@export_range(1, 65536, 1, "or_greater") var projectile_pool_capacity: int = 0
 
 ## 通常敵の接触ダメージに追加で掛ける倍率。有限かつ0以上。エリート・群れ・ボスには適用しない。
 @export_range(0, 100, 0.001, "or_greater") var normal_enemy_damage_scale: float = 0.0

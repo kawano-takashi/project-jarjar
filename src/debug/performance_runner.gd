@@ -10,8 +10,9 @@ const MetricsScript = preload("res://src/debug/performance_metrics.gd")
 const PROFILE_NAME: String = "full_hd_500_2000"
 const RUN_SEED: int = 5_002_000
 const TARGET_WINDOW_SIZE: Vector2i = Vector2i(1920, 1080)
-const TARGET_ENEMY_COUNT: int = 500
-const TARGET_PROJECTILE_COUNT: int = 1_200
+var profile_name: String = PROFILE_NAME
+var target_enemy_count: int = 500
+var target_projectile_count: int = 1_200
 const TARGET_VFX_COUNT: int = 800
 const TARGET_XP_COUNT: int = 1_024
 const TARGET_WEAPON_COUNT: int = 5
@@ -49,13 +50,19 @@ var _first_count_violation: String = ""
 var _final_workload_metrics: Dictionary = {}
 
 
-func initialize(simulation: CombatSimulation) -> Error:
+func initialize(simulation: CombatSimulation, profile: String = PROFILE_NAME) -> Error:
 	if _initialized:
 		return ERR_ALREADY_IN_USE
 	if not _simulation_is_usable(simulation):
 		last_error_message = "simulation_not_initialized"
 		return ERR_INVALID_PARAMETER
 
+	if profile == "full_hd_3000_6000":
+		target_enemy_count = 3000
+		target_projectile_count = 6000
+	elif profile != PROFILE_NAME:
+		return ERR_INVALID_PARAMETER
+	profile_name = profile
 	_simulation = simulation
 	if _simulation.state.run_seed != RUN_SEED:
 		last_error_message = "performance_run_seed_not_%d" % RUN_SEED
@@ -171,6 +178,8 @@ func _finish_capture() -> void:
 			float(metrics["memory_growth_ratio"]), int(metrics["sample_count"]),
 		]
 	)
+	print("PERFORMANCE_WORKLOAD profile=%s enemies=%d projectiles=%d vfx=%d xp=%d" % [profile_name, target_enemy_count, target_projectile_count, TARGET_VFX_COUNT, TARGET_XP_COUNT])
+	print("PERFORMANCE_TIMINGS " + JSON.stringify(_simulation.performance_timings()))
 	if OS.is_stdout_verbose():
 		print("PERFORMANCE_DETAILS %s" % JSON.stringify(summary))
 	print("PERFORMANCE_OK" if exit_code == 0 else "PERFORMANCE_FAILED reasons=%s" % last_error_message)
@@ -180,8 +189,8 @@ func _finish_capture() -> void:
 func _prepare_or_validate_full_load() -> Dictionary:
 	var initial_counts := _active_counts()
 	if (
-		int(initial_counts["active_enemy"]) == TARGET_ENEMY_COUNT
-		and int(initial_counts["active_projectile"]) == TARGET_PROJECTILE_COUNT
+		int(initial_counts["active_enemy"]) == target_enemy_count
+		and int(initial_counts["active_projectile"]) == target_projectile_count
 		and int(initial_counts["active_vfx"]) == TARGET_VFX_COUNT
 		and int(initial_counts["active_xp"]) == TARGET_XP_COUNT
 		and int(initial_counts["active_weapon"]) == TARGET_WEAPON_COUNT
@@ -201,8 +210,8 @@ func _prepare_or_validate_full_load() -> Dictionary:
 	if not bool(
 		_simulation.call(
 			&"prepare_performance_fixture",
-			TARGET_ENEMY_COUNT,
-			TARGET_PROJECTILE_COUNT,
+			target_enemy_count,
+			target_projectile_count,
 			TARGET_VFX_COUNT,
 			TARGET_XP_COUNT,
 		)
@@ -212,8 +221,8 @@ func _prepare_or_validate_full_load() -> Dictionary:
 
 	var final_counts := _active_counts()
 	if (
-		int(final_counts["active_enemy"]) != TARGET_ENEMY_COUNT
-		or int(final_counts["active_projectile"]) != TARGET_PROJECTILE_COUNT
+		int(final_counts["active_enemy"]) != target_enemy_count
+		or int(final_counts["active_projectile"]) != target_projectile_count
 		or int(final_counts["active_vfx"]) != TARGET_VFX_COUNT
 		or int(final_counts["active_xp"]) != TARGET_XP_COUNT
 		or int(final_counts["active_weapon"]) != TARGET_WEAPON_COUNT
@@ -288,8 +297,8 @@ func _validate_frame_values(values: Dictionary) -> void:
 	var active_xp: int = int(values["active_xp"])
 	var active_weapon: int = int(values["active_weapon"])
 	if (
-		active_enemy != TARGET_ENEMY_COUNT
-		or active_projectile != TARGET_PROJECTILE_COUNT
+		active_enemy != target_enemy_count
+		or active_projectile != target_projectile_count
 		or active_vfx != TARGET_VFX_COUNT
 		or active_xp != TARGET_XP_COUNT
 		or active_weapon != TARGET_WEAPON_COUNT
@@ -455,7 +464,7 @@ func _environment_failures(host_info: Dictionary) -> PackedStringArray:
 func _build_summary(metrics: Dictionary) -> Dictionary:
 	var frame_values := _runtime_frame_values() if _simulation_is_usable(_simulation) else {}
 	return {
-		"profile": PROFILE_NAME,
+		"profile": profile_name,
 		"run_seed": RUN_SEED,
 		"warmup_usec": WARMUP_USEC,
 		"run_duration_usec": RUN_DURATION_USEC,

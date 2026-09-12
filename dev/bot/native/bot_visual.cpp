@@ -9,6 +9,7 @@ void JarjarBotVisual::_bind_methods() {
     ClassDB::bind_method(D_METHOD("setup", "mesh"), &JarjarBotVisual::setup);
     ClassDB::bind_method(D_METHOD("is_visible", "inverse", "projection", "world"), &JarjarBotVisual::is_visible);
     ClassDB::bind_method(D_METHOD("visible_loot", "inverse", "projection", "transforms", "indices", "kind"), &JarjarBotVisual::visible_loot);
+    ClassDB::bind_method(D_METHOD("visible_bodies", "inverse", "projection", "transforms", "indices", "radius_factor"), &JarjarBotVisual::visible_bodies);
 }
 
 void JarjarBotVisual::setup(const Ref<Mesh> &p_mesh) {
@@ -60,6 +61,24 @@ PackedVector4Array JarjarBotVisual::visible_loot(const Transform3D &inverse, con
 void JarjarBotObserver::_bind_methods() {
     ClassDB::bind_method(D_METHOD("configure", "visuals"), &JarjarBotObserver::configure);
     ClassDB::bind_method(D_METHOD("observe_bodies", "frame"), &JarjarBotObserver::observe_bodies);
+}
+
+Dictionary JarjarBotVisual::visible_bodies(const Transform3D &inverse, const Projection &projection, const PackedVector3Array &transforms, const PackedInt32Array &indices, double radius_factor) const {
+    PackedVector4Array visible = visible_loot(inverse, projection, transforms, indices, 0);
+    std::vector<Vector4> sorted;
+    for (int64_t i = 0; i < visible.size(); ++i) sorted.push_back(visible[i]);
+    std::sort(sorted.begin(), sorted.end(), [](const Vector4 &a, const Vector4 &b) {
+        if (a.y != b.y) return a.y < b.y;
+        if (a.z != b.z) return a.z < b.z;
+        return a.w < b.w;
+    });
+    PackedVector2Array positions; PackedFloat64Array radii; PackedInt32Array kinds; PackedByteArray materializing;
+    kinds.resize(int64_t(sorted.size())); kinds.fill(0); materializing.resize(int64_t(sorted.size())); materializing.fill(0);
+    for (const auto &body : sorted) {
+        positions.push_back(Vector2(body.y, body.z)); radii.push_back(double(body.w) * radius_factor);
+    }
+    Dictionary result; result["positions"] = positions; result["radii"] = radii;
+    result["kinds"] = kinds; result["materializing"] = materializing; return result;
 }
 
 void JarjarBotObserver::configure(const TypedArray<JarjarBotVisual> &p_visuals) {

@@ -81,7 +81,6 @@ func _ready() -> void:
 	if _simulation != null:
 		_configure_ground()
 		_configure_render_capacity()
-		_apply_snapshot(_simulation.build_snapshot(), 0.0)
 
 
 func initialize(simulation: RefCounted) -> void:
@@ -95,12 +94,6 @@ func initialize(simulation: RefCounted) -> void:
 	if _simulation != null:
 		_configure_ground()
 		_configure_render_capacity()
-		_apply_snapshot(_simulation.build_snapshot(), 0.0)
-
-
-func set_simulation_paused(_paused: bool) -> void:
-	if _simulation != null and is_node_ready():
-		_apply_snapshot(_simulation.build_snapshot(), 0.0)
 
 
 func present_snapshot(snapshot: CombatSnapshot, delta: float) -> void:
@@ -202,28 +195,40 @@ func _apply_snapshot(snapshot: CombatSnapshot, _delta: float) -> void:
 		_player_mesh.position.y,
 		snapshot.player_position.y,
 	)
-	_copy_visual_buckets(
-		snapshot.enemy_transforms,
-		snapshot.enemy_visual_kinds,
-		snapshot.enemy_visual_custom_data,
-		_enemy_instances,
-		true,
-	)
-	_copy_visual_buckets(
-		snapshot.projectile_transforms,
-		snapshot.projectile_visual_kinds,
-		snapshot.projectile_visual_custom_data,
-		_projectile_instances,
-		false,
-	)
-	_copy_evolved_projectile_accents(
-		snapshot.projectile_transforms,
-		snapshot.projectile_visual_custom_data,
-	)
-	_copy_vfx_prefix(snapshot, _vfx_instances)
+	if not snapshot.native_visuals.is_empty():
+		var visuals: Dictionary = snapshot.native_visuals
+		for kind: int in _enemy_instances.size():
+			_upload_buffer(_enemy_instances[kind], visuals.enemy_buffers[kind], 16)
+		for kind: int in _projectile_instances.size():
+			_upload_buffer(_projectile_instances[kind], visuals.projectile_buffers[kind], 16)
+		_upload_buffer(_evolved_outline_inner_instances, visuals.accent_buffers[0], 12)
+		_upload_buffer(_evolved_outline_outer_instances, visuals.accent_buffers[1], 12)
+		_upload_buffer(_evolved_core_instances, visuals.accent_buffers[2], 12)
+		_upload_buffer(_xp_instances, visuals.xp_buffer, 12)
+		_upload_buffer(_vfx_instances, visuals.vfx_buffer, 20)
+	else:
+		_copy_visual_buckets(
+			snapshot.enemy_transforms,
+			snapshot.enemy_visual_kinds,
+			snapshot.enemy_visual_custom_data,
+			_enemy_instances,
+			true,
+		)
+		_copy_visual_buckets(
+			snapshot.projectile_transforms,
+			snapshot.projectile_visual_kinds,
+			snapshot.projectile_visual_custom_data,
+			_projectile_instances,
+			false,
+		)
+		_copy_evolved_projectile_accents(
+			snapshot.projectile_transforms,
+			snapshot.projectile_visual_custom_data,
+		)
+		_copy_vfx_prefix(snapshot, _vfx_instances)
+		_copy_transform_prefix(snapshot.xp_transforms, _xp_instances)
 	_copy_transform_prefix(snapshot.normal_chest_transforms, _chest_instances)
 	_copy_transform_prefix(snapshot.evolution_chest_transforms, _evolution_chest_instances)
-	_copy_transform_prefix(snapshot.xp_transforms, _xp_instances)
 	_copy_transform_prefix(snapshot.pickup_transforms, _pickup_instances)
 	_copy_transform_prefix(snapshot.node_transforms, _node_instances)
 	_update_snapshot_markers(snapshot)
@@ -241,6 +246,14 @@ func _copy_visual_buckets(
 ) -> void:
 	var counts := PackedInt32Array()
 	counts.resize(instances.size())
+	counts.fill(0)
+	for source_index: int in transforms.size():
+		var kind: int = visual_kinds[source_index] if source_index < visual_kinds.size() else 0
+		counts[clampi(kind, 0, instances.size() - 1)] += 1
+	for kind: int in instances.size():
+		var multimesh: MultiMesh = instances[kind].multimesh
+		if multimesh != null and counts[kind] > multimesh.instance_count:
+			multimesh.instance_count = counts[kind]
 	counts.fill(0)
 	for source_index: int in range(transforms.size()):
 		var visual_kind: int = (
@@ -301,10 +314,10 @@ func _copy_evolved_projectile_accents(
 	var core_multimesh: MultiMesh = _evolved_core_instances.multimesh
 	if inner_multimesh == null or outer_multimesh == null or core_multimesh == null:
 		return
-	var capacity: int = mini(
-		inner_multimesh.instance_count,
-		mini(outer_multimesh.instance_count, core_multimesh.instance_count),
-	)
+	var capacity: int = transforms.size()
+	for multimesh: MultiMesh in [inner_multimesh, outer_multimesh, core_multimesh]:
+		if capacity > multimesh.instance_count:
+			multimesh.instance_count = capacity
 	var evolved_count: int = 0
 	for source_index: int in range(transforms.size()):
 		if evolved_count >= capacity:
@@ -492,6 +505,7 @@ func _configure_ground() -> void:
 	_ground = OpenFieldGround.new()
 	_ground.run_seed = _simulation.state.run_seed
 	add_child(_ground)
+	_ground.update_view(view, _world_origin)
 	var player_mesh: CapsuleMesh = _player_mesh.mesh.duplicate() as CapsuleMesh
 	player_mesh.radius = _simulation.catalog.manifest().player.body_radius
 	player_mesh.height = maxf(1.2, player_mesh.radius * 2.0)
@@ -622,3 +636,19 @@ func _update_player_terminal(progress: float) -> void:
 		_player_base_scale.y * height_scale,
 		_player_base_scale.z * (1.0 + progress * 0.18),
 	)
+
+
+func _upload_buffer(instance: MultiMeshInstance3D, values: PackedFloat32Array, stride: int) -> void:
+	var multimesh: MultiMesh = instance.multimesh
+	var count: int = int(values.size() / float(stride))
+	if count > multimesh.instance_count:
+		var capacity: int = maxi(1, multimesh.instance_count)
+		while capacity < count:
+			capacity *= 2
+		multimesh.instance_count = capacity
+	multimesh.visible_instance_count = count
+	if count == 0:
+		return
+	# Capacity grows geometrically; zero padding keeps the bulk upload exact.
+	values.resize(multimesh.instance_count * stride)
+	multimesh.buffer = values

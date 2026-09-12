@@ -29,7 +29,6 @@ const DAMAGE_SOURCE_CONTACT: StringName = &"enemy_contact"
 var enemy_store: EnemyStore = EnemyStore.new()
 var uniform_grid: UniformGrid = UniformGrid.new()
 var encounters: EncounterSystem = EncounterSystem.new()
-var _collision_kernel: RefCounted = null
 
 var _state: RunState = null
 var _catalog: DefinitionCatalog = null
@@ -46,7 +45,7 @@ var _swarm_attempt_consumed: PackedByteArray = PackedByteArray()
 var swarm_warning: SwarmWarningState = null
 
 
-func initialize(state: RunState, catalog: DefinitionCatalog, view: ArenaView = null) -> void:
+func initialize(state: RunState, catalog: DefinitionCatalog, view: ArenaView = null, shared_world: RefCounted = null) -> void:
 	_state = state
 	_catalog = catalog
 	_manifest = catalog.manifest()
@@ -54,6 +53,7 @@ func initialize(state: RunState, catalog: DefinitionCatalog, view: ArenaView = n
 	_view = view if view != null else ArenaView.new()
 	_spawn_rng = state.rng_streams.spawn_rng if state.rng_streams != null else null
 	_swarm_rng = state.rng_streams.swarm_event_rng if state.rng_streams != null else null
+	enemy_store.configure(_manifest.combat.enemy_pool_capacity, shared_world)
 	enemy_store.clear()
 	uniform_grid.clear()
 	_elite_spawned.resize(_catalog.elite_spawn_ticks.size())
@@ -66,59 +66,28 @@ func snapshot_ids() -> Array[int]:
 	return enemy_store.snapshot_ids_sorted()
 
 
-func advance_snapshot(
-	ids: Array[int],
-	player_position: Vector2,
-	current_tick: int,
-) -> Array[int]:
-	var exited_swarm_ids: Array[int] = []
-	var special_ids: Array[int] = []
-	var stop_active: bool = _state.is_stop_active()
-	# The camera is fixed during this update; each body radius shares its bounds.
+func advance_snapshot(ids: Array[int], player_position: Vector2, current_tick: int) -> Array[int]:
 	var retention_rects: Dictionary[float, Rect2] = {}
-	for entity_id: int in ids:
-		var enemy: EnemyEntity = enemy_store.get_by_id(entity_id)
-		if enemy == null:
-			continue
-		if enemy.enemy_type == GameTypes.EnemyType.BOSS:
-			special_ids.append(entity_id)
-		if _should_far_despawn_normal(enemy, player_position, current_tick, retention_rects):
-			if enemy_store.remove(entity_id):
-				_state.normal_far_despawn_count += 1
-			continue
-		_reposition_important_enemy(enemy, current_tick, retention_rects)
-		if not enemy.is_targetable(current_tick):
-			continue
-		var time_scale: float = 1.0
-		if stop_active:
-			time_scale = _manifest.combat.boss_stop_time_scale if enemy.enemy_type == GameTypes.EnemyType.BOSS else 0.0
-		if time_scale <= 0.0:
-			continue
-		_move_enemy(enemy, player_position, time_scale)
-		if enemy.movement_kind == EnemyEntity.MovementKind.FIXED_DIRECTION and enemy.remaining_travel_distance <= 0.0:
-			exited_swarm_ids.append(enemy.entity_id)
-		if enemy.definition.special_interval_ticks > 0:
-			enemy.special_elapsed_ticks += time_scale
-		if enemy.boss_charge_active:
-			enemy.boss_charge_elapsed_ticks += time_scale
-		if enemy.enemy_type == GameTypes.EnemyType.BOSS:
-			enemy.boss_action_age_ticks += time_scale
-		if enemy.telegraph_active:
-			enemy.telegraph_elapsed_ticks += time_scale
-		if enemy.enemy_type == GameTypes.EnemyType.BOSS:
-			_update_boss_state(enemy)
-	# STOP pauses self-propelled movement and actions, but bodies remain pushable.
-	_resolve_enemy_collisions(ids, current_tick)
+	for radius: float in enemy_store.world.body_radii():
+		retention_rects[radius] = _view.body_view_rect(radius).grow(_manifest.spawn.offscreen_band_width + _manifest.spawn.despawn_margin)
+	for entity_id: int in enemy_store.world.important_ids():
+		_reposition_important_enemy(enemy_store.get_by_id(entity_id), current_tick, retention_rects)
+	var result: Dictionary = enemy_store.world.advance_enemies(ids, player_position, current_tick, {
+		"player_radius": _catalog.envelope.player_body_radius, "boss_scale": _manifest.combat.boss_stop_time_scale,
+		"stopped": _state.is_stop_active(), "despawn": current_tick < _catalog.boss_start_tick, "retention": retention_rects,
+	})
+	_state.normal_far_despawn_count += int(result.far_despawns)
+	_state.swarm_event_exit_count += int(result.swarm_exits)
+	var special_ids: Array[int] = []
+	special_ids.assign(result.special)
 	for entity_id: int in special_ids:
 		var boss: EnemyEntity = enemy_store.get_by_id(entity_id)
-		if boss != null and boss.is_targetable(current_tick):
-			boss.position = encounters.constrain_body(boss.position, boss.body_radius())
-	for entity_id: int in exited_swarm_ids:
-		if enemy_store.remove(entity_id):
-			_state.swarm_event_exit_count += 1
+		if boss == null or not boss.is_targetable(current_tick):
+			continue
+		if _time_scale_for(boss) > 0.0:
+			_update_boss_state(boss)
+		boss.position = encounters.constrain_body(boss.position, boss.body_radius())
 	_rebuild_grid(current_tick)
-	# Preserve every boss in the tick-start order, including stopped/entering
-	# bosses. The action stage applies its usual eligibility checks later.
 	return special_ids
 
 
@@ -283,37 +252,19 @@ func resolve_swarm_event_spawns(
 
 
 func has_active_swarm() -> bool:
-	for enemy: EnemyEntity in enemy_store.entities:
-		if enemy.alive and enemy.is_swarm_event:
-			return true
-	return false
+	return enemy_store.world.has_swarm()
 
 
 func cancel_swarm_warning() -> void:
 	swarm_warning = null
 
 
-func resolve_contact_damage_candidates(
-	ids: Array[int],
-	player_position: Vector2,
-	current_tick: int,
-) -> Array[Dictionary]:
-	var candidates: Array[Dictionary] = []
-	for entity_id: int in ids:
-		var enemy: EnemyEntity = enemy_store.get_by_id(entity_id)
-		if not _can_resolve_actions(enemy, current_tick):
-			continue
-		var contact_radius: float = _catalog.envelope.player_body_radius + enemy.definition.body_radius
-		if enemy.position.distance_squared_to(player_position) <= (
-			contact_radius * contact_radius + CONTACT_DISTANCE_EPSILON
-		):
-			candidates.append(_damage_candidate(
-				enemy,
-				DAMAGE_SOURCE_CONTACT,
-				enemy.definition.contact_damage * _effective_damage_multiplier(enemy),
-				enemy.position,
-			))
-	return candidates
+func resolve_contact_damage_candidates(ids: Array[int], player_position: Vector2, current_tick: int) -> Array[Dictionary]:
+	enemy_store.world.set_context(CombatNative.context(_catalog, _state, player_position, current_tick))
+	var result: Array[Dictionary] = []
+	result.assign(enemy_store.world.contact_hits(ids,
+		1.0 + _manifest.combat.boss_attack_bonus_per_stack * float(_state.boss_enrage_stacks), _manifest.combat.boss_stop_time_scale))
+	return result
 
 
 func resolve_ready_enemy_special_actions(
@@ -338,56 +289,7 @@ func current_segment() -> EnemySegmentDefinition:
 
 
 func boss_entity() -> EnemyEntity:
-	for enemy: EnemyEntity in enemy_store.entities:
-		if enemy.enemy_type == GameTypes.EnemyType.BOSS and enemy.alive:
-			return enemy
-	return null
-
-
-func _move_enemy(
-	enemy: EnemyEntity,
-	player_position: Vector2,
-	time_scale: float,
-) -> void:
-	if enemy.movement_kind == EnemyEntity.MovementKind.FIXED_DIRECTION:
-		var maximum_step: float = (
-			enemy.definition.move_speed
-			* time_scale
-			/ float(RunState.TICKS_PER_SECOND)
-		)
-		var travel_step: float = minf(enemy.remaining_travel_distance, maximum_step)
-		enemy.position += enemy.fixed_direction * travel_step
-		enemy.remaining_travel_distance = maxf(
-			0.0,
-			enemy.remaining_travel_distance - travel_step,
-		)
-		return
-	if enemy.encounter_owner_id >= 0:
-		# Ring members pursue independently; player motion can cross their body.
-		enemy.position = enemy.position.move_toward(player_position, enemy.definition.move_speed * time_scale / RunState.TICKS_PER_SECOND)
-		return
-	var from_player: Vector2 = enemy.position - player_position
-	var distance_to_player: float = from_player.length()
-	var separation_direction: Vector2 = (
-		from_player / distance_to_player
-		if distance_to_player > 0.0
-		else _deterministic_contact_direction(enemy.entity_id)
-	)
-	var body_radius: float = enemy.body_radius()
-	var contact_radius: float = _catalog.envelope.player_body_radius + body_radius
-	var next_position: Vector2 = enemy.position
-	if distance_to_player < contact_radius:
-		# Player motion is authoritative. Resolve only the current penetration.
-		next_position = player_position + separation_direction * contact_radius
-	elif distance_to_player > contact_radius:
-		var maximum_step: float = (
-			enemy.definition.move_speed
-			* time_scale
-			/ float(RunState.TICKS_PER_SECOND)
-		)
-		var travel_step: float = minf(maximum_step, distance_to_player - contact_radius)
-		next_position -= separation_direction * travel_step
-	enemy.position = next_position
+	return enemy_store.get_by_id(enemy_store.world.first_enemy_of_type(GameTypes.EnemyType.BOSS))
 
 
 func _deterministic_contact_direction(entity_id: int) -> Vector2:
@@ -398,31 +300,7 @@ func _deterministic_contact_direction(entity_id: int) -> Vector2:
 
 
 func _resolve_enemy_collisions(ids: Array[int], current_tick: int) -> void:
-	var collision_ids: Array[int] = ids.duplicate()
-	collision_ids.sort()
-	var bodies: Array[EnemyEntity] = []
-	var active_ids := PackedInt64Array()
-	var positions := PackedVector2Array()
-	var radii := PackedFloat64Array()
-	for entity_id: int in collision_ids:
-		var enemy: EnemyEntity = enemy_store.get_by_id(entity_id)
-		if enemy == null or not enemy.is_targetable(current_tick):
-			continue
-		if not bodies.is_empty() and bodies[-1] == enemy:
-			continue
-		bodies.append(enemy)
-		active_ids.append(entity_id)
-		positions.append(enemy.position)
-		radii.append(enemy.body_radius())
-	if bodies.size() < 2:
-		return
-	if _collision_kernel == null:
-		_collision_kernel = CombatNative.create_kernel()
-	var corrected: PackedVector2Array = _collision_kernel.resolve_bodies(
-		active_ids, positions, radii, UniformGrid.CELL_SIZE, PackedVector2Array(CONTACT_SEPARATION_DIRECTIONS),
-	)
-	for index: int in bodies.size():
-		bodies[index].position = corrected[index]
+	enemy_store.world.separate_enemies(ids, current_tick)
 
 
 func _fire_ready_boss_volley(
@@ -737,13 +615,6 @@ func _outside_retention(enemy: EnemyEntity, retention_rects: Dictionary[float, R
 	return not retention_rects[radius].has_point(enemy.position)
 
 
-func _should_far_despawn_normal(enemy: EnemyEntity, _player_position: Vector2, current_tick: int, retention_rects: Dictionary[float, Rect2]) -> bool:
-	return (
-		current_tick < _catalog.boss_start_tick and enemy.alive and not enemy.is_swarm_event and enemy.encounter_owner_id < 0
-		and enemy.enemy_type in NORMAL_ENEMY_TYPES and _outside_retention(enemy, retention_rects)
-	)
-
-
 func _reposition_important_enemy(enemy: EnemyEntity, current_tick: int, retention_rects: Dictionary[float, Rect2]) -> void:
 	if enemy.enemy_type == GameTypes.EnemyType.BOSS and encounters.boss_active:
 		return
@@ -762,20 +633,14 @@ func _reposition_important_enemy(enemy: EnemyEntity, current_tick: int, retentio
 
 func shift_origin(displacement: Vector2) -> void:
 	encounters.shift_origin(displacement)
-	for enemy: EnemyEntity in enemy_store.entities:
-		enemy.position -= displacement
-		enemy.telegraph_position -= displacement
+	enemy_store.shift_origin(displacement)
 	if swarm_warning != null:
 		swarm_warning.anchor -= displacement
 	_rebuild_grid(_state.combat_tick)
 
 
 func _normal_enemy_count() -> int:
-	var count: int = 0
-	for enemy: EnemyEntity in enemy_store.entities:
-		if enemy.enemy_type in NORMAL_ENEMY_TYPES and not enemy.is_swarm_event and enemy.encounter_owner_id < 0:
-			count += 1
-	return count
+	return enemy_store.world.normal_count()
 
 
 func _rebuild_grid(current_tick: int) -> void:
@@ -789,20 +654,3 @@ func _can_resolve_actions(enemy: EnemyEntity, current_tick: int) -> bool:
 		and enemy.is_targetable(current_tick)
 		and _time_scale_for(enemy) > 0.0
 	)
-
-
-func _damage_candidate(
-	enemy: EnemyEntity,
-	source_effect_id: StringName,
-	raw_damage: float,
-	position: Vector2,
-) -> Dictionary:
-	return {
-		"type": CANDIDATE_PLAYER_DAMAGE,
-		"source_entity_id": enemy.entity_id,
-		"source_pool_index": enemy.pool_index,
-		"source_generation": enemy.generation,
-		"source_effect_id": source_effect_id,
-		"raw_damage": raw_damage,
-		"position": position,
-	}

@@ -3,11 +3,12 @@ extends RefCounted
 
 func test_survival_pool_active_free_index_contract(assertions: Variant, _context: Dictionary) -> void:
 	var pool := ProjectilePool.new()
+	pool.configure(8)
 	var first: ProjectileState = _fixture_projectile(pool, Vector2.ZERO)
 	var second: ProjectileState = _fixture_projectile(pool, Vector2.RIGHT)
 	var third: ProjectileState = _fixture_projectile(pool, Vector2.DOWN)
 	assertions.expect_equal(3, pool.active_count(), "three acquired projectile slots are active")
-	assertions.expect_equal(ProjectilePool.CAPACITY - 3, pool.free_count(), "free count is constant-time active complement")
+	assertions.expect_equal(pool.capacity - 3, pool.free_count(), "free count is constant-time active complement")
 	var released_generation: int = second.generation
 	assertions.expect_true(pool.release(second.pool_index, released_generation), "middle active slot releases by handle")
 	assertions.expect_equal(2, pool.active_count(), "release removes one active index")
@@ -15,14 +16,21 @@ func test_survival_pool_active_free_index_contract(assertions: Variant, _context
 	var recycled: ProjectileState = _fixture_projectile(pool, Vector2.LEFT)
 	assertions.expect_equal(second.pool_index, recycled.pool_index, "free-index stack immediately reuses the released slot")
 	assertions.expect_true(recycled.generation > released_generation, "recycled slot increments its generation")
+	assertions.expect_false(pool.release(recycled.pool_index, released_generation), "a stale handle cannot release the new occupant")
 	assertions.expect_equal(3, pool.snapshot_active().size(), "snapshot traverses active handles only")
 	assertions.expect_true(first.active and third.active, "swap removal keeps neighboring slots active")
+	var retained_handle := PackedInt64Array([first.pool_index, first.generation])
+	pool.configure(16)
+	assertions.expect_equal(first, pool.resolve_snapshot_entry(retained_handle), "capacity growth preserves live handles")
+	assertions.expect_equal(13, pool.free_count(), "growth adds reusable free slots")
+	assertions.expect_equal(0, pool.orphan_count(), "growth preserves ownership of every slot")
 
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
 	var state: RunState = RunStateFactory.create(7001, catalog)
 	var enemy_pool := EnemyStore.new()
+	enemy_pool.configure(8)
 	var enemy_definition: EnemyDefinition = catalog.enemy(&"pursuer")
 	var first_enemy: EnemyEntity = enemy_pool.try_spawn(
 		state,
@@ -38,7 +46,7 @@ func test_survival_pool_active_free_index_contract(assertions: Variant, _context
 	var first_enemy_id: int = first_enemy.entity_id
 	var retained_ids: Array[int] = enemy_pool.snapshot_ids_sorted()
 	assertions.expect_equal(1, enemy_pool.active_count(), "enemy pool tracks one dense active index")
-	assertions.expect_equal(EnemyStore.CAPACITY - 1, enemy_pool.free_count(), "enemy pool consumes one preallocated free index")
+	assertions.expect_equal(enemy_pool.capacity - 1, enemy_pool.free_count(), "enemy pool consumes one preallocated free index")
 	assertions.expect_true(enemy_pool.remove(first_enemy.entity_id), "enemy pool releases by stable entity ID")
 	var recycled_enemy: EnemyEntity = enemy_pool.try_spawn(
 		state,
@@ -53,6 +61,9 @@ func test_survival_pool_active_free_index_contract(assertions: Variant, _context
 	assertions.expect_true(recycled_enemy.generation > first_enemy_generation, "enemy pool generation advances on reuse")
 	assertions.expect_equal(1, enemy_pool.active_indices_snapshot().size(), "enemy snapshot traverses active indices only")
 	assertions.expect_equal([first_enemy_id], retained_ids, "spawn and removal cannot rewrite a retained tick-start snapshot")
+	state.next_entity_id = 4294967311
+	var wide_id: EnemyEntity = enemy_pool.try_spawn(state, GameTypes.EnemyType.PURSUER, enemy_definition, Vector2.ONE, 1.0, 1.0, 2)
+	assertions.expect_equal(wide_id, enemy_pool.get_by_id(4294967311), "native ownership preserves all 64 bits of the entity ID")
 
 
 func test_xp_pool_overflow_merges_without_loss(assertions: Variant, _context: Dictionary) -> void:
@@ -213,28 +224,29 @@ func test_resonance_wave_sweeps_both_sides_and_amount_adds_damage(assertions: Va
 		-1,
 	)
 	var runtime: RunWeapon = state.weapon_for_lineage(&"resonance_wave")
-	var level_one_attacks: Array[Dictionary] = simulation.weapon_system.advance_and_fire(
+	definition.critical_chance = 0.0
+	right_enemy.hp = 1000.0
+	left_enemy.hp = 1000.0
+	simulation.weapon_system.advance_and_fire(
 		Vector2.ZERO,
 		simulation.enemy_system.enemy_store,
 		simulation.enemy_system.uniform_grid,
 		1,
 	)
-	var level_one_hits: Array[Dictionary] = []
-	level_one_hits.assign(level_one_attacks[0].get("hits", []))
-	assertions.expect_equal(1, _hit_count_for(level_one_hits, right_enemy.entity_id), "level one sweeps the right side once")
-	assertions.expect_equal(1, _hit_count_for(level_one_hits, left_enemy.entity_id), "level one also sweeps the left side once")
+	assertions.expect_float(1000.0 - definition.damage_at(1), right_enemy.hp, "level one damages the right side once")
+	assertions.expect_float(1000.0 - definition.damage_at(1), left_enemy.hp, "level one also damages the left side once")
 	runtime.level = 2
 	runtime.cooldown_remaining_ticks = 0
-	var level_two_attacks: Array[Dictionary] = simulation.weapon_system.advance_and_fire(
+	right_enemy.hp = 1000.0
+	left_enemy.hp = 1000.0
+	simulation.weapon_system.advance_and_fire(
 		Vector2.ZERO,
 		simulation.enemy_system.enemy_store,
 		simulation.enemy_system.uniform_grid,
 		2,
 	)
-	var level_two_hits: Array[Dictionary] = []
-	level_two_hits.assign(level_two_attacks[0].get("hits", []))
-	assertions.expect_equal(2, _hit_count_for(level_two_hits, right_enemy.entity_id), "the third wave adds a second real hit on its side")
-	assertions.expect_equal(1, _hit_count_for(level_two_hits, left_enemy.entity_id), "the opposite sweep remains active")
+	assertions.expect_float(1000.0 - 2.0 * definition.damage_at(2), right_enemy.hp, "the third wave adds a second real hit on its side")
+	assertions.expect_float(1000.0 - definition.damage_at(2), left_enemy.hp, "the opposite sweep remains active")
 
 
 func test_arc_projectile_snapshot_follows_a_parabolic_lob(assertions: Variant, _context: Dictionary) -> void:
@@ -326,7 +338,7 @@ func test_homing_core_levels_emit_sequential_straight_bursts(assertions: Variant
 			runtime.cooldown_remaining_ticks,
 			"level %d cooldown continues while later shots are emitted" % level,
 		)
-		for entry: Vector2i in simulation.projectile_pool.snapshot_active():
+		for entry: PackedInt64Array in simulation.projectile_pool.snapshot_active():
 			var projectile: ProjectileState = (
 				simulation.projectile_pool.resolve_snapshot_entry(entry)
 			)
@@ -464,7 +476,7 @@ func test_homing_core_projectile_flies_straight_and_hits_once(assertions: Varian
 		simulation.enemy_system.uniform_grid,
 		1,
 	)
-	var entry: Vector2i = simulation.projectile_pool.snapshot_active()[0]
+	var entry: PackedInt64Array = simulation.projectile_pool.snapshot_active()[0]
 	var projectile: ProjectileState = simulation.projectile_pool.resolve_snapshot_entry(entry)
 	var launch_velocity: Vector2 = projectile.velocity
 	var launch_damage: float = projectile.damage
@@ -481,7 +493,7 @@ func test_homing_core_projectile_flies_straight_and_hits_once(assertions: Varian
 		-1,
 	)
 	var records: Array[Dictionary] = []
-	var moving_entries: Array[Vector2i] = [entry]
+	var moving_entries: Array[PackedInt64Array] = [entry]
 	for current_tick: int in range(2, 20):
 		if simulation.projectile_pool.resolve_snapshot_entry(entry) == null:
 			break
@@ -629,7 +641,7 @@ func test_arc_projectile_explodes_once_on_first_impact(assertions: Variant, _con
 		simulation.enemy_system.uniform_grid,
 		1,
 	)
-	var entries: Array[Vector2i] = simulation.projectile_pool.snapshot_active()
+	var entries: Array[PackedInt64Array] = simulation.projectile_pool.snapshot_active()
 	assertions.expect_equal(1, entries.size(), "level one arc crystal creates one projectile")
 	var records: Array[Dictionary] = []
 	for current_tick: int in range(2, 40):
@@ -675,7 +687,7 @@ func test_projectile_batch_filters_live_hp_and_history_before_arc_impact(a: Vari
 		var enemy: EnemyEntity = sim.spawn_fixture_enemy(GameTypes.EnemyType.PURSUER, Vector2(x, 0), -1)
 		enemy.hp = 10.0
 		targets.append(enemy)
-	var entries: Array[Vector2i] = []
+	var entries: Array[PackedInt64Array] = []
 	for movement_kind: ProjectileState.MovementKind in [ProjectileState.MovementKind.STRAIGHT, ProjectileState.MovementKind.ARC]:
 		var projectile: ProjectileState = sim.projectile_pool.acquire(
 			ProjectileState.FACTION_ALLY, &"batch_probe", -1, Vector2(8, 0), Vector2.RIGHT,
@@ -684,37 +696,26 @@ func test_projectile_batch_filters_live_hp_and_history_before_arc_impact(a: Vari
 		)
 		projectile.previous_position = Vector2.ZERO
 		if movement_kind == ProjectileState.MovementKind.ARC:
-			projectile.hit_entity_ids[targets[1].entity_id] = true
-		entries.append(Vector2i(projectile.pool_index, projectile.generation))
-	var batch: WeaponSystem.ProjectileIntersections = sim.weapon_system.prepare_projectile_intersections(
-		entries, sim.enemy_system.enemy_store, sim.enemy_system.uniform_grid, Vector2.ZERO, 1,
-	)
-	var resolution: Dictionary = {}
-	var first_hits: Array[Dictionary] = sim.weapon_system.resolve_ally_projectile(
-		entries[0], sim.enemy_system.enemy_store, sim.enemy_system.uniform_grid, Vector2.ZERO, 1, resolution, batch,
-	)
-	a.expect_equal(1, first_hits.size(), "the first projectile has one piercing charge")
-	sim._apply_enemy_hit_records(first_hits)
-	a.expect_float(0.0, targets[0].hp, "the first projectile kills the nearest target before the next projectile")
-	var arc_hits: Array[Dictionary] = sim.weapon_system.resolve_ally_projectile(
-		entries[1], sim.enemy_system.enemy_store, sim.enemy_system.uniform_grid, Vector2.ZERO, 1, resolution, batch,
-	)
-	a.expect_equal(1, arc_hits.size(), "the arc explodes once at the remaining eligible target")
-	if not arc_hits.is_empty():
-		a.expect_equal(targets[2].entity_id, arc_hits[0]["entity_id"], "dead and previously hit candidates cannot choose the arc impact")
-	sim._apply_enemy_hit_records(arc_hits)
-	a.expect_float(10.0, targets[1].hp, "the previously hit middle target is outside the resolved explosion")
-	a.expect_float(0.0, targets[2].hp, "the far target receives the resolved explosion")
+			projectile.mark_hit_enemy(targets[1].entity_id)
+		entries.append(PackedInt64Array([projectile.pool_index, projectile.generation]))
+	sim.world.set_context(CombatNative.context(catalog, sim.state, Vector2.ZERO, 1))
+	sim.world.resolve_projectiles(entries, true, true)
+	a.expect_float(0.0, targets[0].hp, "the first projectile kills before the following arc resolves")
+	a.expect_float(10.0, targets[1].hp, "the arc skips its previous hit when choosing its impact")
+	a.expect_float(0.0, targets[2].hp, "the arc explodes once on the remaining target")
 	var replacement: ProjectileState = sim.projectile_pool.acquire(
 		ProjectileState.FACTION_ALLY, &"batch_probe", -1, Vector2(8, 0), Vector2.RIGHT,
 		0.05, 10.0, 100.0, 10.0, Vector2(8, 0), 0, 0,
 	)
-	a.expect_equal(entries[1].x, replacement.pool_index, "fixture reuses the released arc slot")
-	var stale_hits: Array[Dictionary] = sim.weapon_system.resolve_ally_projectile(
-		Vector2i(replacement.pool_index, replacement.generation), sim.enemy_system.enemy_store,
-		sim.enemy_system.uniform_grid, Vector2.ZERO, 1, resolution, batch,
-	)
-	a.expect_true(stale_hits.is_empty(), "a new generation cannot inherit a previous projectile's batch row")
+	a.expect_equal(entries[1][0], replacement.pool_index, "fixture reuses the released arc slot")
+	replacement.previous_position = Vector2.ZERO
+	sim.world.resolve_projectiles(entries, true, true)
+	a.expect_float(10.0, targets[1].hp, "an old stage cannot move or hit with a recycled occupant")
+	a.expect_true(replacement.active, "an old stage cannot release a recycled occupant")
+	var fresh_entries: Array[PackedInt64Array] = sim.projectile_pool.snapshot_active()
+	sim.world.resolve_projectiles(fresh_entries, true, true)
+	a.expect_float(0.0, targets[1].hp, "the next stage can use the fresh projectile handle")
+
 
 
 func test_arc_node_damage_uses_single_resolved_impact(assertions: Variant, _context: Dictionary) -> void:
@@ -963,7 +964,7 @@ func test_returning_ring_uses_explicit_outbound_range_and_hits_on_return(asserti
 	for current_tick: int in range(2, definition.duration_ticks_at(1) + 4):
 		if current_tick > ceili(outward_reach / definition.projectile_speed_at(1) * 60.0):
 			moving_player_position += Vector2(0.0, 0.04)
-		var entries: Array[Vector2i] = simulation.projectile_pool.snapshot_active()
+		var entries: Array[PackedInt64Array] = simulation.projectile_pool.snapshot_active()
 		simulation.weapon_system.move_snapshot_projectiles(
 			entries,
 			simulation.enemy_system.enemy_store,
@@ -971,7 +972,7 @@ func test_returning_ring_uses_explicit_outbound_range_and_hits_on_return(asserti
 			current_tick,
 			false,
 		)
-		for entry: Vector2i in entries:
+		for entry: PackedInt64Array in entries:
 			var projectile: ProjectileState = simulation.projectile_pool.resolve_snapshot_entry(entry)
 			var returning: bool = projectile != null and projectile.return_phase_started
 			var records: Array[Dictionary] = simulation.weapon_system.resolve_ally_projectile(
@@ -1094,7 +1095,7 @@ func _assert_infinite_homing_cadence(assertions: Variant, cooldown_ticks: int) -
 	for current_tick: int in range(1, 601):
 		if current_tick == 2:
 			target.position = Vector2(0.0, 7.5)
-		var entries: Array[Vector2i] = simulation.projectile_pool.snapshot_active()
+		var entries: Array[PackedInt64Array] = simulation.projectile_pool.snapshot_active()
 		simulation.weapon_system.move_snapshot_projectiles(
 			entries,
 			simulation.enemy_system.enemy_store,
@@ -1116,7 +1117,7 @@ func _assert_infinite_homing_cadence(assertions: Variant, cooldown_ticks: int) -
 				tracking_projectile.velocity.normalized(),
 				"infinite homing still bends toward a moved living target",
 			)
-		for entry: Vector2i in entries:
+		for entry: PackedInt64Array in entries:
 			simulation.weapon_system.resolve_ally_projectile(
 				entry,
 				simulation.enemy_system.enemy_store,
@@ -1136,7 +1137,7 @@ func _assert_infinite_homing_cadence(assertions: Variant, cooldown_ticks: int) -
 	var expected_total: int = 1 + floori(599.0 / float(cooldown_ticks))
 	assertions.expect_equal(expected_total, generated_count, "homing emits throughout the configured cadence")
 	assertions.expect_equal(0, simulation.projectile_pool.overflow_count, "configured homing cadence does not overflow the projectile pool")
-	assertions.expect_true(simulation.projectile_pool.active_count() < ProjectilePool.CAPACITY, "expired homing projectiles recycle active slots")
+	assertions.expect_true(simulation.projectile_pool.active_count() < simulation.projectile_pool.capacity, "expired homing projectiles recycle active slots")
 
 
 func _orbital_fixture(
@@ -1202,7 +1203,7 @@ func _projectile_born_at(
 	simulation: CombatSimulation,
 	born_tick: int,
 ) -> ProjectileState:
-	for entry: Vector2i in simulation.projectile_pool.snapshot_active():
+	for entry: PackedInt64Array in simulation.projectile_pool.snapshot_active():
 		var projectile: ProjectileState = (
 			simulation.projectile_pool.resolve_snapshot_entry(entry)
 		)

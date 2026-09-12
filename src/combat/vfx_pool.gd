@@ -308,3 +308,13 @@ func _replace_oldest_lower_priority(incoming_priority: int) -> void:
 			candidate = slot
 	if candidate != null:
 		release(candidate.pool_index, candidate.generation)
+
+
+## Native death batches omit ordinary effects after the existing per-tick cap.
+## Preserve request/drop telemetry without allocating every omitted effect.
+func record_suppressed_requests(count: int, born_tick: int) -> void:
+	if count <= 0:
+		return
+	_prepare_request_tick(born_tick)
+	request_count += count
+	generic_drop_count += count

@@ -1,6 +1,9 @@
 class_name ProjectileState
 extends RefCounted
 
+## A view of native storage; numeric state has one owner.
+var _world: RefCounted
+
 
 const FACTION_ALLY: StringName = &"ally"
 const FACTION_ENEMY: StringName = &"enemy"
@@ -10,36 +13,146 @@ const ARC_APEX_BONUS_HEIGHT: float = 1.8
 enum MovementKind { STRAIGHT, HOMING, ARC, RETURNING }
 
 var pool_index: int = -1
-var generation: int = 0
-var active: bool = false
-var faction: StringName = &""
-var weapon_id: StringName = &""
-var source_entity_id: int = -1
-var position: Vector2 = Vector2.ZERO
-var previous_position: Vector2 = Vector2.ZERO
-var velocity: Vector2 = Vector2.ZERO
-var radius: float = 0.0
-var damage: float = 0.0
-var remaining_distance: float = 0.0
-var previous_remaining_distance: float = 0.0
-var outbound_distance_remaining: float = 0.0
-var remaining_lifetime: float = 0.0
-var target_position: Vector2 = Vector2.ZERO
-var pierce_remaining: int = 0
-var born_tick: int = 0
-var hit_entity_ids: Dictionary[int, bool] = {}
-var hit_node_ids: Dictionary[int, bool] = {}
-var source_effect_id: StringName = &""
-var movement_kind: MovementKind = MovementKind.STRAIGHT
-var target_entity_id: int = -1
-var speed: float = 0.0
-var elapsed_ticks: float = 0.0
-var total_lifetime_ticks: int = 0
-var return_after_ticks: int = 0
-var return_phase_started: bool = false
-var explosion_radius: float = 0.0
-var stop_time_scale: float = 0.0
-var expired_this_tick: bool = false
+var generation: int:
+	get:
+		return int(_world.projectile_get(pool_index, &"generation"))
+	set(value):
+		_world.projectile_set(pool_index, &"generation", value)
+var active: bool:
+	get:
+		return bool(_world.projectile_get(pool_index, &"active"))
+	set(value):
+		_world.projectile_set(pool_index, &"active", value)
+var faction: StringName:
+	get:
+		return _world.projectile_get(pool_index, &"faction")
+	set(value):
+		_world.projectile_set(pool_index, &"faction", value)
+var weapon_id: StringName:
+	get:
+		return _world.projectile_get(pool_index, &"weapon_id")
+	set(value):
+		_world.projectile_set(pool_index, &"weapon_id", value)
+var source_entity_id: int:
+	get:
+		return int(_world.projectile_get(pool_index, &"source_entity_id"))
+	set(value):
+		_world.projectile_set(pool_index, &"source_entity_id", value)
+var position: Vector2:
+	get:
+		return _world.projectile_get(pool_index, &"position")
+	set(value):
+		_world.projectile_set(pool_index, &"position", value)
+var previous_position: Vector2:
+	get:
+		return _world.projectile_get(pool_index, &"previous_position")
+	set(value):
+		_world.projectile_set(pool_index, &"previous_position", value)
+var velocity: Vector2:
+	get:
+		return _world.projectile_get(pool_index, &"velocity")
+	set(value):
+		_world.projectile_set(pool_index, &"velocity", value)
+var radius: float:
+	get:
+		return float(_world.projectile_get(pool_index, &"radius"))
+	set(value):
+		_world.projectile_set(pool_index, &"radius", value)
+var damage: float:
+	get:
+		return float(_world.projectile_get(pool_index, &"damage"))
+	set(value):
+		_world.projectile_set(pool_index, &"damage", value)
+var remaining_distance: float:
+	get:
+		return float(_world.projectile_get(pool_index, &"remaining_distance"))
+	set(value):
+		_world.projectile_set(pool_index, &"remaining_distance", value)
+var previous_remaining_distance: float:
+	get:
+		return float(_world.projectile_get(pool_index, &"previous_remaining_distance"))
+	set(value):
+		_world.projectile_set(pool_index, &"previous_remaining_distance", value)
+var outbound_distance_remaining: float:
+	get:
+		return float(_world.projectile_get(pool_index, &"outbound_distance_remaining"))
+	set(value):
+		_world.projectile_set(pool_index, &"outbound_distance_remaining", value)
+var remaining_lifetime: float:
+	get:
+		return float(_world.projectile_get(pool_index, &"remaining_lifetime"))
+	set(value):
+		_world.projectile_set(pool_index, &"remaining_lifetime", value)
+var target_position: Vector2:
+	get:
+		return _world.projectile_get(pool_index, &"target_position")
+	set(value):
+		_world.projectile_set(pool_index, &"target_position", value)
+var pierce_remaining: int:
+	get:
+		return int(_world.projectile_get(pool_index, &"pierce_remaining"))
+	set(value):
+		_world.projectile_set(pool_index, &"pierce_remaining", value)
+var born_tick: int:
+	get:
+		return int(_world.projectile_get(pool_index, &"born_tick"))
+	set(value):
+		_world.projectile_set(pool_index, &"born_tick", value)
+var source_effect_id: StringName:
+	get:
+		return _world.projectile_get(pool_index, &"source_effect_id")
+	set(value):
+		_world.projectile_set(pool_index, &"source_effect_id", value)
+var movement_kind: MovementKind:
+	get:
+		return int(_world.projectile_get(pool_index, &"movement_kind")) as MovementKind
+	set(value):
+		_world.projectile_set(pool_index, &"movement_kind", value)
+var target_entity_id: int:
+	get:
+		return int(_world.projectile_get(pool_index, &"target_entity_id"))
+	set(value):
+		_world.projectile_set(pool_index, &"target_entity_id", value)
+var speed: float:
+	get:
+		return float(_world.projectile_get(pool_index, &"speed"))
+	set(value):
+		_world.projectile_set(pool_index, &"speed", value)
+var elapsed_ticks: float:
+	get:
+		return float(_world.projectile_get(pool_index, &"elapsed_ticks"))
+	set(value):
+		_world.projectile_set(pool_index, &"elapsed_ticks", value)
+var total_lifetime_ticks: int:
+	get:
+		return int(_world.projectile_get(pool_index, &"total_lifetime_ticks"))
+	set(value):
+		_world.projectile_set(pool_index, &"total_lifetime_ticks", value)
+var return_after_ticks: int:
+	get:
+		return int(_world.projectile_get(pool_index, &"return_after_ticks"))
+	set(value):
+		_world.projectile_set(pool_index, &"return_after_ticks", value)
+var return_phase_started: bool:
+	get:
+		return bool(_world.projectile_get(pool_index, &"return_phase_started"))
+	set(value):
+		_world.projectile_set(pool_index, &"return_phase_started", value)
+var explosion_radius: float:
+	get:
+		return float(_world.projectile_get(pool_index, &"explosion_radius"))
+	set(value):
+		_world.projectile_set(pool_index, &"explosion_radius", value)
+var stop_time_scale: float:
+	get:
+		return float(_world.projectile_get(pool_index, &"stop_time_scale"))
+	set(value):
+		_world.projectile_set(pool_index, &"stop_time_scale", value)
+var expired_this_tick: bool:
+	get:
+		return bool(_world.projectile_get(pool_index, &"expired_this_tick"))
+	set(value):
+		_world.projectile_set(pool_index, &"expired_this_tick", value)
 
 
 func visual_height() -> float:
@@ -56,85 +169,5 @@ func visual_height() -> float:
 	)
 
 
-func activate(
-	p_faction: StringName,
-	p_weapon_id: StringName,
-	p_source_entity_id: int,
-	p_position: Vector2,
-	p_velocity: Vector2,
-	p_radius: float,
-	p_damage: float,
-	p_remaining_distance: float,
-	p_remaining_lifetime: float,
-	p_target_position: Vector2,
-	p_pierce_remaining: int,
-	p_born_tick: int,
-	p_source_effect_id: StringName = &"",
-	p_movement_kind: MovementKind = MovementKind.STRAIGHT,
-	p_target_entity_id: int = -1,
-	p_total_lifetime_ticks: int = 0,
-	p_return_after_ticks: int = 0,
-	p_explosion_radius: float = 0.0,
-	p_stop_time_scale: float = 0.0,
-) -> void:
-	active = true
-	faction = p_faction
-	weapon_id = p_weapon_id
-	source_entity_id = p_source_entity_id
-	position = p_position
-	previous_position = p_position
-	velocity = p_velocity
-	radius = p_radius
-	damage = p_damage
-	remaining_distance = p_remaining_distance
-	previous_remaining_distance = p_remaining_distance
-	outbound_distance_remaining = 0.0
-	remaining_lifetime = p_remaining_lifetime
-	target_position = p_target_position
-	pierce_remaining = p_pierce_remaining
-	born_tick = p_born_tick
-	hit_entity_ids.clear()
-	hit_node_ids.clear()
-	source_effect_id = p_source_effect_id
-	movement_kind = p_movement_kind
-	target_entity_id = p_target_entity_id
-	speed = p_velocity.length()
-	elapsed_ticks = 0.0
-	total_lifetime_ticks = p_total_lifetime_ticks
-	return_after_ticks = p_return_after_ticks
-	return_phase_started = false
-	explosion_radius = maxf(0.0, p_explosion_radius)
-	stop_time_scale = clampf(p_stop_time_scale, 0.0, 1.0)
-	expired_this_tick = false
-
-
-func deactivate() -> void:
-	active = false
-	faction = &""
-	weapon_id = &""
-	source_entity_id = -1
-	position = Vector2.ZERO
-	previous_position = Vector2.ZERO
-	velocity = Vector2.ZERO
-	radius = 0.0
-	damage = 0.0
-	remaining_distance = 0.0
-	previous_remaining_distance = 0.0
-	outbound_distance_remaining = 0.0
-	remaining_lifetime = 0.0
-	target_position = Vector2.ZERO
-	pierce_remaining = 0
-	born_tick = 0
-	hit_entity_ids.clear()
-	hit_node_ids.clear()
-	source_effect_id = &""
-	movement_kind = MovementKind.STRAIGHT
-	target_entity_id = -1
-	speed = 0.0
-	elapsed_ticks = 0.0
-	total_lifetime_ticks = 0
-	return_after_ticks = 0
-	return_phase_started = false
-	explosion_radius = 0.0
-	stop_time_scale = 0.0
-	expired_this_tick = false
+func mark_hit_enemy(entity_id: int) -> void:
+	_world.projectile_mark_hit(pool_index, entity_id)

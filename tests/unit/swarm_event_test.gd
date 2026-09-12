@@ -66,7 +66,7 @@ func test_swarm_scheduler_is_isolated_repeatable_and_atomic(assertions: Variant,
 	assertions.expect_equal(16, normal_spawns.size(), "normal spawn management also continues during STOP")
 	assertions.expect_equal(66, first_system.enemy_store.active_count(), "normal wave and fifty-member event coexist")
 	assertions.expect_float(0.0, first_state.spawn_credit, "only normal spawns consume credit")
-	assertions.expect_true(catalog.segment(9).target_active + catalog.manifest().swarm_event.member_count + catalog.elite_spawn_ticks.size() < EnemyStore.CAPACITY, "approved peak normal target, one swarm, and all elites fit the pool")
+	assertions.expect_true(catalog.segment(9).target_active + catalog.manifest().swarm_event.member_count + catalog.elite_spawn_ticks.size() < catalog.manifest().combat.enemy_pool_capacity, "approved peak normal target, one swarm, and all elites fit the pool")
 
 	var changed_state: RunState = RunStateFactory.create(8004, catalog)
 	var baseline_state: RunState = RunStateFactory.create(8004, catalog)
@@ -93,7 +93,7 @@ func test_swarm_scheduler_is_isolated_repeatable_and_atomic(assertions: Variant,
 	var overflow_system := EnemySystem.new()
 	overflow_system.initialize(overflow_state, catalog)
 	var pursuer: EnemyDefinition = catalog.enemy(&"pursuer")
-	for fill_index: int in range(EnemyStore.CAPACITY - 49):
+	for fill_index: int in range(catalog.manifest().combat.enemy_pool_capacity - 49):
 		overflow_system.enemy_store.try_spawn(
 			overflow_state,
 			GameTypes.EnemyType.PURSUER,

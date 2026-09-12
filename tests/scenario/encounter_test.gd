@@ -10,7 +10,7 @@ func test_elite_encounter_reserves_capacity_once_and_expires_during_stop(a: Vari
 	sim.state.level = 3
 	var near_enemy: EnemyEntity = sim.spawn_fixture_enemy(GameTypes.EnemyType.PURSUER, Vector2.ONE)
 	var near_id: int = near_enemy.entity_id
-	for index: int in range(EnemyStore.CAPACITY - 1):
+	for index: int in range(system.enemy_store.capacity - 1):
 		sim.spawn_fixture_enemy(GameTypes.EnemyType.PURSUER, Vector2(100.0 + index, 0.0))
 	var scheduled: Array[EnemyEntity] = system.resolve_scheduled_spawns(sim.player_position, tick)
 	a.expect_equal(1, scheduled.size(), "a full pool reserves the entire encounter atomically")
@@ -20,7 +20,7 @@ func test_elite_encounter_reserves_capacity_once_and_expires_during_stop(a: Vari
 	var members: Array[EnemyEntity] = _members(sim)
 	a.expect_equal(definition.member_count, members.size(), "all ring members spawn together")
 	a.expect_true(system.enemy_store.has_entity(near_id), "capacity retires distant ordinary enemies first")
-	a.expect_equal(EnemyStore.CAPACITY - definition.member_count - 1, system._normal_enemy_count(), "ring members do not consume the normal target")
+	a.expect_equal(system.enemy_store.capacity - definition.member_count - 1, system._normal_enemy_count(), "ring members do not consume the normal target")
 	a.expect_equal(0, sim.state.total_kills, "capacity retirement has no kill rewards")
 	a.expect_equal(0, sim.xp_pickup_pool.total_value(), "capacity retirement drops no XP")
 	a.expect_float(definition.opponent_distance, elite.position.distance_to(sim.player_position), "opponent starts safely inside the ring")

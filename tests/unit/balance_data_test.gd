@@ -215,7 +215,7 @@ func test_balance_invalid_values_report_source_field_and_rule(a: Variant, _conte
 				content.player.move_speed = INF
 				field = "move_speed"
 			"target":
-				content.segments[0].target_active = EnemyStore.CAPACITY + 1
+				content.segments[0].target_active = content.combat.enemy_pool_capacity + 1
 				field = "target_active"
 			"weights":
 				content.segments[0].spawn_weights.fill(0.0)

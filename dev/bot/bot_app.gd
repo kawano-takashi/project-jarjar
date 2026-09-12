@@ -108,6 +108,8 @@ func _process(delta: float) -> void:
 			_quit_deferred(2)
 		elif _launch["bot"] == "fast":
 			_process_fast_bot()
+		elif _launch["bot"] == "watch":
+			_render_current_snapshot(delta)
 
 
 func _physics_process(delta: float) -> void:
@@ -202,7 +204,8 @@ func _start_bot_session() -> void:
 			return
 		var hud := _arena.get_node("%CombatHUD") as CombatHud
 		hud.add_child(WatchHudLayout.new())
-		_present_snapshot(combat_simulation.build_snapshot(), 0.0)
+		_render_dirty = true
+		_render_current_snapshot(0.0)
 	_report_bot("BOT_START seed=%d mode=%s view=%dx%d" % [seed_value, _launch["bot"], _bot_session.view.viewport_size.x, _bot_session.view.viewport_size.y])
 
 
@@ -216,6 +219,7 @@ func _process_fast_bot() -> void:
 			_finish_bot_session()
 			return
 		_bot_session.advance()
+		combat_simulation.take_events()
 		if _bot_errors != null and _bot_errors.count() > 0:
 			_bot_session.fail("engine_or_script_error")
 			_finish_bot_session()
@@ -236,15 +240,14 @@ func _process_watched_bot() -> void:
 	for _step_index: int in int(_launch["bot_speed"]):
 		var phase_before: GameTypes.RunPhase = run_state.phase
 		_bot_session.advance()
+		_render_dirty = true
+		_consume_snapshot_events(combat_simulation.take_events())
 		if _bot_errors != null and _bot_errors.count() > 0:
 			_bot_session.fail("engine_or_script_error")
 			_finish_bot_session()
 			return
 		if run_state.phase != GameTypes.RunPhase.COMBAT or phase_before != GameTypes.RunPhase.COMBAT or not _bot_session.result.is_empty():
 			break
-	var snapshot: CombatSnapshot = combat_simulation.build_snapshot()
-	_present_snapshot(snapshot, 0.0)
-	_consume_snapshot_events(snapshot)
 	_sync_run_phase()
 	if not _bot_session.result.is_empty():
 		_finish_bot_session()

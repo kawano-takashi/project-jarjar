@@ -136,17 +136,8 @@ func record_weapon_damage(lineage_id: StringName, amount: float) -> void:
 
 
 func record_kill_chain(current_tick: int) -> int:
-	if kill_chain_last_tick >= 0 and current_tick - kill_chain_last_tick <= kill_chain_window_ticks:
-		kill_chain_count += 1
-	else:
-		kill_chain_count = 1
-		kill_chain_accent_milestone = 0
-	kill_chain_last_tick = current_tick
-	var milestone: int = _kill_chain_milestone(kill_chain_count)
-	if milestone > kill_chain_accent_milestone:
-		kill_chain_accent_milestone = milestone
-		return milestone
-	return 0
+	var milestones: Array[int] = record_kill_chain_batch(current_tick, 1)
+	return milestones[0] if not milestones.is_empty() else 0
 
 
 func kill_chain_is_visible() -> bool:
@@ -179,14 +170,6 @@ func record_enemy_segment_sample(
 	normal_engaged_total_by_segment[segment_index] += maxi(0, engaged_normal_count)
 
 
-func _kill_chain_milestone(count: int) -> int:
-	if count in [10, 25, 50, 100]:
-		return count
-	if count > 100 and count % 50 == 0:
-		return count
-	return 0
-
-
 func is_level_up_resume_invulnerable() -> bool:
 	return combat_tick < level_up_invulnerable_until_tick
 
@@ -215,3 +198,25 @@ func allocate_swarm_group_id() -> int:
 	var allocated: int = next_swarm_group_id
 	next_swarm_group_id += 1
 	return allocated
+
+
+func record_kill_chain_batch(current_tick: int, count: int) -> Array[int]:
+	var milestones: Array[int] = []
+	if count <= 0:
+		return milestones
+	if kill_chain_last_tick < 0 or current_tick - kill_chain_last_tick > kill_chain_window_ticks:
+		kill_chain_count = 0
+		kill_chain_accent_milestone = 0
+	var previous: int = kill_chain_count
+	kill_chain_count += count
+	kill_chain_last_tick = current_tick
+	for threshold: int in [10, 25, 50, 100]:
+		if previous < threshold and kill_chain_count >= threshold:
+			milestones.append(threshold)
+	var next: int = maxi(150, (int(previous / 50.0) + 1) * 50)
+	while next <= kill_chain_count:
+		milestones.append(next)
+		next += 50
+	if not milestones.is_empty():
+		kill_chain_accent_milestone = milestones[-1]
+	return milestones

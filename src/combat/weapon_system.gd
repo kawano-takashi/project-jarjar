@@ -17,17 +17,6 @@ class HomingBurstState:
 	var last_direction: Vector2 = Vector2.RIGHT
 
 
-## Immutable geometry for one projectile stage, keyed by pool slot AND generation.
-## Gameplay filters and hit sorting run when each projectile is resolved.
-class ProjectileIntersections:
-	extends RefCounted
-
-	var rows: Dictionary[Vector2i, int] = {}
-	var offsets := PackedInt32Array([0])
-	var entity_ids := PackedInt64Array()
-	var times := PackedFloat64Array()
-
-
 var _state: RunState = null
 var _catalog: DefinitionCatalog = null
 var _projectile_pool: ProjectilePool = null
@@ -36,9 +25,6 @@ var _last_move_direction: Vector2 = Vector2.RIGHT
 var _orbital_active_until_by_lineage: Dictionary[StringName, int] = {}
 var _orbital_next_damage_tick_by_lineage: Dictionary[StringName, int] = {}
 var _homing_bursts: Dictionary[StringName, HomingBurstState] = {}
-var _moving_snapshot: bool = false
-var _move_targets_ready: bool = false
-var _move_targets: Array[EnemyEntity] = []
 
 
 func initialize(
@@ -68,6 +54,7 @@ func advance_and_fire(
 	uniform_grid: UniformGrid,
 	current_tick: int,
 ) -> Array[Dictionary]:
+	_projectile_pool.world.set_context(CombatNative.context(_catalog, _state, player_position, current_tick))
 	var results: Array[Dictionary] = []
 	var stats: Dictionary = StatCalculator.aggregate(_state, _catalog)
 	for slot_index: int in range(_state.weapons.size()):
@@ -137,257 +124,34 @@ func effective_cooldown_ticks(
 	)
 
 
-func move_snapshot_projectiles(
-	entries: Array[Vector2i],
-	enemy_store: EnemyStore,
-	player_position: Vector2,
-	current_tick: int,
-	stop_active: bool,
-) -> void:
-	_moving_snapshot = true
-	_move_targets_ready = false
-	_move_targets.clear()
-	for entry: Vector2i in entries:
-		var projectile: ProjectileState = _projectile_pool.resolve_snapshot_entry(entry)
-		if projectile == null or projectile.born_tick >= current_tick:
-			continue
-		var time_scale: float = 1.0
-		if stop_active and projectile.faction == ProjectileState.FACTION_ENEMY:
-			time_scale = projectile.stop_time_scale
-		projectile.previous_position = projectile.position
-		projectile.previous_remaining_distance = projectile.remaining_distance
-		projectile.expired_this_tick = false
-		if time_scale <= 0.0:
-			continue
-		if projectile.movement_kind == ProjectileState.MovementKind.HOMING:
-			_update_homing_velocity(
-				projectile,
-				enemy_store,
-				player_position,
-				current_tick,
-			)
-		elif projectile.movement_kind == ProjectileState.MovementKind.RETURNING:
-			_update_returning_velocity(projectile, player_position)
-		var movement: Vector2 = (
-			projectile.velocity * time_scale / float(RunState.TICKS_PER_SECOND)
-		)
-		var movement_limit: float = projectile.remaining_distance
-		if (
-			projectile.movement_kind == ProjectileState.MovementKind.RETURNING
-			and not projectile.return_phase_started
-		):
-			movement_limit = minf(
-				movement_limit,
-				projectile.outbound_distance_remaining,
-			)
-		movement = movement.limit_length(maxf(0.0, movement_limit))
-		projectile.position += movement
-		projectile.remaining_distance = maxf(
-			0.0,
-			projectile.remaining_distance - movement.length(),
-		)
-		if (
-			projectile.movement_kind == ProjectileState.MovementKind.RETURNING
-			and not projectile.return_phase_started
-		):
-			projectile.outbound_distance_remaining = maxf(
-				0.0,
-				projectile.outbound_distance_remaining - movement.length(),
-			)
-		projectile.remaining_lifetime = maxf(
-			0.0,
-			projectile.remaining_lifetime
-			- time_scale / float(RunState.TICKS_PER_SECOND),
-		)
-		projectile.elapsed_ticks += time_scale
-		projectile.expired_this_tick = (
-			projectile.remaining_distance <= 0.0
-			or projectile.remaining_lifetime <= 0.0
-		)
-	_moving_snapshot = false
-	_move_targets.clear()
+func move_snapshot_projectiles(entries: Array[PackedInt64Array], _enemy_store: EnemyStore,
+	player_position: Vector2, current_tick: int, stop_active: bool) -> void:
+	var context: Dictionary = CombatNative.context(_catalog, _state, player_position, current_tick)
+	context.stopped = stop_active
+	_projectile_pool.world.set_context(context)
+	_projectile_pool.world.move_projectiles(entries)
 
 
-func prepare_projectile_intersections(
-	entries: Array[Vector2i],
-	enemy_store: EnemyStore,
-	uniform_grid: UniformGrid,
-	player_position: Vector2,
-	current_tick: int,
-) -> ProjectileIntersections:
-	var batch := ProjectileIntersections.new()
-	var starts := PackedVector2Array()
-	var ends := PackedVector2Array()
-	var radii := PackedFloat64Array()
-	for entry: Vector2i in entries:
-		var projectile: ProjectileState = _projectile_pool.resolve_snapshot_entry(entry)
-		if projectile == null or projectile.faction != ProjectileState.FACTION_ALLY or projectile.born_tick >= current_tick:
-			continue
-		batch.rows[entry] = starts.size()
-		starts.append(projectile.previous_position)
-		ends.append(projectile.position)
-		radii.append(projectile.radius)
-	if starts.is_empty():
-		return batch
-	var enemy_ids := PackedInt64Array()
-	var positions := PackedVector2Array()
-	var body_radii := PackedFloat64Array()
-	# Positions and targetability stay fixed in this stage. HP can only decrease;
-	# the live HP and projectile history are checked again before hit sorting.
-	for enemy: EnemyEntity in enemy_store.entities:
-		if _is_ally_damageable(enemy, player_position, current_tick):
-			enemy_ids.append(enemy.entity_id)
-			positions.append(enemy.position)
-			body_radii.append(enemy.body_radius())
-	uniform_grid.set_damage_geometry(enemy_ids, positions, body_radii)
-	var values: Array = uniform_grid.intersect_segments(starts, ends, radii, _maximum_grid_body_radius(uniform_grid))
-	batch.offsets = values[0]
-	batch.entity_ids = values[1]
-	batch.times = values[2]
-	return batch
-
-
-func resolve_ally_projectile(
-	entry: Vector2i,
-	enemy_store: EnemyStore,
-	uniform_grid: UniformGrid,
-	player_position: Vector2,
-	current_tick: int,
-	resolution: Dictionary = {},
-	batch: ProjectileIntersections = null,
-) -> Array[Dictionary]:
+func resolve_ally_projectile(entry: PackedInt64Array, _enemy_store: EnemyStore, _uniform_grid: UniformGrid,
+	player_position: Vector2, current_tick: int, resolution: Dictionary = {}) -> Array[Dictionary]:
+	# Explicit inspection API: production resolves the complete stage without hit records.
+	_projectile_pool.world.set_context(CombatNative.context(_catalog, _state, player_position, current_tick))
+	var result: Dictionary = _projectile_pool.world.resolve_projectiles([entry], false, false)
 	resolution.clear()
+	if not result.resolutions.is_empty():
+		resolution.merge(result.resolutions[0])
 	var records: Array[Dictionary] = []
-	var projectile: ProjectileState = _projectile_pool.resolve_snapshot_entry(entry)
-	if (
-		projectile == null
-		or projectile.faction != ProjectileState.FACTION_ALLY
-		or projectile.born_tick >= current_tick
-	):
-		return records
-	var effect_outer_distance: float = 0.0
-	if batch == null:
-		batch = prepare_projectile_intersections([entry], enemy_store, uniform_grid, player_position, current_tick)
-	var intersections: Array[Dictionary] = []
-	var row: int = batch.rows.get(entry, -1)
-	if row < 0:
-		return records
-	var first_index: int = batch.offsets[row]
-	var end_index: int = batch.offsets[row + 1]
-	for index: int in range(first_index, end_index):
-		var entity_id: int = batch.entity_ids[index]
-		if projectile.hit_entity_ids.has(entity_id):
-			continue
-		var enemy: EnemyEntity = enemy_store.get_by_id(entity_id)
-		if not _is_ally_damageable(enemy, player_position, current_tick):
-			continue
-		intersections.append({"entity_id": entity_id, "t": batch.times[index]})
-	if intersections.size() > 1:
-		intersections.sort_custom(_intersection_less)
-	if projectile.movement_kind == ProjectileState.MovementKind.ARC:
-		if not intersections.is_empty():
-			var impact_t: float = float(intersections[0]["t"])
-			projectile.position = projectile.previous_position.lerp(
-				projectile.position,
-				impact_t,
-			)
-		if not intersections.is_empty() or projectile.expired_this_tick:
-			effect_outer_distance = _projectile_effect_outer_distance(
-				projectile,
-				player_position,
-			)
-			if effect_outer_distance > _catalog.envelope.effect_outer_radius + 0.0001:
-				_projectile_pool.release(projectile.pool_index, projectile.generation)
-				return records
-			resolution[&"arc_impact_position"] = projectile.position
-			resolution[&"arc_explosion_radius"] = projectile.explosion_radius
-			resolution[&"arc_damage"] = projectile.damage
-			records = _resolve_projectile_explosion(
-				projectile,
-				enemy_store,
-				uniform_grid,
-				player_position,
-				current_tick,
-				effect_outer_distance,
-			)
-			_projectile_pool.release(projectile.pool_index, projectile.generation)
-		elif (
-			_projectile_effect_outer_distance(projectile, player_position)
-			> _catalog.envelope.effect_outer_radius + 0.0001
-		):
-			_projectile_pool.release(projectile.pool_index, projectile.generation)
-		return records
-	for intersection: Dictionary in intersections:
-		var entity_id: int = int(intersection["entity_id"])
-		var hit_position: Vector2 = projectile.previous_position.lerp(
-			projectile.position,
-			float(intersection["t"]),
-		)
-		var hit_outer_distance: float = (
-			player_position.distance_to(hit_position) + projectile.radius
-		)
-		if hit_outer_distance > _catalog.envelope.effect_outer_radius + 0.0001:
-			continue
-		projectile.hit_entity_ids[entity_id] = true
-		records.append(_projectile_damage_record(
-			projectile,
-			entity_id,
-			hit_position,
-			hit_outer_distance,
-		))
-		projectile.pierce_remaining -= 1
-		if projectile.pierce_remaining < 0:
-			_projectile_pool.release(projectile.pool_index, projectile.generation)
-			break
-	if (
-		projectile.active
-		and (
-			projectile.expired_this_tick
-			or _projectile_effect_outer_distance(projectile, player_position)
-			> _catalog.envelope.effect_outer_radius + 0.0001
-		)
-	):
-		_projectile_pool.release(projectile.pool_index, projectile.generation)
+	for row: Dictionary in result.hits:
+		row.event = _router.create_primary(_state, &"projectile_hit", int(row.source_entity_id),
+			row.source_effect_id, float(row.damage), row.position, row.direction)
+		records.append(row)
 	return records
 
 
-func resolve_enemy_projectile(
-	entry: Vector2i,
-	player_position: Vector2,
-	current_tick: int,
-) -> Dictionary:
-	var projectile: ProjectileState = _projectile_pool.resolve_snapshot_entry(entry)
-	if (
-		projectile == null
-		or projectile.faction != ProjectileState.FACTION_ENEMY
-		or projectile.born_tick >= current_tick
-	):
-		return {}
-	if (
-		_state != null
-		and _state.is_stop_active()
-		and projectile.stop_time_scale <= 0.0
-	):
-		return {}
-	var hit_t: float = CombatGeometry.segment_circle_first_t(
-		projectile.previous_position,
-		projectile.position,
-		player_position,
-		projectile.radius + _catalog.envelope.player_body_radius,
-	)
-	if hit_t >= 0.0:
-		var record: Dictionary = {
-			"raw_damage": projectile.damage,
-			"source_entity_id": projectile.source_entity_id,
-			"source_pool_index": projectile.pool_index,
-			"source_generation": projectile.generation,
-			"source_effect_id": projectile.source_effect_id,
-		}
-		_projectile_pool.release(projectile.pool_index, projectile.generation)
-		return record
-	if projectile.expired_this_tick:
-		_projectile_pool.release(projectile.pool_index, projectile.generation)
-	return {}
+func resolve_enemy_projectile(entry: PackedInt64Array, player_position: Vector2, current_tick: int) -> Dictionary:
+	_projectile_pool.world.set_context(CombatNative.context(_catalog, _state, player_position, current_tick))
+	var hits: Array = _projectile_pool.world.hostile_projectile_hits([entry])
+	return hits[0] if not hits.is_empty() else {}
 
 
 func orbital_transforms(player_position: Vector2, current_tick: int) -> Array[Transform3D]:
@@ -500,9 +264,9 @@ func _fire_melee_wave(
 	runtime: RunWeapon,
 	definition: WeaponDefinition,
 	player_position: Vector2,
-	enemy_store: EnemyStore,
-	uniform_grid: UniformGrid,
-	current_tick: int,
+	_enemy_store: EnemyStore,
+	_uniform_grid: UniformGrid,
+	_current_tick: int,
 	stats: Dictionary,
 ) -> Dictionary:
 	var range_m: float = minf(
@@ -516,37 +280,12 @@ func _fire_melee_wave(
 		),
 	)
 	var amount: int = definition.amount_at(runtime.level)
-	var hits: Array[Dictionary] = []
-	var zones: Array[Dictionary] = []
+	var shapes: Array[Dictionary] = []
 	for swing_index: int in range(amount):
-		# Every emitted wave owns its hit set. Later amount upgrades therefore add
-		# real damage instead of being discarded by a lineage-wide de-duplication.
-		var hit_ids: Dictionary[int, bool] = {}
-		var direction: Vector2 = _last_move_direction
-		if swing_index % 2 == 1:
-			direction = -direction
-		zones.append({
-			"center": player_position,
-			"radius": range_m,
-			"damage": _base_damage(definition, runtime, stats),
-		})
-		for entity_id: int in uniform_grid.query_circle_candidates(player_position, range_m, _maximum_grid_body_radius(uniform_grid)):
-			if hit_ids.has(entity_id):
-				continue
-			var enemy: EnemyEntity = enemy_store.get_by_id(entity_id)
-			if not _is_ally_damageable(enemy, player_position, current_tick):
-				continue
-			if not CombatGeometry.point_in_fan(player_position, direction, range_m, _catalog.manifest().combat.melee_arc_degrees, enemy.position, enemy.body_radius()):
-				continue
-			hit_ids[entity_id] = true
-			hits.append(_instant_damage_record(
-				runtime,
-				definition,
-				enemy.entity_id,
-				_roll_damage(definition, runtime, stats),
-				enemy.position,
-				range_m,
-			))
+		shapes.append({"center": player_position, "radius": range_m,
+			"direction": _last_move_direction if swing_index % 2 == 0 else -_last_move_direction,
+			"arc_degrees": _catalog.manifest().combat.melee_arc_degrees})
+	var native_result: Dictionary = _native_attack(runtime, definition, stats, shapes, range_m, false)
 	return {
 		"generated": true,
 		"weapon_id": runtime.weapon_id,
@@ -554,8 +293,8 @@ func _fire_melee_wave(
 		"origin": player_position,
 		"direction": _last_move_direction,
 		"range_m": range_m,
-		"hits": hits,
-		"node_damage_zones": zones,
+		"native_result": native_result,
+		"node_damage_zones": [],
 	}
 
 
@@ -867,8 +606,8 @@ func _fire_orbital(
 	runtime: RunWeapon,
 	definition: WeaponDefinition,
 	player_position: Vector2,
-	enemy_store: EnemyStore,
-	uniform_grid: UniformGrid,
+	_enemy_store: EnemyStore,
+	_uniform_grid: UniformGrid,
 	current_tick: int,
 	stats: Dictionary,
 ) -> Dictionary:
@@ -881,39 +620,10 @@ func _fire_orbital(
 		StatCalculator.weapon_effect_radius(definition, runtime.level, area_multiplier),
 		maxf(0.0, _catalog.envelope.effect_outer_radius - orbit_radius),
 	)
-	var hits: Array[Dictionary] = []
-	var zones: Array[Dictionary] = []
-	var hit_ids: Dictionary[int, bool] = {}
-	for position: Vector2 in _orbital_positions(
-		runtime,
-		definition,
-		player_position,
-		current_tick,
-		stats,
-	):
-		zones.append({"center": position, "radius": hit_radius, "damage": _base_damage(definition, runtime, stats)})
-		for entity_id: int in uniform_grid.query_circle_candidates(position, hit_radius, _maximum_grid_body_radius(uniform_grid)):
-			if hit_ids.has(entity_id):
-				continue
-			var enemy: EnemyEntity = enemy_store.get_by_id(entity_id)
-			if (
-				_is_ally_damageable(enemy, player_position, current_tick)
-				and CombatGeometry.circle_intersects(
-					position,
-					hit_radius,
-					enemy.position,
-					enemy.body_radius(),
-				)
-			):
-				hit_ids[entity_id] = true
-				hits.append(_instant_damage_record(
-					runtime,
-					definition,
-					entity_id,
-					_roll_damage(definition, runtime, stats),
-					enemy.position,
-					orbit_radius + hit_radius,
-				))
+	var shapes: Array[Dictionary] = []
+	for position: Vector2 in _orbital_positions(runtime, definition, player_position, current_tick, stats):
+		shapes.append({"center": position, "radius": hit_radius})
+	var native_result: Dictionary = _native_attack(runtime, definition, stats, shapes, orbit_radius + hit_radius, true)
 	return {
 		"generated": true,
 		"weapon_id": runtime.weapon_id,
@@ -921,8 +631,8 @@ func _fire_orbital(
 		"origin": player_position,
 		"direction": Vector2.RIGHT,
 		"range_m": orbit_radius,
-		"hits": hits,
-		"node_damage_zones": zones,
+		"native_result": native_result,
+		"node_damage_zones": [],
 	}
 
 
@@ -1104,11 +814,10 @@ func _fire_mass(
 	runtime: RunWeapon,
 	definition: WeaponDefinition,
 	player_position: Vector2,
-	enemy_store: EnemyStore,
+	_enemy_store: EnemyStore,
 	current_tick: int,
 	stats: Dictionary,
 ) -> Dictionary:
-	var targets: Array[EnemyEntity] = []
 	var area_multiplier: float = StatCalculator.area_multiplier(stats, _catalog.manifest().combat)
 	var travel_distance: float = StatCalculator.weapon_range(definition,
 		runtime.level,
@@ -1118,28 +827,19 @@ func _fire_mass(
 		0.0,
 		StatCalculator.weapon_projectile_radius(definition, runtime.level, area_multiplier),
 	)
-	for candidate: EnemyEntity in _targets_by_entity_id(
-		enemy_store,
-		player_position,
-		current_tick,
-	):
-		if (
-			player_position.distance_to(candidate.position)
-			<= travel_distance + projectile_radius + candidate.body_radius()
-		):
-			targets.append(candidate)
-	if targets.is_empty():
+	_projectile_pool.world.set_context(CombatNative.context(_catalog, _state, player_position, current_tick))
+	var selected: Dictionary = _projectile_pool.world.choose_target_shots(maxi(1, definition.amount_at(runtime.level)),
+		travel_distance + projectile_radius, {"base": _base_damage(definition, runtime, stats),
+			"chance": definition.critical_chance, "multiplier": definition.critical_multiplier}, runtime.rng)
+	if selected.shots.is_empty():
 		return {"generated": false}
-	var amount: int = maxi(1, definition.amount_at(runtime.level))
-	for _projectile_index: int in range(amount):
-		var target_index: int = runtime.rng.randi_range(0, targets.size() - 1) if runtime.rng != null else 0
-		var target: EnemyEntity = targets[target_index]
-		var direction: Vector2 = (target.position - player_position).normalized()
-		_spawn_ally_projectile(runtime, definition, player_position, direction, target.entity_id, stats, current_tick, ProjectileState.MovementKind.STRAIGHT)
+	for shot: Dictionary in selected.shots:
+		_spawn_ally_projectile(runtime, definition, player_position, shot.direction, int(shot.id), stats,
+			current_tick, ProjectileState.MovementKind.STRAIGHT, Vector2.ZERO, float(shot.damage))
 	return _projectile_result(
 		runtime,
 		player_position,
-		(targets[0].position - player_position).normalized(),
+		selected.direction,
 		travel_distance,
 	)
 
@@ -1148,9 +848,9 @@ func _fire_aura(
 	runtime: RunWeapon,
 	definition: WeaponDefinition,
 	player_position: Vector2,
-	enemy_store: EnemyStore,
-	uniform_grid: UniformGrid,
-	current_tick: int,
+	_enemy_store: EnemyStore,
+	_uniform_grid: UniformGrid,
+	_current_tick: int,
 	stats: Dictionary,
 ) -> Dictionary:
 	var radius: float = minf(
@@ -1163,26 +863,8 @@ func _fire_aura(
 			),
 		),
 	)
-	var hits: Array[Dictionary] = []
-	for entity_id: int in uniform_grid.query_circle_candidates(player_position, radius, _maximum_grid_body_radius(uniform_grid)):
-		var enemy: EnemyEntity = enemy_store.get_by_id(entity_id)
-		if (
-			_is_ally_damageable(enemy, player_position, current_tick)
-			and CombatGeometry.circle_intersects(
-				player_position,
-				radius,
-				enemy.position,
-				enemy.body_radius(),
-			)
-		):
-			hits.append(_instant_damage_record(
-				runtime,
-				definition,
-				entity_id,
-				_roll_damage(definition, runtime, stats),
-				enemy.position,
-				radius,
-			))
+	var native_result: Dictionary = _native_attack(runtime, definition, stats,
+		[{"center": player_position, "radius": radius}], radius, true)
 	return {
 		"generated": true,
 		"weapon_id": runtime.weapon_id,
@@ -1190,8 +872,8 @@ func _fire_aura(
 		"origin": player_position,
 		"direction": Vector2.RIGHT,
 		"range_m": radius,
-		"hits": hits,
-		"node_damage_zones": [{"center": player_position, "radius": radius, "damage": _base_damage(definition, runtime, stats)}],
+		"native_result": native_result,
+		"node_damage_zones": [],
 	}
 
 
@@ -1205,6 +887,7 @@ func _spawn_ally_projectile(
 	current_tick: int,
 	movement_kind: ProjectileState.MovementKind,
 	arc_target: Vector2 = Vector2.ZERO,
+	damage_override: float = -1.0,
 ) -> void:
 	var speed: float = maxf(0.0, definition.projectile_speed_at(runtime.level) * StatCalculator.projectile_speed_multiplier(stats, _catalog.manifest().combat))
 	var duration_ticks: int = maxi(1, roundi(float(definition.duration_ticks_at(runtime.level)) * StatCalculator.duration_multiplier(stats, _catalog.manifest().combat)))
@@ -1245,7 +928,7 @@ func _spawn_ally_projectile(
 		origin,
 		direction.normalized() * speed,
 		projectile_radius,
-		_roll_damage(definition, runtime, stats),
+		damage_override if damage_override >= 0.0 else _roll_damage(definition, runtime, stats),
 		remaining_distance,
 		lifetime_seconds,
 		target_position,
@@ -1263,69 +946,6 @@ func _spawn_ally_projectile(
 		projectile.outbound_distance_remaining = range_m
 
 
-func _resolve_projectile_explosion(
-	projectile: ProjectileState,
-	enemy_store: EnemyStore,
-	uniform_grid: UniformGrid,
-	player_position: Vector2,
-	current_tick: int,
-	effect_outer_distance: float,
-) -> Array[Dictionary]:
-	var records: Array[Dictionary] = []
-	var radius: float = maxf(projectile.radius, projectile.explosion_radius)
-	for entity_id: int in uniform_grid.query_circle_candidates(projectile.position, radius, _maximum_grid_body_radius(uniform_grid)):
-		var enemy: EnemyEntity = enemy_store.get_by_id(entity_id)
-		if (
-			_is_ally_damageable(enemy, player_position, current_tick)
-			and CombatGeometry.circle_intersects(
-				projectile.position,
-				radius,
-				enemy.position,
-				enemy.body_radius(),
-			)
-		):
-			records.append(_projectile_damage_record(
-				projectile,
-				entity_id,
-				projectile.position,
-				effect_outer_distance,
-			))
-	return records
-
-
-func _update_homing_velocity(
-	projectile: ProjectileState,
-	enemy_store: EnemyStore,
-	player_position: Vector2,
-	current_tick: int,
-) -> void:
-	var target: EnemyEntity = enemy_store.get_by_id(projectile.target_entity_id)
-	if not _is_ally_acquirable(target, player_position, current_tick):
-		target = _first_target(
-			enemy_store,
-			projectile.position,
-			player_position,
-			current_tick,
-		)
-		projectile.target_entity_id = target.entity_id if target != null else -1
-	if target != null:
-		projectile.velocity = (target.position - projectile.position).normalized() * projectile.speed
-
-
-func _update_returning_velocity(projectile: ProjectileState, player_position: Vector2) -> void:
-	if projectile.outbound_distance_remaining > 0.0001:
-		return
-	if not projectile.return_phase_started:
-		projectile.hit_entity_ids.clear()
-		projectile.return_phase_started = true
-	projectile.target_position = player_position
-	projectile.velocity = (player_position - projectile.position).normalized() * projectile.speed
-	projectile.remaining_distance = minf(
-		projectile.remaining_distance,
-		projectile.position.distance_to(player_position),
-	)
-
-
 func _base_damage(definition: WeaponDefinition, runtime: RunWeapon, stats: Dictionary) -> float:
 	var damage: float = definition.damage_at(runtime.level) * StatCalculator.might_multiplier(stats)
 	if runtime.weapon_id == &"absorption_field":
@@ -1338,51 +958,6 @@ func _roll_damage(definition: WeaponDefinition, runtime: RunWeapon, stats: Dicti
 	if definition.critical_chance > 0.0 and runtime.rng != null and WeightedSelector.chance_succeeds_with_value(definition.critical_chance, runtime.rng.randf()):
 		damage *= maxf(1.0, definition.critical_multiplier)
 	return damage
-
-
-func _instant_damage_record(
-	runtime: RunWeapon,
-	definition: WeaponDefinition,
-	entity_id: int,
-	damage: float,
-	hit_position: Vector2,
-	effect_outer_distance: float,
-) -> Dictionary:
-	return {
-		"entity_id": entity_id,
-		"event": _router.create_primary(
-			_state,
-			&"weapon_hit",
-			-1,
-			runtime.lineage_id,
-			damage,
-			hit_position,
-		),
-		"weapon_id": definition.weapon_id,
-		"effect_outer_distance": effect_outer_distance,
-	}
-
-
-func _projectile_damage_record(
-	projectile: ProjectileState,
-	entity_id: int,
-	hit_position: Vector2,
-	effect_outer_distance: float,
-) -> Dictionary:
-	return {
-		"entity_id": entity_id,
-		"event": _router.create_primary(
-			_state,
-			&"projectile_hit",
-			projectile.source_entity_id,
-			projectile.source_effect_id,
-			projectile.damage,
-			hit_position,
-			projectile.velocity.normalized(),
-		),
-		"weapon_id": projectile.weapon_id,
-		"effect_outer_distance": effect_outer_distance,
-	}
 
 
 func _projectile_result(
@@ -1403,76 +978,17 @@ func _projectile_result(
 	}
 
 
-func _targets_by_distance(
-	enemy_store: EnemyStore,
-	sort_origin: Vector2,
-	player_position: Vector2,
-	current_tick: int,
-) -> Array[EnemyEntity]:
+func _targets_by_distance(enemy_store: EnemyStore, sort_origin: Vector2, player_position: Vector2, current_tick: int) -> Array[EnemyEntity]:
+	enemy_store.world.set_context(CombatNative.context(_catalog, _state, player_position, current_tick))
 	var targets: Array[EnemyEntity] = []
-	for enemy: EnemyEntity in enemy_store.entities:
-		if _is_ally_acquirable(enemy, player_position, current_tick):
-			targets.append(enemy)
-	targets.sort_custom(func(left: EnemyEntity, right: EnemyEntity) -> bool:
-		var left_distance: float = left.position.distance_squared_to(sort_origin)
-		var right_distance: float = right.position.distance_squared_to(sort_origin)
-		if left_distance != right_distance:
-			return left_distance < right_distance
-		return left.entity_id < right.entity_id
-	)
+	for id: int in enemy_store.world.target_ids(sort_origin, true, -1.0):
+		targets.append(enemy_store.get_by_id(id))
 	return targets
 
 
-func _targets_by_entity_id(
-	enemy_store: EnemyStore,
-	player_position: Vector2,
-	current_tick: int,
-) -> Array[EnemyEntity]:
-	var targets: Array[EnemyEntity] = []
-	for enemy: EnemyEntity in enemy_store.entities:
-		if _is_ally_acquirable(enemy, player_position, current_tick):
-			targets.append(enemy)
-	targets.sort_custom(func(left: EnemyEntity, right: EnemyEntity) -> bool:
-		return left.entity_id < right.entity_id
-	)
-	return targets
-
-
-func _first_target(
-	enemy_store: EnemyStore,
-	sort_origin: Vector2,
-	player_position: Vector2,
-	current_tick: int,
-) -> EnemyEntity:
-	# Only the first ordered target is needed. Keep the distance/id ordering
-	# without allocating and sorting the complete candidate list.
-	var selected: EnemyEntity = null
-	var selected_distance: float = INF
-	var candidates: Array[EnemyEntity] = enemy_store.entities
-	if _moving_snapshot:
-		# Enemy HP and positions are unchanged throughout projectile movement.
-		# Share acquisition filtering only inside that stage of this tick.
-		if not _move_targets_ready:
-			for enemy: EnemyEntity in enemy_store.entities:
-				if _is_ally_acquirable(enemy, player_position, current_tick):
-					_move_targets.append(enemy)
-			_move_targets_ready = true
-		candidates = _move_targets
-	for enemy: EnemyEntity in candidates:
-		if not _moving_snapshot and not _is_ally_acquirable(enemy, player_position, current_tick):
-			continue
-		var distance: float = enemy.position.distance_squared_to(sort_origin)
-		if selected == null or distance < selected_distance or (distance == selected_distance and enemy.entity_id < selected.entity_id):
-			selected = enemy
-			selected_distance = distance
-	return selected
-
-
-func _maximum_grid_body_radius(grid: UniformGrid) -> float:
-	if grid.maximum_body_radius < 0.0:
-		return _catalog.maximum_enemy_body_radius
-	# Keep the original upper bound and room for the narrow phase's epsilon.
-	return minf(_catalog.maximum_enemy_body_radius, grid.maximum_body_radius + 0.01)
+func _first_target(enemy_store: EnemyStore, sort_origin: Vector2, player_position: Vector2, current_tick: int) -> EnemyEntity:
+	enemy_store.world.set_context(CombatNative.context(_catalog, _state, player_position, current_tick))
+	return enemy_store.get_by_id(enemy_store.world.nearest_enemy(sort_origin))
 
 
 func _is_ally_acquirable(
@@ -1487,31 +1003,10 @@ func _is_ally_acquirable(
 	)
 
 
-func _is_ally_damageable(
-	enemy: EnemyEntity,
-	player_position: Vector2,
-	current_tick: int,
-) -> bool:
-	return (
-		enemy != null and enemy.hp > 0.0 and enemy.alive and current_tick >= enemy.activation_tick
-		and enemy.position.distance_squared_to(player_position)
-		<= _catalog.envelope.damage_center_radius * _catalog.envelope.damage_center_radius
-	)
-
-
-func _projectile_effect_outer_distance(
-	projectile: ProjectileState,
-	player_position: Vector2,
-) -> float:
-	return (
-		player_position.distance_to(projectile.position)
-		+ maxf(projectile.radius, projectile.explosion_radius)
-	)
-
-
-func _intersection_less(left: Dictionary, right: Dictionary) -> bool:
-	var left_t: float = float(left["t"])
-	var right_t: float = float(right["t"])
-	if not is_equal_approx(left_t, right_t):
-		return left_t < right_t
-	return int(left["entity_id"]) < int(right["entity_id"])
+func _native_attack(runtime: RunWeapon, definition: WeaponDefinition, stats: Dictionary,
+	shapes: Array[Dictionary], outer: float, deduplicate: bool) -> Dictionary:
+	return _projectile_pool.world.attack_shapes(shapes, {
+		"damage": _base_damage(definition, runtime, stats), "critical_chance": definition.critical_chance,
+		"critical_multiplier": definition.critical_multiplier, "outer": outer,
+		"source": runtime.lineage_id, "deduplicate": deduplicate,
+	}, runtime.rng)

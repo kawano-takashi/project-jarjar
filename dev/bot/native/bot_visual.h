@@ -21,6 +21,7 @@ public:
     bool is_visible(const godot::Transform3D &inverse, const godot::Projection &projection, const godot::Transform3D &world) const;
     bool visible_in_frustum(const BotFrustum &frustum, const godot::Transform3D &world) const;
     godot::PackedVector4Array visible_loot(const godot::Transform3D &inverse, const godot::Projection &projection, const godot::PackedVector3Array &transforms, const godot::PackedInt32Array &indices, int kind) const;
+    godot::Dictionary visible_bodies(const godot::Transform3D &inverse, const godot::Projection &projection, const godot::PackedVector3Array &transforms, const godot::PackedInt32Array &indices, double radius_factor) const;
 };
 
 class JarjarBotObserver : public godot::RefCounted {

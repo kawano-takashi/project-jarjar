@@ -160,7 +160,11 @@ static func _prepare_boss_phase_three(
 		return false
 	boss.hp = boss.max_hp * 0.3
 	boss.boss_phase = 3
+	boss.boss_action_age_ticks = float(simulation.catalog.manifest().combat.boss_enrage_interval_ticks * 3)
+	state.boss_transition_started = true
 	state.boss_spawned = true
+	state.boss_spawn_tick = boss.spawn_tick
+	simulation.enemy_system.encounters.begin_boss(Vector2.ZERO, boss.activation_tick)
 	state.boss_phase = 3
 	state.boss_enrage_stacks = 3
 	state.boss_hp = boss.hp

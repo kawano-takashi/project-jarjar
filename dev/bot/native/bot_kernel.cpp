@@ -234,7 +234,7 @@ protected:
         ClassDB::bind_method(D_METHOD("api_version"), &JarjarBotKernel::api_version);
     }
 public:
-    int api_version() const { return 7; }
+    int api_version() const { return 8; }
     Vector2 choose_move(const Dictionary &data, const PackedVector2Array &directions) {
         PackedFloat64Array scores = score_moves(data, directions);
         ERR_FAIL_COND_V(scores.size() != directions.size(), Vector2(float(INF), float(INF)));

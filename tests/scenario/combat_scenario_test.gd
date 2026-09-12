@@ -67,7 +67,7 @@ func test_stop_freezes_normal_and_halves_boss_projectiles(assertions: Variant, _
 		0, 0, &"boss_projectile", ProjectileState.MovementKind.STRAIGHT,
 		-1, 60, 0, 0.0, 0.5,
 	)
-	var projectile_handles: Array[Vector2i] = simulation.projectile_pool.snapshot_active()
+	var projectile_handles: Array[PackedInt64Array] = simulation.projectile_pool.snapshot_active()
 	simulation.weapon_system.move_snapshot_projectiles(
 		projectile_handles,
 		simulation.enemy_system.enemy_store,
@@ -77,7 +77,7 @@ func test_stop_freezes_normal_and_halves_boss_projectiles(assertions: Variant, _
 	)
 	assertions.expect_float(0.5, boss_projectile.position.x, "stop moves an existing boss projectile at fifty percent")
 	var slowed_boss_hit: Dictionary = simulation.weapon_system.resolve_enemy_projectile(
-		Vector2i(boss_projectile.pool_index, boss_projectile.generation),
+		PackedInt64Array([boss_projectile.pool_index, boss_projectile.generation]),
 		Vector2.ZERO,
 		1,
 	)

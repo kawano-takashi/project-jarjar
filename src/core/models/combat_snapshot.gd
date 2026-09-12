@@ -33,6 +33,8 @@ enum ImportantMarkerKind {
 }
 
 
+## Immutable native render buffers, independent of the event queue.
+var native_visuals: Dictionary = {}
 var player_position: Vector2 = Vector2.ZERO
 ## Integer count of 1024m origin shifts. All positions in this snapshot are local.
 var world_origin: Vector2i = Vector2i.ZERO

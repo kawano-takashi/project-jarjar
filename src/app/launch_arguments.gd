@@ -57,7 +57,7 @@ static func parse_debug(arguments: PackedStringArray) -> Dictionary:
 		return result
 
 	if values.size() == 2 and values.has("--performance") and values.has("--run-seed"):
-		if values["--performance"] != "full_hd_500_2000" or values["--run-seed"] != "5002000":
+		if values["--performance"] not in ["full_hd_500_2000", "full_hd_3000_6000"] or values["--run-seed"] != "5002000":
 			return _rejected("--performance")
 		var result := _accepted(MODE_PERFORMANCE, "")
 		result["performance"] = values["--performance"]
