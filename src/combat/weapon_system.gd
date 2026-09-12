@@ -16,6 +16,18 @@ class HomingBurstState:
 	var target_entity_id: int = -1
 	var last_direction: Vector2 = Vector2.RIGHT
 
+
+## Immutable geometry for one projectile stage, keyed by pool slot AND generation.
+## Gameplay filters and hit sorting run when each projectile is resolved.
+class ProjectileIntersections:
+	extends RefCounted
+
+	var rows: Dictionary[Vector2i, int] = {}
+	var offsets := PackedInt32Array([0])
+	var entity_ids := PackedInt64Array()
+	var times := PackedFloat64Array()
+
+
 var _state: RunState = null
 var _catalog: DefinitionCatalog = null
 var _projectile_pool: ProjectilePool = null
@@ -196,6 +208,45 @@ func move_snapshot_projectiles(
 	_move_targets.clear()
 
 
+func prepare_projectile_intersections(
+	entries: Array[Vector2i],
+	enemy_store: EnemyStore,
+	uniform_grid: UniformGrid,
+	player_position: Vector2,
+	current_tick: int,
+) -> ProjectileIntersections:
+	var batch := ProjectileIntersections.new()
+	var starts := PackedVector2Array()
+	var ends := PackedVector2Array()
+	var radii := PackedFloat64Array()
+	for entry: Vector2i in entries:
+		var projectile: ProjectileState = _projectile_pool.resolve_snapshot_entry(entry)
+		if projectile == null or projectile.faction != ProjectileState.FACTION_ALLY or projectile.born_tick >= current_tick:
+			continue
+		batch.rows[entry] = starts.size()
+		starts.append(projectile.previous_position)
+		ends.append(projectile.position)
+		radii.append(projectile.radius)
+	if starts.is_empty():
+		return batch
+	var enemy_ids := PackedInt64Array()
+	var positions := PackedVector2Array()
+	var body_radii := PackedFloat64Array()
+	# Positions and targetability stay fixed in this stage. HP can only decrease;
+	# the live HP and projectile history are checked again before hit sorting.
+	for enemy: EnemyEntity in enemy_store.entities:
+		if _is_ally_damageable(enemy, player_position, current_tick):
+			enemy_ids.append(enemy.entity_id)
+			positions.append(enemy.position)
+			body_radii.append(enemy.body_radius())
+	uniform_grid.set_damage_geometry(enemy_ids, positions, body_radii)
+	var values: Array = uniform_grid.intersect_segments(starts, ends, radii, _maximum_grid_body_radius(uniform_grid))
+	batch.offsets = values[0]
+	batch.entity_ids = values[1]
+	batch.times = values[2]
+	return batch
+
+
 func resolve_ally_projectile(
 	entry: Vector2i,
 	enemy_store: EnemyStore,
@@ -203,6 +254,7 @@ func resolve_ally_projectile(
 	player_position: Vector2,
 	current_tick: int,
 	resolution: Dictionary = {},
+	batch: ProjectileIntersections = null,
 ) -> Array[Dictionary]:
 	resolution.clear()
 	var records: Array[Dictionary] = []
@@ -214,26 +266,22 @@ func resolve_ally_projectile(
 	):
 		return records
 	var effect_outer_distance: float = 0.0
-	var candidates: Array[int] = uniform_grid.query_segment_candidates(
-		projectile.previous_position,
-		projectile.position,
-		projectile.radius + _maximum_grid_body_radius(uniform_grid),
-	)
+	if batch == null:
+		batch = prepare_projectile_intersections([entry], enemy_store, uniform_grid, player_position, current_tick)
 	var intersections: Array[Dictionary] = []
-	for entity_id: int in candidates:
+	var row: int = batch.rows.get(entry, -1)
+	if row < 0:
+		return records
+	var first_index: int = batch.offsets[row]
+	var end_index: int = batch.offsets[row + 1]
+	for index: int in range(first_index, end_index):
+		var entity_id: int = batch.entity_ids[index]
 		if projectile.hit_entity_ids.has(entity_id):
 			continue
 		var enemy: EnemyEntity = enemy_store.get_by_id(entity_id)
 		if not _is_ally_damageable(enemy, player_position, current_tick):
 			continue
-		var first_t: float = CombatGeometry.segment_circle_first_t(
-			projectile.previous_position,
-			projectile.position,
-			enemy.position,
-			projectile.radius + enemy.body_radius(),
-		)
-		if first_t >= 0.0:
-			intersections.append({"entity_id": entity_id, "t": first_t})
+		intersections.append({"entity_id": entity_id, "t": batch.times[index]})
 	if intersections.size() > 1:
 		intersections.sort_custom(_intersection_less)
 	if projectile.movement_kind == ProjectileState.MovementKind.ARC:

@@ -53,6 +53,8 @@ func _enter_tree() -> void:
 	if not bool(_launch.get("valid", false)):
 		_reject_arguments(str(_launch.get("rejected_name", "missing")))
 		return
+	if not _initialize_combat_native():
+		return
 
 	var settings_store: Variant = _settings_store()
 	if settings_store == null:
@@ -81,6 +83,14 @@ func _enter_tree() -> void:
 
 func _get_launch_arguments() -> PackedStringArray:
 	return OS.get_cmdline_user_args()
+
+
+func _initialize_combat_native() -> bool:
+	if CombatNative.ensure_loaded():
+		return true
+	printerr("COMBAT_NATIVE_REQUIRED " + CombatNative.error_message)
+	_quit_deferred(2)
+	return false
 
 
 func _initialize_settings_for_launch(settings_store: Variant) -> Error:

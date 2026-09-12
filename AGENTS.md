@@ -1,9 +1,10 @@
 # Project JARJAR
 
-Godot 4.7.2-stable Standard / GDScript / Compatibility renderer / Windows x86_64。
+Godot 4.7.2-stable Standard / GDScript + C++ GDExtension / Compatibility renderer / Windows x86_64。
 
 ## 日常の検証
 
+- 初回・`native/combat/` のC++変更後は `./native/combat/build.ps1` を実行する。ゲーム・テスト・botは戦闘用DLLを必須とする。依存環境とexport手順は [戦闘拡張のREADME](native/combat/README.md) を参照。
 - ゲーム本体のコード・Resource変更では、リポジトリのルートで以下の全回帰を実行する。
 
 ```powershell

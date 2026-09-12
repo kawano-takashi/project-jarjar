@@ -2,5 +2,6 @@
 .godot/
 build/
 work/
+native/combat/runtime/
 *.log
 .godot/export_credentials.cfg

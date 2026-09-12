@@ -55,6 +55,9 @@ func _run() -> void:
 	if version["hex"] != 0x040702 or version["status"] != "stable" or version["build"] != "official":
 		_abort("Godot 4.7.2-stable Standard is required (running %s)" % version["string"])
 		return
+	if not CombatNative.ensure_loaded():
+		_abort(CombatNative.error_message)
+		return
 	var verbose := false
 	var test_filter := ""
 	for argument in OS.get_cmdline_user_args():

@@ -4,6 +4,8 @@
 
 リポジトリのルートから起動します。
 
+ゲーム本体が使う戦闘用GDExtensionも必要です。初回・`native/combat/` のC++変更後は `./native/combat/build.ps1` を実行してください。ビルド・配布の詳細は [戦闘拡張のREADME](../../native/combat/README.md) を参照してください。
+
 初回と `dev/bot/native/` の変更後は、先にbot専用のGDExtensionをビルドします。Windows x64、Visual Studio 2022のC++ツールセット **14.40.33807**、CMake 3.24以上、Python 3が必要です。このPCではCMake 3.27.9 / Python 3.13.0で確認しています。
 
 ```powershell
@@ -12,7 +14,7 @@
 
 godot-cppは `godot-4.5-stable` のコミット `e83fd0904c13356ed1d4c3d09f8bb9132bdc6b77` に固定し、取得アーカイブのSHA-256を検査します。4.5のGDExtension APIをGodot 4.7.2 Standardで使用します。依存・DLL・拡張定義はすべて `build/bot-native/` に生成します。ビルド後のDLLを内容別の名前で保持するため、実行中のbotを止めずに次の版をビルドできます。
 
-DLLはbot起動時に読み込みます。未ビルド・DLL欠落・API不一致・読み込み失敗は理由を表示し、終了コード2で停止します。ゲーム本体はDLLを必要としません。
+bot専用DLLはbot起動時に読み込みます。未ビルド・DLL欠落・API不一致・読み込み失敗は理由を表示し、終了コード2で停止します。ゲーム本体の配布にbot専用DLLは含めません。
 
 ```powershell
 godot --headless --path . --script res://dev/bot/run.gd -- --bot=fast --run-seed=1 --runs=100

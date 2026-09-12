@@ -163,9 +163,15 @@ class ProfiledWeapons extends WeaponSystem:
 		super(entries, enemy_store, player_position, current_tick, stop_active)
 		timer.record(&"weapon_system.move_snapshot_projectiles", started)
 
-	func resolve_ally_projectile(entry: Vector2i, enemy_store: EnemyStore, uniform_grid: UniformGrid, player_position: Vector2, current_tick: int, resolution: Dictionary = {},) -> Array[Dictionary]:
+	func prepare_projectile_intersections(entries: Array[Vector2i], enemy_store: EnemyStore, uniform_grid: UniformGrid, player_position: Vector2, current_tick: int,) -> ProjectileIntersections:
 		var started: int = Time.get_ticks_usec()
-		var result: Array[Dictionary] = super(entry, enemy_store, uniform_grid, player_position, current_tick, resolution)
+		var result: ProjectileIntersections = super(entries, enemy_store, uniform_grid, player_position, current_tick)
+		timer.record(&"weapon_system.prepare_projectile_intersections", started)
+		return result
+
+	func resolve_ally_projectile(entry: Vector2i, enemy_store: EnemyStore, uniform_grid: UniformGrid, player_position: Vector2, current_tick: int, resolution: Dictionary = {}, batch: ProjectileIntersections = null,) -> Array[Dictionary]:
+		var started: int = Time.get_ticks_usec()
+		var result: Array[Dictionary] = super(entry, enemy_store, uniform_grid, player_position, current_tick, resolution, batch)
 		timer.record(&"weapon_system.resolve_ally_projectile", started)
 		return result
 

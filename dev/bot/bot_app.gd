@@ -53,6 +53,8 @@ func _enter_tree() -> void:
 	if not bool(_launch.get("valid", false)):
 		_reject_arguments(str(_launch.get("rejected_name", "missing")))
 		return
+	if not _initialize_combat_native():
+		return
 	_bot_errors = BotErrorMonitor.new()
 	OS.add_logger(_bot_errors)
 

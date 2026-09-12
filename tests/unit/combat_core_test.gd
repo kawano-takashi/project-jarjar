@@ -662,6 +662,61 @@ func test_arc_projectile_explodes_once_on_first_impact(assertions: Variant, _con
 	assertions.expect_equal(0, repeated_records.size(), "released arc projectile cannot deal a double hit")
 
 
+func test_projectile_batch_filters_live_hp_and_history_before_arc_impact(a: Variant, _context: Dictionary) -> void:
+	var catalog: DefinitionCatalog = _catalog(a)
+	if catalog == null:
+		return
+	catalog.enemy(&"pursuer").body_radius = 0.25
+	var sim := CombatSimulation.new()
+	sim.initialize(RunStateFactory.create(7320, catalog), catalog)
+	sim.state.combat_tick = 1
+	var targets: Array[EnemyEntity] = []
+	for x: float in [2.0, 4.0, 6.0]:
+		var enemy: EnemyEntity = sim.spawn_fixture_enemy(GameTypes.EnemyType.PURSUER, Vector2(x, 0), -1)
+		enemy.hp = 10.0
+		targets.append(enemy)
+	var entries: Array[Vector2i] = []
+	for movement_kind: ProjectileState.MovementKind in [ProjectileState.MovementKind.STRAIGHT, ProjectileState.MovementKind.ARC]:
+		var projectile: ProjectileState = sim.projectile_pool.acquire(
+			ProjectileState.FACTION_ALLY, &"batch_probe", -1, Vector2(8, 0), Vector2.RIGHT,
+			0.05, 10.0, 100.0, 10.0, Vector2(8, 0), 0, 0,
+			&"batch_probe", movement_kind, -1, 600, 0, 0.5,
+		)
+		projectile.previous_position = Vector2.ZERO
+		if movement_kind == ProjectileState.MovementKind.ARC:
+			projectile.hit_entity_ids[targets[1].entity_id] = true
+		entries.append(Vector2i(projectile.pool_index, projectile.generation))
+	var batch: WeaponSystem.ProjectileIntersections = sim.weapon_system.prepare_projectile_intersections(
+		entries, sim.enemy_system.enemy_store, sim.enemy_system.uniform_grid, Vector2.ZERO, 1,
+	)
+	var resolution: Dictionary = {}
+	var first_hits: Array[Dictionary] = sim.weapon_system.resolve_ally_projectile(
+		entries[0], sim.enemy_system.enemy_store, sim.enemy_system.uniform_grid, Vector2.ZERO, 1, resolution, batch,
+	)
+	a.expect_equal(1, first_hits.size(), "the first projectile has one piercing charge")
+	sim._apply_enemy_hit_records(first_hits)
+	a.expect_float(0.0, targets[0].hp, "the first projectile kills the nearest target before the next projectile")
+	var arc_hits: Array[Dictionary] = sim.weapon_system.resolve_ally_projectile(
+		entries[1], sim.enemy_system.enemy_store, sim.enemy_system.uniform_grid, Vector2.ZERO, 1, resolution, batch,
+	)
+	a.expect_equal(1, arc_hits.size(), "the arc explodes once at the remaining eligible target")
+	if not arc_hits.is_empty():
+		a.expect_equal(targets[2].entity_id, arc_hits[0]["entity_id"], "dead and previously hit candidates cannot choose the arc impact")
+	sim._apply_enemy_hit_records(arc_hits)
+	a.expect_float(10.0, targets[1].hp, "the previously hit middle target is outside the resolved explosion")
+	a.expect_float(0.0, targets[2].hp, "the far target receives the resolved explosion")
+	var replacement: ProjectileState = sim.projectile_pool.acquire(
+		ProjectileState.FACTION_ALLY, &"batch_probe", -1, Vector2(8, 0), Vector2.RIGHT,
+		0.05, 10.0, 100.0, 10.0, Vector2(8, 0), 0, 0,
+	)
+	a.expect_equal(entries[1].x, replacement.pool_index, "fixture reuses the released arc slot")
+	var stale_hits: Array[Dictionary] = sim.weapon_system.resolve_ally_projectile(
+		Vector2i(replacement.pool_index, replacement.generation), sim.enemy_system.enemy_store,
+		sim.enemy_system.uniform_grid, Vector2.ZERO, 1, resolution, batch,
+	)
+	a.expect_true(stale_hits.is_empty(), "a new generation cannot inherit a previous projectile's batch row")
+
+
 func test_arc_node_damage_uses_single_resolved_impact(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:

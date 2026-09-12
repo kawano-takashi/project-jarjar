@@ -29,7 +29,7 @@ const DAMAGE_SOURCE_CONTACT: StringName = &"enemy_contact"
 var enemy_store: EnemyStore = EnemyStore.new()
 var uniform_grid: UniformGrid = UniformGrid.new()
 var encounters: EncounterSystem = EncounterSystem.new()
-var _collision_grid: UniformGrid = UniformGrid.new()
+var _collision_kernel: RefCounted = null
 
 var _state: RunState = null
 var _catalog: DefinitionCatalog = null
@@ -56,7 +56,6 @@ func initialize(state: RunState, catalog: DefinitionCatalog, view: ArenaView = n
 	_swarm_rng = state.rng_streams.swarm_event_rng if state.rng_streams != null else null
 	enemy_store.clear()
 	uniform_grid.clear()
-	_collision_grid.clear()
 	_elite_spawned.resize(_catalog.elite_spawn_ticks.size())
 	_elite_spawned.fill(0)
 	cancel_swarm_warning()
@@ -399,57 +398,31 @@ func _deterministic_contact_direction(entity_id: int) -> Vector2:
 
 
 func _resolve_enemy_collisions(ids: Array[int], current_tick: int) -> void:
-	_collision_grid.clear()
 	var collision_ids: Array[int] = ids.duplicate()
 	collision_ids.sort()
 	var bodies: Array[EnemyEntity] = []
+	var active_ids := PackedInt64Array()
 	var positions := PackedVector2Array()
 	var radii := PackedFloat64Array()
-	var maximum_radius: float = 0.0
 	for entity_id: int in collision_ids:
 		var enemy: EnemyEntity = enemy_store.get_by_id(entity_id)
 		if enemy == null or not enemy.is_targetable(current_tick):
 			continue
 		if not bodies.is_empty() and bodies[-1] == enemy:
 			continue
-		# Dense indices preserve entity-ID order and avoid store lookups per pair.
-		_collision_grid.insert(bodies.size(), enemy.position)
 		bodies.append(enemy)
+		active_ids.append(entity_id)
 		positions.append(enemy.position)
-		var radius: float = enemy.body_radius()
-		radii.append(radius)
-		maximum_radius = maxf(maximum_radius, radius)
-	var initial_positions: PackedVector2Array = positions.duplicate()
-	# Keep the broad phase fixed for this pass. New overlaps caused by a
-	# correction may remain until the next tick, allowing a dense crowd.
+		radii.append(enemy.body_radius())
+	if bodies.size() < 2:
+		return
+	if _collision_kernel == null:
+		_collision_kernel = CombatNative.create_kernel()
+	var corrected: PackedVector2Array = _collision_kernel.resolve_bodies(
+		active_ids, positions, radii, UniformGrid.CELL_SIZE, PackedVector2Array(CONTACT_SEPARATION_DIRECTIONS),
+	)
 	for index: int in bodies.size():
-		var position: Vector2 = positions[index]
-		var radius: float = radii[index]
-		var candidates: Array[int] = _collision_grid.query_circle_candidates(
-			initial_positions[index], radius, maximum_radius,
-		)
-		candidates.sort()
-		for other_index: int in candidates:
-			if other_index <= index:
-				continue
-			var offset: Vector2 = positions[other_index] - position
-			var distance_squared: float = offset.length_squared()
-			var contact_radius: float = radius + radii[other_index]
-			if distance_squared >= contact_radius * contact_radius:
-				continue
-			var distance: float = sqrt(distance_squared)
-			var direction: Vector2 = (
-				offset / distance if distance > 0.0
-				else _deterministic_contact_direction(bodies[index].entity_id + bodies[other_index].entity_id)
-			)
-			# Equal position correction, including flowers and fixed-direction
-			# swarms, follows the official browser build's arcade circle response.
-			var correction: Vector2 = direction * ((contact_radius - distance) * 0.5)
-			position -= correction
-			positions[other_index] += correction
-		positions[index] = position
-	for index: int in bodies.size():
-		bodies[index].position = positions[index]
+		bodies[index].position = corrected[index]
 
 
 func _fire_ready_boss_volley(
@@ -795,7 +768,6 @@ func shift_origin(displacement: Vector2) -> void:
 	if swarm_warning != null:
 		swarm_warning.anchor -= displacement
 	_rebuild_grid(_state.combat_tick)
-	_collision_grid.clear()
 
 
 func _normal_enemy_count() -> int:

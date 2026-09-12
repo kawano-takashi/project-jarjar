@@ -240,6 +240,9 @@ func advance_tick(move_input: Vector2) -> bool:
 	_damage_nodes_from_projectiles(projectile_snapshot, current_tick)
 	# Resolution values are consumed synchronously before the next projectile.
 	var projectile_resolution: Dictionary = {}
+	var projectile_intersections: WeaponSystem.ProjectileIntersections = weapon_system.prepare_projectile_intersections(
+		projectile_snapshot, enemy_system.enemy_store, enemy_system.uniform_grid, player_position, current_tick,
+	)
 	for projectile_entry: Vector2i in projectile_snapshot:
 		if _performance_fixture_active:
 			_performance_projectile_collision_resolutions += 1
@@ -250,6 +253,7 @@ func advance_tick(move_input: Vector2) -> bool:
 			player_position,
 			current_tick,
 			projectile_resolution,
+			projectile_intersections,
 		)
 		if not projectile_resolution.is_empty():
 			_damage_nodes_from_projectile_resolution(projectile_resolution, current_tick)
