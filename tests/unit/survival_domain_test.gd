@@ -534,7 +534,7 @@ func test_survival_chest_owned_upgrade_stability_serial_and_single_effect(assert
 	assertions.expect_equal(1, outcome.previous_level, "upgrade records previous level")
 	assertions.expect_equal(2, outcome.new_level, "upgrade records exactly one new level")
 	var expected_detail: String = (
-		"弾数 1 → 2"
+		"連射数 1 → 2"
 		if outcome.content_id == &"homing_core"
 		else "波数 2 → 3"
 	)

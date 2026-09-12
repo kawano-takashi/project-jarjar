@@ -4,14 +4,14 @@ extends RefCounted
 
 const MIN_COOLDOWN_TICKS: int = 1
 const PROJECTILE_HEIGHT_M: float = 0.35
-const HOMING_CORE_ID: StringName = &"homing_core"
 const AIM_DIRECTION_EPSILON_SQUARED: float = 0.000001
 
 
-class HomingBurstState:
+class AttackSequenceState:
 	extends RefCounted
 
 	var remaining_shots: int = 0
+	var shot_index: int = 0
 	var next_shot_tick: int = 0
 	var target_entity_id: int = -1
 	var last_direction: Vector2 = Vector2.RIGHT
@@ -24,7 +24,7 @@ var _router: CombatEventRouter = null
 var _last_move_direction: Vector2 = Vector2.RIGHT
 var _orbital_active_until_by_lineage: Dictionary[StringName, int] = {}
 var _orbital_next_damage_tick_by_lineage: Dictionary[StringName, int] = {}
-var _homing_bursts: Dictionary[StringName, HomingBurstState] = {}
+var _attack_sequences: Dictionary[StringName, AttackSequenceState] = {}
 
 
 func initialize(
@@ -40,7 +40,7 @@ func initialize(
 	_last_move_direction = Vector2.RIGHT
 	_orbital_active_until_by_lineage.clear()
 	_orbital_next_damage_tick_by_lineage.clear()
-	_homing_bursts.clear()
+	_attack_sequences.clear()
 
 
 func update_move_direction(move_direction: Vector2) -> void:
@@ -62,8 +62,8 @@ func advance_and_fire(
 		var definition: WeaponDefinition = _catalog.weapon(runtime.weapon_id)
 		if definition == null:
 			continue
-		if definition.behavior == GameTypes.WeaponBehavior.HOMING_PROJECTILE:
-			var homing_result: Dictionary = _advance_homing_projectile(
+		if definition.uses_attack_sequence():
+			var sequence_result: Dictionary = _advance_attack_sequence(
 				runtime,
 				definition,
 				slot_index,
@@ -72,8 +72,8 @@ func advance_and_fire(
 				current_tick,
 				stats,
 			)
-			if bool(homing_result.get("generated", false)):
-				results.append(homing_result)
+			if bool(sequence_result.get("generated", false)):
+				results.append(sequence_result)
 			continue
 		if definition.behavior == GameTypes.WeaponBehavior.ORBITAL:
 			var orbital_result: Dictionary = _advance_orbital(
@@ -92,6 +92,7 @@ func advance_and_fire(
 		if runtime.ready_on_resume:
 			runtime.cooldown_remaining_ticks = 0
 			runtime.ready_on_resume = false
+			_attack_sequences.erase(runtime.lineage_id)
 		elif runtime.cooldown_remaining_ticks > 0:
 			runtime.cooldown_remaining_ticks -= 1
 		if runtime.cooldown_remaining_ticks > 0:
@@ -204,7 +205,7 @@ func orbital_active_until_tick(lineage_id: StringName) -> int:
 func deterministic_state_values() -> Array:
 	return [
 		_last_move_direction,
-		_sorted_homing_burst_entries(),
+		_sorted_attack_sequence_entries(),
 		_sorted_orbital_tick_entries(_orbital_active_until_by_lineage),
 		_sorted_orbital_tick_entries(_orbital_next_damage_tick_by_lineage),
 	]
@@ -246,12 +247,8 @@ func _fire_weapon(
 	stats: Dictionary,
 ) -> Dictionary:
 	match definition.behavior:
-		GameTypes.WeaponBehavior.MELEE_WAVE:
-			return _fire_melee_wave(runtime, definition, player_position, enemy_store, uniform_grid, current_tick, stats)
 		GameTypes.WeaponBehavior.HOMING_PROJECTILE:
 			return _fire_homing(runtime, definition, player_position, enemy_store, current_tick, stats)
-		GameTypes.WeaponBehavior.DIRECTIONAL_PROJECTILE:
-			return _fire_directional(runtime, definition, player_position, enemy_store, current_tick, stats)
 		GameTypes.WeaponBehavior.ARC_PROJECTILE:
 			return _fire_arc(runtime, definition, player_position, enemy_store, current_tick, stats)
 		GameTypes.WeaponBehavior.RETURNING_RING:
@@ -265,40 +262,26 @@ func _fire_weapon(
 	return {"generated": false, "slot_index": slot_index}
 
 
-func _fire_melee_wave(
+func _fire_melee_swing(
 	runtime: RunWeapon,
 	definition: WeaponDefinition,
 	player_position: Vector2,
-	_enemy_store: EnemyStore,
-	_uniform_grid: UniformGrid,
-	_current_tick: int,
 	stats: Dictionary,
+	sequence: AttackSequenceState,
 ) -> Dictionary:
-	var range_m: float = minf(
-		_catalog.envelope.effect_outer_radius,
-		maxf(
-			0.0,
-			StatCalculator.weapon_range(definition,
-				runtime.level,
-				StatCalculator.area_multiplier(stats, _catalog.manifest().combat),
-			),
-		),
-	)
-	var amount: int = definition.amount_at(runtime.level)
-	var shapes: Array[Dictionary] = []
-	for swing_index: int in range(amount):
-		shapes.append({"center": player_position, "radius": range_m,
-			"direction": _last_move_direction if swing_index % 2 == 0 else -_last_move_direction,
-			"arc_degrees": _catalog.manifest().combat.melee_arc_degrees})
-	var native_result: Dictionary = _native_attack(runtime, definition, stats, shapes, range_m, false)
+	var range_m: float = StatCalculator.weapon_range(definition, runtime.level,
+		StatCalculator.area_multiplier(stats, _catalog.manifest().combat))
+	var direction: Vector2 = sequence.last_direction if sequence.shot_index % 2 == 0 else -sequence.last_direction
+	var shapes: Array[Dictionary] = [{"center": player_position, "radius": range_m,
+		"direction": direction, "arc_degrees": _catalog.manifest().combat.melee_arc_degrees}]
 	return {
 		"generated": true,
 		"weapon_id": runtime.weapon_id,
 		"lineage_id": runtime.lineage_id,
 		"origin": player_position,
-		"direction": _last_move_direction,
+		"direction": direction,
 		"range_m": range_m,
-		"native_result": native_result,
+		"native_result": _native_attack(runtime, definition, stats, shapes, range_m, false),
 		"visual_shapes": shapes,
 		"node_damage_zones": [],
 	}
@@ -332,7 +315,7 @@ func _fire_homing(
 	)
 
 
-func _advance_homing_projectile(
+func _advance_attack_sequence(
 	runtime: RunWeapon,
 	definition: WeaponDefinition,
 	slot_index: int,
@@ -345,109 +328,48 @@ func _advance_homing_projectile(
 	if runtime.ready_on_resume:
 		runtime.ready_on_resume = false
 		runtime.cooldown_remaining_ticks = 0
-		_homing_bursts.erase(lineage_id)
+		_attack_sequences.erase(lineage_id)
 	elif runtime.cooldown_remaining_ticks > 0:
 		runtime.cooldown_remaining_ticks -= 1
-	if runtime.weapon_id == HOMING_CORE_ID:
-		var burst: HomingBurstState = _homing_bursts.get(lineage_id) as HomingBurstState
-		if burst != null:
-			if current_tick < burst.next_shot_tick:
-				return {"generated": false, "slot_index": slot_index}
-			var pending_result: Dictionary = _fire_pending_homing_core_shot(
-				runtime,
-				definition,
-				player_position,
-				enemy_store,
-				current_tick,
-				stats,
-				burst,
-			)
-			burst.remaining_shots -= 1
-			if burst.remaining_shots <= 0:
-				_homing_bursts.erase(lineage_id)
-			else:
-				burst.next_shot_tick += _catalog.manifest().combat.homing_burst_interval_ticks
-			return pending_result
-	else:
-		_homing_bursts.erase(lineage_id)
-	if runtime.cooldown_remaining_ticks > 0:
-		return {"generated": false, "slot_index": slot_index}
-	var result: Dictionary
-	if runtime.weapon_id == HOMING_CORE_ID:
-		result = _start_homing_core_burst(
-			runtime,
-			definition,
-			player_position,
-			enemy_store,
-			current_tick,
-			stats,
-		)
-	else:
-		result = _fire_homing(
-			runtime,
-			definition,
-			player_position,
-			enemy_store,
-			current_tick,
-			stats,
-		)
-	if bool(result.get("generated", false)):
-		runtime.cooldown_remaining_ticks = effective_cooldown_ticks(
-			definition,
-			runtime.level,
-			stats,
-		)
-	return result
-
-
-func _start_homing_core_burst(
-	runtime: RunWeapon,
-	definition: WeaponDefinition,
-	player_position: Vector2,
-	enemy_store: EnemyStore,
-	current_tick: int,
-	stats: Dictionary,
-) -> Dictionary:
-	var target: EnemyEntity = _first_target(
-		enemy_store,
-		player_position,
-		player_position,
-		current_tick,
-	)
-	if target == null:
+	var sequence: AttackSequenceState = _attack_sequences.get(lineage_id) as AttackSequenceState
+	if sequence != null and current_tick < sequence.next_shot_tick:
 		return {"generated": false}
-	var direction: Vector2 = _homing_aim_direction(
-		player_position,
-		target.position,
-		_last_move_direction,
-	)
-	_spawn_ally_projectile(
-		runtime,
-		definition,
-		player_position,
-		direction,
-		target.entity_id,
-		stats,
-		current_tick,
-		ProjectileState.MovementKind.STRAIGHT,
-	)
-	var amount: int = maxi(1, definition.amount_at(runtime.level))
-	if amount > 1:
-		var burst := HomingBurstState.new()
-		burst.remaining_shots = amount - 1
-		burst.next_shot_tick = current_tick + _catalog.manifest().combat.homing_burst_interval_ticks
-		burst.target_entity_id = target.entity_id
-		burst.last_direction = direction
-		_homing_bursts[runtime.lineage_id] = burst
-	return _projectile_result(
-		runtime,
-		player_position,
-		direction,
-		StatCalculator.weapon_range(definition,
-			runtime.level,
-			StatCalculator.area_multiplier(stats, _catalog.manifest().combat),
-		),
-	)
+	if sequence == null:
+		if runtime.cooldown_remaining_ticks > 0:
+			return {"generated": false}
+		var target: EnemyEntity = null
+		if definition.behavior != GameTypes.WeaponBehavior.MELEE_WAVE:
+			target = _first_target(enemy_store, player_position, player_position, current_tick)
+			if target == null:
+				return {"generated": false}
+		sequence = AttackSequenceState.new()
+		sequence.remaining_shots = definition.amount_at(runtime.level)
+		sequence.last_direction = _last_move_direction
+		if target != null:
+			sequence.target_entity_id = target.entity_id
+		runtime.cooldown_remaining_ticks = effective_cooldown_ticks(definition, runtime.level, stats)
+	var result: Dictionary
+	match definition.behavior:
+		GameTypes.WeaponBehavior.MELEE_WAVE:
+			result = _fire_melee_swing(runtime, definition, player_position, stats, sequence)
+		GameTypes.WeaponBehavior.DIRECTIONAL_PROJECTILE:
+			_spawn_ally_projectile(runtime, definition, player_position, _last_move_direction,
+				-1, stats, current_tick, ProjectileState.MovementKind.STRAIGHT)
+			result = _projectile_result(runtime, player_position, _last_move_direction,
+				StatCalculator.weapon_range(definition, runtime.level,
+					StatCalculator.area_multiplier(stats, _catalog.manifest().combat)))
+		_:
+			result = _fire_pending_homing_core_shot(runtime, definition, player_position,
+				enemy_store, current_tick, stats, sequence)
+	sequence.remaining_shots -= 1
+	sequence.shot_index += 1
+	if sequence.remaining_shots > 0:
+		sequence.next_shot_tick = current_tick + definition.shot_interval_ticks_at(runtime.level)
+		_attack_sequences[lineage_id] = sequence
+	else:
+		_attack_sequences.erase(lineage_id)
+	result["slot_index"] = slot_index
+	return result
 
 
 func _fire_pending_homing_core_shot(
@@ -457,7 +379,7 @@ func _fire_pending_homing_core_shot(
 	enemy_store: EnemyStore,
 	current_tick: int,
 	stats: Dictionary,
-	burst: HomingBurstState,
+	burst: AttackSequenceState,
 ) -> Dictionary:
 	var target: EnemyEntity = enemy_store.get_by_id(burst.target_entity_id)
 	if not _is_ally_acquirable(target, player_position, current_tick):
@@ -514,30 +436,6 @@ func _homing_aim_direction(
 	if _last_move_direction.length_squared() > AIM_DIRECTION_EPSILON_SQUARED:
 		return _last_move_direction.normalized()
 	return Vector2.RIGHT
-
-
-func _fire_directional(
-	runtime: RunWeapon,
-	definition: WeaponDefinition,
-	player_position: Vector2,
-	enemy_store: EnemyStore,
-	current_tick: int,
-	stats: Dictionary,
-) -> Dictionary:
-	if _first_target(enemy_store, player_position, player_position, current_tick) == null:
-		return {"generated": false}
-	var amount: int = maxi(1, definition.amount_at(runtime.level))
-	var side := Vector2(-_last_move_direction.y, _last_move_direction.x)
-	for projectile_index: int in range(amount):
-		var centered_index: float = float(projectile_index) - float(amount - 1) * 0.5
-		var origin: Vector2 = player_position + side * centered_index * _catalog.manifest().combat.parallel_projectile_spacing
-		_spawn_ally_projectile(runtime, definition, origin, _last_move_direction, -1, stats, current_tick, ProjectileState.MovementKind.STRAIGHT)
-	return _projectile_result(
-		runtime,
-		player_position,
-		_last_move_direction,
-		StatCalculator.weapon_range(definition, runtime.level, StatCalculator.area_multiplier(stats, _catalog.manifest().combat)),
-	)
 
 
 func _fire_arc(
@@ -779,22 +677,23 @@ func _sorted_orbital_tick_entries(source: Dictionary) -> Array:
 	return result
 
 
-func _sorted_homing_burst_entries() -> Array:
+func _sorted_attack_sequence_entries() -> Array:
 	var keys: Array[String] = []
-	for key_value: Variant in _homing_bursts:
+	for key_value: Variant in _attack_sequences:
 		keys.append(String(key_value))
 	keys.sort()
 	var result: Array = []
 	for key_text: String in keys:
 		var lineage_id := StringName(key_text)
-		var burst: HomingBurstState = (
-			_homing_bursts.get(lineage_id) as HomingBurstState
+		var burst: AttackSequenceState = (
+			_attack_sequences.get(lineage_id) as AttackSequenceState
 		)
 		if burst == null:
 			continue
 		result.append([
 			key_text,
 			burst.remaining_shots,
+			burst.shot_index,
 			burst.next_shot_tick,
 			burst.target_entity_id,
 			burst.last_direction,

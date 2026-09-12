@@ -29,6 +29,7 @@ static func elite_events(ticks: Array, kind: GameTypes.ChestKind = GameTypes.Che
 		var event := EliteSpawnDefinition.new()
 		event.event_id = StringName("elite_%d" % result.size())
 		event.start_tick = tick
+		event.hp_multiplier = 1.0
 		event.chest_kind = kind
 		result.append(event)
 	return result

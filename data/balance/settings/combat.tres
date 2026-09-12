@@ -29,6 +29,4 @@ boss_phase_two_hp_ratio = 0.66
 boss_phase_three_hp_ratio = 0.33
 boss_stop_time_scale = 0.5
 orbital_damage_interval_ticks = 15
-homing_burst_interval_ticks = 6
 boss_volley_phase_bonus = 4
-parallel_projectile_spacing = 0.28

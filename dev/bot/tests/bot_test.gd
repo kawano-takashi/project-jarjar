@@ -346,12 +346,13 @@ func test_bot_reacts_to_observed_projectile_motion_and_keeps_legal_input(a: Vari
 	var firing := BotObservation.new()
 	firing.hp = 100.0
 	firing.max_hp = 100.0
+	view.reset(firing.player_position)
 	firing.camera_transform = view.camera_transform
 	firing.camera_projection = view.projection
 	firing.weapons.append({"id": &"directional_needle", "level": 1, "evolved": false})
 	firing.needles.append(Vector2(0.1, 0.0))
 	var behind := BotObservation.Body.new()
-	behind.position = Vector2(-4.0, 0.0)
+	behind.position = Vector2(-5.5, 0.0)
 	behind.radius = 0.38
 	firing.enemies.append(behind)
 	aiming.decide(firing)

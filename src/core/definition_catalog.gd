@@ -22,6 +22,7 @@ var boss_start_tick: int = 0
 var segment_start_ticks: PackedInt32Array = []
 var segment_end_ticks: PackedInt32Array = []
 var elite_spawn_ticks: PackedInt32Array = []
+var elite_hp_multipliers: Array[float] = []
 var elite_chest_kinds: Array[GameTypes.ChestKind] = []
 var stage_events: Array[StageEventOccurrence] = []
 var envelope: CombatEnvelope = null
@@ -151,6 +152,7 @@ func _reset() -> void:
 	segment_end_ticks.clear()
 	elite_spawn_ticks.clear()
 	elite_chest_kinds.clear()
+	elite_hp_multipliers.clear()
 	stage_events.clear()
 	boss_start_tick = 0
 	maximum_enemy_body_radius = 0.0
@@ -229,7 +231,7 @@ func _validate_settings() -> void:
 	_require(arena, "node_spawn_chance_max", arena.node_spawn_chance <= arena.node_spawn_chance_max and arena.node_spawn_chance_max <= 1.0, "node_spawn_chance <= maximum <= 1")
 	_validate_weights(arena, "node_drop_weights", GameTypes.NodeDropType.size())
 	var combat: CombatBalanceDefinition = _manifest.combat
-	for key: String in ["enemy_pool_capacity", "projectile_pool_capacity", "boss_hp_multiplier", "boss_action_rate_multiplier", "boss_enrage_interval_ticks", "min_cooldown_multiplier", "min_duration_multiplier", "min_projectile_speed_multiplier", "min_area_multiplier", "target_center_radius", "effect_outer_radius", "damage_center_radius", "boss_phase_interval_multiplier", "boss_min_interval_multiplier", "orbital_damage_interval_ticks", "homing_burst_interval_ticks"]:
+	for key: String in ["enemy_pool_capacity", "projectile_pool_capacity", "boss_hp_multiplier", "boss_action_rate_multiplier", "boss_enrage_interval_ticks", "min_cooldown_multiplier", "min_duration_multiplier", "min_projectile_speed_multiplier", "min_area_multiplier", "target_center_radius", "effect_outer_radius", "damage_center_radius", "boss_phase_interval_multiplier", "boss_min_interval_multiplier", "orbital_damage_interval_ticks"]:
 		_positive(combat, key)
 	_require(combat, "target_center_radius", combat.target_center_radius <= combat.effect_outer_radius, "<= effect_outer_radius")
 	_require(combat, "effect_outer_radius", combat.effect_outer_radius <= combat.damage_center_radius, "<= damage_center_radius")
@@ -276,7 +278,7 @@ func _validate_weapons() -> void:
 		_require(definition, "behavior", int(definition.behavior) in GameTypes.WeaponBehavior.values(), "supported weapon behavior")
 		_positive(definition, "max_level")
 		var arrays_valid: bool = true
-		for key: String in ["damage_by_level", "cooldown_ticks_by_level", "amount_by_level", "projectile_speed_by_level", "range_by_level", "projectile_radius_by_level", "effect_radius_by_level", "duration_ticks_by_level", "pierce_by_level"]:
+		for key: String in ["damage_by_level", "shot_interval_ticks_by_level", "cooldown_ticks_by_level", "amount_by_level", "projectile_speed_by_level", "range_by_level", "projectile_radius_by_level", "effect_radius_by_level", "duration_ticks_by_level", "pierce_by_level"]:
 			var values: Variant = definition.get(key)
 			if values.size() != definition.max_level:
 				arrays_valid = false
@@ -300,6 +302,10 @@ func _validate_weapons() -> void:
 			if definition.level_deltas(level).is_empty():
 				_error(definition, "level[%d]" % level, "no changes", "at least one stat changes")
 		for level: int in range(1, definition.max_level + 1):
+			var interval: int = definition.shot_interval_ticks_at(level)
+			_require(definition, "shot_interval_ticks_by_level[%d]" % (level - 1),
+				interval > 0 if definition.uses_attack_sequence() else interval == 0,
+				"positive for attack sequences; zero for other weapons")
 			if definition.behavior == GameTypes.WeaponBehavior.ORBITAL and definition.range_at(level) <= 0.0:
 				_error(definition, "range_by_level[%d]" % (level - 1), definition.range_at(level), "positive orbital radius for angular motion")
 			var outer: float = StatCalculator.weapon_outer_radius(definition, level, max_area)
@@ -419,6 +425,7 @@ func _validate_stage_events() -> void:
 		_require(event, "start_tick", starts_inside, "0 <= start_tick < normal combat end (%d)" % boss_start_tick)
 		if event is EliteSpawnDefinition:
 			var elite := event as EliteSpawnDefinition
+			_positive(elite, "hp_multiplier")
 			_require(elite, "chest_kind", int(elite.chest_kind) in GameTypes.ChestKind.values(), "supported chest kind")
 			if starts_inside:
 				_append_stage_event(StageEventOccurrence.Kind.ELITE_ENCOUNTER, event.start_tick, event)
@@ -449,6 +456,7 @@ func _validate_stage_events() -> void:
 		if event.kind == StageEventOccurrence.Kind.ELITE_ENCOUNTER:
 			event.elite_serial = elite_spawn_ticks.size()
 			elite_spawn_ticks.append(event.tick)
+			elite_hp_multipliers.append((event.definition as EliteSpawnDefinition).hp_multiplier)
 			elite_chest_kinds.append((event.definition as EliteSpawnDefinition).chest_kind)
 
 

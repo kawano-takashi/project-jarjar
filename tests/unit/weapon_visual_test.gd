@@ -6,12 +6,14 @@ func test_weapon_regions_keep_actual_geometry_when_decorations_are_full(a: Varia
 	for definition: WeaponDefinition in content.weapons:
 		if definition.weapon_id == &"resonance_wave":
 			definition.range_scales_with_area = false
+			var offset: float = 5.5 - definition.range_at(1)
 			for level: int in definition.range_by_level.size():
-				definition.range_by_level[level] += 3.3
+				definition.range_by_level[level] += offset
 		if definition.weapon_id == &"zero_field":
 			definition.effect_radius_scales_with_area = false
+			var offset: float = 4.75 - definition.effect_radius_at(1)
 			for level: int in definition.effect_radius_by_level.size():
-				definition.effect_radius_by_level[level] += 2.75
+				definition.effect_radius_by_level[level] += offset
 	content.combat.melee_arc_degrees = 70.0
 	var catalog := DefinitionCatalog.new()
 	a.expect_true(catalog.validate_manifest(content), catalog.error_text)
@@ -23,14 +25,12 @@ func test_weapon_regions_keep_actual_geometry_when_decorations_are_full(a: Varia
 			simulation.vfx_pool.acquire(Vector2.ZERO, 0.1, 1.0, Color.WHITE, 0)
 		var snapshot: CombatSnapshot = simulation.step(Vector2.ZERO)
 		var wave: bool = weapon_id == &"resonance_wave"
-		a.expect_equal(2 if wave else 1, snapshot.weapon_effect_transforms.size(), "the attack body survives a full decorative pool")
+		a.expect_equal(1, snapshot.weapon_effect_transforms.size(), "the attack body survives a full decorative pool")
 		for index: int in snapshot.weapon_effect_transforms.size():
 			var transform: Transform3D = snapshot.weapon_effect_transforms[index]
 			a.expect_float(5.5 if wave else 4.75, transform.basis.x.length(), "display range is not independently clamped to four metres")
 			a.expect_equal(Vector2.ZERO, Vector2(transform.origin.x, transform.origin.z), "the displayed region starts at the real attack origin")
 			a.expect_float(70.0 / 360.0 if wave else 1.0, snapshot.weapon_effect_custom_data[index].b, "fan angle and full-circle coverage come from the attack shape")
-		if wave and snapshot.weapon_effect_transforms.size() == 2:
-			a.expect_true(snapshot.weapon_effect_transforms[0].basis.z.normalized().is_equal_approx(-snapshot.weapon_effect_transforms[1].basis.z.normalized()), "both actual sweep directions are visible")
 
 
 func test_native_weapon_hit_budget_does_not_limit_damage(a: Variant, _context: Dictionary) -> void:
@@ -89,7 +89,7 @@ func _check_arc_impact(a: Variant, victims: int) -> void:
 func test_weapon_visual_lifetime_handles_pause_origin_shift_and_restart(a: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = BalanceTestFixtures.catalog()
 	var simulation: CombatSimulation = _simulation(catalog, &"zero_field")
-	simulation.spawn_fixture_enemy(GameTypes.EnemyType.BULWARK, Vector2(1.5, 0.0), -1)
+	simulation.spawn_fixture_enemy(GameTypes.EnemyType.BULWARK, Vector2(0.5, 0.0), -1)
 	var before: CombatSnapshot = simulation.step(Vector2.ZERO)
 	a.expect_equal(1, simulation.state.weapon_hit_count, "the field actually hits its target")
 	a.expect_true(before.enemy_visual_custom_data[0].g > 0.0, "the real hit reaches the enemy shader's flash flag")
@@ -125,6 +125,20 @@ func test_weapon_qa_launches_build_single_and_mixed_loadouts(a: Variant, _contex
 		if result.get("valid", false):
 			a.expect_equal(5 if scenario.begins_with("weapon_mix_") else 1, result.state.weapons.size(), "QA equipment is ready for visual inspection")
 			a.expect_true(result.rng_unchanged, "QA setup preserves the reproducible combat streams")
+
+	for level: int in [1, 3, 8]:
+		var launch: Dictionary = LaunchArguments.parse_debug(PackedStringArray([
+			"--qa-scenario=weapon_homing_core", "--qa-weapon-level=%d" % level]))
+		a.expect_true(launch.valid, "single weapon accepts a positive level")
+		var result: Dictionary = QaScenarioFactory.build(launch.qa_scenario, catalog, launch.qa_weapon_level)
+		a.expect_true(result.valid, "requested weapon level can be prepared")
+		if result.valid:
+			a.expect_equal(level, result.state.weapons[0].level, "QA equips the requested level")
+			a.expect_true(result.rng_unchanged, "level selection preserves combat RNG")
+	a.expect_false(LaunchArguments.parse_debug(PackedStringArray(["--qa-scenario=weapon_mix_areas", "--qa-weapon-level=2"])).valid, "mixed loadouts reject a single weapon level")
+	a.expect_false(LaunchArguments.parse_debug(PackedStringArray(["--qa-scenario=weapon_homing_core", "--qa-weapon-level=0"])).valid, "explicit level zero is rejected")
+	a.expect_false(QaScenarioFactory.build("weapon_homing_core", catalog, catalog.weapon(&"homing_core").max_level + 1).valid, "QA cannot silently clamp a level past the definition")
+	a.expect_false(QaScenarioFactory.build("weapon_infinite_homing", catalog, 2).valid, "evolved weapons have only their terminal level")
 
 
 func _simulation(catalog: DefinitionCatalog, weapon_id: StringName) -> CombatSimulation:

@@ -105,7 +105,7 @@ func spawn_elite_encounter(serial: int, player_position: Vector2, current_tick: 
 	if not _reserve_encounter_capacity(_manifest.encounters.member_count + 1, player_position):
 		return null
 	var elite: EnemyEntity = _spawn_enemy(GameTypes.EnemyType.ELITE,
-		_encounter_opponent_position(player_position), current_tick)
+		_encounter_opponent_position(player_position), current_tick, _catalog.elite_hp_multipliers[serial])
 	if elite != null:
 		elite.elite_serial = serial
 		_state.elite_spawn_ticks[serial] = current_tick
@@ -116,7 +116,7 @@ func spawn_elite_encounter(serial: int, player_position: Vector2, current_tick: 
 
 func spawn_final_boss(player_position: Vector2, current_tick: int) -> EnemyEntity:
 	var boss: EnemyEntity = _spawn_enemy(GameTypes.EnemyType.BOSS,
-		_encounter_opponent_position(player_position), current_tick)
+		_encounter_opponent_position(player_position), current_tick, _manifest.combat.boss_hp_multiplier)
 	if boss != null:
 		encounters.begin_boss(player_position, boss.activation_tick)
 		_state.boss_spawned = true
@@ -170,6 +170,7 @@ func resolve_normal_spawns(_player_position: Vector2, current_tick: int) -> Arra
 			enemy_type,
 			_spawn_position_for_type(enemy_type),
 			current_tick,
+			segment.hp_multiplier,
 		)
 		if enemy == null:
 			break
@@ -407,15 +408,14 @@ func _spawn_enemy(
 	enemy_type: GameTypes.EnemyType,
 	position: Vector2,
 	current_tick: int,
+	hp_multiplier: float,
 ) -> EnemyEntity:
 	var definition: EnemyDefinition = _catalog.enemy_for_type(enemy_type)
 	if definition == null:
 		return null
 	var segment: EnemySegmentDefinition = current_segment()
-	var hp_multiplier: float = segment.hp_multiplier
 	var damage_multiplier: float = segment.damage_multiplier
 	if enemy_type == GameTypes.EnemyType.BOSS:
-		hp_multiplier = _manifest.combat.boss_hp_multiplier
 		damage_multiplier = _manifest.combat.boss_damage_multiplier
 	elif enemy_type in NORMAL_ENEMY_TYPES:
 		damage_multiplier *= _manifest.combat.normal_enemy_damage_scale

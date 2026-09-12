@@ -212,7 +212,7 @@ func test_balance_variable_growth_and_multiple_stat_descriptions(a: Variant, _co
 	var offer: LevelOffer = ProgressionService.create_offer(state, catalog)
 	a.expect_equal(3, offer.options.size(), "offer shows only existing candidates")
 	var detail: String = UpgradeDescriptionFormatter.weapon_detail(first, 2)
-	a.expect_true(detail.contains("威力 4 → 5") and detail.contains("弾数 1 → 3"), "all simultaneous changes including amount +2 are displayed")
+	a.expect_true(detail.contains("威力 4 → 5") and detail.contains("連射数 1 → 3"), "all simultaneous changes including amount +2 are displayed")
 	a.expect_equal(2, detail.split("\n").size(), "each changed stat has its own line")
 	var precise_passive: PassiveDefinition = passive.duplicate_deep(Resource.DEEP_DUPLICATE_ALL) as PassiveDefinition
 	precise_passive.amount_per_level = -0.003
@@ -454,12 +454,13 @@ func _find_weapon(content: SurvivalContentManifest, id: StringName) -> WeaponDef
 
 
 func _set_levels(weapon: WeaponDefinition, count: int) -> void:
-	for key: String in ["damage_by_level", "cooldown_ticks_by_level", "amount_by_level", "projectile_speed_by_level", "range_by_level", "projectile_radius_by_level", "effect_radius_by_level", "duration_ticks_by_level", "pierce_by_level"]:
+	for key: String in ["damage_by_level", "shot_interval_ticks_by_level", "cooldown_ticks_by_level", "amount_by_level", "projectile_speed_by_level", "range_by_level", "projectile_radius_by_level", "effect_radius_by_level", "duration_ticks_by_level", "pierce_by_level"]:
 		var values: Variant = weapon.get(key)
 		values.resize(count)
 		for index: int in range(count):
 			match key:
 				"damage_by_level": values[index] = 4 + index
+				"shot_interval_ticks_by_level": values[index] = 6 if weapon.uses_attack_sequence() else 0
 				"cooldown_ticks_by_level": values[index] = 60
 				"amount_by_level": values[index] = 1 + index * 2
 				"projectile_speed_by_level": values[index] = 4.0
@@ -483,3 +484,21 @@ func _values(value: Variant) -> Variant:
 			result.append(_values(item))
 		return result
 	return var_to_str(value)
+
+
+func test_elite_hp_is_independent_of_normal_wave_and_delayed_spawn(a: Variant, _context: Dictionary) -> void:
+	var content: SurvivalContentManifest = BalanceTestFixtures.manifest()
+	content.stage_events.events = BalanceTestFixtures.elite_events([1])
+	(content.stage_events.events[0] as EliteSpawnDefinition).hp_multiplier = 2.0
+	for definition: EnemyDefinition in content.enemies:
+		if definition.enemy_type == GameTypes.EnemyType.ELITE:
+			definition.base_hp = 30.0
+	content.segments[0].hp_multiplier = 50.0
+	content.segments[1].hp_multiplier = 100.0
+	var catalog: DefinitionCatalog = _catalog(content, a)
+	var simulation: CombatSimulation = _simulation(catalog, 92)
+	simulation.state.combat_tick = catalog.segment_start_ticks[1] + 1
+	var elite: EnemyEntity = simulation.enemy_system.spawn_elite_encounter(0, Vector2.ZERO, simulation.state.combat_tick)
+	a.expect_true(elite != null, "scheduled elite can be spawned after its original wave")
+	if elite != null:
+		a.expect_float(60.0, elite.max_hp, "event HP is unaffected by either normal wave multiplier")

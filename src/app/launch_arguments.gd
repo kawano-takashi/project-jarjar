@@ -33,6 +33,7 @@ const QA_SCENARIOS: Array[String] = [
 
 const DEBUG_OPTIONS: Array[String] = [
 	"--qa-scenario",
+	"--qa-weapon-level",
 	"--smoke-quit",
 	"--performance",
 	"--run-seed",
@@ -59,11 +60,19 @@ static func parse_debug(arguments: PackedStringArray) -> Dictionary:
 		result["smoke_frames"] = frame_count
 		return result
 
-	if values.size() == 1 and values.has("--qa-scenario"):
+	if values.has("--qa-scenario") and (values.size() == 1 or (values.size() == 2 and values.has("--qa-weapon-level"))):
 		if not values["--qa-scenario"] in QA_SCENARIOS:
 			return _rejected("--qa-scenario")
+		var weapon_level: int = 0
+		if values.has("--qa-weapon-level"):
+			var level_text: String = values["--qa-weapon-level"]
+			var scenario: String = values["--qa-scenario"]
+			if not scenario.begins_with("weapon_") or scenario.begins_with("weapon_mix_") or not level_text.is_valid_int() or level_text.to_int() < 1:
+				return _rejected("--qa-weapon-level")
+			weapon_level = level_text.to_int()
 		var result := _accepted(MODE_QA_SCENARIO, "")
 		result["qa_scenario"] = values["--qa-scenario"]
+		result["qa_weapon_level"] = weapon_level
 		return result
 
 	if values.size() == 2 and values.has("--performance") and values.has("--run-seed"):

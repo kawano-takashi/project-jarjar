@@ -119,7 +119,7 @@ func _ready() -> void:
 
 	match _launch.get("mode", LaunchArgumentsScript.MODE_NORMAL):
 		LaunchArgumentsScript.MODE_QA_SCENARIO:
-			_start_qa_mode(str(_launch.get("qa_scenario", "")))
+			_start_qa_mode(str(_launch.get("qa_scenario", "")), int(_launch.get("qa_weapon_level", 0)))
 		LaunchArgumentsScript.MODE_PERFORMANCE:
 			_start_performance_mode()
 		_:
@@ -632,13 +632,13 @@ func _on_performance_completed(exit_code: int, _summary: Dictionary) -> void:
 	get_tree().quit(exit_code)
 
 
-func _start_qa_mode(scenario_id: String) -> void:
+func _start_qa_mode(scenario_id: String, weapon_level: int = 0) -> void:
 	var factory_script: Variant = load("res://src/debug/qa_scenario_factory.gd")
 	if factory_script == null:
 		print("QA_SCENARIO_FAILED reason=factory")
 		get_tree().quit(1)
 		return
-	var result: Dictionary = factory_script.build(scenario_id, _definition_catalog)
+	var result: Dictionary = factory_script.build(scenario_id, _definition_catalog, weapon_level)
 	if not bool(result.get("valid", false)):
 		print("QA_SCENARIO_REJECTED name=--qa-scenario")
 		get_tree().quit(2)

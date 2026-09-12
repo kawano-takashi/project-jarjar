@@ -4,6 +4,7 @@ extends Resource
 
 const STAT_DAMAGE: StringName = &"damage"
 const STAT_COOLDOWN_TICKS: StringName = &"cooldown_ticks"
+const STAT_SHOT_INTERVAL_TICKS: StringName = &"shot_interval_ticks"
 const STAT_AMOUNT: StringName = &"amount"
 const STAT_PROJECTILE_SPEED: StringName = &"projectile_speed"
 const STAT_RANGE: StringName = &"range"
@@ -48,16 +49,23 @@ var max_level: int:
 ## 各レベルのdamage。HP/命中、有限かつ正。Lv1から順に格納、全レベル配列の長さはdamage_by_levelと一致。隣接レベルは最低1項目を変更。
 @export_range(0, 100, 0.001, "or_greater") var damage_by_level: PackedFloat32Array = PackedFloat32Array()
 ## 各レベルのcooldown_ticks。整数tick（60/秒）、有限かつ正。Lv1から順に格納、全レベル配列の長さはdamage_by_levelと一致。隣接レベルは最低1項目を変更。
+## 通常は最初の攻撃から次の発動まで。通常の周回武器は展開終了から再展開までの休止時間。
 @export_range(0, 100, 1, "or_greater", "suffix:tick") var cooldown_ticks_by_level: PackedInt32Array = PackedInt32Array()
+## 連続攻撃内の発射間隔。整数tick（60/秒）。全レベル配列と同じ長さ。
+## 共鳴波・追尾核・方向針では正、それ以外は0。能力のcooldown補正は適用しない。
+## 発動間隔は最初の攻撃から数えるが、連続攻撃が終わるまで次の組は開始しない。
+@export_range(0, 100, 1, "or_greater", "suffix:tick") var shot_interval_ticks_by_level: PackedInt32Array = PackedInt32Array()
 ## 各レベルのamount。個、有限かつ正。Lv1から順に格納、全レベル配列の長さはdamage_by_levelと一致。隣接レベルは最低1項目を変更。
 @export_range(0, 100, 1, "or_greater") var amount_by_level: PackedInt32Array = PackedInt32Array()
 ## 各レベルのprojectile_speed。m/秒、有限かつ0以上。Lv1から順に格納、全レベル配列の長さはdamage_by_levelと一致。隣接レベルは最低1項目を変更。
+## 周回武器では軌道上の接線速度。周回の角速度はこの値を実効周回半径で割ったrad/秒。
 @export_range(0, 100, 0.001, "or_greater", "suffix:m/s") var projectile_speed_by_level: PackedFloat32Array = PackedFloat32Array()
 ## 各レベルのrange。m、有限かつ0以上。Lv1から順に格納、全レベル配列の長さはdamage_by_levelと一致。隣接レベルは最低1項目を変更。周回武器のrangeは正。
 @export_range(0, 100, 0.001, "or_greater", "suffix:m") var range_by_level: PackedFloat32Array = PackedFloat32Array()
 ## 各レベルのprojectile_radius。m、有限かつ0以上。Lv1から順に格納、全レベル配列の長さはdamage_by_levelと一致。隣接レベルは最低1項目を変更。
 @export_range(0, 100, 0.001, "or_greater", "suffix:m") var projectile_radius_by_level: PackedFloat32Array = PackedFloat32Array()
 ## 各レベルのeffect_radius。m、有限かつ0以上。Lv1から順に格納、全レベル配列の長さはdamage_by_levelと一致。隣接レベルは最低1項目を変更。
+## 弧晶は着弾時の爆発半径、周回武器は各軌道体の命中半径、場の武器はプレイヤー中心の攻撃半径。
 @export_range(0, 100, 0.001, "or_greater", "suffix:m") var effect_radius_by_level: PackedFloat32Array = PackedFloat32Array()
 ## trueならrangeにarea補正倍率を掛ける。falseなら表の値を使う。最大強化時もcombatの効果外縁以内。
 @export var range_scales_with_area: bool = false
@@ -89,6 +97,14 @@ func amount_at(level: int) -> int:
 	return _int_at(amount_by_level, level)
 
 
+func shot_interval_ticks_at(level: int) -> int:
+	return _int_at(shot_interval_ticks_by_level, level)
+
+
+func uses_attack_sequence() -> bool:
+	return behavior in [GameTypes.WeaponBehavior.MELEE_WAVE, GameTypes.WeaponBehavior.DIRECTIONAL_PROJECTILE] or weapon_id == &"homing_core"
+
+
 func projectile_speed_at(level: int) -> float:
 	return _float_at(projectile_speed_by_level, level)
 
@@ -118,6 +134,8 @@ func level_deltas(next_level: int) -> Array[WeaponLevelDelta]:
 	if next_level < 2 or next_level > max_level:
 		return result
 	var previous_level: int = next_level - 1
+	_append_int_delta(result, STAT_SHOT_INTERVAL_TICKS,
+		shot_interval_ticks_at(previous_level), shot_interval_ticks_at(next_level))
 	_append_float_delta(
 		result,
 		STAT_DAMAGE,

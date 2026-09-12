@@ -209,55 +209,64 @@ func test_all_weapon_behaviors_generate_attacks(assertions: Variant, _context: D
 		assertions.expect_equal(1, attacks.size(), "%s generates its mapped automatic attack" % weapon_id)
 
 
-func test_resonance_wave_sweeps_both_sides_and_amount_adds_damage(assertions: Variant, _context: Dictionary) -> void:
+func test_resonance_wave_sequence_keeps_its_axis_and_hits_each_swing(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
-	var state: RunState = RunStateFactory.create(7301, catalog)
-	state.weapons.clear()
 	var definition: WeaponDefinition = catalog.weapon(&"resonance_wave")
-	state.weapons.append(RunWeapon.create(
-		definition.weapon_id,
-		catalog.lineage_for_weapon(definition.weapon_id),
-		false,
-		state.rng_streams.create_weapon_rng(catalog.lineage_for_weapon(definition.weapon_id), 0),
-	))
-	var simulation := CombatSimulation.new()
-	simulation.initialize(state, catalog)
-	var right_enemy: EnemyEntity = simulation.spawn_fixture_enemy(
-		GameTypes.EnemyType.BULWARK,
-		Vector2(1.5, 0.0),
-		-1,
-	)
-	var left_enemy: EnemyEntity = simulation.spawn_fixture_enemy(
-		GameTypes.EnemyType.BULWARK,
-		Vector2(-1.5, 0.0),
-		-1,
-	)
-	var runtime: RunWeapon = state.weapon_for_lineage(&"resonance_wave")
-	definition.critical_chance = 0.0
-	right_enemy.hp = 1000.0
-	left_enemy.hp = 1000.0
-	simulation.weapon_system.advance_and_fire(
-		Vector2.ZERO,
-		simulation.enemy_system.enemy_store,
-		simulation.enemy_system.uniform_grid,
-		1,
-	)
-	assertions.expect_float(1000.0 - definition.damage_at(1), right_enemy.hp, "level one damages the right side once")
-	assertions.expect_float(1000.0 - definition.damage_at(1), left_enemy.hp, "level one also damages the left side once")
-	runtime.level = 2
-	runtime.cooldown_remaining_ticks = 0
-	right_enemy.hp = 1000.0
-	left_enemy.hp = 1000.0
-	simulation.weapon_system.advance_and_fire(
-		Vector2.ZERO,
-		simulation.enemy_system.enemy_store,
-		simulation.enemy_system.uniform_grid,
-		2,
-	)
-	assertions.expect_float(1000.0 - 2.0 * definition.damage_at(2), right_enemy.hp, "the third wave adds a second real hit on its side")
-	assertions.expect_float(1000.0 - definition.damage_at(2), left_enemy.hp, "the opposite sweep remains active")
+	definition.damage_by_level.fill(10.0)
+	definition.amount_by_level.fill(3)
+	definition.amount_by_level[0] = 1
+	definition.shot_interval_ticks_by_level.fill(6)
+	definition.cooldown_ticks_by_level.fill(4)
+	var setup: Dictionary = _homing_fixture(catalog, 7301, &"resonance_wave", 1)
+	var simulation: CombatSimulation = setup.simulation
+	var right_enemy: EnemyEntity = simulation.spawn_fixture_enemy(GameTypes.EnemyType.BULWARK, Vector2(1.0, 0.0), -1)
+	var left_enemy: EnemyEntity = simulation.spawn_fixture_enemy(GameTypes.EnemyType.BULWARK, Vector2(-1.0, 0.0), -1)
+	right_enemy.hp = 100.0
+	left_enemy.hp = 100.0
+	_fire_at(simulation, 1)
+	assertions.expect_float(90.0, right_enemy.hp, "one swing damages only the forward enemy")
+	assertions.expect_float(100.0, left_enemy.hp, "one swing leaves the rear uncovered")
+	ProgressionService.apply_direct_upgrade(setup.state, catalog, GameTypes.UpgradeKind.WEAPON, &"resonance_wave")
+	var ticks := PackedInt32Array()
+	for tick: int in range(2, 15):
+		if tick == 3:
+			simulation.weapon_system.update_move_direction(Vector2.UP)
+		if not _fire_at(simulation, tick).is_empty():
+			ticks.append(tick)
+		if tick == 7:
+			assertions.expect_float(100.0, left_enemy.hp, "rear swing cannot hit before its scheduled tick")
+	assertions.expect_equal(PackedInt32Array([2, 8, 14]), ticks, "short cooldown never overlaps an unfinished sequence")
+	assertions.expect_float(70.0, right_enemy.hp, "both forward swings apply real damage")
+	assertions.expect_float(90.0, left_enemy.hp, "the rear swing retains the original axis after turning")
+	var next: Array[Dictionary] = _fire_at(simulation, 15)
+	assertions.expect_equal(Vector2.UP, next[0].direction, "the next sequence adopts the new facing")
+
+
+func test_directional_sequence_turns_each_shot_and_restarts_on_upgrade(assertions: Variant, _context: Dictionary) -> void:
+	var catalog: DefinitionCatalog = _catalog(assertions)
+	if catalog == null:
+		return
+	var definition: WeaponDefinition = catalog.weapon(&"directional_needle")
+	definition.amount_by_level.fill(3)
+	definition.shot_interval_ticks_by_level.fill(4)
+	definition.cooldown_ticks_by_level.fill(30)
+	var setup: Dictionary = _homing_fixture(catalog, 7302, &"directional_needle", 1)
+	var simulation: CombatSimulation = setup.simulation
+	simulation.spawn_fixture_enemy(GameTypes.EnemyType.BOSS, Vector2(4.0, 0.0), -1)
+	_fire_at(simulation, 1)
+	for tick: int in range(2, 5):
+		assertions.expect_true(_fire_at(simulation, tick).is_empty(), "needles are spaced in time")
+	simulation.weapon_system.update_move_direction(Vector2.UP)
+	_fire_at(simulation, 5)
+	assertions.expect_equal(Vector2.RIGHT, _projectile_born_at(simulation, 1).velocity.normalized(), "first needle flies along its launch direction")
+	assertions.expect_equal(Vector2.UP, _projectile_born_at(simulation, 5).velocity.normalized(), "next needle uses the latest movement direction")
+	ProgressionService.apply_direct_upgrade(setup.state, catalog, GameTypes.UpgradeKind.WEAPON, &"directional_needle")
+	assertions.expect_equal(1, _fire_at(simulation, 6).size(), "own upgrade starts immediately")
+	for tick: int in range(7, 10):
+		assertions.expect_true(_fire_at(simulation, tick).is_empty(), "old pending needle is discarded")
+	assertions.expect_equal(1, _fire_at(simulation, 10).size(), "new sequence uses its own timing")
 
 
 func test_arc_projectile_snapshot_follows_a_parabolic_lob(assertions: Variant, _context: Dictionary) -> void:
@@ -390,83 +399,39 @@ func test_missed_projectile_disappears_at_lifetime_end(assertions: Variant, _con
 	assertions.expect_true(snapshot.projectile_transforms.is_empty(), "the expired projectile disappears from the snapshot")
 
 
-func test_homing_core_levels_emit_sequential_straight_bursts(assertions: Variant, _context: Dictionary) -> void:
+func test_homing_core_sequence_uses_definition_intervals_without_overlap(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
 	var definition: WeaponDefinition = catalog.weapon(&"homing_core")
-	var levels := PackedInt32Array([1, 2, 4, 6, 8])
-	var expected_amounts := PackedInt32Array([1, 2, 3, 4, 5])
-	for level_index: int in range(levels.size()):
-		var level: int = levels[level_index]
-		var expected_amount: int = expected_amounts[level_index]
-		var setup: Dictionary = _homing_fixture(catalog, 7304 + level, &"homing_core", level)
-		var simulation: CombatSimulation = setup["simulation"]
-		var runtime: RunWeapon = setup["runtime"]
-		var target: EnemyEntity = simulation.spawn_fixture_enemy(
-			GameTypes.EnemyType.BOSS,
-			Vector2(4.0, 0.0),
-			-1,
-		)
-		target.max_hp = 1_000_000.0
-		target.hp = target.max_hp
-		var expected_ticks := PackedInt32Array()
-		for shot_index: int in range(expected_amount):
-			expected_ticks.append(1 + shot_index * BalanceTestFixtures.catalog().manifest().combat.homing_burst_interval_ticks)
-		var observed_ticks := PackedInt32Array()
-		var final_tick: int = expected_ticks[expected_ticks.size() - 1]
-		for current_tick: int in range(1, final_tick + 1):
-			var attacks: Array[Dictionary] = simulation.weapon_system.advance_and_fire(
-				Vector2.ZERO,
-				simulation.enemy_system.enemy_store,
-				simulation.enemy_system.uniform_grid,
-				current_tick,
-			)
-			if not attacks.is_empty():
-				observed_ticks.append(current_tick)
-			if current_tick == 1:
-				assertions.expect_equal(
-					definition.cooldown_ticks_at(level),
-					runtime.cooldown_remaining_ticks,
-					"level %d cooldown starts with its first shot" % level,
-				)
-		assertions.expect_equal(
-			expected_ticks,
-			observed_ticks,
-			"level %d emits its amount as one shot every six ticks" % level,
-		)
-		assertions.expect_equal(
-			expected_amount,
-			simulation.projectile_pool.active_count(),
-			"level %d creates exactly its configured projectile amount" % level,
-		)
-		assertions.expect_equal(
-			maxi(0, definition.cooldown_ticks_at(level) - final_tick + 1),
-			runtime.cooldown_remaining_ticks,
-			"level %d cooldown continues while later shots are emitted" % level,
-		)
-		var projectile_entries: PackedInt64Array = simulation.projectile_pool.snapshot_active()
-		for offset: int in range(0, projectile_entries.size(), 2):
-			var entry: PackedInt64Array = projectile_entries.slice(offset, offset + 2)
-			var projectile: ProjectileState = (
-				simulation.projectile_pool.resolve_snapshot_entry(entry)
-			)
-			assertions.expect_equal(
-				ProjectileState.MovementKind.STRAIGHT,
-				projectile.movement_kind,
-				"base homing core projectiles become straight flights",
-			)
-			assertions.expect_equal(
-				target.entity_id,
-				projectile.target_entity_id,
-				"a valid burst target remains locked across later shots",
-			)
+	definition.amount_by_level.fill(3)
+	definition.shot_interval_ticks_by_level.fill(4)
+	definition.cooldown_ticks_by_level.fill(5)
+	var setup: Dictionary = _homing_fixture(catalog, 7304, &"homing_core", 1)
+	var simulation: CombatSimulation = setup.simulation
+	var target: EnemyEntity = simulation.spawn_fixture_enemy(GameTypes.EnemyType.BOSS, Vector2(4.0, 0.0), -1)
+	var ticks := PackedInt32Array()
+	for tick: int in range(1, 11):
+		if not _fire_at(simulation, tick).is_empty():
+			ticks.append(tick)
+		if tick == 1:
+			assertions.expect_equal(5, setup.runtime.cooldown_remaining_ticks, "cooldown starts with the first shot")
+	assertions.expect_equal(PackedInt32Array([1, 5, 9, 10]), ticks, "sequence spacing comes from the definition; next burst waits for completion")
+	assertions.expect_equal(4, simulation.projectile_pool.active_count(), "one actual projectile is created for each emitted shot")
+	for tick: int in ticks:
+		var projectile: ProjectileState = _projectile_born_at(simulation, tick)
+		assertions.expect_equal(ProjectileState.MovementKind.STRAIGHT, projectile.movement_kind, "base core has straight flight")
+		assertions.expect_equal(target.entity_id, projectile.target_entity_id, "valid target stays locked")
 
 
 func test_homing_core_burst_locks_and_reacquires_before_launch(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
+	# Five shots exercise live lock, range loss, death, and the empty-target tail.
+	var definition: WeaponDefinition = catalog.weapon(&"homing_core")
+	definition.amount_by_level[7] = 5
+	definition.shot_interval_ticks_by_level[7] = 6
 	var setup: Dictionary = _homing_fixture(catalog, 7314, &"homing_core", 8)
 	var simulation: CombatSimulation = setup["simulation"]
 	var first_target: EnemyEntity = simulation.spawn_fixture_enemy(
@@ -1159,7 +1124,7 @@ func test_orbital_active_window_uses_duration_and_has_real_gaps(assertions: Vari
 	var base_duration: int = base_definition.duration_ticks_at(base_runtime.level)
 	assertions.expect_equal(1 + base_duration, base_simulation.weapon_system.orbital_active_until_tick(&"orbital_array"), "base orbit duration establishes an exclusive active deadline")
 	assertions.expect_equal(1, first_pulse.size(), "orbit activation produces its first damage pulse")
-	assertions.expect_equal(5, base_simulation.weapon_system.orbital_transforms(Vector2.ZERO, base_duration).size(), "orbit visuals remain visible through the final active tick")
+	assertions.expect_equal(base_definition.amount_at(base_runtime.level), base_simulation.weapon_system.orbital_transforms(Vector2.ZERO, base_duration).size(), "orbit visuals remain visible through the final active tick")
 	var gap_tick: int = 1 + base_duration
 	var gap_pulse: Array[Dictionary] = base_simulation.weapon_system.advance_and_fire(
 		Vector2.ZERO,
@@ -1441,3 +1406,8 @@ func _catalog(assertions: Variant) -> DefinitionCatalog:
 	var catalog := DefinitionCatalog.new()
 	assertions.expect_true(catalog.validate_manifest(BalanceTestFixtures.manifest()), "survival content catalog validates")
 	return catalog if catalog.is_valid else null
+
+
+func _fire_at(simulation: CombatSimulation, tick: int) -> Array[Dictionary]:
+	return simulation.weapon_system.advance_and_fire(Vector2.ZERO,
+		simulation.enemy_system.enemy_store, simulation.enemy_system.uniform_grid, tick)

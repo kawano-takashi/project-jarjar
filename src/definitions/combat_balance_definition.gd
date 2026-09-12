@@ -76,11 +76,5 @@ extends Resource
 ## 周回攻撃の命中間隔。tick（60/秒）、正。
 @export_range(0, 100, 1, "or_greater", "suffix:tick") var orbital_damage_interval_ticks: int = 0
 
-## 通常追尾武器の連射間隔。tick（60/秒）、正。
-@export_range(0, 100, 1, "or_greater", "suffix:tick") var homing_burst_interval_ticks: int = 0
-
 ## ボスの段階ごとの追加弾数。0以上。
 @export_range(0, 100, 1, "or_greater") var boss_volley_phase_bonus: int = 0
-
-## 平行に出す投射体の隣接間隔。m、有限かつ0以上。
-@export_range(0, 100, 0.001, "or_greater") var parallel_projectile_spacing: float = 0.0

@@ -24,8 +24,11 @@ const WEAPON_SCENARIO_IDS: Dictionary[String, StringName] = {
 }
 
 
-static func build(scenario_id: String, catalog: DefinitionCatalog) -> Dictionary:
+## weapon_levelは単独武器の確認時だけ指定。0は定義の最大Lv、正の値は1〜最大Lv。
+static func build(scenario_id: String, catalog: DefinitionCatalog, weapon_level: int = 0) -> Dictionary:
 	if catalog == null or not catalog.is_valid or not scenario_id in VALID_IDS:
+		return {"valid": false}
+	if weapon_level < 0 or (weapon_level > 0 and not WEAPON_SCENARIO_IDS.has(scenario_id)):
 		return {"valid": false}
 	var state: RunState = RunStateFactory.create(FIXED_SEED, catalog)
 	var rng_before: Dictionary = state.rng_streams.state_digest()
@@ -47,6 +50,7 @@ static func build(scenario_id: String, catalog: DefinitionCatalog) -> Dictionary
 			state,
 			catalog,
 			WEAPON_SCENARIO_IDS[scenario_id],
+			weapon_level,
 		)
 	elif scenario_id == "level_up_modal":
 		valid = _prepare_level_up_state(state, catalog)
@@ -79,14 +83,15 @@ static func _prepare_weapon_state(
 	state: RunState,
 	catalog: DefinitionCatalog,
 	weapon_id: StringName,
+	weapon_level: int,
 ) -> bool:
 	state.weapons.clear()
-	return _append_weapon(state, catalog, weapon_id)
+	return _append_weapon(state, catalog, weapon_id, weapon_level)
 
 
-static func _append_weapon(state: RunState, catalog: DefinitionCatalog, weapon_id: StringName) -> bool:
+static func _append_weapon(state: RunState, catalog: DefinitionCatalog, weapon_id: StringName, weapon_level: int = 0) -> bool:
 	var definition: WeaponDefinition = catalog.weapon(weapon_id)
-	if definition == null:
+	if definition == null or weapon_level > definition.max_level:
 		return false
 	var runtime := RunWeapon.create(
 		definition.weapon_id,
@@ -94,7 +99,7 @@ static func _append_weapon(state: RunState, catalog: DefinitionCatalog, weapon_i
 		definition.is_evolved,
 		state.rng_streams.create_weapon_rng(catalog.lineage_for_weapon(definition.weapon_id), state.weapons.size()),
 	)
-	runtime.level = definition.max_level
+	runtime.level = definition.max_level if weapon_level == 0 else weapon_level
 	runtime.ready_on_resume = true
 	state.weapons.append(runtime)
 	return true

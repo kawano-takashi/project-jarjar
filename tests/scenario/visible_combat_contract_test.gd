@@ -295,10 +295,6 @@ func test_shooter_type_chases_for_contact_without_normal_projectiles(assertions:
 		"SHOOTER remains in the normal-enemy type set",
 	)
 	assertions.expect_true(
-		simulation.catalog.segment(3).weight_for(GameTypes.EnemyType.SHOOTER) > 0.0,
-		"SHOOTER remains in the wave table from segment four onward",
-	)
-	assertions.expect_true(
 		shooter_definition.contact_damage > 0.0,
 		"SHOOTER is a contact-damage enemy",
 	)

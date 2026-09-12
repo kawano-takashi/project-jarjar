@@ -11,8 +11,7 @@ func test_continuous_clock_and_time_only_spawn_targets(assertions: Variant, _con
 	assertions.expect_equal(60, simulation.state.combat_tick, "one second advances exactly sixty combat ticks")
 	assertions.expect_float(1.0, simulation.state.elapsed_seconds(), "HUD clock derives from integer combat ticks")
 	var first_segment: EnemySegmentDefinition = simulation.catalog.segment_for_tick(simulation.state.combat_tick)
-	assertions.expect_equal(16, first_segment.target_active, "first minute uses the active-enemy target")
-	assertions.expect_true(simulation.enemy_system.enemy_store.active_count() <= 16, "spawn fill never overshoots the segment target")
+	assertions.expect_true(simulation.enemy_system.enemy_store.active_count() <= first_segment.target_active, "spawn fill never overshoots the segment target")
 
 
 func test_scheduled_elites_and_final_boss_are_guaranteed(assertions: Variant, _context: Dictionary) -> void:

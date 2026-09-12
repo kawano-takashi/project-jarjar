@@ -106,6 +106,7 @@ func _content() -> SurvivalContentManifest:
 	swarm.hp_multiplier = 1.0
 	swarm.damage_multiplier = 1.0
 	var elite := EliteSpawnDefinition.new()
+	elite.hp_multiplier = 1.0
 	elite.event_id = &"encounter"
 	elite.start_tick = 3
 	elite.chest_kind = GameTypes.ChestKind.EVOLUTION_CAPABLE

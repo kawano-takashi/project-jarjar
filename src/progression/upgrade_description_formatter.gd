@@ -16,12 +16,12 @@ static func _weapon_delta_detail(definition: WeaponDefinition, delta: WeaponDefi
 	var label: String = _weapon_stat_label(definition, delta.stat_id)
 	var previous: float = delta.previous_value
 	var next: float = delta.new_value
-	if delta.stat_id in [WeaponDefinition.STAT_COOLDOWN_TICKS, WeaponDefinition.STAT_DURATION_TICKS]:
+	if delta.stat_id in [WeaponDefinition.STAT_COOLDOWN_TICKS, WeaponDefinition.STAT_DURATION_TICKS, WeaponDefinition.STAT_SHOT_INTERVAL_TICKS]:
 		previous /= float(RunState.TICKS_PER_SECOND)
 		next /= float(RunState.TICKS_PER_SECOND)
 	var numbers: PackedStringArray = _delta_numbers(previous, next)
 	match delta.stat_id:
-		WeaponDefinition.STAT_COOLDOWN_TICKS, WeaponDefinition.STAT_DURATION_TICKS:
+		WeaponDefinition.STAT_COOLDOWN_TICKS, WeaponDefinition.STAT_DURATION_TICKS, WeaponDefinition.STAT_SHOT_INTERVAL_TICKS:
 			return "%s %s秒 → %s秒" % [
 				label,
 				numbers[0],
@@ -85,6 +85,8 @@ static func _weapon_stat_label(
 			return "威力"
 		WeaponDefinition.STAT_COOLDOWN_TICKS:
 			return "再展開間隔" if definition.behavior == GameTypes.WeaponBehavior.ORBITAL else "発動間隔"
+		WeaponDefinition.STAT_SHOT_INTERVAL_TICKS:
+			return "連続攻撃の間隔"
 		WeaponDefinition.STAT_AMOUNT:
 			match definition.behavior:
 				GameTypes.WeaponBehavior.MELEE_WAVE:
@@ -95,9 +97,11 @@ static func _weapon_stat_label(
 					return "環数"
 				GameTypes.WeaponBehavior.ORBITAL:
 					return "軌道体数"
+				GameTypes.WeaponBehavior.HOMING_PROJECTILE, GameTypes.WeaponBehavior.DIRECTIONAL_PROJECTILE:
+					return "連射数" if definition.uses_attack_sequence() else "弾数"
 			return "弾数"
 		WeaponDefinition.STAT_PROJECTILE_SPEED:
-			return "弾速"
+			return "周回速度" if definition.behavior == GameTypes.WeaponBehavior.ORBITAL else "弾速"
 		WeaponDefinition.STAT_RANGE:
 			match definition.behavior:
 				GameTypes.WeaponBehavior.MELEE_WAVE:
@@ -108,7 +112,12 @@ static func _weapon_stat_label(
 		WeaponDefinition.STAT_PROJECTILE_RADIUS:
 			return "弾サイズ" if definition.behavior == GameTypes.WeaponBehavior.MASS_PROJECTILE else "弾半径"
 		WeaponDefinition.STAT_EFFECT_RADIUS:
-			return "爆発半径" if definition.behavior == GameTypes.WeaponBehavior.ARC_PROJECTILE else "効果半径"
+			match definition.behavior:
+				GameTypes.WeaponBehavior.ARC_PROJECTILE:
+					return "爆発半径"
+				GameTypes.WeaponBehavior.ORBITAL:
+					return "軌道体半径"
+			return "効果半径"
 		WeaponDefinition.STAT_DURATION_TICKS:
 			return "持続時間"
 		WeaponDefinition.STAT_PIERCE:

@@ -6,11 +6,12 @@
 script = ExtResource("1")
 weapon_id = &"vital_resonance"
 display_name = "生命共鳴"
-description = "会心する共鳴波。与ダメージの一部を生命へ戻す。"
+description = "前後を連続して薙ぐ大型の波動。会心と吸収で近距離の戦いを支える。"
 behavior = 0
 is_evolved = true
-damage_by_level = PackedFloat32Array(66.25)
-cooldown_ticks_by_level = PackedInt32Array(50)
+damage_by_level = PackedFloat32Array(48)
+cooldown_ticks_by_level = PackedInt32Array(48)
+shot_interval_ticks_by_level = PackedInt32Array(8)
 amount_by_level = PackedInt32Array(4)
 projectile_speed_by_level = PackedFloat32Array(0)
 range_by_level = PackedFloat32Array(4.4)
