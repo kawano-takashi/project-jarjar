@@ -23,11 +23,12 @@ static func grid() -> UniformGrid:
 	return result
 
 
-static func elite_spawns(offsets: Array, kind: GameTypes.ChestKind = GameTypes.ChestKind.NORMAL) -> Array[EliteSpawnDefinition]:
-	var result: Array[EliteSpawnDefinition] = []
-	for offset: int in offsets:
+static func elite_events(ticks: Array, kind: GameTypes.ChestKind = GameTypes.ChestKind.NORMAL) -> Array[StageEventDefinition]:
+	var result: Array[StageEventDefinition] = []
+	for tick: int in ticks:
 		var event := EliteSpawnDefinition.new()
-		event.offset_ticks = offset
+		event.event_id = StringName("elite_%d" % result.size())
+		event.start_tick = tick
 		event.chest_kind = kind
 		result.append(event)
 	return result

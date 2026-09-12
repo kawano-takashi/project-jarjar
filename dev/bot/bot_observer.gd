@@ -229,7 +229,7 @@ func _capture_warnings(simulation: CombatSimulation, culler: Culler, observation
 				"kind": &"boss", "position": position, "radius": radius,
 				"directions": directions,
 			})
-	var warning: SwarmWarningState = simulation.enemy_system.swarm_warning
+	var warning: SwarmWarningState = simulation.enemy_system.stage_events.swarm_warning
 	if warning == null:
 		return
 	var definition: SwarmEventDefinition = simulation.catalog.manifest().swarm_event

@@ -183,7 +183,8 @@ static func _prepare_boss_phase_three(
 	boss.hp = boss.max_hp * 0.3
 	boss.boss_phase = 3
 	boss.boss_action_age_ticks = float(simulation.catalog.manifest().combat.boss_enrage_interval_ticks * 3)
-	state.boss_transition_started = true
+	simulation.enemy_system.stage_events.prepare_tick(state.combat_tick)
+	simulation.enemy_system.stage_events.finish()
 	state.boss_spawned = true
 	state.boss_spawn_tick = boss.spawn_tick
 	simulation.enemy_system.encounters.begin_boss(Vector2.ZERO, boss.activation_tick)

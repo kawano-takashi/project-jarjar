@@ -33,7 +33,6 @@ var pending_chest_sources: Array[int] = []
 var opened_chests: int = 0
 var evolution_count: int = 0
 var boss_spawned: bool = false
-var boss_transition_started: bool = false
 var boss_defeated: bool = false
 var boss_phase: int = 0
 var boss_enrage_stacks: int = 0

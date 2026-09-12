@@ -122,10 +122,10 @@ class ProfiledEnemies extends EnemySystem:
 		timer.record(&"enemy_system.resolve_normal_spawns", started)
 		return result
 
-	func resolve_swarm_event_spawns(player_position: Vector2, current_tick: int,) -> Array[EnemyEntity]:
+	func resolve_stage_events(player_position: Vector2, current_tick: int,) -> Array[EnemyEntity]:
 		var started: int = Time.get_ticks_usec()
 		var result: Array[EnemyEntity] = super(player_position, current_tick)
-		timer.record(&"enemy_system.resolve_swarm_event_spawns", started)
+		timer.record(&"enemy_system.resolve_stage_events", started)
 		return result
 
 	func resolve_contact_damage_candidates(ids: Array[int], player_position: Vector2, current_tick: int,) -> Array[Dictionary]:

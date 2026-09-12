@@ -139,7 +139,7 @@ func test_bot_observes_partial_telegraphs_and_escapes_swarm_lane(a: Variant, _co
 	warning.spawn_tick = 90
 	warning.hp_multiplier = 1.0
 	warning.damage_multiplier = 1.0
-	session.simulation.enemy_system.swarm_warning = warning
+	session.simulation.enemy_system.stage_events.swarm_warning = warning
 	var arrows: BotObservation = session.observer.capture(session.simulation, session.view)
 	a.expect_equal(Vector2.LEFT, arrows.warnings[0]["travel_direction"], "visible arrowheads reveal the swarm's travel direction")
 	var screen_right := Vector2(right.x, right.z)
@@ -161,7 +161,7 @@ func test_bot_observes_partial_telegraphs_and_escapes_swarm_lane(a: Variant, _co
 	warning.spawn_distance = escape.simulation.enemy_system._sample_spawn_distance(
 		escape.simulation.state.rng_streams.swarm_event_rng, warning.anchor, -warning.direction,
 	)
-	escape.simulation.enemy_system.swarm_warning = warning
+	escape.simulation.enemy_system.stage_events.swarm_warning = warning
 	escape.simulation.xp_pickup_pool.acquire(Vector2(8.0, 0.0), 1, 0, Vector2.ZERO)
 	for _tick: int in 360:
 		if not escape.advance():

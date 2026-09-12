@@ -29,20 +29,13 @@ const DAMAGE_SOURCE_CONTACT: StringName = &"enemy_contact"
 var enemy_store: EnemyStore = EnemyStore.new()
 var uniform_grid: UniformGrid = UniformGrid.new()
 var encounters: EncounterSystem = EncounterSystem.new()
+var stage_events: StageEventScheduler = StageEventScheduler.new()
 
 var _state: RunState = null
 var _catalog: DefinitionCatalog = null
 var _manifest: SurvivalContentManifest = null
 var _view: ArenaView = null
 var _spawn_rng: RandomNumberGenerator = null
-var _swarm_rng: RandomNumberGenerator = null
-var _elite_spawned: PackedByteArray = PackedByteArray()
-var _swarm_attempt_ticks: PackedInt32Array = PackedInt32Array()
-var _swarm_attempt_chances: PackedFloat32Array = PackedFloat32Array()
-var _swarm_attempt_hp: PackedFloat64Array = PackedFloat64Array()
-var _swarm_attempt_damage: PackedFloat64Array = PackedFloat64Array()
-var _swarm_attempt_consumed: PackedByteArray = PackedByteArray()
-var swarm_warning: SwarmWarningState = null
 
 
 func initialize(state: RunState, catalog: DefinitionCatalog, view: ArenaView = null, shared_world: RefCounted = null) -> void:
@@ -52,14 +45,10 @@ func initialize(state: RunState, catalog: DefinitionCatalog, view: ArenaView = n
 	encounters.initialize(_manifest.encounters)
 	_view = view if view != null else ArenaView.new()
 	_spawn_rng = state.rng_streams.spawn_rng if state.rng_streams != null else null
-	_swarm_rng = state.rng_streams.swarm_event_rng if state.rng_streams != null else null
 	enemy_store.configure(_manifest.combat.enemy_pool_capacity, shared_world)
 	enemy_store.clear()
 	uniform_grid.clear()
-	_elite_spawned.resize(_catalog.elite_spawn_ticks.size())
-	_elite_spawned.fill(0)
-	cancel_swarm_warning()
-	_build_swarm_attempts()
+	stage_events.initialize(state, catalog)
 
 
 func snapshot_ids() -> Array[int]:
@@ -108,43 +97,34 @@ func accrue_spawn_credit() -> void:
 	)
 
 
-func resolve_scheduled_spawns(player_position: Vector2, current_tick: int) -> Array[EnemyEntity]:
-	var spawned: Array[EnemyEntity] = []
-	if current_tick >= _catalog.boss_start_tick:
-		_elite_spawned.fill(1)
-	for elite_index: int in range(_catalog.elite_spawn_ticks.size()):
-		if (
-			_elite_spawned[elite_index] == 0
-			and current_tick >= _catalog.elite_spawn_ticks[elite_index]
-		):
-			if not _reserve_encounter_capacity(_manifest.encounters.member_count + 1, player_position):
-				continue
-			var elite: EnemyEntity = _spawn_enemy(
-				GameTypes.EnemyType.ELITE,
-				_encounter_opponent_position(player_position),
-				current_tick,
-			)
-			if elite != null:
-				_elite_spawned[elite_index] = 1
-				elite.elite_serial = elite_index
-				_state.elite_spawn_ticks[elite_index] = current_tick
-				spawned.append(elite)
-				encounters.spawn_ring(elite, player_position, _state, enemy_store, current_segment().damage_multiplier * _manifest.combat.normal_enemy_damage_scale)
-	if not _state.boss_spawned and current_tick >= _catalog.boss_start_tick:
-		var boss: EnemyEntity = _spawn_enemy(
-			GameTypes.EnemyType.BOSS,
-			_encounter_opponent_position(player_position),
-			current_tick,
-		)
-		if boss != null:
-			encounters.begin_boss(player_position, boss.activation_tick)
-			_state.boss_spawned = true
-			_state.boss_spawn_tick = current_tick
-			_state.boss_phase = 1
-			_state.boss_hp = boss.hp
-			_state.boss_max_hp = boss.max_hp
-			spawned.append(boss)
-	return spawned
+func resolve_stage_events(player_position: Vector2, current_tick: int) -> Array[EnemyEntity]:
+	return stage_events.resolve_spawns(self, player_position, current_tick)
+
+
+func spawn_elite_encounter(serial: int, player_position: Vector2, current_tick: int) -> EnemyEntity:
+	if not _reserve_encounter_capacity(_manifest.encounters.member_count + 1, player_position):
+		return null
+	var elite: EnemyEntity = _spawn_enemy(GameTypes.EnemyType.ELITE,
+		_encounter_opponent_position(player_position), current_tick)
+	if elite != null:
+		elite.elite_serial = serial
+		_state.elite_spawn_ticks[serial] = current_tick
+		encounters.spawn_ring(elite, player_position, _state, enemy_store,
+			current_segment().damage_multiplier * _manifest.combat.normal_enemy_damage_scale)
+	return elite
+
+
+func spawn_final_boss(player_position: Vector2, current_tick: int) -> EnemyEntity:
+	var boss: EnemyEntity = _spawn_enemy(GameTypes.EnemyType.BOSS,
+		_encounter_opponent_position(player_position), current_tick)
+	if boss != null:
+		encounters.begin_boss(player_position, boss.activation_tick)
+		_state.boss_spawned = true
+		_state.boss_spawn_tick = current_tick
+		_state.boss_phase = 1
+		_state.boss_hp = boss.hp
+		_state.boss_max_hp = boss.max_hp
+	return boss
 
 
 func _encounter_opponent_position(center: Vector2) -> Vector2:
@@ -198,65 +178,22 @@ func resolve_normal_spawns(_player_position: Vector2, current_tick: int) -> Arra
 	return spawned
 
 
-func resolve_swarm_event_spawns(
-	player_position: Vector2,
-	current_tick: int,
-) -> Array[EnemyEntity]:
-	var spawned: Array[EnemyEntity] = []
-	if (
-		_manifest.swarm_event == null
-		or _swarm_rng == null
-		or current_tick >= _catalog.boss_start_tick
-	):
-		cancel_swarm_warning()
-		return spawned
-	var occupied_this_tick: bool = swarm_warning != null or has_active_swarm()
-	if swarm_warning != null and current_tick >= swarm_warning.spawn_tick:
-		spawned.append_array(_spawn_swarm_group(
-			swarm_warning.anchor,
-			swarm_warning.direction,
-			current_tick,
-			swarm_warning.spawn_distance,
-			swarm_warning.hp_multiplier,
-			swarm_warning.damage_multiplier,
-		))
-		cancel_swarm_warning()
-	for attempt_index: int in range(_swarm_attempt_ticks.size()):
-		if (
-			_swarm_attempt_consumed[attempt_index] != 0
-			or current_tick < _swarm_attempt_ticks[attempt_index]
-		):
-			continue
-		_swarm_attempt_consumed[attempt_index] = 1
-		_state.swarm_event_attempt_count += 1
-		var attempt_rng := RandomNumberGenerator.new()
-		attempt_rng.seed = _swarm_rng.randi()
-		if not WeightedSelector.chance_succeeds_with_value(_swarm_attempt_chances[attempt_index], attempt_rng.randf()):
-			continue
-		_state.swarm_event_roll_success_count += 1
-		if occupied_this_tick:
-			_state.swarm_event_skipped_busy_count += 1
-			continue
-		var outward_direction: Vector2 = _sample_spawn_outward_direction(attempt_rng)
-		var spawn_distance: float = _sample_spawn_distance(attempt_rng, player_position, outward_direction)
-		swarm_warning = SwarmWarningState.new()
-		swarm_warning.anchor = player_position
-		swarm_warning.direction = -outward_direction
-		swarm_warning.spawn_distance = spawn_distance
-		swarm_warning.start_tick = current_tick
-		swarm_warning.spawn_tick = current_tick + _manifest.swarm_event.telegraph_ticks
-		swarm_warning.hp_multiplier = _swarm_attempt_hp[attempt_index]
-		swarm_warning.damage_multiplier = _swarm_attempt_damage[attempt_index]
-		occupied_this_tick = true
-	return spawned
+func create_swarm_warning(rng: RandomNumberGenerator, player_position: Vector2,
+		current_tick: int, schedule: SwarmEventScheduleDefinition) -> SwarmWarningState:
+	var outward_direction: Vector2 = _sample_spawn_outward_direction(rng)
+	var warning := SwarmWarningState.new()
+	warning.anchor = player_position
+	warning.direction = -outward_direction
+	warning.spawn_distance = _sample_spawn_distance(rng, player_position, outward_direction)
+	warning.start_tick = current_tick
+	warning.spawn_tick = current_tick + _manifest.swarm_event.telegraph_ticks
+	warning.hp_multiplier = schedule.hp_multiplier
+	warning.damage_multiplier = schedule.damage_multiplier
+	return warning
 
 
 func has_active_swarm() -> bool:
 	return enemy_store.world.has_swarm()
-
-
-func cancel_swarm_warning() -> void:
-	swarm_warning = null
 
 
 func resolve_contact_damage_candidates(ids: Array[int], player_position: Vector2, current_tick: int) -> Array[Dictionary]:
@@ -494,7 +431,7 @@ func _spawn_enemy(
 	)
 
 
-func _spawn_swarm_group(
+func spawn_swarm_group(
 	player_position: Vector2,
 	direction: Vector2,
 	current_tick: int,
@@ -561,20 +498,6 @@ func _spawn_swarm_group(
 	return spawned
 
 
-func _build_swarm_attempts() -> void:
-	_swarm_attempt_ticks.clear()
-	_swarm_attempt_chances.clear()
-	_swarm_attempt_hp.clear()
-	_swarm_attempt_damage.clear()
-	for attempt: Dictionary in _catalog.swarm_attempts:
-		_swarm_attempt_ticks.append(int(attempt[&"tick"]))
-		_swarm_attempt_chances.append(float(attempt[&"chance"]))
-		_swarm_attempt_hp.append(float(attempt[&"hp_multiplier"]))
-		_swarm_attempt_damage.append(float(attempt[&"damage_multiplier"]))
-	_swarm_attempt_consumed.resize(_swarm_attempt_ticks.size())
-	_swarm_attempt_consumed.fill(0)
-
-
 func _select_normal_enemy_type(segment: EnemySegmentDefinition) -> GameTypes.EnemyType:
 	var total: float = 0.0
 	var last_positive: GameTypes.EnemyType = GameTypes.EnemyType.PURSUER
@@ -634,8 +557,7 @@ func _reposition_important_enemy(enemy: EnemyEntity, current_tick: int, retentio
 func shift_origin(displacement: Vector2) -> void:
 	encounters.shift_origin(displacement)
 	enemy_store.shift_origin(displacement)
-	if swarm_warning != null:
-		swarm_warning.anchor -= displacement
+	stage_events.shift_origin(displacement)
 	_rebuild_grid(_state.combat_tick)
 
 

@@ -17,7 +17,7 @@ func test_swarm_scheduler_is_isolated_repeatable_and_atomic(assertions: Variant,
 	first_state.stop_until_tick = 7600
 	second_state.stop_until_tick = 7600
 	first_state.spawn_credit = 7.25
-	var normal_rng_before: int = first_state.rng_streams.spawn_rng.state
+	var independent_rng_before: Dictionary = first_state.rng_streams.state_digest()
 	var swarm_rng_before: int = first_state.rng_streams.swarm_event_rng.state
 	var first_group: Array[EnemyEntity] = _spawn_scheduled(first_system,
 		Vector2(2.0, -1.0),
@@ -31,7 +31,9 @@ func test_swarm_scheduler_is_isolated_repeatable_and_atomic(assertions: Variant,
 	assertions.expect_equal(50, second_group.size(), "same seed repeats the successful attempt")
 	assertions.expect_equal(first_group[0].position, second_group[0].position, "same seed repeats direction and formation")
 	assertions.expect_equal(first_group[0].fixed_direction, second_group[0].fixed_direction, "same seed repeats fixed direction")
-	assertions.expect_equal(normal_rng_before, first_state.rng_streams.spawn_rng.state, "swarm attempt consumes no normal spawn RNG")
+	var independent_rng_after: Dictionary = first_state.rng_streams.state_digest()
+	for domain: StringName in [&"spawn", &"upgrade", &"chest"]:
+		assertions.expect_equal(independent_rng_before[domain], independent_rng_after[domain], "swarm attempt consumes no %s RNG" % domain)
 	assertions.expect_not_equal(swarm_rng_before, first_state.rng_streams.swarm_event_rng.state, "swarm attempt advances only its dedicated RNG")
 	var first_direction: Vector2 = first_group[0].fixed_direction
 	var first_spawn_distance: float = -(
@@ -72,9 +74,19 @@ func test_swarm_scheduler_is_isolated_repeatable_and_atomic(assertions: Variant,
 	var baseline_state: RunState = RunStateFactory.create(8004, catalog)
 	var changed_system := EnemySystem.new()
 	var baseline_system := EnemySystem.new()
-	changed_system.initialize(changed_state, catalog)
+	var changed_content := catalog.manifest().duplicate_deep(Resource.DEEP_DUPLICATE_ALL) as SurvivalContentManifest
+	var original: SwarmEventScheduleDefinition = changed_content.stage_events.events[0] as SwarmEventScheduleDefinition
+	var failed_first := original.duplicate_deep(Resource.DEEP_DUPLICATE_ALL) as SwarmEventScheduleDefinition
+	failed_first.event_id = &"failed_first"
+	failed_first.attempt_count = 1
+	failed_first.spawn_chance = 0.0
+	original.start_tick += original.interval_ticks
+	original.attempt_count -= 1
+	changed_content.stage_events.events = [failed_first, original]
+	var changed_catalog := DefinitionCatalog.new()
+	assertions.expect_true(changed_catalog.validate_manifest(changed_content), changed_catalog.error_text)
+	changed_system.initialize(changed_state, changed_catalog)
 	baseline_system.initialize(baseline_state, catalog)
-	changed_system._swarm_attempt_chances[0] = 0.0
 	changed_state.combat_tick = 7500
 	baseline_state.combat_tick = 7500
 	_spawn_scheduled(changed_system, Vector2.ZERO, 7500)
@@ -125,7 +137,7 @@ func test_swarm_formation_crosses_player_relative_frame_and_uses_two_visuals(ass
 	var captured_player := Vector2(14.0, 14.0)
 	simulation.player_position = captured_player
 	var direction: Vector2 = Vector2(0.70710678, -0.70710678)
-	var group: Array[EnemyEntity] = simulation.enemy_system._spawn_swarm_group(
+	var group: Array[EnemyEntity] = simulation.enemy_system.spawn_swarm_group(
 		captured_player,
 		direction,
 		7500,
@@ -222,7 +234,7 @@ func test_swarm_contact_damage_and_kill_accounting_are_separate(assertions: Vari
 	simulation.initialize(state, catalog)
 	state.combat_tick = 7500
 	simulation.player_position = Vector2.ZERO
-	var group: Array[EnemyEntity] = simulation.enemy_system._spawn_swarm_group(
+	var group: Array[EnemyEntity] = simulation.enemy_system.spawn_swarm_group(
 		Vector2.ZERO,
 		Vector2.RIGHT,
 		7500,
@@ -354,7 +366,7 @@ func test_swarm_stop_and_modal_pause_preserve_travel(assertions: Variant, _conte
 	var modal_state: RunState = RunStateFactory.create(8011, catalog)
 	var modal_simulation := CombatSimulation.new()
 	modal_simulation.initialize(modal_state, catalog)
-	var modal_group: Array[EnemyEntity] = modal_simulation.enemy_system._spawn_swarm_group(
+	var modal_group: Array[EnemyEntity] = modal_simulation.enemy_system.spawn_swarm_group(
 		Vector2.ZERO,
 		Vector2.RIGHT,
 		0,
@@ -376,8 +388,7 @@ func test_boss_transition_absorbs_swarm_without_rewards(assertions: Variant, _co
 	var simulation := CombatSimulation.new()
 	simulation.initialize(state, catalog)
 	state.combat_tick = catalog.boss_start_tick - 1
-	simulation.enemy_system._elite_spawned.fill(1)
-	var group: Array[EnemyEntity] = simulation.enemy_system._spawn_swarm_group(
+	var group: Array[EnemyEntity] = simulation.enemy_system.spawn_swarm_group(
 		Vector2.ZERO,
 		Vector2.RIGHT,
 		state.combat_tick,
@@ -440,23 +451,21 @@ func _catalog(assertions: Variant) -> DefinitionCatalog:
 	content.swarm_event.unit_definition.base_hp = 1.0
 	content.swarm_event.unit_definition.move_speed = 2.59
 	content.swarm_event.unit_definition.contact_damage = 1.0
-	for segment: EnemySegmentDefinition in content.segments:
-		segment.swarm_schedules = []
 	var schedule := SwarmEventScheduleDefinition.new()
-	schedule.schedule_id = &"fixture"
-	schedule.first_offset_ticks = 300
+	schedule.event_id = &"fixture"
+	schedule.start_tick = 7500
 	schedule.interval_ticks = 300
 	schedule.attempt_count = 3
 	schedule.spawn_chance = 1.0
 	schedule.hp_multiplier = 1.325
 	schedule.damage_multiplier = 0.22
-	content.segments[2].swarm_schedules = [schedule]
+	content.stage_events.events = [schedule]
 	assertions.expect_true(catalog.validate_manifest(content), "catalog validates: %s" % catalog.error_text)
 	return catalog if catalog.is_valid else null
 
 
 func _spawn_scheduled(system: EnemySystem, anchor: Vector2, tick: int) -> Array[EnemyEntity]:
-	var spawned: Array[EnemyEntity] = system.resolve_swarm_event_spawns(anchor, tick)
-	if system.swarm_warning != null:
-		spawned.append_array(system.resolve_swarm_event_spawns(anchor, system.swarm_warning.spawn_tick))
+	var spawned: Array[EnemyEntity] = system.resolve_stage_events(anchor, tick)
+	if system.stage_events.swarm_warning != null:
+		spawned.append_array(system.resolve_stage_events(anchor, system.stage_events.swarm_warning.spawn_tick))
 	return spawned

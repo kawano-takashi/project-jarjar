@@ -23,7 +23,7 @@ var segment_start_ticks: PackedInt32Array = []
 var segment_end_ticks: PackedInt32Array = []
 var elite_spawn_ticks: PackedInt32Array = []
 var elite_chest_kinds: Array[GameTypes.ChestKind] = []
-var swarm_attempts: Array[Dictionary] = []
+var stage_events: Array[StageEventOccurrence] = []
 var envelope: CombatEnvelope = null
 var maximum_enemy_body_radius: float = 0.0
 
@@ -47,7 +47,7 @@ func validate_manifest(content: SurvivalContentManifest) -> bool:
 	if content == null:
 		validation_errors.append("<manifest>: resource=null; SurvivalContentManifest is required")
 		return _finish_validation()
-	for key: String in ["player", "progression", "arena", "combat", "spawn", "swarm_event", "encounters"]:
+	for key: String in ["player", "progression", "arena", "combat", "spawn", "swarm_event", "encounters", "stage_events"]:
 		_require(content, key, content.get(key) != null, "required Resource reference")
 	if not validation_errors.is_empty():
 		return _finish_validation()
@@ -63,6 +63,7 @@ func validate_manifest(content: SurvivalContentManifest) -> bool:
 	_validate_swarm()
 	_validate_encounters()
 	_validate_segments()
+	_validate_stage_events()
 	if validation_errors.is_empty():
 		envelope = CombatEnvelope.new(content)
 	return _finish_validation()
@@ -150,7 +151,7 @@ func _reset() -> void:
 	segment_end_ticks.clear()
 	elite_spawn_ticks.clear()
 	elite_chest_kinds.clear()
-	swarm_attempts.clear()
+	stage_events.clear()
 	boss_start_tick = 0
 	maximum_enemy_body_radius = 0.0
 	envelope = null
@@ -401,35 +402,63 @@ func _validate_segments() -> void:
 			_require(definition, "duration_ticks", false, "positive duration, cumulative tick <= 2147483647")
 			continue
 		segment_start_ticks.append(boss_start_tick)
-		for elite: EliteSpawnDefinition in definition.elite_spawns:
-			if elite == null:
-				_error(definition, "elite_spawns", null, "required elite spawn Resource")
-				continue
-			_validate_numbers(elite)
-			_require(elite, "offset_ticks", elite.offset_ticks >= 0 and elite.offset_ticks < definition.duration_ticks, "0 <= offset_ticks < duration_ticks")
+		boss_start_tick += definition.duration_ticks
+		segment_end_ticks.append(boss_start_tick)
+
+
+func _validate_stage_events() -> void:
+	var ids: Dictionary[StringName, bool] = {}
+	for event: StageEventDefinition in _manifest.stage_events.events:
+		if event == null:
+			_error(_manifest.stage_events, "events", null, "required event Resource")
+			continue
+		_validate_numbers(event)
+		_require(event, "event_id", event.event_id != &"" and not ids.has(event.event_id), "nonempty unique ID within timeline")
+		ids[event.event_id] = true
+		var starts_inside: bool = event.start_tick >= 0 and event.start_tick < boss_start_tick
+		_require(event, "start_tick", starts_inside, "0 <= start_tick < normal combat end (%d)" % boss_start_tick)
+		if event is EliteSpawnDefinition:
+			var elite := event as EliteSpawnDefinition
 			_require(elite, "chest_kind", int(elite.chest_kind) in GameTypes.ChestKind.values(), "supported chest kind")
-			if elite.offset_ticks >= 0 and elite.offset_ticks < definition.duration_ticks:
-				elite_spawn_ticks.append(boss_start_tick + elite.offset_ticks)
-				elite_chest_kinds.append(elite.chest_kind)
-		var ids: Dictionary[StringName, bool] = {}
-		for schedule: SwarmEventScheduleDefinition in definition.swarm_schedules:
-			if schedule == null:
-				_error(definition, "swarm_schedules", null, "required schedule Resource")
-				continue
-			_validate_numbers(schedule)
-			_require(schedule, "schedule_id", schedule.schedule_id != &"" and not ids.has(schedule.schedule_id), "nonempty unique ID within segment")
-			ids[schedule.schedule_id] = true
+			if starts_inside:
+				_append_stage_event(StageEventOccurrence.Kind.ELITE_ENCOUNTER, event.start_tick, event)
+		elif event is SwarmEventScheduleDefinition:
+			var schedule := event as SwarmEventScheduleDefinition
 			_positive(schedule, "interval_ticks")
 			_positive(schedule, "hp_multiplier")
 			_require(schedule, "spawn_chance", schedule.spawn_chance <= 1.0, "probability in [0, 1]")
-			var last_offset: int = schedule.first_offset_ticks + maxi(0, schedule.attempt_count - 1) * schedule.interval_ticks
-			var fits: bool = schedule.first_offset_ticks >= 0 and last_offset >= schedule.first_offset_ticks and last_offset < definition.duration_ticks
-			_require(schedule, "first_offset_ticks", fits, "all attempts inside segment: first + (count - 1) * interval < duration_ticks (%d)" % definition.duration_ticks)
-			if fits and schedule.interval_ticks > 0 and schedule.attempt_count >= 0:
+			if not starts_inside or schedule.interval_ticks <= 0 or schedule.attempt_count < 0:
+				continue
+			var maximum_attempts: int = 1 + floori(float(boss_start_tick - 1 - schedule.start_tick) / float(schedule.interval_ticks))
+			var fits: bool = schedule.attempt_count <= maximum_attempts
+			_require(schedule, "attempt_count", fits, "all attempts before normal combat end (%d)" % boss_start_tick)
+			if fits:
 				for attempt: int in range(schedule.attempt_count):
-					swarm_attempts.append({&"tick": boss_start_tick + schedule.first_offset_ticks + attempt * schedule.interval_ticks, &"chance": schedule.spawn_chance, &"hp_multiplier": schedule.hp_multiplier, &"damage_multiplier": schedule.damage_multiplier})
-		boss_start_tick += definition.duration_ticks
-		segment_end_ticks.append(boss_start_tick)
+					_append_stage_event(StageEventOccurrence.Kind.SWARM, schedule.start_tick + attempt * schedule.interval_ticks, schedule)
+		else:
+			_error(event, "event", event.get_script(), "EliteSpawnDefinition or SwarmEventScheduleDefinition")
+	_append_stage_event(StageEventOccurrence.Kind.BOSS, boss_start_tick, null)
+	stage_events.sort_custom(func(left: StageEventOccurrence, right: StageEventOccurrence) -> bool:
+		if left.tick != right.tick:
+			return left.tick < right.tick
+		if left.kind != right.kind:
+			return left.kind < right.kind
+		return left.definition_order < right.definition_order
+	)
+	for event: StageEventOccurrence in stage_events:
+		if event.kind == StageEventOccurrence.Kind.ELITE_ENCOUNTER:
+			event.elite_serial = elite_spawn_ticks.size()
+			elite_spawn_ticks.append(event.tick)
+			elite_chest_kinds.append((event.definition as EliteSpawnDefinition).chest_kind)
+
+
+func _append_stage_event(kind: StageEventOccurrence.Kind, tick: int, definition: StageEventDefinition) -> void:
+	var event := StageEventOccurrence.new()
+	event.kind = kind
+	event.tick = tick
+	event.definition = definition
+	event.definition_order = stage_events.size()
+	stage_events.append(event)
 
 
 func _validate_numbers(resource: Resource, signed_fields: Array[String] = []) -> void:

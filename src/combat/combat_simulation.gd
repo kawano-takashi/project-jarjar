@@ -227,7 +227,7 @@ func advance_tick(move_input: Vector2) -> bool:
 				moved_enemy.position
 			)
 	enemy_system.accrue_spawn_credit()
-	var scheduled_spawns: Array[EnemyEntity] = enemy_system.resolve_scheduled_spawns(
+	var scheduled_spawns: Array[EnemyEntity] = enemy_system.resolve_stage_events(
 		player_position,
 		current_tick,
 	)
@@ -243,7 +243,6 @@ func advance_tick(move_input: Vector2) -> bool:
 				1,
 				spawned.enemy_type,
 			))
-	enemy_system.resolve_swarm_event_spawns(player_position, current_tick)
 	enemy_system.resolve_normal_spawns(player_position, current_tick)
 
 	# 3. Allied movement, weapon generation, and damage.
@@ -339,6 +338,7 @@ func advance_tick(move_input: Vector2) -> bool:
 		))
 	RunStateMachine.resolve_terminal(state, player_dead, victory)
 	if state.phase in [GameTypes.RunPhase.RESULT, GameTypes.RunPhase.FAILED]:
+		enemy_system.stage_events.finish()
 		enemy_system.encounters.clear(enemy_system.enemy_store)
 	if state.phase == GameTypes.RunPhase.COMBAT:
 		_resolve_modal_priority()
@@ -524,7 +524,7 @@ func build_snapshot() -> CombatSnapshot:
 	snapshot.chest_guidance = arena_object_system.chest_guidance(player_position)
 	snapshot.normal_chest_transforms = arena_object_system.chest_transforms(GameTypes.ChestKind.NORMAL)
 	snapshot.evolution_chest_transforms = arena_object_system.chest_transforms(GameTypes.ChestKind.EVOLUTION_CAPABLE)
-	var warning: SwarmWarningState = enemy_system.swarm_warning
+	var warning: SwarmWarningState = enemy_system.stage_events.swarm_warning
 	if warning != null:
 		var swarm: SwarmEventDefinition = _manifest.swarm_event
 		snapshot.swarm_warning_active = true
@@ -626,7 +626,7 @@ func prepare_performance_fixture(
 	state.active_chest_outcome = null
 	state.build_maxed = true
 	state.boss_spawned = true
-	state.boss_transition_started = true
+	enemy_system.stage_events.finish()
 	state.boss_defeated = false
 	state.boss_phase = 0
 	state.boss_enrage_stacks = 0
@@ -644,7 +644,7 @@ func prepare_performance_fixture(
 	state.swarm_event_roll_success_count = 0
 	state.swarm_event_spawn_failure_count = 0
 	state.swarm_event_skipped_busy_count = 0
-	enemy_system.cancel_swarm_warning()
+	enemy_system.stage_events.swarm_warning = null
 	state.swarm_event_group_count = 0
 	state.swarm_event_generated_count = 0
 	state.swarm_event_kill_count = 0
@@ -683,7 +683,6 @@ func prepare_performance_fixture(
 	_audio_cue_admission.reset()
 	state.weapon_damage_by_lineage.clear()
 	state.recent_damage_samples.clear()
-	enemy_system._elite_spawned.fill(1)
 	for index: int in range(enemy_count):
 		if not _spawn_performance_enemy(index, state.combat_tick - 1):
 			return false
@@ -800,14 +799,8 @@ func _rebase_if_needed() -> void:
 
 
 func _begin_boss_transition_if_due(current_tick: int) -> void:
-	if (
-		state.boss_transition_started
-		or current_tick < catalog.boss_start_tick
-	):
+	if not enemy_system.stage_events.prepare_tick(current_tick):
 		return
-	state.boss_transition_started = true
-	enemy_system.cancel_swarm_warning()
-	enemy_system._elite_spawned.fill(1)
 	state.spawn_credit = 0.0
 	_absorption_started_tick = current_tick
 	_absorption_position = player_position

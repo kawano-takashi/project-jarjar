@@ -12,7 +12,7 @@ func test_elite_encounter_reserves_capacity_once_and_expires_during_stop(a: Vari
 	var near_id: int = near_enemy.entity_id
 	for index: int in range(system.enemy_store.capacity - 1):
 		sim.spawn_fixture_enemy(GameTypes.EnemyType.PURSUER, Vector2(100.0 + index, 0.0))
-	var scheduled: Array[EnemyEntity] = system.resolve_scheduled_spawns(sim.player_position, tick)
+	var scheduled: Array[EnemyEntity] = system.resolve_stage_events(sim.player_position, tick)
 	a.expect_equal(1, scheduled.size(), "a full pool reserves the entire encounter atomically")
 	if scheduled.is_empty():
 		return
@@ -31,7 +31,7 @@ func test_elite_encounter_reserves_capacity_once_and_expires_during_stop(a: Vari
 	var expiry: int = elite.activation_tick + definition.elite_lifetime_ticks
 	elite.position = Vector2(1000.0, 0.0)
 	system.advance_snapshot([elite.entity_id], sim.player_position, tick + 1)
-	a.expect_equal(0, system.resolve_scheduled_spawns(sim.player_position, tick + 1).size(), "repositioning an elite does not recreate its encounter")
+	a.expect_equal(0, system.resolve_stage_events(sim.player_position, tick + 1).size(), "repositioning an elite does not recreate its encounter")
 	a.expect_equal(definition.member_count, _members(sim).size(), "no replacement members are added")
 	sim.state.combat_tick = expiry - 2
 	sim.state.stop_until_tick = expiry + 100
@@ -53,7 +53,7 @@ func test_encirclers_allow_crossing_and_only_killed_members_drop_xp(a: Variant, 
 	var sim: CombatSimulation = _simulation()
 	var tick: int = sim.catalog.elite_spawn_ticks[0]
 	sim.state.combat_tick = tick
-	var elite: EnemyEntity = sim.enemy_system.resolve_scheduled_spawns(Vector2.ZERO, tick)[0]
+	var elite: EnemyEntity = sim.enemy_system.resolve_stage_events(Vector2.ZERO, tick)[0]
 	var members: Array[EnemyEntity] = _members(sim)
 	var crossed: EnemyEntity = members[0]
 	crossed.position = Vector2.ZERO

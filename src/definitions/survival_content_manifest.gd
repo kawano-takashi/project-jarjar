@@ -17,7 +17,10 @@ extends Resource
 ## 出現ペース・出現位置・保護時間の設定。必須のSpawnBalanceDefinition。
 @export var spawn: SpawnBalanceDefinition = null
 
-## 区間の群れ予定が使う個体・隊列設定。必須。
+## イベント予定の正本。必須。通常敵の区間とは独立した絶対tickで定義する。
+@export var stage_events: StageEventTimelineDefinition = null
+
+## 群れ予定が使う個体・隊列設定。必須。
 @export var swarm_event: SwarmEventDefinition = null
 
 ## エリート包囲・ボス囲いの設定。必須。

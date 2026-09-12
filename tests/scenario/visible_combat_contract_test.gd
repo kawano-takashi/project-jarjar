@@ -76,7 +76,7 @@ func test_boss_transition_absorbs_normals_and_hostile_projectiles_without_reward
 	var arena_before: Array = _arena_object_digest(simulation.arena_object_system)
 	assertions.expect_true(simulation.advance_tick(Vector2.ZERO), "the boss boundary transition tick advances")
 	assertions.expect_equal(boss_start_tick, simulation.state.combat_tick, "transition starts on the exact the boss boundary tick")
-	assertions.expect_true(simulation.state.boss_transition_started, "boss transition latches once")
+	assertions.expect_true(simulation.enemy_system.stage_events.boss_transition_started, "boss transition latches once")
 	assertions.expect_true(not simulation.enemy_system.enemy_store.has_entity(contact_enemy_id), "contact enemy is removed before its ready attack")
 	assertions.expect_true(not simulation.enemy_system.enemy_store.has_entity(shooter_id), "shooter is absorbed before its ready projectile action")
 	assertions.expect_false(simulation.enemy_system.enemy_store.has_entity(elite_id), "existing elite is retired before boss combat")

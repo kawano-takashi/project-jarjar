@@ -1,6 +1,41 @@
 extends RefCounted
 
 
+func test_balance_stage_events_follow_approved_alternating_timeline(a: Variant, _context: Dictionary) -> void:
+	var catalog: DefinitionCatalog = BalanceTestFixtures.catalog()
+	var expected_swarm_seconds: Array[int] = []
+	for minute: int in [1, 3]:
+		for second: int in [5, 10, 15]:
+			expected_swarm_seconds.append(minute * 60 + second)
+	for minute: int in [5, 7, 9]:
+		for second: int in [5, 10]:
+			expected_swarm_seconds.append(minute * 60 + second)
+	for minute: int in [11, 13]:
+		for second: int in [5, 10, 15, 20, 25, 30]:
+			expected_swarm_seconds.append(minute * 60 + second)
+	for minute: int in [15, 17, 19]:
+		for second: int in [15, 30, 45]:
+			expected_swarm_seconds.append(minute * 60 + second)
+	var actual_swarm_ticks: Array[int] = []
+	var actual_elite_ticks: Array[int] = []
+	var boss_ticks: Array[int] = []
+	for event: StageEventOccurrence in catalog.stage_events:
+		match event.kind:
+			StageEventOccurrence.Kind.SWARM:
+				actual_swarm_ticks.append(event.tick)
+				var chance: float = 1.0 if event.tick < 5 * 3600 else (0.1 if event.tick < 11 * 3600 else (0.8 if event.tick < 15 * 3600 else 0.7))
+				a.expect_float(chance, (event.definition as SwarmEventScheduleDefinition).spawn_chance, "each retained pattern preserves its approved chance")
+			StageEventOccurrence.Kind.ELITE_ENCOUNTER:
+				actual_elite_ticks.append(event.tick)
+				var kind: GameTypes.ChestKind = GameTypes.ChestKind.NORMAL if event.tick < 8 * 3600 else GameTypes.ChestKind.EVOLUTION_CAPABLE
+				a.expect_equal(kind, catalog.elite_chest_kinds[event.elite_serial], "elite source retains the approved evolution opportunity")
+			StageEventOccurrence.Kind.BOSS:
+				boss_ticks.append(event.tick)
+	a.expect_equal(expected_swarm_seconds.map(func(second: int) -> int: return second * 60), actual_swarm_ticks, "all 33 attempts belong to the agreed odd-minute patterns")
+	a.expect_equal([7200, 14400, 21600, 28800, 36000, 43200, 50400, 57600, 64800], actual_elite_ticks, "all nine encounters remain on even minutes")
+	a.expect_equal([72000], boss_ticks, "one terminal boss event follows the twenty-minute normal timeline")
+
+
 func test_balance_saved_resource_uses_normal_loading_path(a: Variant, context: Dictionary) -> void:
 	var content: SurvivalContentManifest = BalanceTestFixtures.manifest()
 	content.player.base_max_hp = 61.75
@@ -79,37 +114,36 @@ func test_balance_unequal_timeline_events_and_boss(a: Variant, _context: Diction
 		var segment: EnemySegmentDefinition = content.segments[0].duplicate_deep(Resource.DEEP_DUPLICATE_ALL) as EnemySegmentDefinition
 		segment.duration_ticks = duration
 		segment.target_active = 0
-		segment.elite_spawns = []
-		segment.swarm_schedules = []
 		segments.append(segment)
-	segments[0].elite_spawns = BalanceTestFixtures.elite_spawns([0, 3])
-	segments[1].elite_spawns = BalanceTestFixtures.elite_spawns([1, 1])
-	segments[2].elite_spawns = BalanceTestFixtures.elite_spawns([2])
+	content.stage_events.events = BalanceTestFixtures.elite_events([0, 3, 6, 6, 14])
 	for id: StringName in [&"first", &"second"]:
 		var schedule := SwarmEventScheduleDefinition.new()
-		schedule.hp_multiplier = 1.0
+		schedule.hp_multiplier = 2.0 if id == &"first" else 7.0
 		schedule.damage_multiplier = 0.5
-		schedule.schedule_id = id
-		schedule.first_offset_ticks = 2
+		schedule.event_id = id
+		schedule.start_tick = 7
 		schedule.interval_ticks = 2
 		schedule.attempt_count = 2
-		schedule.spawn_chance = 1.0 if id == &"first" else 0.0
-		segments[1].swarm_schedules.append(schedule)
+		schedule.spawn_chance = 1.0
+		content.stage_events.events.append(schedule)
 	content.segments = segments
 	content.swarm_event.lateral_count = 2
 	content.swarm_event.depth_count = 1
 	content.swarm_event.telegraph_ticks = 1
+	content.swarm_event.unit_definition.base_hp = 3.0
 	var catalog: DefinitionCatalog = _catalog(content, a)
 	a.expect_equal(PackedInt32Array([0, 5, 12]), catalog.segment_start_ticks, "starts accumulate ordered durations")
 	a.expect_equal(PackedInt32Array([5, 12, 15]), catalog.segment_end_ticks, "unequal ends are exclusive")
 	a.expect_equal(PackedInt32Array([0, 3, 6, 6, 14]), catalog.elite_spawn_ticks, "elite offsets expand in segment/array order")
-	a.expect_equal([7, 9, 7, 9], catalog.swarm_attempts.map(func(event: Dictionary) -> int: return int(event[&"tick"])), "same-tick attempts retain definition order")
 	var simulation: CombatSimulation = _simulation(catalog, 83)
 	simulation.state.weapons.clear()
 	for tick: int in range(16):
 		simulation.state.combat_tick = tick
-		simulation.enemy_system.resolve_scheduled_spawns(Vector2.ZERO, tick)
-		simulation.enemy_system.resolve_swarm_event_spawns(Vector2.ZERO, tick)
+		var spawned: Array[EnemyEntity] = simulation.enemy_system.resolve_stage_events(Vector2.ZERO, tick)
+		if tick == 8:
+			a.expect_equal(2, spawned.size(), "same-tick schedules admit only the first declared formation")
+			if not spawned.is_empty():
+				a.expect_float(6.0, spawned[0].max_hp, "definition order chooses the first successful schedule at equal ticks")
 		simulation._record_visible_enemy_sample(tick)
 		if tick in [0, 4, 5, 11, 12, 14, 15]:
 			var expected: int = 0 if tick < 5 else (1 if tick < 12 else (2 if tick < 15 else -1))
@@ -121,7 +155,7 @@ func test_balance_unequal_timeline_events_and_boss(a: Variant, _context: Diction
 	a.expect_equal(4, simulation.state.swarm_event_attempt_count, "each attempt is consumed once")
 	a.expect_equal(1, simulation.state.swarm_event_group_count, "busy follow-up is consumed while the first formation remains")
 	a.expect_equal(2, simulation.state.swarm_event_generated_count, "formation dimensions determine member count")
-	a.expect_equal(1, simulation.state.swarm_event_skipped_busy_count, "busy attempt is separately recorded")
+	a.expect_equal(3, simulation.state.swarm_event_skipped_busy_count, "same-tick and later busy attempts are consumed exactly once")
 
 
 func test_balance_relative_weights_and_zero_candidates(a: Variant, _context: Dictionary) -> void:
@@ -221,11 +255,11 @@ func test_balance_invalid_values_report_source_field_and_rule(a: Variant, _conte
 				content.segments[0].spawn_weights.fill(0.0)
 				field = "spawn_weights"
 			"chance":
-				content.segments[2].swarm_schedules[0].spawn_chance = 1.1
+				(content.stage_events.events[0] as SwarmEventScheduleDefinition).spawn_chance = 1.1
 				field = "spawn_chance"
 			"offset":
-				content.segments[2].swarm_schedules[0].first_offset_ticks = content.segments[2].duration_ticks
-				field = "first_offset_ticks"
+				content.stage_events.events[0].start_tick = BalanceTestFixtures.catalog().boss_start_tick
+				field = "start_tick"
 			"duration":
 				content.segments[0].duration_ticks = 0
 				field = "duration_ticks"
@@ -288,7 +322,7 @@ func test_balance_arena_and_scrollable_variable_ui(a: Variant, context: Dictiona
 	content.arena.node_initial_count = 1
 	content.arena.node_capacity = 3
 	content.progression.xp_pool_capacity = 2377
-	content.segments[0].elite_spawns = BalanceTestFixtures.elite_spawns([1, 2, 3, 4, 5, 6])
+	content.stage_events.events = BalanceTestFixtures.elite_events([1, 2, 3, 4, 5, 6])
 	content.progression.weapon_slot_count = 7
 	content.progression.passive_slot_count = 9
 	content.progression.level_offer_count = 9

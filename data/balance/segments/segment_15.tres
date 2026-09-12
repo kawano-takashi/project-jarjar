@@ -1,14 +1,6 @@
-[gd_resource type="Resource" script_class="EnemySegmentDefinition" load_steps=6 format=3]
+[gd_resource type="Resource" script_class="EnemySegmentDefinition" load_steps=2 format=3]
 
 [ext_resource type="Script" path="res://src/definitions/enemy_segment_definition.gd" id="1"]
-[ext_resource type="Script" path="res://src/definitions/elite_spawn_definition.gd" id="elite_type"]
-[ext_resource type="Script" path="res://src/definitions/swarm_event_schedule_definition.gd" id="schedule_type"]
-[ext_resource type="Resource" path="res://data/balance/swarm_events/minute_14.tres" id="schedule_0"]
-
-[sub_resource type="Resource" id="elite"]
-script = ExtResource("elite_type")
-offset_ticks = 0
-chest_kind = 1
 
 [resource]
 script = ExtResource("1")
@@ -17,5 +9,3 @@ target_active = 97
 hp_multiplier = 1.75
 damage_multiplier = 0.64
 spawn_weights = PackedFloat32Array(0.15, 0.15, 0.45, 0.25, 0, 0)
-elite_spawns = Array[ExtResource("elite_type")]([SubResource("elite")])
-swarm_schedules = Array[ExtResource("schedule_type")]([ExtResource("schedule_0")])

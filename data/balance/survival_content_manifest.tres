@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="SurvivalContentManifest" load_steps=72 format=3]
+[gd_resource type="Resource" script_class="SurvivalContentManifest" load_steps=73 format=3]
 
 [ext_resource type="Script" path="res://src/definitions/survival_content_manifest.gd" id="1_manifest"]
 [ext_resource type="Resource" path="res://data/balance/weapons/resonance_wave.tres" id="3_w01"]
@@ -64,7 +64,7 @@
 [ext_resource type="Script" path="res://src/definitions/evolution_definition.gd" id="53_evolution_script"]
 [ext_resource type="Script" path="res://src/definitions/enemy_definition.gd" id="54_enemy_script"]
 [ext_resource type="Script" path="res://src/definitions/enemy_segment_definition.gd" id="55_segment_script"]
-[ext_resource type="Resource" path="res://data/balance/swarm_events/bat_swarm.tres" id="56_swarm"]
+[ext_resource type="Resource" path="res://data/balance/events/bat_swarm.tres" id="56_swarm"]
 
 [ext_resource type="Resource" path="res://data/balance/settings/player.tres" id="balance_player"]
 [ext_resource type="Resource" path="res://data/balance/settings/progression.tres" id="balance_progression"]
@@ -73,8 +73,11 @@
 [ext_resource type="Resource" path="res://data/balance/settings/spawn.tres" id="balance_spawn"]
 [ext_resource type="Resource" path="res://data/balance/settings/encounters.tres" id="balance_encounters"]
 
+[ext_resource type="Resource" path="res://data/balance/stage_events.tres" id="stage_events"]
+
 [resource]
 script = ExtResource("1_manifest")
+stage_events = ExtResource("stage_events")
 swarm_event = ExtResource("56_swarm")
 weapons = Array[ExtResource("51_weapon_script")]([ExtResource("3_w01"), ExtResource("4_w02"), ExtResource("5_w03"), ExtResource("6_w04"), ExtResource("7_w05"), ExtResource("8_w06"), ExtResource("9_w07"), ExtResource("10_w08"), ExtResource("11_we01"), ExtResource("12_we02"), ExtResource("13_we03"), ExtResource("14_we04"), ExtResource("15_we05"), ExtResource("16_we06"), ExtResource("17_we07"), ExtResource("18_we08")])
 passives = Array[ExtResource("52_passive_script")]([ExtResource("19_p01"), ExtResource("20_p02"), ExtResource("21_p03"), ExtResource("22_p04"), ExtResource("23_p05"), ExtResource("24_p06"), ExtResource("25_p07"), ExtResource("26_p08")])

@@ -20,19 +20,24 @@ func test_scheduled_elites_and_final_boss_are_guaranteed(assertions: Variant, _c
 	var simulation: CombatSimulation = setup.get("simulation") as CombatSimulation
 	if simulation == null:
 		return
+	var content: SurvivalContentManifest = BalanceTestFixtures.manifest()
+	content.stage_events.events = content.stage_events.events.filter(func(event: StageEventDefinition) -> bool: return event is EliteSpawnDefinition)
+	var catalog := DefinitionCatalog.new()
+	assertions.expect_true(catalog.validate_manifest(content), catalog.error_text)
+	simulation.initialize(RunStateFactory.create(8102, catalog), catalog)
 	var schedule: PackedInt32Array = simulation.catalog.elite_spawn_ticks
 	for elite_index: int in range(schedule.size()):
 		simulation.state.combat_tick = schedule[elite_index]
-		var spawned: Array[EnemyEntity] = simulation.enemy_system.resolve_scheduled_spawns(
+		var spawned: Array[EnemyEntity] = simulation.enemy_system.resolve_stage_events(
 			Vector2.ZERO,
 			schedule[elite_index],
 		)
 		assertions.expect_equal(1, spawned.size(), "scheduled elite %d spawns exactly once" % elite_index)
 		assertions.expect_equal(GameTypes.EnemyType.ELITE, spawned[0].enemy_type, "scheduled spawn is an elite")
 		assertions.expect_equal(elite_index, spawned[0].elite_serial, "elite carries its chest serial")
-		assertions.expect_equal(0, simulation.enemy_system.resolve_scheduled_spawns(Vector2.ZERO, schedule[elite_index]).size(), "same scheduled elite cannot duplicate")
+		assertions.expect_equal(0, simulation.enemy_system.resolve_stage_events(Vector2.ZERO, schedule[elite_index]).size(), "same scheduled elite cannot duplicate")
 	simulation.state.combat_tick = BalanceTestFixtures.catalog().boss_start_tick
-	var boss_spawns: Array[EnemyEntity] = simulation.enemy_system.resolve_scheduled_spawns(
+	var boss_spawns: Array[EnemyEntity] = simulation.enemy_system.resolve_stage_events(
 		Vector2.ZERO,
 		BalanceTestFixtures.catalog().boss_start_tick,
 	)
@@ -161,7 +166,7 @@ func test_scheduled_boss_uses_dedicated_manifest_multipliers(assertions: Variant
 	var simulation := CombatSimulation.new()
 	simulation.initialize(state, custom_catalog)
 	state.combat_tick = custom_catalog.boss_start_tick
-	var spawned: Array[EnemyEntity] = simulation.enemy_system.resolve_scheduled_spawns(
+	var spawned: Array[EnemyEntity] = simulation.enemy_system.resolve_stage_events(
 		Vector2.ZERO,
 		custom_catalog.boss_start_tick,
 	)

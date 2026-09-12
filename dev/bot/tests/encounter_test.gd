@@ -10,7 +10,7 @@ func test_bot_observes_mixed_ring_members_and_only_visible_boundary_lines(a: Var
 	var session: BotSession = _session()
 	var sim: CombatSimulation = session.simulation
 	sim.state.combat_tick = sim.catalog.elite_spawn_ticks[0]
-	sim.enemy_system.resolve_scheduled_spawns(Vector2.ZERO, sim.state.combat_tick)
+	sim.enemy_system.resolve_stage_events(Vector2.ZERO, sim.state.combat_tick)
 	var member: EnemyEntity = _member(sim)
 	member.position = Vector2(0.0, 2.0)
 	sim.spawn_fixture_enemy(GameTypes.EnemyType.PURSUER, Vector2(2.0, 0.0))
@@ -141,7 +141,7 @@ func test_bot_can_break_through_soft_ring_away_from_elite_contact(a: Variant, _c
 	var sim: CombatSimulation = session.simulation
 	sim.state.weapons.clear()
 	sim.state.combat_tick = sim.catalog.elite_spawn_ticks[0]
-	var elite: EnemyEntity = sim.enemy_system.resolve_scheduled_spawns(Vector2.ZERO, sim.state.combat_tick)[0]
+	var elite: EnemyEntity = sim.enemy_system.resolve_stage_events(Vector2.ZERO, sim.state.combat_tick)[0]
 	var members: Array[EnemyEntity] = []
 	for enemy: EnemyEntity in sim.enemy_system.enemy_store.entities:
 		if enemy.encounter_owner_id >= 0:

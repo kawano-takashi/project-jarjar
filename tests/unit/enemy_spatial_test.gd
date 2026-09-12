@@ -139,9 +139,8 @@ func test_boss_charge_cadence_and_latches(assertions: Variant, _context: Diction
 	var state: RunState = RunStateFactory.create(8105, catalog)
 	var system := EnemySystem.new()
 	system.initialize(state, catalog)
-	system._elite_spawned.fill(1)
 	state.combat_tick = BalanceTestFixtures.catalog().boss_start_tick
-	var spawned: Array[EnemyEntity] = system.resolve_scheduled_spawns(
+	var spawned: Array[EnemyEntity] = system.resolve_stage_events(
 		Vector2.ZERO,
 		BalanceTestFixtures.catalog().boss_start_tick,
 	)
