@@ -32,9 +32,6 @@ const ABSORPTION_EVENT_SECONDS: float = 0.24
 	%ProjectileFieldInstances,
 	%ProjectileEnemyInstances,
 ]
-@onready var _evolved_outline_inner_instances: MultiMeshInstance3D = %EvolvedOutlineInnerInstances
-@onready var _evolved_outline_outer_instances: MultiMeshInstance3D = %EvolvedOutlineOuterInstances
-@onready var _evolved_core_instances: MultiMeshInstance3D = %EvolvedCoreInstances
 @onready var _vfx_instances: MultiMeshInstance3D = %VfxInstances
 @onready var _chest_instances: MultiMeshInstance3D = %ChestInstances
 @onready var _evolution_chest_instances: MultiMeshInstance3D = %EvolutionChestInstances
@@ -54,6 +51,8 @@ const ABSORPTION_EVENT_SECONDS: float = 0.24
 @onready var _combat_hud: CombatHud = %CombatHUD
 
 var _simulation: RefCounted = null
+var _weapon_effect_instances: MultiMeshInstance3D
+var _weapon_effect_material: ShaderMaterial
 var view: ArenaView = ArenaView.new()
 var _world_origin := Vector2i.ZERO
 var _ground: OpenFieldGround = null
@@ -75,6 +74,8 @@ func _ready() -> void:
 	set_physics_process(false)
 	set_process(false)
 	_player_base_scale = _player_mesh.scale
+	_create_weapon_effects()
+	_apply_accessibility_settings()
 	_create_boss_boundary()
 	_configure_camera()
 	_hide_presentation_markers()
@@ -201,11 +202,9 @@ func _apply_snapshot(snapshot: CombatSnapshot, _delta: float) -> void:
 			_upload_buffer(_enemy_instances[kind], visuals.enemy_buffers[kind], 16)
 		for kind: int in _projectile_instances.size():
 			_upload_buffer(_projectile_instances[kind], visuals.projectile_buffers[kind], 16)
-		_upload_buffer(_evolved_outline_inner_instances, visuals.accent_buffers[0], 12)
-		_upload_buffer(_evolved_outline_outer_instances, visuals.accent_buffers[1], 12)
-		_upload_buffer(_evolved_core_instances, visuals.accent_buffers[2], 12)
 		_upload_buffer(_xp_instances, visuals.xp_buffer, 12)
 		_upload_buffer(_vfx_instances, visuals.vfx_buffer, 20)
+		_upload_buffer(_weapon_effect_instances, visuals.weapon_effect_buffer, 20)
 	else:
 		_copy_visual_buckets(
 			snapshot.enemy_transforms,
@@ -221,11 +220,8 @@ func _apply_snapshot(snapshot: CombatSnapshot, _delta: float) -> void:
 			_projectile_instances,
 			false,
 		)
-		_copy_evolved_projectile_accents(
-			snapshot.projectile_transforms,
-			snapshot.projectile_visual_custom_data,
-		)
 		_copy_vfx_prefix(snapshot, _vfx_instances)
+		_copy_weapon_effects(snapshot)
 		_copy_transform_prefix(snapshot.xp_transforms, _xp_instances)
 	_copy_transform_prefix(snapshot.normal_chest_transforms, _chest_instances)
 	_copy_transform_prefix(snapshot.evolution_chest_transforms, _evolution_chest_instances)
@@ -235,6 +231,35 @@ func _apply_snapshot(snapshot: CombatSnapshot, _delta: float) -> void:
 	_combat_hud.update_from_snapshot(snapshot)
 	_update_camera()
 	_ground.update_view(view, snapshot.world_origin)
+
+
+func _create_weapon_effects() -> void:
+	_weapon_effect_material = WeaponVisualStyle.effect_material()
+	var mesh := PlaneMesh.new()
+	mesh.size = Vector2(2.0, 2.0)
+	mesh.material = _weapon_effect_material
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.use_colors = true
+	multimesh.use_custom_data = true
+	multimesh.mesh = mesh
+	_weapon_effect_instances = MultiMeshInstance3D.new()
+	_weapon_effect_instances.name = "WeaponEffects"
+	_weapon_effect_instances.multimesh = multimesh
+	_weapon_effect_instances.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_weapon_effect_instances)
+
+
+func _copy_weapon_effects(snapshot: CombatSnapshot) -> void:
+	var multimesh: MultiMesh = _weapon_effect_instances.multimesh
+	var count: int = snapshot.weapon_effect_transforms.size()
+	if count > multimesh.instance_count:
+		multimesh.instance_count = count
+	for index: int in count:
+		multimesh.set_instance_transform(index, snapshot.weapon_effect_transforms[index])
+		multimesh.set_instance_color(index, snapshot.weapon_effect_colors[index])
+		multimesh.set_instance_custom_data(index, snapshot.weapon_effect_custom_data[index])
+	multimesh.visible_instance_count = count
 
 
 func _copy_visual_buckets(
@@ -303,44 +328,6 @@ func _copy_transform_prefix(
 	for index: int in range(visible_count):
 		multimesh.set_instance_transform(index, transforms[index])
 	multimesh.visible_instance_count = visible_count
-
-
-func _copy_evolved_projectile_accents(
-	transforms: Array[Transform3D],
-	custom_data_values: PackedColorArray,
-) -> void:
-	var inner_multimesh: MultiMesh = _evolved_outline_inner_instances.multimesh
-	var outer_multimesh: MultiMesh = _evolved_outline_outer_instances.multimesh
-	var core_multimesh: MultiMesh = _evolved_core_instances.multimesh
-	if inner_multimesh == null or outer_multimesh == null or core_multimesh == null:
-		return
-	var capacity: int = transforms.size()
-	for multimesh: MultiMesh in [inner_multimesh, outer_multimesh, core_multimesh]:
-		if capacity > multimesh.instance_count:
-			multimesh.instance_count = capacity
-	var evolved_count: int = 0
-	for source_index: int in range(transforms.size()):
-		if evolved_count >= capacity:
-			break
-		if (
-			source_index >= custom_data_values.size()
-			or custom_data_values[source_index].r < 0.5
-		):
-			continue
-		var base_transform: Transform3D = transforms[source_index]
-		var inner_transform: Transform3D = base_transform
-		inner_transform.basis = inner_transform.basis * Basis(Vector3.UP, PI / 12.0)
-		var outer_transform: Transform3D = base_transform
-		outer_transform.basis = outer_transform.basis * Basis(Vector3.UP, PI / 18.0)
-		var core_transform: Transform3D = base_transform
-		core_transform.basis = core_transform.basis.scaled(Vector3.ONE * 1.2)
-		inner_multimesh.set_instance_transform(evolved_count, inner_transform)
-		outer_multimesh.set_instance_transform(evolved_count, outer_transform)
-		core_multimesh.set_instance_transform(evolved_count, core_transform)
-		evolved_count += 1
-	inner_multimesh.visible_instance_count = evolved_count
-	outer_multimesh.visible_instance_count = evolved_count
-	core_multimesh.visible_instance_count = evolved_count
 
 
 func _copy_vfx_prefix(snapshot: CombatSnapshot, instance: MultiMeshInstance3D) -> void:
@@ -586,6 +573,9 @@ func _apply_accessibility_settings() -> void:
 	var store: Variant = get_node_or_null("/root/SettingsStore") if is_inside_tree() else null
 	_reduce_motion = bool(store.reduce_motion) if store != null else false
 	_reduce_flashes = bool(store.reduce_flashes) if store != null else false
+	if _weapon_effect_material != null:
+		_weapon_effect_material.set_shader_parameter("reduce_motion", _reduce_motion)
+		_weapon_effect_material.set_shader_parameter("reduce_flashes", _reduce_flashes)
 	if _simulation != null and _simulation.has_method(&"configure_accessibility"):
 		_simulation.call(&"configure_accessibility", _reduce_motion, _reduce_flashes)
 	if is_node_ready():

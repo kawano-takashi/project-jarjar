@@ -167,12 +167,11 @@ func orbital_transforms(player_position: Vector2, current_tick: int) -> Array[Tr
 			continue
 		if not orbital_is_active(runtime.lineage_id, current_tick):
 			continue
-		var visual_diameter: float = maxf(
-			0.0,
-			StatCalculator.weapon_effect_radius(definition,
-				runtime.level,
-				StatCalculator.area_multiplier(stats, _catalog.manifest().combat),
-			) * 2.0,
+		var area: float = StatCalculator.area_multiplier(stats, _catalog.manifest().combat)
+		var orbit_radius: float = StatCalculator.weapon_range(definition, runtime.level, area)
+		var visual_radius: float = minf(
+			maxf(0.0, _catalog.envelope.effect_outer_radius - orbit_radius),
+			maxf(0.0, StatCalculator.weapon_effect_radius(definition, runtime.level, area)),
 		)
 		for position: Vector2 in _orbital_positions(
 			runtime,
@@ -181,8 +180,10 @@ func orbital_transforms(player_position: Vector2, current_tick: int) -> Array[Tr
 			current_tick,
 			stats,
 		):
+			var radial: Vector2 = (position - player_position).normalized()
+			var tangent := Vector3(-radial.y, 0.0, radial.x)
 			transforms.append(Transform3D(
-				Basis.IDENTITY.scaled(Vector3.ONE * visual_diameter),
+				Basis(Vector3(radial.x, 0.0, radial.y) * visual_radius, Vector3.UP, tangent * visual_radius),
 				Vector3(position.x, PROJECTILE_HEIGHT_M, position.y),
 			))
 	return transforms
@@ -298,6 +299,7 @@ func _fire_melee_wave(
 		"direction": _last_move_direction,
 		"range_m": range_m,
 		"native_result": native_result,
+		"visual_shapes": shapes,
 		"node_damage_zones": [],
 	}
 
@@ -867,8 +869,8 @@ func _fire_aura(
 			),
 		),
 	)
-	var native_result: Dictionary = _native_attack(runtime, definition, stats,
-		[{"center": player_position, "radius": radius}], radius, true)
+	var shapes: Array[Dictionary] = [{"center": player_position, "radius": radius}]
+	var native_result: Dictionary = _native_attack(runtime, definition, stats, shapes, radius, true)
 	return {
 		"generated": true,
 		"weapon_id": runtime.weapon_id,
@@ -877,6 +879,7 @@ func _fire_aura(
 		"direction": Vector2.RIGHT,
 		"range_m": radius,
 		"native_result": native_result,
+		"visual_shapes": shapes,
 		"node_damage_zones": [],
 	}
 
@@ -1012,5 +1015,5 @@ func _native_attack(runtime: RunWeapon, definition: WeaponDefinition, stats: Dic
 	return _projectile_pool.world.attack_shapes(shapes, {
 		"damage": _base_damage(definition, runtime, stats), "critical_chance": definition.critical_chance,
 		"critical_multiplier": definition.critical_multiplier, "outer": outer,
-		"source": runtime.lineage_id, "deduplicate": deduplicate,
+		"source": runtime.lineage_id, "weapon_id": runtime.weapon_id, "deduplicate": deduplicate,
 	}, runtime.rng)

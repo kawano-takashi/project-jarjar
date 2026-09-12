@@ -20,6 +20,11 @@ var evolved: bool = false
 var born_tick: int = 0
 var priority: int = 0
 var request_serial: int = 0
+## Optional weapon decoration, admitted through the ordinary VFX budget.
+var weapon_visual_kind: int = 0
+var weapon_trail_length_m: float = 0.0
+var weapon_height_m: float = 0.04
+var weapon_duration_ticks: int = 0
 
 
 func activate(
@@ -93,3 +98,7 @@ func deactivate() -> void:
 	born_tick = 0
 	priority = 0
 	request_serial = 0
+	weapon_visual_kind = 0
+	weapon_trail_length_m = 0.0
+	weapon_height_m = 0.04
+	weapon_duration_ticks = 0

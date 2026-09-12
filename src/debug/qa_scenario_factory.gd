@@ -3,20 +3,7 @@ extends RefCounted
 
 
 const FIXED_SEED: int = 20260827
-const VALID_IDS: Array[String] = [
-	"weapon_resonance_wave",
-	"weapon_homing_core",
-	"weapon_direction_needle",
-	"weapon_arc_crystal",
-	"weapon_return_ring",
-	"weapon_orbit_array",
-	"weapon_mass_shot",
-	"weapon_zero_field",
-	"level_up_modal",
-	"chest_reward",
-	"boss_phase_three",
-	"result",
-]
+const VALID_IDS: Array[String] = LaunchArguments.QA_SCENARIOS
 const WEAPON_SCENARIO_IDS: Dictionary[String, StringName] = {
 	"weapon_resonance_wave": &"resonance_wave",
 	"weapon_homing_core": &"homing_core",
@@ -26,6 +13,14 @@ const WEAPON_SCENARIO_IDS: Dictionary[String, StringName] = {
 	"weapon_orbit_array": &"orbital_array",
 	"weapon_mass_shot": &"mass_projectile",
 	"weapon_zero_field": &"zero_field",
+	"weapon_vital_resonance": &"vital_resonance",
+	"weapon_infinite_homing": &"infinite_homing",
+	"weapon_infinite_needles": &"infinite_needles",
+	"weapon_spiral_crystal": &"spiral_crystal",
+	"weapon_critical_ring": &"critical_ring",
+	"weapon_eternal_orbit": &"eternal_orbit",
+	"weapon_collapse_projectile": &"collapse_projectile",
+	"weapon_absorption_field": &"absorption_field",
 }
 
 
@@ -36,7 +31,18 @@ static func build(scenario_id: String, catalog: DefinitionCatalog) -> Dictionary
 	var rng_before: Dictionary = state.rng_streams.state_digest()
 	var simulation := CombatSimulation.new()
 	var valid: bool = true
-	if WEAPON_SCENARIO_IDS.has(scenario_id):
+	var mixed: bool = scenario_id in ["weapon_mix_projectiles", "weapon_mix_areas"]
+	if mixed:
+		var weapon_ids: Array[StringName] = []
+		weapon_ids.assign(
+			[&"infinite_homing", &"infinite_needles", &"spiral_crystal", &"critical_ring", &"collapse_projectile"]
+			if scenario_id == "weapon_mix_projectiles" else
+			[&"vital_resonance", &"eternal_orbit", &"absorption_field", &"arc_crystal", &"directional_needle"]
+		)
+		state.weapons.clear()
+		for weapon_id: StringName in weapon_ids:
+			valid = _append_weapon(state, catalog, weapon_id) and valid
+	elif WEAPON_SCENARIO_IDS.has(scenario_id):
 		valid = _prepare_weapon_state(
 			state,
 			catalog,
@@ -55,7 +61,7 @@ static func build(scenario_id: String, catalog: DefinitionCatalog) -> Dictionary
 		}
 
 	simulation.initialize(state, catalog)
-	if WEAPON_SCENARIO_IDS.has(scenario_id):
+	if WEAPON_SCENARIO_IDS.has(scenario_id) or mixed:
 		_prepare_weapon_combat(simulation)
 	elif scenario_id == "boss_phase_three":
 		valid = _prepare_boss_phase_three(state, simulation)
@@ -74,15 +80,19 @@ static func _prepare_weapon_state(
 	catalog: DefinitionCatalog,
 	weapon_id: StringName,
 ) -> bool:
-	var definition: WeaponDefinition = catalog.weapon(weapon_id)
-	if definition == null or definition.is_evolved:
-		return false
 	state.weapons.clear()
+	return _append_weapon(state, catalog, weapon_id)
+
+
+static func _append_weapon(state: RunState, catalog: DefinitionCatalog, weapon_id: StringName) -> bool:
+	var definition: WeaponDefinition = catalog.weapon(weapon_id)
+	if definition == null:
+		return false
 	var runtime := RunWeapon.create(
 		definition.weapon_id,
 		catalog.lineage_for_weapon(definition.weapon_id),
-		false,
-		state.rng_streams.create_weapon_rng(catalog.lineage_for_weapon(definition.weapon_id), 0),
+		definition.is_evolved,
+		state.rng_streams.create_weapon_rng(catalog.lineage_for_weapon(definition.weapon_id), state.weapons.size()),
 	)
 	runtime.level = definition.max_level
 	runtime.ready_on_resume = true
@@ -101,10 +111,22 @@ static func _prepare_weapon_combat(simulation: CombatSimulation) -> void:
 		GameTypes.WeaponBehavior.MASS_PROJECTILE,
 	]:
 		target_distance = 8.0
-	simulation.spawn_fixture_enemy(
+	var first_target: EnemyEntity = simulation.spawn_fixture_enemy(
 		GameTypes.EnemyType.BULWARK,
 		Vector2(target_distance, 0.0),
 	)
+	if first_target != null:
+		first_target.hp = 100_000.0
+		first_target.max_hp = first_target.hp
+	# Targets on both sides and at several distances expose real patterns and areas.
+	for index: int in range(8):
+		var near_distance: float = 5.0 if target_distance > 2.0 else 2.5
+		var distance_m: float = near_distance if index % 2 == 0 else 6.5
+		var enemy: EnemyEntity = simulation.spawn_fixture_enemy(GameTypes.EnemyType.BULWARK,
+			Vector2.from_angle(TAU * float(index) / 8.0) * distance_m)
+		if enemy != null:
+			enemy.hp = 100_000.0
+			enemy.max_hp = enemy.hp
 
 
 static func _prepare_level_up_state(
@@ -203,3 +225,5 @@ static func _restore_rng_states(
 	streams.upgrade_rng.state = int(digest[&"upgrade"])
 	streams.chest_rng.state = int(digest[&"chest"])
 	streams.powerup_rng.state = int(digest[&"powerup"])
+	streams.swarm_event_rng.state = int(digest[&"swarm_event"])
+	streams.node_spawn_rng.state = int(digest[&"node_spawn"])

@@ -201,7 +201,10 @@ func advance(delta: float, current_tick: int) -> void:
 		if slot.born_tick >= current_tick:
 			active_position += 1
 			continue
-		slot.remaining_lifetime = maxf(0.0, slot.remaining_lifetime - delta)
+		if slot.weapon_duration_ticks > 0:
+			slot.remaining_lifetime = float(maxi(0, slot.born_tick + slot.weapon_duration_ticks - current_tick)) / 60.0
+		else:
+			slot.remaining_lifetime = maxf(0.0, slot.remaining_lifetime - delta)
 		if slot.remaining_lifetime <= 0.0:
 			release(pool_index, slot.generation)
 		else:

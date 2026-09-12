@@ -149,6 +149,9 @@ class JarjarCombatWorld : public RefCounted {
     double effect_radius = 0, target_radius = 0;
     int64_t hit_glow_ticks = 0;
     std::map<StringName, Vector2i> weapon_visuals;
+    Array weapon_hit_cues, weapon_impacts;
+    int64_t visual_tick = -1, visual_limit = 0, omitted_hit_cues = 0, trail_interval = 1;
+    bool visuals_drained = true;
 
     Enemy *enemy(int64_t id) {
         auto found = enemy_slots.find(id);
@@ -179,11 +182,11 @@ class JarjarCombatWorld : public RefCounted {
         }
         return selected;
     }
-    void apply_damage(Enemy &e, double amount, const StringName &source, double outer) {
+    bool apply_damage(Enemy &e, double amount, const StringName &source, double outer) {
         double center = e.position.distance_to(player);
-        if (!targetable(e) || center > damage_radius + .0001 || outer > effect_radius + .0001) return;
+        if (!targetable(e) || center > damage_radius + .0001 || outer > effect_radius + .0001) return false;
         double applied = std::min(e.hp, std::max(0.0, amount));
-        if (applied <= 0) return;
+        if (applied <= 0) return false;
         e.hp = std::max(0.0, e.hp - applied); e.hit_flash_until_tick = tick + hit_glow_ticks;
         auto &h = damage_totals[String(source)];
         h.damage += applied; ++h.count; if (in_damage(e.position)) ++h.visible;
@@ -191,9 +194,19 @@ class JarjarCombatWorld : public RefCounted {
         h.maximum_center = std::max(h.maximum_center, center); h.maximum_outer = std::max(h.maximum_outer, outer);
         h.position = e.position; h.enemy_type = e.enemy_type;
         if (e.hp <= 0 && !deaths.count(e.entity_id)) deaths.emplace(e.entity_id, Death{e, source, center});
+        return true;
+    }
+    void queue_weapon_hit(const StringName &weapon, const Enemy &target, const Vector2 &direction) {
+        if (visuals_drained || visual_tick != tick || !weapon_visuals.count(weapon)) return;
+        if (weapon_hit_cues.size() >= visual_limit) { ++omitted_hit_cues; return; }
+        Dictionary cue; cue["weapon_id"] = weapon; cue["position"] = target.position;
+        cue["height"] = enemy_transform(target).origin.y * 2.0 + .02;
+        cue["direction"] = direction; weapon_hit_cues.push_back(cue);
     }
     void hit(Enemy &e, Projectile &p, const Vector2 &position, double outer, bool apply, Array &records) {
-        if (apply) apply_damage(e, p.damage, p.source_effect_id, outer);
+        if (apply) {
+            if (apply_damage(e, p.damage, p.source_effect_id, outer)) queue_weapon_hit(p.weapon_id, e, p.velocity.normalized());
+        }
         else {
             Dictionary record;
             record["entity_id"] = e.entity_id; record["damage"] = p.damage;
@@ -221,6 +234,14 @@ class JarjarCombatWorld : public RefCounted {
     static Transform3D projectile_transform(const Projectile &p) {
         double progress = p.total_lifetime_ticks > 0 ? std::clamp(p.elapsed_ticks / double(p.total_lifetime_ticks), 0.0, 1.0) : 0;
         double height = .35 + (p.movement_kind == 2 ? 1.8 * 4.0 * progress * (1.0 - progress) : 0.0);
+        if (p.faction == StringName("ally")) {
+            Vector2 direction = p.velocity.normalized();
+            if (direction == Vector2()) direction = Vector2(1, 0);
+            real_t radius = real_t(std::max(0.0, p.radius));
+            Basis basis(Vector3(direction.y, 0, -direction.x) * radius, Vector3(0, 1, 0),
+                Vector3(direction.x, 0, direction.y) * radius);
+            return Transform3D(basis, Vector3(p.position.x, real_t(height), p.position.y));
+        }
         return Transform3D(Basis().scaled(Vector3(1, 1, 1) * real_t(std::max(.25, p.radius / .16))), Vector3(p.position.x, real_t(height), p.position.y));
     }
     static void append_transform(std::vector<float> &buffer, const Transform3D &t) {
@@ -242,7 +263,35 @@ protected:
     static void _bind_methods();
 
 public:
-    int64_t api_version() const { return 3; }
+    int64_t api_version() const { return 4; }
+    void begin_weapon_visual_tick(int64_t current_tick, int64_t hit_limit, int64_t interval) {
+        visual_tick = current_tick; visual_limit = std::max<int64_t>(0, hit_limit);
+        trail_interval = std::max<int64_t>(1, interval); omitted_hit_cues = 0;
+        weapon_hit_cues.clear(); weapon_impacts.clear(); visuals_drained = false;
+    }
+    Dictionary take_weapon_visuals() {
+        Array trails;
+        if (!visuals_drained) {
+            for (int i : projectiles.active) {
+                if (weapon_hit_cues.size() + trails.size() >= visual_limit) break;
+                const auto &p = projectiles.slots[i];
+                if (p.faction != StringName("ally") || p.born_tick >= visual_tick || (visual_tick + i) % trail_interval != 0) continue;
+                auto found = weapon_visuals.find(p.weapon_id);
+                if (found == weapon_visuals.end() || found->second.x < 2 || found->second.x > 5) continue;
+                Vector2 displacement = p.position - p.previous_position;
+                if (displacement.length_squared() <= 1e-8) continue;
+                Dictionary cue; cue["weapon_id"] = p.weapon_id; cue["position"] = (p.position + p.previous_position) * .5f;
+                cue["direction"] = displacement.normalized(); cue["length"] = displacement.length();
+                cue["radius"] = p.radius; cue["height"] = projectile_transform(p).origin.y;
+                trails.push_back(cue);
+            }
+        }
+        Dictionary result; result["hits"] = weapon_hit_cues; result["impacts"] = weapon_impacts;
+        result["trails"] = trails; result["omitted_hits"] = omitted_hit_cues;
+        // Assign new arrays so the returned batch remains independent of future ticks.
+        weapon_hit_cues = Array(); weapon_impacts = Array(); omitted_hit_cues = 0; visuals_drained = true;
+        return result;
+    }
     bool configure_pool(int kind, int capacity) {
         if (kind == 0) {
             bool result = enemies.resize(capacity);
@@ -729,6 +778,10 @@ public:
                 if (impacted) p.position = p.previous_position.lerp(p.position, real_t(first.time));
                 double outer = player.distance_to(p.position) + std::max(p.radius, p.explosion_radius);
                 if ((impacted || p.expired_this_tick) && outer <= effect_radius + .0001) {
+                    if (apply && !visuals_drained && visual_tick == tick) {
+                        Dictionary impact; impact["weapon_id"] = p.weapon_id; impact["center"] = p.position;
+                        impact["radius"] = std::max(p.radius, p.explosion_radius); weapon_impacts.push_back(impact);
+                    }
                     if (!apply) {
                         Dictionary resolution; resolution["arc_impact_position"] = p.position;
                         resolution["arc_explosion_radius"] = p.explosion_radius; resolution["arc_damage"] = p.damage;
@@ -831,7 +884,10 @@ public:
                 if (fan && offset.length_squared() > 1e-6 && (direction == Vector2() || direction.normalized().dot(offset.normalized()) < cosine - 1e-6)) continue;
                 hit_ids.insert(id); double amount = damage;
                 if (chance > 0 && rng.is_valid() && rng->randf() < std::clamp(chance, 0.0, 1.0)) amount *= std::max(1.0, critical);
-                apply_damage(*e, amount, source, outer); ++hits;
+                if (apply_damage(*e, amount, source, outer)) {
+                    queue_weapon_hit(attack.get("weapon_id", source), *e, fan ? direction : offset.normalized());
+                }
+                ++hits;
             }
             damage_node_circle(center, radius, damage, destroyed);
         }
@@ -906,7 +962,7 @@ public:
         for (int64_t i = 0; i < keys.size(); ++i) weapon_visuals[StringName(keys[i])] = definitions[keys[i]];
     }
     Dictionary render_snapshot(int64_t current_tick, bool reduce_motion, bool reduce_flashes, const Array &orbitals, bool evolved_orbitals) const {
-        std::vector<float> enemy_buffers[8], projectile_buffers[10], accents[3], xp_buffer;
+        std::vector<float> enemy_buffers[8], projectile_buffers[10], xp_buffer;
         Array enemy_transforms, projectile_transforms, xp_values;
         PackedInt32Array enemy_kinds, projectile_kinds; PackedColorArray enemy_custom, projectile_custom;
         std::vector<int> ordered = enemies.active;
@@ -925,13 +981,6 @@ public:
             Color custom(evolved ? 1.f : 0.f, real_t(progress), reduce_motion ? 1.f : 0.f, reduce_flashes ? 1.f : 0.f);
             projectile_transforms.push_back(t); projectile_kinds.push_back(kind); projectile_custom.push_back(custom);
             append_transform(projectile_buffers[kind], t); append_color(projectile_buffers[kind], custom);
-            if (evolved) {
-                Transform3D inner = t, outer = t, core = t;
-                inner.basis = inner.basis * Basis(Vector3(0, 1, 0), real_t(3.14159265358979323846 / 12));
-                outer.basis = outer.basis * Basis(Vector3(0, 1, 0), real_t(3.14159265358979323846 / 18));
-                core.basis = core.basis.scaled(Vector3(1.2f, 1.2f, 1.2f));
-                append_transform(accents[0], inner); append_transform(accents[1], outer); append_transform(accents[2], core);
-            }
         };
         for (int i : projectiles.active) {
             const auto &p = projectiles.slots[i];
@@ -946,15 +995,14 @@ public:
         for (int i : pickups.active) {
             Transform3D t = xp_transform(i); xp_values.push_back(t); append_transform(xp_buffer, t);
         }
-        Array enemy_buckets, projectile_buckets, accent_buffers;
+        Array enemy_buckets, projectile_buckets;
         for (const auto &b : enemy_buffers) enemy_buckets.push_back(packed_buffer(b));
         for (const auto &b : projectile_buffers) projectile_buckets.push_back(packed_buffer(b));
-        for (const auto &b : accents) accent_buffers.push_back(packed_buffer(b));
         Dictionary result;
         result["enemy_transforms"] = enemy_transforms; result["enemy_kinds"] = enemy_kinds; result["enemy_custom"] = enemy_custom;
         result["projectile_transforms"] = projectile_transforms; result["projectile_kinds"] = projectile_kinds; result["projectile_custom"] = projectile_custom;
         result["xp_transforms"] = xp_values; result["enemy_buffers"] = enemy_buckets; result["projectile_buffers"] = projectile_buckets;
-        result["accent_buffers"] = accent_buffers; result["xp_buffer"] = packed_buffer(xp_buffer);
+        result["xp_buffer"] = packed_buffer(xp_buffer);
         return result;
     }
     PackedFloat32Array pack_visuals(const Array &transforms, const Array &colors, const Array &custom_data) const {
@@ -1006,6 +1054,8 @@ public:
 // BINDINGS
 void JarjarCombatWorld::_bind_methods() {
     ClassDB::bind_method(D_METHOD("api_version"), &JarjarCombatWorld::api_version);
+    ClassDB::bind_method(D_METHOD("begin_weapon_visual_tick", "tick", "hit_limit", "trail_interval"), &JarjarCombatWorld::begin_weapon_visual_tick);
+    ClassDB::bind_method(D_METHOD("take_weapon_visuals"), &JarjarCombatWorld::take_weapon_visuals);
     ClassDB::bind_method(D_METHOD("configure_pool", "kind", "capacity"), &JarjarCombatWorld::configure_pool);
     ClassDB::bind_method(D_METHOD("pool_stats", "kind"), &JarjarCombatWorld::pool_stats);
     ClassDB::bind_method(D_METHOD("pool_indices", "kind"), &JarjarCombatWorld::pool_indices);

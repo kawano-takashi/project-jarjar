@@ -43,7 +43,7 @@ protected:
     }
 
 public:
-    int64_t api_version() const { return 3; }
+    int64_t api_version() const { return 4; }
 
     void clear_index(double cell_size) {
         index.clear();

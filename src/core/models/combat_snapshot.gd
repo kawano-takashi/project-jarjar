@@ -49,6 +49,10 @@ var projectile_visual_custom_data: PackedColorArray = PackedColorArray()
 var vfx_transforms: Array[Transform3D] = []
 var vfx_colors: Array[Color] = []
 var vfx_custom_data: Array[Color] = []
+## Attack bodies and admitted weapon decorations, independent of event/audio queues.
+var weapon_effect_transforms: Array[Transform3D] = []
+var weapon_effect_colors: Array[Color] = []
+var weapon_effect_custom_data: Array[Color] = []
 var chest_transforms: Array[Transform3D] = []
 var normal_chest_transforms: Array[Transform3D] = []
 var evolution_chest_transforms: Array[Transform3D] = []

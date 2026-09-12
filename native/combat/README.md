@@ -39,7 +39,7 @@ Godotは `.gdextension` が参照するDLLを配布先へコピーします。`L
 
 ## 計算境界
 
-`JarjarCombatWorld` と幾何計算用 `JarjarCombatKernel` はRefCountedで、APIバージョン3を起動時に検査します。位置・半径の単位はメートル、時間は整数tick（60tick/秒）です。敵IDは64bit整数、弾一覧は `[slot, generation, slot, generation, …]` の `PackedInt64Array` です。単体の検査では2要素の配列を渡します。一覧はtick開始時に独立して作成し、その後の出現・解放によって変更しません。奇数長の一覧は処理せず、不正・古いハンドルはスキップします。解放・再利用・容量変更後も以前のハンドルで新しい弾を操作できません。プールの設定値はmanifest内の `CombatBalanceDefinition` から読み込み、描画容量は実際の個体数に合わせて拡張します。
+`JarjarCombatWorld` と幾何計算用 `JarjarCombatKernel` はRefCountedで、APIバージョン4を起動時に検査します。位置・半径の単位はメートル、時間は整数tick（60tick/秒）です。敵IDは64bit整数、弾一覧は `[slot, generation, slot, generation, …]` の `PackedInt64Array` です。単体の検査では2要素の配列を渡します。一覧はtick開始時に独立して作成し、その後の出現・解放によって変更しません。奇数長の一覧は処理せず、不正・古いハンドルはスキップします。解放・再利用・容量変更後も以前のハンドルで新しい弾を操作できません。プールの設定値はmanifest内の `CombatBalanceDefinition` から読み込み、描画容量は実際の個体数に合わせて拡張します。
 
 戦闘更新は単一スレッドの固定60tickです。段階ごとのハンドル・攻撃要求をまとめて渡し、C++内で現在のHPを見て順に処理します。命中ごとのGDScriptコールバックはありません。ダメージは発生源別、撃破は発生源・種類別に集計し、重要な撃破と制限内の演出要求を返します。死亡確定は当tickの接触と特殊行動の後です。演出の上限に達しても撃破数とXPを減らしません。
 

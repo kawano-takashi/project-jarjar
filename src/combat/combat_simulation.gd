@@ -6,7 +6,6 @@ const FIXED_DELTA_SECONDS: float = 1.0 / 60.0
 const ORIGIN_STEP_METERS: int = 1024
 const VFX_HEIGHT_M: float = 0.03
 const DEATH_VFX_LIFETIME: float = 0.22
-const ATTACK_VFX_LIFETIME: float = 0.12
 const HIT_GLOW_TICKS: int = 6
 const MAX_PRESENTATION_EVENTS_PER_TICK: int = 64
 const PRESENTATION_IMPORTANT_RESERVE: int = 32
@@ -38,6 +37,8 @@ var xp_pickup_pool: XpPickupPool = XpPickupPool.new()
 var arena_object_system: ArenaObjectSystem = ArenaObjectSystem.new()
 var event_router: CombatEventRouter = CombatEventRouter.new()
 var weapon_system: WeaponSystem = WeaponSystem.new()
+var weapon_effects: Array[WeaponEffectState] = []
+var _weapon_visuals: Dictionary[StringName, Vector2i] = {}
 
 var freeze_all_updates: bool = false
 
@@ -99,6 +100,7 @@ func initialize(p_state: RunState, p_catalog: DefinitionCatalog) -> void:
 	projectile_pool.configure(_manifest.combat.projectile_pool_capacity, world)
 	projectile_pool.clear()
 	vfx_pool.clear()
+	weapon_effects.clear()
 	xp_pickup_pool.configure(_manifest.progression, world)
 	xp_pickup_pool.clear()
 	event_router = CombatEventRouter.new()
@@ -146,6 +148,16 @@ func advance_tick(move_input: Vector2) -> bool:
 		return false
 	state.combat_tick += 1
 	var current_tick: int = state.combat_tick
+	world.begin_weapon_visual_tick(current_tick,
+		VfxPool.MAX_PRODUCTION_REQUESTS_PER_TICK - VfxPool.IMPORTANT_RESERVED_SLOTS,
+		WeaponVisualStyle.TRAIL_INTERVAL_TICKS)
+	var effect_index: int = 0
+	while effect_index < weapon_effects.size():
+		var effect: WeaponEffectState = weapon_effects[effect_index]
+		if current_tick >= effect.born_tick + effect.duration_ticks:
+			weapon_effects.remove_at(effect_index)
+		else:
+			effect_index += 1
 	# Boss entry is a tick-boundary operation. Removing the old combatants before
 	# snapshots are taken guarantees they cannot move, attack, or collide on the boundary.
 	enemy_system.encounters.advance(current_tick, enemy_system.enemy_store)
@@ -267,10 +279,11 @@ func advance_tick(move_input: Vector2) -> bool:
 	if _performance_fixture_active:
 		_performance_weapon_attacks += attacks.size()
 	for attack: Dictionary in attacks:
-		_emit_attack_vfx(attack, current_tick)
+		_emit_attack_visuals(attack, current_tick)
 		_damage_nodes_from_attack(attack, current_tick)
 		_apply_resolution_hits(attack)
 	_consume_native_damage()
+	_consume_native_weapon_visuals(current_tick)
 
 	# 4. Enemy damage and special actions. Lethal allied hits remain pending so their
 	# current contact still participates before the death stage.
@@ -458,8 +471,23 @@ func build_snapshot() -> CombatSnapshot:
 	var vfx_transforms: Array[Transform3D] = []
 	var vfx_colors: Array[Color] = []
 	var vfx_custom_data: Array[Color] = []
+	var weapon_transforms: Array[Transform3D] = []
+	var weapon_colors: Array[Color] = []
+	var weapon_custom: Array[Color] = []
+	for effect: WeaponEffectState in weapon_effects:
+		weapon_transforms.append(effect.transform())
+		weapon_colors.append(WeaponVisualStyle.color_for(effect.visual_kind))
+		weapon_custom.append(effect.custom_data(state.combat_tick))
 	for pool_index: int in vfx_pool.active_indices_snapshot():
 		var vfx: VfxState = vfx_pool.slots[pool_index]
+		if vfx.weapon_visual_kind > 0:
+			var visual_transform: Transform3D = vfx.current_transform(vfx.weapon_height_m)
+			visual_transform.basis.x *= 0.25
+			visual_transform.basis.z = visual_transform.basis.z.normalized() * vfx.weapon_trail_length_m * 0.5
+			weapon_transforms.append(visual_transform)
+			weapon_colors.append(vfx.color)
+			weapon_custom.append(Color(vfx.normalized_progress(), float(vfx.weapon_visual_kind), -2.0, 1.0 if vfx.evolved else 0.0))
+			continue
 		vfx_transforms.append(vfx.current_transform(VFX_HEIGHT_M))
 		vfx_colors.append(vfx.color)
 		vfx_custom_data.append(vfx.shader_custom_data(
@@ -485,6 +513,11 @@ func build_snapshot() -> CombatSnapshot:
 	)
 	snapshot.native_visuals = visuals
 	snapshot.native_visuals["vfx_buffer"] = world.pack_visuals(vfx_transforms, vfx_colors, vfx_custom_data)
+	snapshot.weapon_effect_transforms = weapon_transforms
+	snapshot.weapon_effect_colors = weapon_colors
+	snapshot.weapon_effect_custom_data = weapon_custom
+	snapshot.active_vfx_count += weapon_transforms.size()
+	snapshot.native_visuals["weapon_effect_buffer"] = world.pack_visuals(weapon_transforms, weapon_colors, weapon_custom)
 	snapshot.hud_values["events"] = []
 	_apply_snapshot_markers(snapshot)
 	snapshot.world_origin = world_origin
@@ -759,6 +792,8 @@ func _rebase_if_needed() -> void:
 	projectile_pool.shift_origin(displacement)
 	for index: int in vfx_pool.active_indices_snapshot():
 		vfx_pool.slots[index].position -= displacement
+	for effect: WeaponEffectState in weapon_effects:
+		effect.position -= displacement
 	_absorption_position -= displacement
 	for event: CombatPresentationEvent in _pending_presentation_events:
 		event.position -= displacement
@@ -1292,41 +1327,54 @@ func _damage_nodes_from_attack(attack: Dictionary, current_tick: int) -> void:
 		)
 
 
-func _emit_attack_vfx(attack: Dictionary, current_tick: int) -> void:
+func _emit_attack_visuals(attack: Dictionary, current_tick: int) -> void:
 	if not bool(attack.get("generated", false)):
 		return
 	var weapon_id := StringName(str(attack.get("weapon_id", "")))
-	var definition: WeaponDefinition = catalog.weapon(weapon_id)
-	if definition == null or definition.behavior not in [
-		GameTypes.WeaponBehavior.MELEE_WAVE,
-		GameTypes.WeaponBehavior.AURA,
-	]:
+	if not _weapon_visuals.has(weapon_id):
 		return
-	var origin: Vector2 = attack.get("origin", player_position)
-	var direction: Vector2 = attack.get("direction", Vector2.RIGHT)
-	var range_m: float = maxf(0.4, float(attack.get("range_m", 1.0)))
-	var aura: bool = definition.behavior == GameTypes.WeaponBehavior.AURA
-	var effect_kind: VfxState.EffectKind = (
-		VfxState.EffectKind.AURA_PULSE if aura else VfxState.EffectKind.ENERGY_WAVE
-	)
-	var effect_position: Vector2 = (
-		origin if aura else origin + direction.normalized() * range_m * 0.4
-	)
-	var color := (
-		Color(0.32, 0.22, 1.0, 0.66) if aura else Color(0.25, 0.88, 1.0, 0.72)
-	)
-	vfx_pool.request(
-		effect_position,
-		minf(4.0, range_m),
-		ATTACK_VFX_LIFETIME,
-		color,
-		current_tick,
-		VfxPool.PRIORITY_ATTACK,
-		effect_kind,
-		direction,
-		1.0,
-		definition.is_evolved,
-	)
+	var visual: Vector2i = _weapon_visuals[weapon_id]
+	# Multiple simultaneous swings can share the exact same region. Draw its
+	# boundary once, while leaving every damage application in WeaponSystem intact.
+	var shown: Array[Dictionary] = []
+	for shape: Dictionary in attack.get("visual_shapes", []):
+		if shape in shown or float(shape["radius"]) <= 0.0:
+			continue
+		shown.append(shape)
+		weapon_effects.append(WeaponEffectState.new(shape, visual.x, visual.y != 0,
+			current_tick, WeaponVisualStyle.ATTACK_TICKS))
+
+
+func _consume_native_weapon_visuals(current_tick: int) -> void:
+	var batch: Dictionary = world.take_weapon_visuals()
+	for impact: Dictionary in batch.impacts:
+		var visual: Vector2i = _weapon_visuals.get(impact.weapon_id, Vector2i.ZERO)
+		weapon_effects.append(WeaponEffectState.new(impact, visual.x, visual.y != 0,
+			current_tick, WeaponVisualStyle.IMPACT_TICKS))
+	vfx_pool.record_suppressed_requests(int(batch.omitted_hits), current_tick)
+	# The enemy's hit flag provides feedback. Native hit requests still consume
+	# the decorative budget before trails, without producing floating hit marks.
+	for cue: Dictionary in batch.trails:
+		_emit_weapon_trail(cue, current_tick)
+
+
+func _emit_weapon_trail(cue: Dictionary, current_tick: int) -> void:
+	if vfx_pool.reduce_motion:
+		return
+	var visual: Vector2i = _weapon_visuals.get(cue.weapon_id, Vector2i.ZERO)
+	if visual.x <= 0:
+		return
+	var ticks: int = WeaponVisualStyle.TRAIL_TICKS
+	var slot: VfxState = vfx_pool.request(cue.position,
+		float(cue.radius), float(ticks) / 60.0,
+		WeaponVisualStyle.color_for(visual.x), current_tick,
+		VfxPool.PRIORITY_GENERIC,
+		VfxState.EffectKind.GENERIC, cue.direction, 1.0, visual.y != 0)
+	if slot != null:
+		slot.weapon_visual_kind = visual.x
+		slot.weapon_duration_ticks = ticks
+		slot.weapon_trail_length_m = float(cue.length)
+		slot.weapon_height_m = float(cue.height)
 
 
 func _resolve_modal_priority() -> void:
@@ -1805,10 +1853,10 @@ func _configure_native_visuals() -> void:
 		&"mass_projectile": CombatSnapshot.ProjectileVisualKind.MASS_PROJECTILE,
 		&"zero_field": CombatSnapshot.ProjectileVisualKind.ZERO_FIELD,
 	}
-	var definitions: Dictionary = {}
+	_weapon_visuals.clear()
 	for definition: WeaponDefinition in catalog.weapons.values():
-		definitions[definition.weapon_id] = Vector2i(kinds.get(catalog.lineage_for_weapon(definition.weapon_id), 0), int(definition.is_evolved))
-	world.configure_visuals(definitions)
+		_weapon_visuals[definition.weapon_id] = Vector2i(kinds.get(catalog.lineage_for_weapon(definition.weapon_id), 0), int(definition.is_evolved))
+	world.configure_visuals(_weapon_visuals)
 
 
 func _archive_events() -> void:

@@ -6,7 +6,7 @@ extends RefCounted
 const EXTENSION_PATH: String = "res://native/combat/runtime/jarjar_combat.gdextension"
 const KERNEL_CLASS: StringName = &"JarjarCombatKernel"
 const WORLD_CLASS: StringName = &"JarjarCombatWorld"
-const API_VERSION: int = 3
+const API_VERSION: int = 4
 static var error_message: String = ""
 static var _loaded: bool = false
 

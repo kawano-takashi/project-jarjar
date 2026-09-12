@@ -1,4 +1,4 @@
-[gd_scene load_steps=70 format=3]
+[gd_scene load_steps=88 format=3]
 
 [ext_resource type="Script" path="res://src/gameplay/arena_presenter.gd" id="1_presenter"]
 [ext_resource type="PackedScene" path="res://scenes/ui/combat_hud.tscn" id="2_hud"]
@@ -7,6 +7,16 @@
 [ext_resource type="BoxMesh" path="res://scenes/gameplay/chest_mesh.tres" id="4_chest"]
 
 [ext_resource type="CylinderMesh" path="res://scenes/gameplay/evolution_chest_mesh.tres" id="5_evolution_chest"]
+
+[ext_resource type="ArrayMesh" path="res://scenes/gameplay/weapon_meshes/default.tres" id="weapon_default"]
+[ext_resource type="ArrayMesh" path="res://scenes/gameplay/weapon_meshes/resonance.tres" id="weapon_resonance"]
+[ext_resource type="ArrayMesh" path="res://scenes/gameplay/weapon_meshes/homing.tres" id="weapon_homing"]
+[ext_resource type="ArrayMesh" path="res://scenes/gameplay/weapon_meshes/needle.tres" id="weapon_needle"]
+[ext_resource type="ArrayMesh" path="res://scenes/gameplay/weapon_meshes/arc.tres" id="weapon_arc"]
+[ext_resource type="ArrayMesh" path="res://scenes/gameplay/weapon_meshes/returning.tres" id="weapon_returning"]
+[ext_resource type="ArrayMesh" path="res://scenes/gameplay/weapon_meshes/orbital.tres" id="weapon_orbital"]
+[ext_resource type="ArrayMesh" path="res://scenes/gameplay/weapon_meshes/mass.tres" id="weapon_mass"]
+[ext_resource type="ArrayMesh" path="res://scenes/gameplay/weapon_meshes/field.tres" id="weapon_field"]
 
 [sub_resource type="StandardMaterial3D" id="PlayerMaterial"]
 albedo_color = Color(0.3, 0.78, 0.96, 1)
@@ -156,118 +166,6 @@ mesh = SubResource("BossMesh")
 instance_count = 4
 visible_instance_count = 0
 
-[sub_resource type="StandardMaterial3D" id="ProjectileDefaultMaterial"]
-albedo_color = Color(1, 0.78, 0.24, 1)
-emission_enabled = true
-emission = Color(0.6, 0.25, 0.02, 1)
-emission_energy_multiplier = 2.0
-roughness = 0.25
-
-[sub_resource type="SphereMesh" id="ProjectileDefaultMesh"]
-material = SubResource("ProjectileDefaultMaterial")
-radius = 0.16
-height = 0.32
-radial_segments = 8
-rings = 4
-
-[sub_resource type="StandardMaterial3D" id="ProjectileResonanceMaterial"]
-albedo_color = Color(0.22, 0.92, 1, 1)
-emission_enabled = true
-emission = Color(0.02, 0.54, 0.72, 1)
-emission_energy_multiplier = 2.4
-
-[sub_resource type="CylinderMesh" id="ProjectileResonanceMesh"]
-material = SubResource("ProjectileResonanceMaterial")
-top_radius = 0.25
-bottom_radius = 0.25
-height = 0.08
-radial_segments = 12
-
-[sub_resource type="StandardMaterial3D" id="ProjectileHomingMaterial"]
-albedo_color = Color(0.36, 1, 0.58, 1)
-emission_enabled = true
-emission = Color(0.03, 0.62, 0.16, 1)
-emission_energy_multiplier = 2.0
-
-[sub_resource type="SphereMesh" id="ProjectileHomingMesh"]
-material = SubResource("ProjectileHomingMaterial")
-radius = 0.19
-height = 0.38
-radial_segments = 6
-rings = 3
-
-[sub_resource type="StandardMaterial3D" id="ProjectileNeedleMaterial"]
-albedo_color = Color(1, 0.95, 0.7, 1)
-emission_enabled = true
-emission = Color(0.7, 0.52, 0.12, 1)
-emission_energy_multiplier = 2.1
-
-[sub_resource type="BoxMesh" id="ProjectileNeedleMesh"]
-material = SubResource("ProjectileNeedleMaterial")
-size = Vector3(0.10, 0.10, 0.58)
-
-[sub_resource type="StandardMaterial3D" id="ProjectileArcMaterial"]
-albedo_color = Color(0.52, 0.72, 1, 1)
-emission_enabled = true
-emission = Color(0.12, 0.28, 0.8, 1)
-emission_energy_multiplier = 2.2
-
-[sub_resource type="BoxMesh" id="ProjectileArcMesh"]
-material = SubResource("ProjectileArcMaterial")
-size = Vector3(0.28, 0.28, 0.28)
-
-[sub_resource type="StandardMaterial3D" id="ProjectileReturningMaterial"]
-albedo_color = Color(1, 0.45, 0.82, 1)
-emission_enabled = true
-emission = Color(0.65, 0.05, 0.4, 1)
-emission_energy_multiplier = 2.1
-
-[sub_resource type="TorusMesh" id="ProjectileReturningMesh"]
-material = SubResource("ProjectileReturningMaterial")
-inner_radius = 0.10
-outer_radius = 0.24
-rings = 6
-ring_segments = 10
-
-[sub_resource type="StandardMaterial3D" id="ProjectileOrbitalMaterial"]
-albedo_color = Color(0.74, 0.5, 1, 1)
-emission_enabled = true
-emission = Color(0.3, 0.09, 0.75, 1)
-emission_energy_multiplier = 2.1
-
-[sub_resource type="CylinderMesh" id="ProjectileOrbitalMesh"]
-material = SubResource("ProjectileOrbitalMaterial")
-top_radius = 0.18
-bottom_radius = 0.28
-height = 0.34
-radial_segments = 6
-
-[sub_resource type="StandardMaterial3D" id="ProjectileMassMaterial"]
-albedo_color = Color(1, 0.5, 0.22, 1)
-emission_enabled = true
-emission = Color(0.72, 0.12, 0.02, 1)
-emission_energy_multiplier = 2.0
-
-[sub_resource type="SphereMesh" id="ProjectileMassMesh"]
-material = SubResource("ProjectileMassMaterial")
-radius = 0.25
-height = 0.5
-radial_segments = 8
-rings = 4
-
-[sub_resource type="StandardMaterial3D" id="ProjectileFieldMaterial"]
-albedo_color = Color(0.3, 0.86, 0.95, 1)
-emission_enabled = true
-emission = Color(0.02, 0.42, 0.62, 1)
-emission_energy_multiplier = 1.7
-
-[sub_resource type="TorusMesh" id="ProjectileFieldMesh"]
-material = SubResource("ProjectileFieldMaterial")
-inner_radius = 0.14
-outer_radius = 0.3
-rings = 6
-ring_segments = 12
-
 [sub_resource type="StandardMaterial3D" id="ProjectileEnemyMaterial"]
 albedo_color = Color(1, 0.18, 0.18, 1)
 emission_enabled = true
@@ -281,107 +179,66 @@ height = 0.36
 radial_segments = 6
 rings = 3
 
-[sub_resource type="StandardMaterial3D" id="EvolvedOutlineInnerMaterial"]
-albedo_color = Color(1, 0.94, 0.62, 0.92)
-emission_enabled = true
-emission = Color(1, 0.62, 0.12, 1)
-emission_energy_multiplier = 1.65
-transparency = 1
-
-[sub_resource type="TorusMesh" id="EvolvedOutlineInnerMesh"]
-material = SubResource("EvolvedOutlineInnerMaterial")
-inner_radius = 0.18
-outer_radius = 0.24
-rings = 6
-ring_segments = 12
-
-[sub_resource type="StandardMaterial3D" id="EvolvedOutlineOuterMaterial"]
-albedo_color = Color(0.42, 0.92, 1, 0.82)
-emission_enabled = true
-emission = Color(0.08, 0.58, 1, 1)
-emission_energy_multiplier = 1.45
-transparency = 1
-
-[sub_resource type="TorusMesh" id="EvolvedOutlineOuterMesh"]
-material = SubResource("EvolvedOutlineOuterMaterial")
-inner_radius = 0.27
-outer_radius = 0.32
-rings = 6
-ring_segments = 18
-
-[sub_resource type="StandardMaterial3D" id="EvolvedCoreMaterial"]
-albedo_color = Color(1, 1, 1, 1)
-emission_enabled = true
-emission = Color(1, 1, 1, 1)
-emission_energy_multiplier = 1.4
-
-[sub_resource type="SphereMesh" id="EvolvedCoreMesh"]
-material = SubResource("EvolvedCoreMaterial")
-radius = 0.095
-height = 0.19
-radial_segments = 10
-rings = 5
-
 [sub_resource type="MultiMesh" id="ProjectileDefaultMultiMesh"]
 transform_format = 1
 use_custom_data = true
-mesh = SubResource("ProjectileDefaultMesh")
+mesh = ExtResource("weapon_default")
 instance_count = 4096
 visible_instance_count = 0
 
 [sub_resource type="MultiMesh" id="ProjectileResonanceMultiMesh"]
 transform_format = 1
 use_custom_data = true
-mesh = SubResource("ProjectileResonanceMesh")
+mesh = ExtResource("weapon_resonance")
 instance_count = 0
 visible_instance_count = 0
 
 [sub_resource type="MultiMesh" id="ProjectileHomingMultiMesh"]
 transform_format = 1
 use_custom_data = true
-mesh = SubResource("ProjectileHomingMesh")
+mesh = ExtResource("weapon_homing")
 instance_count = 0
 visible_instance_count = 0
 
 [sub_resource type="MultiMesh" id="ProjectileNeedleMultiMesh"]
 transform_format = 1
 use_custom_data = true
-mesh = SubResource("ProjectileNeedleMesh")
+mesh = ExtResource("weapon_needle")
 instance_count = 0
 visible_instance_count = 0
 
 [sub_resource type="MultiMesh" id="ProjectileArcMultiMesh"]
 transform_format = 1
 use_custom_data = true
-mesh = SubResource("ProjectileArcMesh")
+mesh = ExtResource("weapon_arc")
 instance_count = 0
 visible_instance_count = 0
 
 [sub_resource type="MultiMesh" id="ProjectileReturningMultiMesh"]
 transform_format = 1
 use_custom_data = true
-mesh = SubResource("ProjectileReturningMesh")
+mesh = ExtResource("weapon_returning")
 instance_count = 0
 visible_instance_count = 0
 
 [sub_resource type="MultiMesh" id="ProjectileOrbitalMultiMesh"]
 transform_format = 1
 use_custom_data = true
-mesh = SubResource("ProjectileOrbitalMesh")
+mesh = ExtResource("weapon_orbital")
 instance_count = 0
 visible_instance_count = 0
 
 [sub_resource type="MultiMesh" id="ProjectileMassMultiMesh"]
 transform_format = 1
 use_custom_data = true
-mesh = SubResource("ProjectileMassMesh")
+mesh = ExtResource("weapon_mass")
 instance_count = 0
 visible_instance_count = 0
 
 [sub_resource type="MultiMesh" id="ProjectileFieldMultiMesh"]
 transform_format = 1
 use_custom_data = true
-mesh = SubResource("ProjectileFieldMesh")
+mesh = ExtResource("weapon_field")
 instance_count = 0
 visible_instance_count = 0
 
@@ -389,24 +246,6 @@ visible_instance_count = 0
 transform_format = 1
 use_custom_data = true
 mesh = SubResource("ProjectileEnemyMesh")
-instance_count = 0
-visible_instance_count = 0
-
-[sub_resource type="MultiMesh" id="EvolvedOutlineInnerMultiMesh"]
-transform_format = 1
-mesh = SubResource("EvolvedOutlineInnerMesh")
-instance_count = 0
-visible_instance_count = 0
-
-[sub_resource type="MultiMesh" id="EvolvedOutlineOuterMultiMesh"]
-transform_format = 1
-mesh = SubResource("EvolvedOutlineOuterMesh")
-instance_count = 0
-visible_instance_count = 0
-
-[sub_resource type="MultiMesh" id="EvolvedCoreMultiMesh"]
-transform_format = 1
-mesh = SubResource("EvolvedCoreMesh")
 instance_count = 0
 visible_instance_count = 0
 
@@ -695,21 +534,6 @@ multimesh = SubResource("ProjectileFieldMultiMesh")
 [node name="ProjectileEnemyInstances" type="MultiMeshInstance3D" parent="."]
 unique_name_in_owner = true
 multimesh = SubResource("ProjectileEnemyMultiMesh")
-
-[node name="EvolvedOutlineInnerInstances" type="MultiMeshInstance3D" parent="."]
-unique_name_in_owner = true
-cast_shadow = 0
-multimesh = SubResource("EvolvedOutlineInnerMultiMesh")
-
-[node name="EvolvedOutlineOuterInstances" type="MultiMeshInstance3D" parent="."]
-unique_name_in_owner = true
-cast_shadow = 0
-multimesh = SubResource("EvolvedOutlineOuterMultiMesh")
-
-[node name="EvolvedCoreInstances" type="MultiMeshInstance3D" parent="."]
-unique_name_in_owner = true
-cast_shadow = 0
-multimesh = SubResource("EvolvedCoreMultiMesh")
 
 [node name="VfxInstances" type="MultiMeshInstance3D" parent="."]
 unique_name_in_owner = true
