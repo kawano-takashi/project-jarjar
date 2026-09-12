@@ -123,6 +123,8 @@ var elapsed_ticks: float:
 		return float(_world.projectile_get(pool_index, &"elapsed_ticks"))
 	set(value):
 		_world.projectile_set(pool_index, &"elapsed_ticks", value)
+## Flight age limit in combat ticks (60 ticks/second), also used for the lob height.
+## Positive values expire at this age; zero uses only remaining_lifetime and range.
 var total_lifetime_ticks: int:
 	get:
 		return int(_world.projectile_get(pool_index, &"total_lifetime_ticks"))

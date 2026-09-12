@@ -321,13 +321,13 @@ func _fire_homing(
 	if target == null:
 		return {"generated": false}
 	var amount: int = maxi(1, definition.amount_at(runtime.level))
+	var direction: Vector2 = _homing_aim_direction(player_position, target.position, _last_move_direction)
 	for _projectile_index: int in range(amount):
-		var direction: Vector2 = (target.position - player_position).normalized()
 		_spawn_ally_projectile(runtime, definition, player_position, direction, target.entity_id, stats, current_tick, ProjectileState.MovementKind.HOMING)
 	return _projectile_result(
 		runtime,
 		player_position,
-		(target.position - player_position).normalized(),
+		direction,
 		StatCalculator.weapon_range(definition, runtime.level, StatCalculator.area_multiplier(stats, _catalog.manifest().combat)),
 	)
 
@@ -416,7 +416,7 @@ func _start_homing_core_burst(
 	)
 	if target == null:
 		return {"generated": false}
-	var direction: Vector2 = _homing_core_aim_direction(
+	var direction: Vector2 = _homing_aim_direction(
 		player_position,
 		target.position,
 		_last_move_direction,
@@ -471,7 +471,7 @@ func _fire_pending_homing_core_shot(
 	var direction: Vector2 = burst.last_direction
 	if target != null:
 		target_entity_id = target.entity_id
-		direction = _homing_core_aim_direction(
+		direction = _homing_aim_direction(
 			player_position,
 			target.position,
 			burst.last_direction,
@@ -501,7 +501,7 @@ func _fire_pending_homing_core_shot(
 	)
 
 
-func _homing_core_aim_direction(
+func _homing_aim_direction(
 	origin: Vector2,
 	target_position: Vector2,
 	fallback: Vector2,

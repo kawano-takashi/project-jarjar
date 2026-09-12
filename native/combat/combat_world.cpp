@@ -705,7 +705,9 @@ public:
             if (p.movement_kind == 1) {
                 Enemy *e = enemy(p.target_entity_id);
                 if (!e || !acquirable(*e)) { e = nearest(p.position); p.target_entity_id = e ? e->entity_id : -1; }
-                if (e) p.velocity = (e->position - p.position).normalized() * real_t(p.speed);
+                // Keep the heading at overlap: another shot may kill this target
+                // before this projectile's collision is resolved.
+                if (e && e->position != p.position) p.velocity = (e->position - p.position).normalized() * real_t(p.speed);
             } else if (p.movement_kind == 3 && p.outbound_distance_remaining <= .0001) {
                 if (!p.return_phase_started) { p.hit_enemies.clear(); p.return_phase_started = true; }
                 p.target_position = player; p.velocity = (player - p.position).normalized() * real_t(p.speed);
@@ -714,10 +716,15 @@ public:
             Vector2 movement = p.velocity * real_t(scale) / real_t(60.0);
             double limit = p.remaining_distance;
             if (p.movement_kind == 3 && !p.return_phase_started) limit = std::min(limit, p.outbound_distance_remaining);
+            // Consume the scalar distance before Vector2 rounds the clamped movement.
+            // Measuring that rounded vector can leave a tiny positive range forever.
+            const double distance = std::min(double(movement.length()), std::max(0.0, limit));
             movement = movement.limit_length(real_t(std::max(0.0, limit))); p.position += movement;
-            p.remaining_distance = std::max(0.0, p.remaining_distance - double(movement.length()));
-            if (p.movement_kind == 3 && !p.return_phase_started) p.outbound_distance_remaining = std::max(0.0, p.outbound_distance_remaining - double(movement.length()));
+            p.remaining_distance = std::max(0.0, p.remaining_distance - distance);
+            if (p.movement_kind == 3 && !p.return_phase_started) p.outbound_distance_remaining = std::max(0.0, p.outbound_distance_remaining - distance);
             p.remaining_lifetime = std::max(0.0, p.remaining_lifetime - scale / 60.0); p.elapsed_ticks += scale;
+            // Whole-tick lifetimes must not survive an extra tick due to seconds subtraction.
+            if (p.total_lifetime_ticks > 0 && p.elapsed_ticks >= p.total_lifetime_ticks) p.remaining_lifetime = 0;
             p.expired_this_tick = p.remaining_distance <= 0 || p.remaining_lifetime <= 0;
         }
     }

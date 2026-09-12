@@ -294,6 +294,102 @@ func test_arc_projectile_snapshot_follows_a_parabolic_lob(assertions: Variant, _
 	assertions.expect_float(start_height, landing_height, "arc projectile returns to launch height at landing")
 
 
+func test_missed_projectiles_disappear_at_range_end(assertions: Variant, _context: Dictionary) -> void:
+	var catalog: DefinitionCatalog = BalanceTestFixtures.catalog()
+	# This oblique trajectory used to leave a positive subpixel distance indefinitely.
+	var direction := Vector2.from_angle(deg_to_rad(86.0))
+	for movement_kind: ProjectileState.MovementKind in [
+		ProjectileState.MovementKind.STRAIGHT, ProjectileState.MovementKind.HOMING,
+		ProjectileState.MovementKind.ARC, ProjectileState.MovementKind.RETURNING,
+	]:
+		var state: RunState = RunStateFactory.create(7308, catalog)
+		state.weapons.clear()
+		state.spawn_credit = -100.0
+		state.stop_until_tick = 100
+		var simulation := CombatSimulation.new()
+		simulation.initialize(state, catalog)
+		var target: EnemyEntity = simulation.spawn_fixture_enemy(
+			GameTypes.EnemyType.BULWARK, direction * 5.5, -1,
+		)
+		var returning: bool = movement_kind == ProjectileState.MovementKind.RETURNING
+		var projectile: ProjectileState = simulation.projectile_pool.acquire(
+			ProjectileState.FACTION_ALLY, &"homing_core", -1, Vector2.ZERO,
+			direction * 8.0, 0.2, 1.0, 11.0 if returning else 5.5, 3.0,
+			direction * 5.5, 0, 0, &"homing_core", movement_kind, target.entity_id, 180,
+		)
+		projectile.outbound_distance_remaining = 5.5 if returning else 0.0
+		var flight_ticks: int = 84 if returning else 42
+		for current_tick: int in range(1, flight_ticks):
+			if current_tick == 2:
+				target.hp = 0.0
+			elif current_tick == 3:
+				simulation.enemy_system.enemy_store.remove(target.entity_id)
+			simulation.advance_tick(Vector2.ZERO)
+		assertions.expect_true(projectile.active, "a missed projectile remains in flight before its range ends")
+		var snapshot: CombatSnapshot = simulation.step(Vector2.ZERO)
+		assertions.expect_equal(0, simulation.projectile_pool.active_count(), "movement kind %d disappears at the end of its path" % movement_kind)
+		assertions.expect_true(snapshot.projectile_transforms.is_empty(), "an exhausted projectile leaves no ground visual")
+		assertions.expect_equal(0, state.weapon_hit_count, "the missed shot expires without an enemy hit")
+
+
+func test_homing_projectile_keeps_flying_when_another_shot_kills_its_target(assertions: Variant, _context: Dictionary) -> void:
+	var catalog: DefinitionCatalog = BalanceTestFixtures.catalog()
+	var setup: Dictionary = _homing_fixture(catalog, 7310, &"infinite_homing", 1)
+	var simulation: CombatSimulation = setup["simulation"]
+	var state: RunState = simulation.state
+	state.spawn_credit = -100.0
+	state.stop_until_tick = 100
+	var position := Vector2(3.0, 0.0)
+	simulation.player_position = position
+	var target: EnemyEntity = simulation.spawn_fixture_enemy(GameTypes.EnemyType.BULWARK, position, -1)
+	# Both shots overlap the target during movement, but the first kills it before
+	# the homing shot's collision is resolved.
+	simulation.projectile_pool.acquire(
+		ProjectileState.FACTION_ALLY, &"homing_core", -1, position,
+		Vector2.RIGHT, 0.2, target.hp, 1.0, 3.0, position, 0, -1,
+	)
+	simulation.weapon_system.advance_and_fire(
+		position, simulation.enemy_system.enemy_store,
+		simulation.enemy_system.uniform_grid, 0,
+	)
+	state.weapons.clear()
+	var projectile: ProjectileState = _projectile_born_at(simulation, 0)
+	assertions.expect_true(projectile != null, "the homing weapon fires at the overlapping enemy")
+	if projectile == null:
+		return
+	projectile.remaining_distance = 1.0
+	assertions.expect_true(projectile.speed > 0.0, "an overlapping target does not turn the launch speed into zero")
+	simulation.advance_tick(Vector2.ZERO)
+	assertions.expect_equal(1, state.total_kills, "the first shot kills the shared target")
+	assertions.expect_true(projectile.active, "the second shot retains its remaining flight")
+	assertions.expect_true(projectile.position != position, "the homing shot keeps moving when its overlapping target dies")
+	for current_tick: int in range(2, 9):
+		simulation.advance_tick(Vector2.ZERO)
+	assertions.expect_equal(1, state.weapon_hit_count, "the dead target is not hit again")
+	assertions.expect_equal(0, simulation.projectile_pool.active_count(), "the surviving shot consumes its range and disappears")
+	assertions.expect_true(simulation.build_snapshot().projectile_transforms.is_empty(), "no shot remains visible on the ground")
+
+
+func test_missed_projectile_disappears_at_lifetime_end(assertions: Variant, _context: Dictionary) -> void:
+	var catalog: DefinitionCatalog = BalanceTestFixtures.catalog()
+	var state: RunState = RunStateFactory.create(7309, catalog)
+	state.weapons.clear()
+	state.spawn_credit = -100.0
+	var simulation := CombatSimulation.new()
+	simulation.initialize(state, catalog)
+	var projectile: ProjectileState = simulation.projectile_pool.acquire(
+		ProjectileState.FACTION_ALLY, &"homing_core", -1, Vector2.ZERO,
+		Vector2.ZERO, 0.2, 1.0, 5.5, 3.0 / 60.0, Vector2.RIGHT * 5.5,
+		0, 0, &"homing_core", ProjectileState.MovementKind.STRAIGHT, -1, 3,
+	)
+	for current_tick: int in 2:
+		simulation.advance_tick(Vector2.ZERO)
+	assertions.expect_true(projectile.active, "a motionless projectile retains its configured lifetime")
+	var snapshot: CombatSnapshot = simulation.step(Vector2.ZERO)
+	assertions.expect_equal(0, simulation.projectile_pool.active_count(), "a projectile expires at its lifetime even when its range is not consumed")
+	assertions.expect_true(snapshot.projectile_transforms.is_empty(), "the expired projectile disappears from the snapshot")
+
+
 func test_homing_core_levels_emit_sequential_straight_bursts(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
