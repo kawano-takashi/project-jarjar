@@ -157,6 +157,10 @@ func test_bot_observes_partial_telegraphs_and_escapes_swarm_lane(a: Variant, _co
 	escape.initialize(BalanceTestFixtures.catalog(), 774, Vector2i(1920, 1080))
 	warning.anchor = Vector2.ZERO
 	warning.direction = Vector2.LEFT
+	# Keep the fixture in the real offscreen spawn band used by warning prediction.
+	warning.spawn_distance = escape.simulation.enemy_system._sample_spawn_distance(
+		escape.simulation.state.rng_streams.swarm_event_rng, warning.anchor, -warning.direction,
+	)
 	escape.simulation.enemy_system.swarm_warning = warning
 	escape.simulation.xp_pickup_pool.acquire(Vector2(8.0, 0.0), 1, 0, Vector2.ZERO)
 	for _tick: int in 360:
