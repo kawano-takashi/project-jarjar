@@ -103,6 +103,17 @@ func test_boss_boundary_constrains_bodies_slides_and_stops_shrinking(a: Variant,
 	a.expect_true(sim.player_position.y > before.y, "an outward diagonal slides along the wall")
 	a.expect_true(sim.player_position.distance_to(encounter.boss_center) + player_radius <= encounter.boss_radius + 0.001, "player body stays inside")
 	a.expect_true(boss.position.distance_to(encounter.boss_center) + boss.body_radius() <= encounter.boss_radius + 0.001, "boss is constrained instead of repositioned offscreen")
+	var projectile: ProjectileState = sim.projectile_pool.acquire(
+		ProjectileState.FACTION_ALLY, &"boundary_probe", -1, boss.position, Vector2.ZERO,
+		0.1, 1.0, 1.0, 1.0, boss.position, 0, sim.state.combat_tick - 1,
+	)
+	var hits: Array[Dictionary] = sim.weapon_system.resolve_ally_projectile(
+		PackedInt64Array([projectile.pool_index, projectile.generation]), sim.enemy_system.enemy_store,
+		sim.enemy_system.uniform_grid, sim.player_position, sim.state.combat_tick,
+	)
+	a.expect_equal(1, hits.size(), "weapons find the boss after boundary correction and origin shifting")
+	if not hits.is_empty():
+		a.expect_equal(boss.entity_id, hits[0].entity_id, "the corrected boss receives the hit")
 	sim.state.stop_until_tick = sim.state.combat_tick + 10000
 	sim.state.combat_tick = boss.activation_tick + sim.catalog.manifest().encounters.boss_shrink_ticks - 1
 	sim.advance_tick(Vector2.ZERO)

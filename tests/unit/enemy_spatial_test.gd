@@ -12,6 +12,13 @@ func test_sparse_grid_queries_distant_cells_without_aliasing(a: Variant, _contex
 	a.expect_equal([43], grid.query_segment_candidates(Vector2(-0.2, 0.1), Vector2(0.2, 0.1), 0.0), "an identity inserted into multiple cells is returned only once")
 	grid.clear()
 	a.expect_true(grid.query_circle_candidates(Vector2(5000, -3000), 1.0, 0.0).is_empty(), "cleared cells return no stale IDs")
+	for offset: int in 4:
+		grid.insert(4294967311, Vector2(10000 + offset * 10, 20000))
+		grid.insert(42, Vector2(10000 + offset * 10, 20000))
+		grid.insert(42, Vector2(10000 + offset * 10 + 2, 20000))
+		a.expect_equal([42, 4294967311], grid.query_circle_candidates(Vector2(10000 + offset * 10, 20000), 3.0, 0.0), "reused cells preserve full IDs, ordering and duplicate suppression")
+		a.expect_true(grid.query_circle_candidates(Vector2(5000, -3000), 1.0, 0.0).is_empty(), "reused storage does not revive historical coordinates")
+		grid.clear()
 
 
 func test_enemy_entry_contract_and_pool_default(assertions: Variant, _context: Dictionary) -> void:
@@ -170,7 +177,9 @@ func test_boss_charge_cadence_and_latches(assertions: Variant, _context: Diction
 			assertions.expect_false(boss.boss_charge_half_step, "first volley latches the unshifted pattern")
 	assertions.expect_equal(8, projectile_pool.active_count(), "thirty action ticks of charge emit eight projectiles")
 	assertions.expect_true(boss.position.distance_to(Vector2(6, 0)) < spawn_position.distance_to(Vector2(6, 0)), "active boss directly pursues the player while charging")
-	for entry: PackedInt64Array in projectile_pool.snapshot_active():
+	var projectile_entries: PackedInt64Array = projectile_pool.snapshot_active()
+	for offset: int in range(0, projectile_entries.size(), 2):
+		var entry: PackedInt64Array = projectile_entries.slice(offset, offset + 2)
 		var projectile: ProjectileState = projectile_pool.resolve_snapshot_entry(entry)
 		assertions.expect_equal(boss.position, projectile.position, "volley projectile originates at the moving boss fire position")
 
@@ -196,7 +205,7 @@ func test_boss_charge_cadence_and_latches(assertions: Variant, _context: Diction
 		if charge_index == 0:
 			assertions.expect_equal(12, boss.boss_charge_spoke_count, "phase change does not mutate a latched charge")
 	assertions.expect_equal(20, projectile_pool.active_count(), "latched phase-two charge emits twelve additional projectiles")
-	var shifted_entry: PackedInt64Array = projectile_pool.snapshot_active()[8]
+	var shifted_entry: PackedInt64Array = projectile_pool.snapshot_active().slice(16, 18)
 	var shifted_projectile: ProjectileState = projectile_pool.resolve_snapshot_entry(shifted_entry)
 	assertions.expect_true(
 		shifted_projectile.velocity.normalized().dot(Vector2.from_angle(PI / 12.0)) > 0.9999,

@@ -67,7 +67,7 @@ func test_stop_freezes_normal_and_halves_boss_projectiles(assertions: Variant, _
 		0, 0, &"boss_projectile", ProjectileState.MovementKind.STRAIGHT,
 		-1, 60, 0, 0.0, 0.5,
 	)
-	var projectile_handles: Array[PackedInt64Array] = simulation.projectile_pool.snapshot_active()
+	var projectile_handles: PackedInt64Array = simulation.projectile_pool.snapshot_active()
 	simulation.weapon_system.move_snapshot_projectiles(
 		projectile_handles,
 		simulation.enemy_system.enemy_store,

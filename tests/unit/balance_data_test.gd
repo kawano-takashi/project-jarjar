@@ -369,7 +369,7 @@ func test_balance_stationary_projectile_values_remain_finite(a: Variant, _contex
 		-1, {}, 0, ProjectileState.MovementKind.ARC, Vector2(2, 0),
 	)
 	a.expect_equal(1, simulation.projectile_pool.active_count(), "zero-speed projectile is a valid stationary effect")
-	var projectile: ProjectileState = simulation.projectile_pool.resolve_snapshot_entry(simulation.projectile_pool.snapshot_active()[0])
+	var projectile: ProjectileState = simulation.projectile_pool.resolve_snapshot_entry(simulation.projectile_pool.snapshot_active().slice(0, 2))
 	a.expect_true(is_finite(projectile.remaining_lifetime), "zero speed never divides by zero while determining travel duration")
 	a.expect_equal(Vector2.ZERO, projectile.velocity, "zero speed is not replaced by a hidden minimum")
 

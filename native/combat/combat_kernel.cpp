@@ -43,7 +43,7 @@ protected:
     }
 
 public:
-    int64_t api_version() const { return 2; }
+    int64_t api_version() const { return 3; }
 
     void clear_index(double cell_size) {
         index.clear();
@@ -55,6 +55,7 @@ public:
     void rebuild_index(const PackedInt64Array &ids, const PackedVector2Array &positions, double cell_size) {
         clear_index(cell_size);
         ERR_FAIL_COND_MSG(ids.size() != positions.size(), "Combat index arrays must have equal lengths.");
+        index.reserve(size_t(ids.size()));
         for (int64_t i = 0; i < ids.size(); ++i) index.insert(ids[i], positions[i]);
     }
 
@@ -120,6 +121,7 @@ public:
         ERR_FAIL_COND_V_MSG(ids.size() != positions.size() || ids.size() != radii.size(), PackedVector2Array(), "Combat separation arrays must have equal lengths.");
         ERR_FAIL_COND_V_MSG(cell_size <= 0.0 || !std::isfinite(cell_size) || directions.is_empty(), PackedVector2Array(), "Combat separation requires a positive cell size and contact directions.");
         separation_index.clear();
+        separation_index.reserve(size_t(ids.size()));
         separation_index.cell_size = cell_size;
         double maximum_radius = 0.0;
         for (int64_t i = 0; i < ids.size(); ++i) {

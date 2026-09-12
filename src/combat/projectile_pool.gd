@@ -103,10 +103,9 @@ func release(pool_index: int, generation: int = -1) -> bool:
 	return world.release_projectile(pool_index, generation)
 
 
-func snapshot_active() -> Array[PackedInt64Array]:
-	var result: Array[PackedInt64Array] = []
-	result.assign(world.projectile_handles())
-	return result
+## Independent tick-start pairs: [slot, generation, ...], with 64-bit values.
+func snapshot_active() -> PackedInt64Array:
+	return world.projectile_handles()
 
 
 func resolve_snapshot_entry(entry: PackedInt64Array) -> ProjectileState:

@@ -92,7 +92,7 @@ class ProfiledSimulation extends "res://dev/bot/recorded_simulation.gd":
 		super()
 		timer.record(&"combat_simulation._apply_passive_recovery", started)
 
-	func _damage_nodes_from_projectiles(entries: Array[PackedInt64Array], current_tick: int) -> void:
+	func _damage_nodes_from_projectiles(entries: PackedInt64Array, current_tick: int) -> void:
 		var started: int = Time.get_ticks_usec()
 		super(entries, current_tick)
 		timer.record(&"combat_simulation._damage_nodes_from_projectiles", started)
@@ -158,7 +158,7 @@ class ProfiledWeapons extends WeaponSystem:
 		timer.record(&"weapon_system.advance_and_fire", started)
 		return result
 
-	func move_snapshot_projectiles(entries: Array[PackedInt64Array], enemy_store: EnemyStore, player_position: Vector2, current_tick: int, stop_active: bool,) -> void:
+	func move_snapshot_projectiles(entries: PackedInt64Array, enemy_store: EnemyStore, player_position: Vector2, current_tick: int, stop_active: bool,) -> void:
 		var started: int = Time.get_ticks_usec()
 		super(entries, enemy_store, player_position, current_tick, stop_active)
 		timer.record(&"weapon_system.move_snapshot_projectiles", started)

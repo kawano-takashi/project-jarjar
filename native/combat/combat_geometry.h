@@ -13,10 +13,22 @@ namespace {
 // GDScript scalars are double, but each Vector2 operation rounds to real_t.
 // Keep intermediate scalar results double and cast at vector operator boundaries.
 struct Grid {
+    using Cells = std::unordered_map<uint64_t, std::vector<int64_t>>;
+    using Ids = std::unordered_set<int64_t>;
     double cell_size = 1.0;
-    std::unordered_map<uint64_t, std::vector<int64_t>> cells;
-    std::unordered_set<int64_t> inserted;
+    Cells cells;
+    Ids inserted;
+    std::vector<Cells::node_type> spare_cells;
+    std::vector<Ids::node_type> spare_ids;
+    size_t reserved = 0;
     bool unique = true;
+
+    void reserve(size_t count) {
+        if (count <= reserved) return;
+        cells.reserve(count); inserted.reserve(count);
+        spare_cells.reserve(count); spare_ids.reserve(count);
+        reserved = count;
+    }
 
     static uint64_t key(int32_t x, int32_t y) {
         return (uint64_t(uint32_t(x)) << 32) | uint32_t(y);
@@ -28,15 +40,37 @@ struct Grid {
     }
 
     void clear() {
-        cells.clear();
-        inserted.clear();
+        // Recycle nodes and their vectors without retaining historical coordinates.
+        while (!cells.empty()) {
+            auto node = cells.extract(cells.begin());
+            node.mapped().clear();
+            spare_cells.push_back(std::move(node));
+        }
+        while (!inserted.empty()) spare_ids.push_back(inserted.extract(inserted.begin()));
         unique = true;
     }
 
     void insert(int64_t id, const Vector2 &position) {
-        if (!inserted.insert(id).second) unique = false;
+        if (spare_ids.empty()) {
+            if (!inserted.insert(id).second) unique = false;
+        } else {
+            auto node = std::move(spare_ids.back()); spare_ids.pop_back();
+            node.value() = id;
+            auto result = inserted.insert(std::move(node));
+            if (!result.inserted) { unique = false; spare_ids.push_back(std::move(result.node)); }
+        }
         const Vector2i location = cell(position);
-        auto &values = cells[key(location.x, location.y)];
+        uint64_t cell_key = key(location.x, location.y);
+        auto found = cells.find(cell_key);
+        if (found == cells.end()) {
+            if (spare_cells.empty()) found = cells.try_emplace(cell_key).first;
+            else {
+                auto node = std::move(spare_cells.back()); spare_cells.pop_back();
+                node.key() = cell_key;
+                found = cells.insert(std::move(node)).position;
+            }
+        }
+        auto &values = found->second;
         values.insert(std::upper_bound(values.begin(), values.end(), id), id);
     }
 

@@ -154,7 +154,7 @@ func advance_tick(move_input: Vector2) -> bool:
 	view.advance(player_position, FIXED_DELTA_SECONDS)
 	_begin_boss_transition_if_due(current_tick)
 	var enemy_snapshot: Array[int] = enemy_system.snapshot_ids()
-	var projectile_snapshot: Array[PackedInt64Array] = projectile_pool.snapshot_active()
+	var projectile_snapshot: PackedInt64Array = projectile_pool.snapshot_active()
 	var tracked_enemy_id: int = -1
 	var tracked_enemy_position: Vector2 = Vector2.ZERO
 	var tracked_projectile_entry := PackedInt64Array([-1, -1])
@@ -167,7 +167,7 @@ func advance_tick(move_input: Vector2) -> bool:
 		if tracked_enemy != null:
 			tracked_enemy_position = tracked_enemy.position
 	if _performance_fixture_active and not projectile_snapshot.is_empty():
-		tracked_projectile_entry = projectile_snapshot[0]
+		tracked_projectile_entry = projectile_snapshot.slice(0, 2)
 		var tracked_projectile: ProjectileState = projectile_pool.resolve_snapshot_entry(
 			tracked_projectile_entry
 		)
@@ -256,7 +256,7 @@ func advance_tick(move_input: Vector2) -> bool:
 	arena_object_system.resolve_native_destructions(projectile_result.destroyed_nodes, current_tick)
 	_consume_native_damage()
 	if _performance_fixture_active:
-		_performance_projectile_collision_resolutions += projectile_snapshot.size()
+		_performance_projectile_collision_resolutions += (projectile_snapshot.size() >> 1)
 	weapon_system.update_move_direction(move_input)
 	var attacks: Array[Dictionary] = weapon_system.advance_and_fire(
 		player_position,
@@ -1276,7 +1276,7 @@ func _apply_passive_recovery() -> void:
 		)
 
 
-func _damage_nodes_from_projectiles(entries: Array[PackedInt64Array], current_tick: int) -> void:
+func _damage_nodes_from_projectiles(entries: PackedInt64Array, current_tick: int) -> void:
 	arena_object_system.resolve_native_destructions(world.damage_projectile_nodes(entries), current_tick)
 
 

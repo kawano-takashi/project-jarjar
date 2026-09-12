@@ -32,6 +32,14 @@ struct Projectile {
     int visual_kind = 0;
     bool evolved = false;
 };
+struct ProjectileIntersection {
+    double time = INFINITY;
+    int64_t entity_id = INT64_MAX;
+    int slot = -1;
+    bool operator<(const ProjectileIntersection &other) const {
+        return time < other.time || (time == other.time && entity_id < other.entity_id);
+    }
+};
 struct Xp { JARJAR_XP_FIELDS(DECLARE_FIELD) bool vacuum = false; };
 struct Node { JARJAR_NODE_FIELDS(DECLARE_FIELD) };
 #undef DECLARE_FIELD
@@ -114,6 +122,14 @@ class JarjarCombatWorld : public RefCounted {
     std::vector<Node> nodes;
     std::unordered_map<int64_t, int> enemy_slots;
     Grid grid;
+    Grid separation_grid;
+    std::vector<int64_t> separation_ids, separation_candidates;
+    std::vector<Vector2> separation_positions;
+    std::vector<int64_t> projectile_candidates, explosion_candidates, shape_candidates;
+    std::vector<ProjectileIntersection> projectile_intersections;
+    std::vector<Enemy *> target_candidates;
+    mutable std::vector<int64_t> snapshot_ids, query_candidates;
+    mutable std::vector<double> radius_values;
     double maximum_radius = 0;
     double attract_radius = 0, collect_radius = 0, attract_speed = 0;
     int64_t overflow_merges = 0;
@@ -226,10 +242,17 @@ protected:
     static void _bind_methods();
 
 public:
-    int64_t api_version() const { return 2; }
+    int64_t api_version() const { return 3; }
     bool configure_pool(int kind, int capacity) {
         if (kind == 0) {
             bool result = enemies.resize(capacity);
+            if (!result) return false;
+            const size_t count = size_t(capacity);
+            grid.reserve(count); separation_grid.reserve(count);
+            separation_ids.reserve(count); separation_candidates.reserve(count); separation_positions.reserve(count);
+            projectile_candidates.reserve(count); explosion_candidates.reserve(count); projectile_intersections.reserve(count);
+            shape_candidates.reserve(count); target_candidates.reserve(count);
+            snapshot_ids.reserve(count); query_candidates.reserve(count); radius_values.reserve(count);
             for (int i : enemies.free) enemies.slots[i].alive = false;
             return result;
         }
@@ -355,7 +378,7 @@ public:
         auto found = enemy_slots.find(id); return found == enemy_slots.end() ? -1 : found->second;
     }
     Array enemy_ids() const {
-        std::vector<int64_t> ids; ids.reserve(enemies.active.size());
+        auto &ids = snapshot_ids; ids.clear();
         for (int i : enemies.active) ids.push_back(enemies.slots[i].entity_id);
         std::sort(ids.begin(), ids.end()); Array result;
         for (auto id : ids) result.push_back(id); return result;
@@ -371,11 +394,12 @@ public:
     void projectile_mark_hit(int slot, int64_t id) {
         if (projectiles.valid(slot)) projectiles.slots[slot].hit_enemies.insert(id);
     }
-    Array projectile_handles() const {
-        Array result;
+    PackedInt64Array projectile_handles() const {
+        PackedInt64Array result;
+        result.resize(int64_t(projectiles.active.size()) * 2);
+        int64_t *data = result.ptrw();
         for (int i : projectiles.active) {
-            PackedInt64Array handle; handle.push_back(i); handle.push_back(projectiles.slots[i].generation);
-            result.push_back(handle);
+            *data++ = i; *data++ = projectiles.slots[i].generation;
         }
         return result;
     }
@@ -489,30 +513,31 @@ public:
     }
     double grid_maximum_radius() const { return maximum_radius; }
     Array body_radii() const {
-        std::vector<double> radii;
+        auto &radii = radius_values; radii.clear();
         for (int i : enemies.active) radii.push_back(enemies.slots[i].radius);
         std::sort(radii.begin(), radii.end()); radii.erase(std::unique(radii.begin(), radii.end()), radii.end());
         Array result; for (double radius : radii) result.push_back(radius); return result;
     }
     void insert_enemy_index(int64_t id, const Vector2 &position) { grid.insert(id, position); }
     Array query_enemies(const Vector2 &lower, const Vector2 &upper) const {
-        std::vector<int64_t> candidates; grid.query(lower, upper, candidates);
+        auto &candidates = query_candidates; grid.query(lower, upper, candidates);
         Array result; for (auto id : candidates) result.push_back(id); return result;
     }
     void separate_enemies(const Array &ids, int64_t current_tick) {
         tick = current_tick;
-        std::vector<int64_t> sorted; sorted.reserve(ids.size());
+        auto &sorted = separation_ids; sorted.clear();
         for (int64_t n = 0; n < ids.size(); ++n) {
             int64_t id = ids[n]; Enemy *e = enemy(id); if (e && targetable(*e)) sorted.push_back(id);
         }
-        std::sort(sorted.begin(), sorted.end()); sorted.erase(std::unique(sorted.begin(), sorted.end()), sorted.end());
-        Grid separation; separation.cell_size = 2.0; double max_radius = 0;
-        std::vector<Vector2> positions; positions.reserve(sorted.size());
+        if (!std::is_sorted(sorted.begin(), sorted.end())) std::sort(sorted.begin(), sorted.end());
+        sorted.erase(std::unique(sorted.begin(), sorted.end()), sorted.end());
+        auto &separation = separation_grid; separation.clear(); separation.cell_size = 2.0; double max_radius = 0;
+        auto &positions = separation_positions; positions.clear();
         for (auto id : sorted) {
             Enemy &e = *enemy(id); positions.push_back(e.position); separation.insert(id, e.position);
             max_radius = std::max(max_radius, e.radius);
         }
-        std::vector<int64_t> candidates;
+        auto &candidates = separation_candidates;
         for (size_t i = 0; i < sorted.size(); ++i) {
             Enemy &e = *enemy(sorted[i]); Vector2 position = e.position;
             Vector2 extent = Vector2(1, 1) * real_t(e.radius + max_radius);
@@ -568,7 +593,7 @@ public:
         }
         separate_enemies(ids, current_tick);
         for (int64_t n = 0; n < exited.size(); ++n) if (remove_enemy(exited[n])) ++exits;
-        rebuild_grid(current_tick);
+        // EnemySystem rebuilds after the boss boundary correction, before spawns.
         Dictionary result; result["special"] = special; result["far_despawns"] = far_count; result["swarm_exits"] = exits;
         return result;
     }
@@ -589,7 +614,7 @@ public:
     }
     int64_t nearest_enemy(const Vector2 &origin) { Enemy *e = nearest(origin); return e ? e->entity_id : -1; }
     Array target_ids(const Vector2 &origin, bool by_distance, double travel_limit) {
-        std::vector<Enemy *> candidates;
+        auto &candidates = target_candidates; candidates.clear();
         for (int i : enemies.active) {
             auto &e = enemies.slots[i]; if (!acquirable(e)) continue;
             if (travel_limit >= 0 && e.position.distance_to(player) > travel_limit + e.radius) continue;
@@ -616,11 +641,13 @@ public:
         }
         result["shots"] = shots; return result;
     }
-    void move_projectiles(const Array &entries) {
-        for (int64_t n = 0; n < entries.size(); ++n) {
-            PackedInt64Array h = entries[n];
-            if (h.size() != 2 || h[0] < 0 || h[0] >= int64_t(projectiles.slots.size()) || h[1] <= 0) continue;
-            int slot = int(h[0]); int64_t generation = h[1];
+    void move_projectiles(const PackedInt64Array &entries) {
+        if (entries.size() % 2 != 0) return;
+        const int64_t *handles = entries.ptr();
+        for (int64_t n = 0; n < entries.size(); n += 2) {
+            int64_t raw_slot = handles[n], generation = handles[n + 1];
+            if (raw_slot < 0 || raw_slot >= int64_t(projectiles.slots.size()) || generation <= 0) continue;
+            int slot = int(raw_slot);
             if (!projectiles.valid(slot, generation)) continue;
             auto &p = projectiles.slots[slot]; if (p.born_tick >= tick) continue;
             double scale = stopped && p.faction == StringName("enemy") ? p.stop_time_scale : 1.0;
@@ -645,12 +672,14 @@ public:
             p.expired_this_tick = p.remaining_distance <= 0 || p.remaining_lifetime <= 0;
         }
     }
-    Array damage_projectile_nodes(const Array &entries) {
+    Array damage_projectile_nodes(const PackedInt64Array &entries) {
         Array destroyed;
-        for (int64_t n = 0; n < entries.size(); ++n) {
-            PackedInt64Array h = entries[n];
-            if (h.size() != 2 || h[0] < 0 || h[0] >= int64_t(projectiles.slots.size()) || h[1] <= 0) continue;
-            int slot = int(h[0]); int64_t generation = h[1];
+        if (entries.size() % 2 != 0) return destroyed;
+        const int64_t *handles = entries.ptr();
+        for (int64_t n = 0; n < entries.size(); n += 2) {
+            int64_t raw_slot = handles[n], generation = handles[n + 1];
+            if (raw_slot < 0 || raw_slot >= int64_t(projectiles.slots.size()) || generation <= 0) continue;
+            int slot = int(raw_slot);
             if (!projectiles.valid(slot, generation)) continue;
             auto &p = projectiles.slots[slot];
             if (p.faction != StringName("ally") || p.movement_kind == 2 || p.damage <= 0) continue;
@@ -663,13 +692,16 @@ public:
         }
         return destroyed;
     }
-    Dictionary resolve_projectiles(const Array &entries, bool apply, bool affect_nodes) {
+    Dictionary resolve_projectiles(const PackedInt64Array &entries, bool apply, bool affect_nodes) {
+        if (entries.size() % 2 != 0) return Dictionary();
         Array records, resolutions, destroyed;
-        std::vector<int64_t> candidates; std::vector<std::pair<double, int64_t>> intersections;
-        for (int64_t n = 0; n < entries.size(); ++n) {
-            PackedInt64Array h = entries[n];
-            if (h.size() != 2 || h[0] < 0 || h[0] >= int64_t(projectiles.slots.size()) || h[1] <= 0) continue;
-            int slot = int(h[0]); int64_t generation = h[1];
+        auto &candidates = projectile_candidates;
+        auto &intersections = projectile_intersections;
+        const int64_t *handles = entries.ptr();
+        for (int64_t n = 0; n < entries.size(); n += 2) {
+            int64_t raw_slot = handles[n], generation = handles[n + 1];
+            if (raw_slot < 0 || raw_slot >= int64_t(projectiles.slots.size()) || generation <= 0) continue;
+            int slot = int(raw_slot);
             if (!projectiles.valid(slot, generation)) continue;
             auto &p = projectiles.slots[slot];
             if (p.faction != StringName("ally") || p.born_tick >= tick) continue;
@@ -680,16 +712,23 @@ public:
             Vector2 extent = Vector2(1, 1) * real_t(std::max(0.0, p.radius) + maximum_radius + .01);
             grid.query(p.previous_position.min(p.position) - extent, p.previous_position.max(p.position) + extent, candidates);
             intersections.clear();
+            const bool arc = p.movement_kind == 2;
+            ProjectileIntersection first;
             for (auto id : candidates) {
-                Enemy *e = enemy(id); if (!e || !eligible(*e) || p.hit_enemies.count(id)) continue;
-                double t = segment_circle_first_t(p.previous_position, p.position, e->position, p.radius + e->radius, 1e-6);
-                if (t >= 0) intersections.emplace_back(t, id);
+                auto found = enemy_slots.find(id); if (found == enemy_slots.end()) continue;
+                const Enemy &e = enemies.slots[found->second];
+                if (!eligible(e) || p.hit_enemies.count(id)) continue;
+                double t = segment_circle_first_t(p.previous_position, p.position, e.position, p.radius + e.radius, 1e-6);
+                if (!(t >= 0)) continue;
+                ProjectileIntersection intersection{t, id, found->second};
+                if (arc) { if (intersection < first) first = intersection; }
+                else intersections.push_back(intersection);
             }
-            std::sort(intersections.begin(), intersections.end());
-            if (p.movement_kind == 2) {
-                if (!intersections.empty()) p.position = p.previous_position.lerp(p.position, real_t(intersections[0].first));
+            if (arc) {
+                bool impacted = first.slot >= 0;
+                if (impacted) p.position = p.previous_position.lerp(p.position, real_t(first.time));
                 double outer = player.distance_to(p.position) + std::max(p.radius, p.explosion_radius);
-                if ((!intersections.empty() || p.expired_this_tick) && outer <= effect_radius + .0001) {
+                if ((impacted || p.expired_this_tick) && outer <= effect_radius + .0001) {
                     if (!apply) {
                         Dictionary resolution; resolution["arc_impact_position"] = p.position;
                         resolution["arc_explosion_radius"] = p.explosion_radius; resolution["arc_damage"] = p.damage;
@@ -697,23 +736,35 @@ public:
                     }
                     double radius = std::max(p.radius, p.explosion_radius);
                     extent = Vector2(1, 1) * real_t(radius + maximum_radius + .01);
-                    grid.query(p.position - extent, p.position + extent, candidates);
-                    for (auto id : candidates) {
+                    grid.query(p.position - extent, p.position + extent, explosion_candidates);
+                    for (auto id : explosion_candidates) {
                         Enemy *e = enemy(id);
                         if (e && eligible(*e) && e->position.distance_squared_to(p.position) <= (radius + e->radius) * (radius + e->radius))
                             hit(*e, p, p.position, outer, apply, records);
                     }
                     if (affect_nodes) damage_node_circle(p.position, p.explosion_radius, p.damage, destroyed);
                 }
-                if (!intersections.empty() || p.expired_this_tick || outer > effect_radius + .0001) release_projectile(slot, generation);
+                if (impacted || p.expired_this_tick || outer > effect_radius + .0001) release_projectile(slot, generation);
                 continue;
             }
-            for (const auto &intersection : intersections) {
-                Enemy *e = enemy(intersection.second); if (!e || !eligible(*e)) continue;
-                Vector2 position = p.previous_position.lerp(p.position, real_t(intersection.first));
+            const size_t count = intersections.size();
+            const bool sort_all = p.pierce_remaining >= int64_t(count) - 1;
+            auto later = [](const ProjectileIntersection &a, const ProjectileIntersection &b) { return b < a; };
+            if (sort_all) std::sort(intersections.begin(), intersections.end());
+            else std::make_heap(intersections.begin(), intersections.end(), later);
+            for (size_t index = 0; index < count; ++index) {
+                ProjectileIntersection intersection;
+                if (sort_all) intersection = intersections[index];
+                else {
+                    std::pop_heap(intersections.begin(), intersections.end(), later);
+                    intersection = intersections.back(); intersections.pop_back();
+                }
+                // Slots cannot be recycled inside this stage; deaths remain pending.
+                Enemy &e = enemies.slots[intersection.slot]; if (!eligible(e)) continue;
+                Vector2 position = p.previous_position.lerp(p.position, real_t(intersection.time));
                 double outer = player.distance_to(position) + p.radius;
                 if (outer > effect_radius + .0001) continue;
-                p.hit_enemies.insert(e->entity_id); hit(*e, p, position, outer, apply, records);
+                p.hit_enemies.insert(e.entity_id); hit(e, p, position, outer, apply, records);
                 if (--p.pierce_remaining < 0) { release_projectile(slot, generation); break; }
             }
             if (p.active && (p.expired_this_tick || player.distance_to(p.position) + std::max(p.radius, p.explosion_radius) > effect_radius + .0001)) release_projectile(slot, generation);
@@ -721,12 +772,14 @@ public:
         Dictionary result; result["hits"] = records; result["resolutions"] = resolutions; result["destroyed_nodes"] = destroyed;
         return result;
     }
-    Array hostile_projectile_hits(const Array &entries) {
+    Array hostile_projectile_hits(const PackedInt64Array &entries) {
         Array result;
-        for (int64_t n = 0; n < entries.size(); ++n) {
-            PackedInt64Array h = entries[n];
-            if (h.size() != 2 || h[0] < 0 || h[0] >= int64_t(projectiles.slots.size()) || h[1] <= 0) continue;
-            int slot = int(h[0]); int64_t generation = h[1];
+        if (entries.size() % 2 != 0) return result;
+        const int64_t *handles = entries.ptr();
+        for (int64_t n = 0; n < entries.size(); n += 2) {
+            int64_t raw_slot = handles[n], generation = handles[n + 1];
+            if (raw_slot < 0 || raw_slot >= int64_t(projectiles.slots.size()) || generation <= 0) continue;
+            int slot = int(raw_slot);
             if (!projectiles.valid(slot, generation)) continue;
             auto &p = projectiles.slots[slot];
             if (p.faction != StringName("enemy") || p.born_tick >= tick || (stopped && p.stop_time_scale <= 0)) continue;
@@ -762,7 +815,7 @@ public:
         double damage = attack["damage"], chance = attack["critical_chance"], critical = attack["critical_multiplier"], outer = attack["outer"];
         StringName source = attack["source"];
         bool deduplicate = attack["deduplicate"];
-        std::unordered_set<int64_t> hit_ids; std::vector<int64_t> candidates;
+        std::unordered_set<int64_t> hit_ids; auto &candidates = shape_candidates;
         int64_t hits = 0; Array destroyed;
         for (int64_t i = 0; i < shapes.size(); ++i) {
             if (!deduplicate) hit_ids.clear();

@@ -124,7 +124,7 @@ func effective_cooldown_ticks(
 	)
 
 
-func move_snapshot_projectiles(entries: Array[PackedInt64Array], _enemy_store: EnemyStore,
+func move_snapshot_projectiles(entries: PackedInt64Array, _enemy_store: EnemyStore,
 	player_position: Vector2, current_tick: int, stop_active: bool) -> void:
 	var context: Dictionary = CombatNative.context(_catalog, _state, player_position, current_tick)
 	context.stopped = stop_active
@@ -135,9 +135,11 @@ func move_snapshot_projectiles(entries: Array[PackedInt64Array], _enemy_store: E
 func resolve_ally_projectile(entry: PackedInt64Array, _enemy_store: EnemyStore, _uniform_grid: UniformGrid,
 	player_position: Vector2, current_tick: int, resolution: Dictionary = {}) -> Array[Dictionary]:
 	# Explicit inspection API: production resolves the complete stage without hit records.
-	_projectile_pool.world.set_context(CombatNative.context(_catalog, _state, player_position, current_tick))
-	var result: Dictionary = _projectile_pool.world.resolve_projectiles([entry], false, false)
 	resolution.clear()
+	if entry.size() != 2:
+		return []
+	_projectile_pool.world.set_context(CombatNative.context(_catalog, _state, player_position, current_tick))
+	var result: Dictionary = _projectile_pool.world.resolve_projectiles(entry, false, false)
 	if not result.resolutions.is_empty():
 		resolution.merge(result.resolutions[0])
 	var records: Array[Dictionary] = []
@@ -149,8 +151,10 @@ func resolve_ally_projectile(entry: PackedInt64Array, _enemy_store: EnemyStore, 
 
 
 func resolve_enemy_projectile(entry: PackedInt64Array, player_position: Vector2, current_tick: int) -> Dictionary:
+	if entry.size() != 2:
+		return {}
 	_projectile_pool.world.set_context(CombatNative.context(_catalog, _state, player_position, current_tick))
-	var hits: Array = _projectile_pool.world.hostile_projectile_hits([entry])
+	var hits: Array = _projectile_pool.world.hostile_projectile_hits(entry)
 	return hits[0] if not hits.is_empty() else {}
 
 
