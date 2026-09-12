@@ -1,21 +1,20 @@
 extends RefCounted
 
 
-func test_balance_stage_events_follow_approved_alternating_timeline(a: Variant, _context: Dictionary) -> void:
+func test_balance_stage_events_follow_fifteen_minute_timeline(a: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = BalanceTestFixtures.catalog()
 	var expected_swarm_seconds: Array[int] = []
 	for minute: int in [1, 3]:
 		for second: int in [5, 10, 15]:
 			expected_swarm_seconds.append(minute * 60 + second)
-	for minute: int in [5, 7, 9]:
+	for minute: int in [5, 7]:
 		for second: int in [5, 10]:
 			expected_swarm_seconds.append(minute * 60 + second)
-	for minute: int in [11, 13]:
+	for minute: int in [9, 11]:
 		for second: int in [5, 10, 15, 20, 25, 30]:
 			expected_swarm_seconds.append(minute * 60 + second)
-	for minute: int in [15, 17, 19]:
-		for second: int in [15, 30, 45]:
-			expected_swarm_seconds.append(minute * 60 + second)
+	for second: int in [15, 30, 45]:
+		expected_swarm_seconds.append(13 * 60 + second)
 	var actual_swarm_ticks: Array[int] = []
 	var actual_elite_ticks: Array[int] = []
 	var boss_ticks: Array[int] = []
@@ -23,17 +22,17 @@ func test_balance_stage_events_follow_approved_alternating_timeline(a: Variant, 
 		match event.kind:
 			StageEventOccurrence.Kind.SWARM:
 				actual_swarm_ticks.append(event.tick)
-				var chance: float = 1.0 if event.tick < 5 * 3600 else (0.1 if event.tick < 11 * 3600 else (0.8 if event.tick < 15 * 3600 else 0.7))
+				var chance: float = 1.0 if event.tick < 5 * 3600 else (0.1 if event.tick < 9 * 3600 else (0.8 if event.tick < 13 * 3600 else 0.7))
 				a.expect_float(chance, (event.definition as SwarmEventScheduleDefinition).spawn_chance, "each retained pattern preserves its approved chance")
 			StageEventOccurrence.Kind.ELITE_ENCOUNTER:
 				actual_elite_ticks.append(event.tick)
-				var kind: GameTypes.ChestKind = GameTypes.ChestKind.NORMAL if event.tick < 8 * 3600 else GameTypes.ChestKind.EVOLUTION_CAPABLE
+				var kind: GameTypes.ChestKind = GameTypes.ChestKind.NORMAL if event.tick < 6 * 3600 else GameTypes.ChestKind.EVOLUTION_CAPABLE
 				a.expect_equal(kind, catalog.elite_chest_kinds[event.elite_serial], "elite source retains the approved evolution opportunity")
 			StageEventOccurrence.Kind.BOSS:
 				boss_ticks.append(event.tick)
-	a.expect_equal(expected_swarm_seconds.map(func(second: int) -> int: return second * 60), actual_swarm_ticks, "all 33 attempts belong to the agreed odd-minute patterns")
-	a.expect_equal([7200, 14400, 21600, 28800, 36000, 43200, 50400, 57600, 64800], actual_elite_ticks, "all nine encounters remain on even minutes")
-	a.expect_equal([72000], boss_ticks, "one terminal boss event follows the twenty-minute normal timeline")
+	a.expect_equal(expected_swarm_seconds.map(func(second: int) -> int: return second * 60), actual_swarm_ticks, "all 25 attempts belong to the agreed odd-minute patterns")
+	a.expect_equal([7200, 14400, 21600, 28800, 36000, 43200, 50400], actual_elite_ticks, "all seven encounters remain on even minutes")
+	a.expect_equal([54000], boss_ticks, "one terminal boss event follows the fifteen-minute normal timeline")
 
 
 func test_balance_saved_resource_uses_normal_loading_path(a: Variant, context: Dictionary) -> void:

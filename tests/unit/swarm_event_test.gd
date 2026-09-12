@@ -229,6 +229,7 @@ func test_swarm_contact_damage_and_kill_accounting_are_separate(assertions: Vari
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	if catalog == null:
 		return
+	catalog.manifest().progression.xp_yield_percent = 150
 	var state: RunState = RunStateFactory.create(8007, catalog)
 	var simulation := CombatSimulation.new()
 	simulation.initialize(state, catalog)
@@ -287,8 +288,8 @@ func test_swarm_contact_damage_and_kill_accounting_are_separate(assertions: Vari
 	)
 	ProgressionService.add_xp(state, collected_xp, catalog)
 	assertions.expect_equal(1, collected_xp, "event crystal uses the standard XP collection path")
-	assertions.expect_equal(0, state.xp, "one raw event XP is scaled by the global ninety-percent yield")
-	assertions.expect_equal(90, state.xp_yield_remainder, "event XP preserves the standard fractional yield remainder")
+	assertions.expect_equal(1, state.xp, "one raw event XP uses the fixture's 150-percent yield")
+	assertions.expect_equal(50, state.xp_yield_remainder, "event XP preserves the configured fractional yield remainder")
 	assertions.expect_equal(0, simulation.arena_object_system.pickups.size(), "event kill creates no chest or power-up drop")
 
 

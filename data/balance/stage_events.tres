@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="StageEventTimelineDefinition" load_steps=24 format=3]
+[gd_resource type="Resource" script_class="StageEventTimelineDefinition" load_steps=19 format=3]
 
 [ext_resource type="Script" path="res://src/definitions/stage_event_timeline_definition.gd" id="timeline"]
 [ext_resource type="Script" path="res://src/definitions/stage_event_definition.gd" id="event_type"]
@@ -44,14 +44,14 @@ start_tick = 18300
 interval_ticks = 300
 attempt_count = 2
 spawn_chance = 0.1
-hp_multiplier = 0.24
-damage_multiplier = 0.25
+hp_multiplier = 0.74
+damage_multiplier = 0.29
 
 [sub_resource type="Resource" id="elite_encounter_06"]
 script = ExtResource("elite")
 event_id = &"elite_encounter_06"
 start_tick = 21600
-chest_kind = 0
+chest_kind = 1
 
 [sub_resource type="Resource" id="bat_swarm_07"]
 script = ExtResource("swarm")
@@ -60,8 +60,8 @@ start_tick = 25500
 interval_ticks = 300
 attempt_count = 2
 spawn_chance = 0.1
-hp_multiplier = 0.74
-damage_multiplier = 0.29
+hp_multiplier = 1.85
+damage_multiplier = 0.42
 
 [sub_resource type="Resource" id="elite_encounter_08"]
 script = ExtResource("elite")
@@ -74,10 +74,10 @@ script = ExtResource("swarm")
 event_id = &"bat_swarm_09"
 start_tick = 32700
 interval_ticks = 300
-attempt_count = 2
-spawn_chance = 0.1
-hp_multiplier = 1.85
-damage_multiplier = 0.42
+attempt_count = 6
+spawn_chance = 0.8
+hp_multiplier = 0.78
+damage_multiplier = 0.5
 
 [sub_resource type="Resource" id="elite_encounter_10"]
 script = ExtResource("elite")
@@ -104,12 +104,12 @@ chest_kind = 1
 [sub_resource type="Resource" id="bat_swarm_13"]
 script = ExtResource("swarm")
 event_id = &"bat_swarm_13"
-start_tick = 47100
-interval_ticks = 300
-attempt_count = 6
-spawn_chance = 0.8
-hp_multiplier = 0.78
-damage_multiplier = 0.5
+start_tick = 47700
+interval_ticks = 900
+attempt_count = 3
+spawn_chance = 0.7
+hp_multiplier = 1.4
+damage_multiplier = 1.5
 
 [sub_resource type="Resource" id="elite_encounter_14"]
 script = ExtResource("elite")
@@ -117,48 +117,6 @@ event_id = &"elite_encounter_14"
 start_tick = 50400
 chest_kind = 1
 
-[sub_resource type="Resource" id="bat_swarm_15"]
-script = ExtResource("swarm")
-event_id = &"bat_swarm_15"
-start_tick = 54900
-interval_ticks = 900
-attempt_count = 3
-spawn_chance = 0.7
-hp_multiplier = 1.4
-damage_multiplier = 1.5
-
-[sub_resource type="Resource" id="elite_encounter_16"]
-script = ExtResource("elite")
-event_id = &"elite_encounter_16"
-start_tick = 57600
-chest_kind = 1
-
-[sub_resource type="Resource" id="bat_swarm_17"]
-script = ExtResource("swarm")
-event_id = &"bat_swarm_17"
-start_tick = 62100
-interval_ticks = 900
-attempt_count = 3
-spawn_chance = 0.7
-hp_multiplier = 1.4
-damage_multiplier = 1.5
-
-[sub_resource type="Resource" id="elite_encounter_18"]
-script = ExtResource("elite")
-event_id = &"elite_encounter_18"
-start_tick = 64800
-chest_kind = 1
-
-[sub_resource type="Resource" id="bat_swarm_19"]
-script = ExtResource("swarm")
-event_id = &"bat_swarm_19"
-start_tick = 69300
-interval_ticks = 900
-attempt_count = 3
-spawn_chance = 0.7
-hp_multiplier = 1.4
-damage_multiplier = 1.5
-
 [resource]
 script = ExtResource("timeline")
-events = Array[ExtResource("event_type")]([SubResource("bat_swarm_01"), SubResource("elite_encounter_02"), SubResource("bat_swarm_03"), SubResource("elite_encounter_04"), SubResource("bat_swarm_05"), SubResource("elite_encounter_06"), SubResource("bat_swarm_07"), SubResource("elite_encounter_08"), SubResource("bat_swarm_09"), SubResource("elite_encounter_10"), SubResource("bat_swarm_11"), SubResource("elite_encounter_12"), SubResource("bat_swarm_13"), SubResource("elite_encounter_14"), SubResource("bat_swarm_15"), SubResource("elite_encounter_16"), SubResource("bat_swarm_17"), SubResource("elite_encounter_18"), SubResource("bat_swarm_19")])
+events = Array[ExtResource("event_type")]([SubResource("bat_swarm_01"), SubResource("elite_encounter_02"), SubResource("bat_swarm_03"), SubResource("elite_encounter_04"), SubResource("bat_swarm_05"), SubResource("elite_encounter_06"), SubResource("bat_swarm_07"), SubResource("elite_encounter_08"), SubResource("bat_swarm_09"), SubResource("elite_encounter_10"), SubResource("bat_swarm_11"), SubResource("elite_encounter_12"), SubResource("bat_swarm_13"), SubResource("elite_encounter_14")])

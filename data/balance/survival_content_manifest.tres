@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="SurvivalContentManifest" load_steps=73 format=3]
+[gd_resource type="Resource" script_class="SurvivalContentManifest" load_steps=68 format=3]
 
 [ext_resource type="Script" path="res://src/definitions/survival_content_manifest.gd" id="1_manifest"]
 [ext_resource type="Resource" path="res://data/balance/weapons/resonance_wave.tres" id="3_w01"]
@@ -54,11 +54,6 @@
 [ext_resource type="Resource" path="res://data/balance/segments/segment_13.tres" id="s13"]
 [ext_resource type="Resource" path="res://data/balance/segments/segment_14.tres" id="s14"]
 [ext_resource type="Resource" path="res://data/balance/segments/segment_15.tres" id="s15"]
-[ext_resource type="Resource" path="res://data/balance/segments/segment_16.tres" id="s16"]
-[ext_resource type="Resource" path="res://data/balance/segments/segment_17.tres" id="s17"]
-[ext_resource type="Resource" path="res://data/balance/segments/segment_18.tres" id="s18"]
-[ext_resource type="Resource" path="res://data/balance/segments/segment_19.tres" id="s19"]
-[ext_resource type="Resource" path="res://data/balance/segments/segment_20.tres" id="s20"]
 [ext_resource type="Script" path="res://src/definitions/weapon_definition.gd" id="51_weapon_script"]
 [ext_resource type="Script" path="res://src/definitions/passive_definition.gd" id="52_passive_script"]
 [ext_resource type="Script" path="res://src/definitions/evolution_definition.gd" id="53_evolution_script"]
@@ -83,7 +78,7 @@ weapons = Array[ExtResource("51_weapon_script")]([ExtResource("3_w01"), ExtResou
 passives = Array[ExtResource("52_passive_script")]([ExtResource("19_p01"), ExtResource("20_p02"), ExtResource("21_p03"), ExtResource("22_p04"), ExtResource("23_p05"), ExtResource("24_p06"), ExtResource("25_p07"), ExtResource("26_p08")])
 evolutions = Array[ExtResource("53_evolution_script")]([ExtResource("27_e01"), ExtResource("28_e02"), ExtResource("29_e03"), ExtResource("30_e04"), ExtResource("31_e05"), ExtResource("32_e06"), ExtResource("33_e07"), ExtResource("34_e08")])
 enemies = Array[ExtResource("54_enemy_script")]([ExtResource("35_n01"), ExtResource("36_n02"), ExtResource("37_n03"), ExtResource("38_n04"), ExtResource("39_n05"), ExtResource("40_n06")])
-segments = Array[ExtResource("55_segment_script")]([ExtResource("41_s01"), ExtResource("42_s02"), ExtResource("43_s03"), ExtResource("44_s04"), ExtResource("45_s05"), ExtResource("46_s06"), ExtResource("47_s07"), ExtResource("48_s08"), ExtResource("49_s09"), ExtResource("50_s10"), ExtResource("s11"), ExtResource("s12"), ExtResource("s13"), ExtResource("s14"), ExtResource("s15"), ExtResource("s16"), ExtResource("s17"), ExtResource("s18"), ExtResource("s19"), ExtResource("s20")])
+segments = Array[ExtResource("55_segment_script")]([ExtResource("41_s01"), ExtResource("42_s02"), ExtResource("43_s03"), ExtResource("44_s04"), ExtResource("45_s05"), ExtResource("46_s06"), ExtResource("47_s07"), ExtResource("48_s08"), ExtResource("49_s09"), ExtResource("50_s10"), ExtResource("s11"), ExtResource("s12"), ExtResource("s13"), ExtResource("s14"), ExtResource("s15")])
 player = ExtResource("balance_player")
 progression = ExtResource("balance_progression")
 arena = ExtResource("balance_arena")

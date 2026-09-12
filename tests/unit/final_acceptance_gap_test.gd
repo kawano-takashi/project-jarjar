@@ -24,7 +24,7 @@ func test_powerups_persist_at_their_drop_sites_beyond_render_capacity(a: Variant
 	a.expect_equal(78, objects.active_powerup_count(), "chests do not consume or merge powerups")
 
 
-func test_boss_hud_clock_continues_after_twenty_minutes(assertions: Variant, context: Dictionary) -> void:
+func test_boss_hud_clock_continues_after_fifteen_minutes(assertions: Variant, context: Dictionary) -> void:
 	var tree: SceneTree = context["tree"]
 	var hud: CombatHud = COMBAT_HUD_SCENE.instantiate() as CombatHud
 	tree.root.add_child(hud)
@@ -32,10 +32,10 @@ func test_boss_hud_clock_continues_after_twenty_minutes(assertions: Variant, con
 	hud.update_from_values({
 		"weapon_slot_count": 5,
 		"passive_slot_count": 5,
-		"time_seconds": 1265.0,
+		"time_seconds": 965.0,
 		"boss_active": true,
 	})
-	assertions.expect_true(str(hud.debug_state()["time"]).contains("21:05"), "boss HUD reports real elapsed time after twenty minutes")
+	assertions.expect_true(str(hud.debug_state()["time"]).contains("16:05"), "boss HUD reports real elapsed time after fifteen minutes")
 	hud.queue_free()
 	await tree.process_frame
 

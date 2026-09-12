@@ -197,9 +197,20 @@ func test_survival_xp_yield_fraction_and_growth_order(assertions: Variant, _cont
 	assertions.expect_equal(18, growth_state.xp, "95 percent scaling occurs before level-20 Growth doubles XP")
 	assertions.expect_equal(50, growth_state.xp_yield_remainder, "Growth does not multiply the scaling fraction")
 	ProgressionService.add_xp(growth_state, 10, catalog)
-	manifest.progression.xp_yield_percent = original_yield_percent
 	assertions.expect_equal(38, growth_state.xp, "carried scaling fraction resolves before the next Growth application")
 	assertions.expect_equal(0, growth_state.xp_yield_remainder, "resolved Growth fixture leaves no XP fraction")
+	manifest.progression.xp_yield_percent = 120
+	var bonus_state: RunState = RunStateFactory.create(1354, catalog)
+	bonus_state.level = 20
+	bonus_state.xp = ProgressionService.xp_required_for_level(20, manifest.progression) - 2
+	assertions.expect_equal(1, ProgressionService.add_xp(bonus_state, 4, catalog), "XP bonus crosses the Growth boundary within one pickup")
+	assertions.expect_equal(21, bonus_state.level, "Growth ends when the bonus pickup advances the level")
+	assertions.expect_equal(3, bonus_state.xp, "only the first of four scaled XP receives Growth before crossing")
+	assertions.expect_equal(80, bonus_state.xp_yield_remainder, "120 percent scaling carries four fifths of an XP across the level boundary")
+	ProgressionService.add_xp(bonus_state, 1, catalog)
+	assertions.expect_equal(5, bonus_state.xp, "the next one-XP pickup releases two XP after Growth has ended")
+	assertions.expect_equal(0, bonus_state.xp_yield_remainder, "the bonus fraction is retained without loss")
+	manifest.progression.xp_yield_percent = original_yield_percent
 
 
 func test_survival_validator_rejects_all_nonboss_ranged_drift(assertions: Variant, _context: Dictionary) -> void:

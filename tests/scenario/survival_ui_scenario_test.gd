@@ -172,7 +172,7 @@ func test_combat_hud_shows_max_build_slots_and_boss_health(assertions: Variant, 
 	hud.update_from_values({
 		"weapon_slot_count": 5,
 		"passive_slot_count": 5,
-		"time_seconds": 1200.0,
+		"time_seconds": 900.0,
 		"level": 42,
 		"total_kills": 1234,
 		"current_hp": 88.0,

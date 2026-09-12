@@ -36,15 +36,21 @@ func test_scheduled_elites_and_final_boss_are_guaranteed(assertions: Variant, _c
 		assertions.expect_equal(GameTypes.EnemyType.ELITE, spawned[0].enemy_type, "scheduled spawn is an elite")
 		assertions.expect_equal(elite_index, spawned[0].elite_serial, "elite carries its chest serial")
 		assertions.expect_equal(0, simulation.enemy_system.resolve_stage_events(Vector2.ZERO, schedule[elite_index]).size(), "same scheduled elite cannot duplicate")
-	simulation.state.combat_tick = BalanceTestFixtures.catalog().boss_start_tick
+	var boss_tick: int = simulation.catalog.boss_start_tick
+	simulation.state.combat_tick = boss_tick - 1
+	assertions.expect_equal(0, simulation.enemy_system.resolve_stage_events(Vector2.ZERO, boss_tick - 1).size(), "the tick before the boss boundary has no encounter")
+	assertions.expect_false(simulation.state.boss_spawned, "boss cannot appear before normal combat ends")
+	simulation.state.combat_tick = boss_tick
 	var boss_spawns: Array[EnemyEntity] = simulation.enemy_system.resolve_stage_events(
 		Vector2.ZERO,
-		BalanceTestFixtures.catalog().boss_start_tick,
+		boss_tick,
 	)
 	assertions.expect_equal(1, boss_spawns.size(), "the boss boundary creates one final boss")
 	assertions.expect_equal(GameTypes.EnemyType.BOSS, boss_spawns[0].enemy_type, "the boss boundary scheduled entity is the boss")
 	assertions.expect_true(simulation.state.boss_spawned, "boss-spawn state latches after successful allocation")
-	assertions.expect_equal(0, simulation.enemy_system.resolve_normal_spawns(Vector2.ZERO, BalanceTestFixtures.catalog().boss_start_tick).size(), "normal spawning stops at the boss boundary")
+	assertions.expect_equal(0, simulation.enemy_system.resolve_normal_spawns(Vector2.ZERO, boss_tick).size(), "normal spawning stops at the boss boundary")
+	simulation.state.combat_tick = boss_tick + 1
+	assertions.expect_equal(0, simulation.enemy_system.resolve_stage_events(Vector2.ZERO, boss_tick + 1).size(), "the completed boss event cannot spawn again")
 
 
 func test_stop_freezes_normal_and_halves_boss_projectiles(assertions: Variant, _context: Dictionary) -> void:
