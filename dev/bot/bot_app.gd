@@ -9,7 +9,7 @@ var _bot_session: BotSession = null
 var _bot_completed_runs: int = 0
 var _bot_wins: int = 0
 var _bot_summary_printed: bool = false
-var _bot_next_report_tick: int = 18000
+var _bot_next_report_tick: int = 3600
 var _bot_errors: BotErrorMonitor = null
 var _bot_window_settings: Array = []
 
@@ -179,9 +179,9 @@ func _instantiate_control_scene(scene_path: String) -> Control:
 func _start_bot_session() -> void:
 	_bot_session = BotSession.new()
 	_bot_summary_printed = false
-	_bot_next_report_tick = 18000
+	_bot_next_report_tick = 3600
 	var seed_value: int = int(_launch["run_seed"]) + _bot_completed_runs
-	if not _bot_session.initialize(_definition_catalog, seed_value, _launch["bot_view"], _launch["bot_profile"]):
+	if not _bot_session.initialize(_definition_catalog, seed_value, _launch["bot_view"], _launch["bot_profile"], _launch["bot_evolution_after_tick"]):
 		_report_bot("BOT_ERROR " + _bot_session.error_message)
 		set_process(false)
 		set_physics_process(false)
@@ -224,9 +224,7 @@ func _process_fast_bot() -> void:
 			_bot_session.fail("engine_or_script_error")
 			_finish_bot_session()
 			return
-		if run_state.combat_tick >= _bot_next_report_tick:
-			_report_bot("BOT_PROGRESS seed=%d game_seconds=%.1f hp=%.1f level=%d" % [run_state.run_seed, run_state.elapsed_seconds(), run_state.current_hp, run_state.level])
-			_bot_next_report_tick += 18000
+		_report_bot_progress()
 		if Time.get_ticks_usec() >= deadline_usec:
 			return
 
@@ -240,6 +238,7 @@ func _process_watched_bot() -> void:
 	for _step_index: int in int(_launch["bot_speed"]):
 		var phase_before: GameTypes.RunPhase = run_state.phase
 		_bot_session.advance()
+		_report_bot_progress()
 		_render_dirty = true
 		_consume_snapshot_events(combat_simulation.take_events())
 		if _bot_errors != null and _bot_errors.count() > 0:
@@ -251,6 +250,12 @@ func _process_watched_bot() -> void:
 	_sync_run_phase()
 	if not _bot_session.result.is_empty():
 		_finish_bot_session()
+
+
+func _report_bot_progress() -> void:
+	if run_state.combat_tick >= _bot_next_report_tick:
+		_report_bot("BOT_PROGRESS " + JSON.stringify(_bot_session.progress_report()))
+		_bot_next_report_tick = (floori(float(run_state.combat_tick) / 3600.0) + 1) * 3600
 
 
 func _finish_bot_session() -> void:

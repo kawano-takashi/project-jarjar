@@ -39,6 +39,7 @@ func test_bot_watch_and_fast_paths_share_decisions_and_gameplay(a: Variant, cont
 			a.expect_true(viewport_bounds.encloses(field.get_global_rect()), "watch HUD keeps %s on screen at %s" % [field_name, app.dimensions])
 		var fast := BotSession.new()
 		a.expect_true(fast.initialize(app._definition_catalog, 778, app.dimensions), "comparison run starts with the same initial state")
+		fast.simulation.recording_enabled = false
 		for sim: CombatSimulation in [app.combat_simulation, fast.simulation]:
 			sim.player_position = Vector2(1023.99, 0)
 			sim.view.reset(sim.player_position)
@@ -57,7 +58,7 @@ func test_bot_watch_and_fast_paths_share_decisions_and_gameplay(a: Variant, cont
 				if not fast.advance():
 					break
 		a.expect_equal(fast.action_digest, app._bot_session.action_digest, "watch speed does not change movement or modal choices")
-		a.expect_equal(_gameplay_digest(fast.simulation), _gameplay_digest(app.combat_simulation), "rendering does not change gameplay or random streams")
+		a.expect_equal(_gameplay_digest(fast.simulation), _gameplay_digest(app.combat_simulation), "rendering and reporting do not change gameplay or random streams")
 		a.expect_equal(fast.view.camera_transform, app._bot_session.view.camera_transform, "camera advances exactly once per combat tick")
 		a.expect_equal(Vector2i(1, 0), fast.simulation.world_origin, "fast and watch both continue across an origin shift")
 		app._manual_paused = true

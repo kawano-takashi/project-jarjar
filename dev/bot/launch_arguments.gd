@@ -1,6 +1,6 @@
 extends RefCounted
 
-const OPTIONS: Array[String] = ["--bot", "--run-seed", "--runs", "--bot-speed", "--bot-view", "--bot-profile"]
+const OPTIONS: Array[String] = ["--bot", "--run-seed", "--runs", "--bot-speed", "--bot-view", "--bot-profile", "--bot-evolution-after-tick"]
 
 
 static func parse(arguments: PackedStringArray) -> Dictionary:
@@ -20,6 +20,9 @@ static func _parse_bot(values: Dictionary) -> Dictionary:
 	var runs_text: String = values.get("--runs", "1")
 	var speed_text: String = values.get("--bot-speed", "1")
 	var profile_text: String = values.get("--bot-profile", "0")
+	var evolution_text: String = values.get("--bot-evolution-after-tick", "0")
+	if not evolution_text.is_valid_int() or evolution_text.to_int() < 0 or evolution_text.to_int() > 108000:
+		return _rejected("--bot-evolution-after-tick")
 	if profile_text not in ["0", "1"]:
 		return _rejected("--bot-profile")
 	if not seed_text.is_valid_int() or str(seed_text.to_int()) != seed_text:
@@ -47,6 +50,7 @@ static func _parse_bot(values: Dictionary) -> Dictionary:
 	result["runs"] = runs_text.to_int()
 	result["bot_speed"] = speed_text.to_int()
 	result["bot_profile"] = profile_text == "1"
+	result["bot_evolution_after_tick"] = evolution_text.to_int()
 	result["bot_view"] = Vector2i(dimensions[0].to_int(), dimensions[1].to_int())
 	return result
 

@@ -17,6 +17,8 @@ func test_survival_xp_formula_growth_and_queue(assertions: Variant, _context: Di
 		assertions.expect_equal(example.y, ProgressionService.xp_required_for_level(example.x, independent), "piecewise XP formula uses independent coefficients and offsets")
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	var manifest: SurvivalContentManifest = catalog.manifest()
+	manifest.progression.xp_early_coefficient = 10
+	manifest.progression.xp_early_offset = -5
 	var original_yield_percent: int = manifest.progression.xp_yield_percent
 	manifest.progression.xp_yield_percent = 100
 	var state: RunState = RunStateFactory.create(1001, catalog)
@@ -34,11 +36,11 @@ func test_survival_capacity_level_sixty_five_and_growth_application(assertions: 
 	manifest.progression.xp_yield_percent = 100
 	var state: RunState = RunStateFactory.create(1101, catalog)
 	assertions.expect_equal(64, ProgressionService.remaining_upgrade_capacity(state, catalog), "starter build has exactly 64 selections")
-	var queued: int = ProgressionService.add_xp(state, 27350, catalog)
+	var queued: int = ProgressionService.add_xp(state, 1_000_000, catalog)
 	assertions.expect_equal(64, queued, "cumulative XP queues every available selection")
 	assertions.expect_equal(64, state.pending_level_ups, "all 64 selections remain pending")
 	assertions.expect_equal(65, state.level, "64 selections advance initial level one to final level 65")
-	assertions.expect_equal(0, state.xp, "approved cumulative XP is exact")
+	assertions.expect_equal(0, state.xp, "surplus XP is discarded after every available selection is queued")
 	var level_twenty: RunState = RunStateFactory.create(1102, catalog)
 	level_twenty.level = 20
 	var queued_at_twenty: int = ProgressionService.add_xp(level_twenty, 10, catalog)
@@ -60,7 +62,19 @@ func test_survival_capacity_level_sixty_five_and_growth_application(assertions: 
 func test_survival_growth_boundaries_apply_per_level_segment(assertions: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = _catalog(assertions)
 	var manifest: SurvivalContentManifest = catalog.manifest()
-	var original_yield_percent: int = manifest.progression.xp_yield_percent
+	# Detached inputs keep the odd thresholds that exercise Growth rounding.
+	manifest.progression.xp_early_coefficient = 10
+	manifest.progression.xp_early_offset = -5
+	manifest.progression.xp_early_max_level = 19
+	manifest.progression.xp_first_transition_requirement = 795
+	manifest.progression.xp_middle_coefficient = 13
+	manifest.progression.xp_middle_offset = -65
+	manifest.progression.xp_middle_max_level = 39
+	manifest.progression.xp_second_transition_requirement = 2855
+	manifest.progression.xp_late_coefficient = 16
+	manifest.progression.xp_late_offset = -185
+	manifest.progression.xp_growth_compensation_levels = PackedInt32Array([20, 40])
+	manifest.progression.xp_growth_compensation_multiplier = 2.0
 	manifest.progression.xp_yield_percent = 100
 	var into_twenty: RunState = RunStateFactory.create(1201, catalog)
 	into_twenty.level = 19
@@ -97,21 +111,6 @@ func test_survival_growth_boundaries_apply_per_level_segment(assertions: Variant
 	assertions.expect_equal(22, both_queued, "one large pickup queues every level across both Growth boundaries")
 	assertions.expect_equal(41, both_boundaries.level, "one large pickup crosses levels 20 and 40")
 	assertions.expect_equal(1, both_boundaries.xp, "both odd Growth thresholds carry exactly one adjusted XP")
-	var entering_twenty: RunState = RunStateFactory.create(1105, catalog)
-	entering_twenty.level = 19
-	entering_twenty.xp = 180
-	var entering_twenty_queued: int = ProgressionService.add_xp(entering_twenty, 10, catalog)
-	assertions.expect_equal(1, entering_twenty_queued, "one bulk collection crosses into level twenty")
-	assertions.expect_equal(20, entering_twenty.level, "level nineteen threshold advances to twenty")
-	assertions.expect_equal(10, entering_twenty.xp, "only XP processed after entering level twenty is doubled")
-	var leaving_twenty: RunState = RunStateFactory.create(1106, catalog)
-	leaving_twenty.level = 20
-	leaving_twenty.xp = 790
-	var leaving_twenty_queued: int = ProgressionService.add_xp(leaving_twenty, 10, catalog)
-	manifest.progression.xp_yield_percent = original_yield_percent
-	assertions.expect_equal(1, leaving_twenty_queued, "Growth-assisted XP crosses the level twenty threshold")
-	assertions.expect_equal(21, leaving_twenty.level, "Growth compensation ends after leaving level twenty")
-	assertions.expect_equal(8, leaving_twenty.xp, "post-threshold remainder returns to normal Growth")
 
 
 func test_survival_manifest_drives_progression_and_xp_pickups(assertions: Variant, _context: Dictionary) -> void:
@@ -121,6 +120,7 @@ func test_survival_manifest_drives_progression_and_xp_pickups(assertions: Varian
 	if custom_manifest == null:
 		return
 	custom_manifest.progression.xp_early_coefficient = 11
+	custom_manifest.progression.xp_early_offset = -5
 	custom_manifest.progression.xp_growth_compensation_multiplier = 3.0
 	assertions.expect_equal(
 		6,

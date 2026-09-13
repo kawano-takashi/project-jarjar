@@ -7,5 +7,5 @@ script = ExtResource("1")
 duration_ticks = 3600
 target_active = 132
 hp_multiplier = 1.25
-damage_multiplier = 0.5
+damage_multiplier = 0.25
 spawn_weights = PackedFloat32Array(0.2, 0.3, 0.15, 0.35, 0, 0)

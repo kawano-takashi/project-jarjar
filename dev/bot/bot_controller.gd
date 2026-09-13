@@ -28,9 +28,13 @@ var _goal := Vector2.ZERO
 var _next_goal_tick: int = 0
 var _engagement_distance: float = ENGAGEMENT_DISTANCE
 var _slow_clearance: float = 2.0
-var _needle_last_near_tick: int = -1000
+var _needle_nearest_distance_squared: float = INF
+var _needle_sequence_start_tick: int = -1
+var _needle_cycle_ticks: int = 0
+var _needle_weapon_id: StringName = &""
 var _needle_next_tick: int = -1
-var _resume_fire: bool = false
+## Development comparison: avoid collecting evolution chests before this combat tick.
+var evolution_after_tick: int = 0
 var _needle_definition: Dictionary = {}
 var _needle_level: int = 0
 var _needle_weapons: Array[Dictionary] = []
@@ -78,10 +82,11 @@ func decide(observation: BotObservation) -> BotAction:
 		_previous_hp = -1.0
 		_next_goal_tick = 0
 		_needle_next_tick = -1
-		_needle_last_near_tick = -1000
+		_needle_nearest_distance_squared = INF
+		_needle_sequence_start_tick = -1
+		_needle_weapon_id = &""
 		_needle_weapons.clear()
 		_equipment_ready = false
-		_resume_fire = false
 		_escape_until_tick = -1
 		_last_move = Vector2.RIGHT
 		_explore_direction = Vector2.RIGHT
@@ -105,14 +110,12 @@ func decide(observation: BotObservation) -> BotAction:
 		_next_goal_tick = 0
 		return action
 	if observation.phase == GameTypes.RunPhase.LEVEL_UP:
-		_resume_fire = true
 		action.kind = BotAction.Kind.CHOOSE_UPGRADE
 		action.choice_index = _choose_upgrade(observation)
 		action.reason = &"upgrade"
 		_next_goal_tick = 0
 		return action
 	if observation.phase == GameTypes.RunPhase.CHEST_REWARD:
-		_resume_fire = true
 		action.kind = BotAction.Kind.CONTINUE_CHEST
 		action.reason = &"chest"
 		_next_goal_tick = 0
@@ -140,7 +143,9 @@ func decide(observation: BotObservation) -> BotAction:
 	if best_move != Vector2.ZERO:
 		_explore_direction = best_move.normalized()
 	if _needle_next_tick == observation.tick + 1 and not _needle_definition.is_empty():
-		best_move = _kernel.aim_needles(_directions, DIRECTION_COUNT, best_move, float(_needle_definition["range"][_needle_level - 1]))
+		var aimed: Vector2 = _kernel.aim_needles(_directions, DIRECTION_COUNT, best_move, float(_needle_definition["range"][_needle_level - 1]))
+		if _avoids_delayed_chests(observation, aimed):
+			best_move = aimed
 	action.move_input = _view.world_to_screen_input(best_move)
 	action.reason = last_reason
 	return action
@@ -180,7 +185,7 @@ func _choose_move(observation: BotObservation, contact_damage: Dictionary[int, f
 		"encircler_kind": CombatSnapshot.EnemyVisualKind.ENCIRCLER,
 		"contact_damage": contact_damage,
 		"swarms": swarms, "bosses": bosses,
-	}, _directions)
+	}, _movement_candidates(observation))
 
 
 func _update_engagement(observation: BotObservation) -> void:
@@ -232,29 +237,66 @@ func _observe_needles(observation: BotObservation) -> void:
 		_needle_definition = {}
 		for weapon: Dictionary in observation.weapons:
 			var definition: Dictionary = _knowledge.weapons[weapon["id"]]
-			if int(definition["behavior"]) == GameTypes.WeaponBehavior.DIRECTIONAL_PROJECTILE:
-				_needle_definition = definition
-				_needle_level = int(weapon["level"])
-				break
+			if int(definition["behavior"]) != GameTypes.WeaponBehavior.DIRECTIONAL_PROJECTILE:
+				continue
+			if weapon["id"] != _needle_weapon_id or int(weapon["level"]) != _needle_level:
+				_needle_sequence_start_tick = -1
+				_needle_nearest_distance_squared = INF
+			_needle_weapon_id = weapon["id"]
+			_needle_definition = definition
+			_needle_level = int(weapon["level"])
+			break
 	if _needle_definition.is_empty():
 		return
+	var nearest_squared: float = INF
 	for position: Vector2 in observation.needles:
-		if position.distance_squared_to(observation.player_position) > 0.25:
-			continue
-		if observation.tick - _needle_last_near_tick > 4:
-			var cooldown_pct: float = 0.0
-			for passive: Dictionary in observation.passives:
-				var definition: Dictionary = _knowledge.passives[passive["id"]]
-				if definition["stat"] == &"cooldown_pct":
-					cooldown_pct += float(definition["amount"]) * int(passive["level"])
-			var multiplier: float = maxf(_knowledge.minimum_cooldown_multiplier, 1.0 + cooldown_pct / 100.0)
-			_needle_next_tick = observation.tick + maxi(1, roundi(float(_needle_definition["cooldown"][_needle_level - 1]) * multiplier))
-		_needle_last_near_tick = observation.tick
-		break
-	if _resume_fire:
-		# Returning from a modal readies weapons under the public combat rule.
+		nearest_squared = minf(nearest_squared, position.distance_squared_to(observation.player_position))
+	var launch_seen: bool = nearest_squared <= 0.25 and nearest_squared < _needle_nearest_distance_squared - 0.000001
+	_needle_nearest_distance_squared = nearest_squared
+	var index: int = _needle_level - 1
+	var interval: int = _needle_definition["shot_interval"][index]
+	var amount: int = _needle_definition["amount"][index]
+	if launch_seen and (_needle_sequence_start_tick < 0 or observation.tick >= _needle_sequence_start_tick + _needle_cycle_ticks):
+		_needle_sequence_start_tick = observation.tick
+		var cooldown_pct: float = 0.0
+		for passive: Dictionary in observation.passives:
+			var definition: Dictionary = _knowledge.passives[passive["id"]]
+			if definition["stat"] == &"cooldown_pct":
+				cooldown_pct += float(definition["amount"]) * int(passive["level"])
+		var multiplier: float = maxf(_knowledge.minimum_cooldown_multiplier, 1.0 + cooldown_pct / 100.0)
+		_needle_cycle_ticks = maxi((amount - 1) * interval + 1,
+			maxi(1, roundi(float(_needle_definition["cooldown"][index]) * multiplier)))
+	if _needle_sequence_start_tick < 0:
 		_needle_next_tick = observation.tick + 1
-		_resume_fire = false
+		return
+	# Extrapolate from visible launches, never from the weapon's hidden timer.
+	var cycles: int = floori(float(observation.tick - _needle_sequence_start_tick) / float(_needle_cycle_ticks))
+	var start: int = _needle_sequence_start_tick + cycles * _needle_cycle_ticks
+	var next_shot: int = floori(float(observation.tick - start) / float(interval)) + 1
+	_needle_next_tick = start + next_shot * interval if next_shot < amount else start + _needle_cycle_ticks
+
+
+func _avoids_delayed_chests(observation: BotObservation, movement: Vector2) -> bool:
+	if observation.tick >= evolution_after_tick:
+		return true
+	var next_position: Vector2 = observation.player_position + movement * _knowledge.move_speed / 60.0
+	for loot: Vector4 in observation.loot:
+		if int(loot.x) != BotObservation.LootKind.EVOLUTION_CHEST:
+			continue
+		var position := Vector2(loot.y, loot.z)
+		if next_position.distance_to(position) < _knowledge.object_collect_radius + 0.25:
+			return false
+	return true
+
+
+func _movement_candidates(observation: BotObservation) -> PackedVector2Array:
+	if observation.tick >= evolution_after_tick:
+		return _directions
+	var candidates := PackedVector2Array()
+	for movement: Vector2 in _directions:
+		if _avoids_delayed_chests(observation, movement):
+			candidates.append(movement)
+	return _directions if candidates.is_empty() else candidates
 
 
 func _observe_bodies(observation: BotObservation, inverse: Transform3D, contact_damage: Dictionary[int, float]) -> void:
@@ -269,7 +311,13 @@ func _observe_bodies(observation: BotObservation, inverse: Transform3D, contact_
 
 
 func _remember_loot(observation: BotObservation, inverse: Transform3D) -> void:
-	_navigation.remember_loot(observation.loot, inverse,
+	var loot: PackedVector4Array = observation.loot
+	if observation.tick < evolution_after_tick:
+		loot = PackedVector4Array()
+		for entry: Vector4 in observation.loot:
+			if int(entry.x) != BotObservation.LootKind.EVOLUTION_CHEST:
+				loot.append(entry)
+	_navigation.remember_loot(loot, inverse,
 		observation.viewport_size, observation.tick, observation.camera_projection, BotObservation.LootKind.XP)
 
 
@@ -319,6 +367,26 @@ func _choose_target(observation: BotObservation) -> void:
 			_goal = boss_position + from_boss.rotated(0.65) * 3.8
 			last_reason = &"boss"
 			return
+	if not observation.boss_active and observation.tick >= evolution_after_tick and _knowledge.evolution_ready(observation):
+		# A ready evolution must not be starved by a continuous supply of XP.
+		# Routing and collision avoidance still decide how to reach the chest.
+		var nearest_squared: float = INF
+		for loot: Vector4 in observation.loot:
+			if int(loot.x) != BotObservation.LootKind.EVOLUTION_CHEST:
+				continue
+			var position := Vector2(loot.y, loot.z)
+			var distance_squared: float = player.distance_squared_to(position)
+			if distance_squared < nearest_squared:
+				nearest_squared = distance_squared
+				_goal = position
+		if nearest_squared < INF:
+			last_reason = &"collect"
+			return
+		for cue: Dictionary in observation.chest_guidance:
+			if int(cue["kind"]) == GameTypes.ChestKind.EVOLUTION_CAPABLE:
+				_goal = player + _view.screen_to_world_input(cue["direction"]).normalized() * 24.0
+				last_reason = &"chest_direction"
+				return
 	var target: Vector3 = _navigation.choose_loot_goal({
 		"player": player, "last_move": _last_move,
 		"maxed": observation.build_maxed, "evolution_ready": _knowledge.evolution_ready(observation),
@@ -334,7 +402,7 @@ func _choose_target(observation: BotObservation) -> void:
 	for cue: Dictionary in observation.chest_guidance:
 		if observation.boss_active:
 			break
-		if int(cue["kind"]) == GameTypes.ChestKind.EVOLUTION_CAPABLE and not _knowledge.evolution_ready(observation) and not observation.build_maxed:
+		if int(cue["kind"]) == GameTypes.ChestKind.EVOLUTION_CAPABLE and (observation.tick < evolution_after_tick or (not _knowledge.evolution_ready(observation) and not observation.build_maxed)):
 			continue
 		_goal = player + _view.screen_to_world_input(cue["direction"]).normalized() * 24.0
 		last_reason = &"chest_direction"
@@ -362,11 +430,20 @@ func _choose_upgrade(observation: BotObservation) -> int:
 func _upgrade_score(option: Dictionary, observation: BotObservation) -> float:
 	var content_id: StringName = option["id"]
 	var level: int = option["level"]
+	var starter_level: int = 0
+	for owned: Dictionary in observation.weapons:
+		if owned["id"] == _knowledge.starter_weapon_id:
+			starter_level = int(owned["level"])
+	var growing_starter: bool = starter_level > 0 and starter_level < int(_knowledge.weapons[_knowledge.starter_weapon_id]["max_level"])
 	if int(option["kind"]) == GameTypes.UpgradeKind.WEAPON:
 		var definition: Dictionary = _knowledge.weapons[content_id]
 		var behavior: int = definition["behavior"]
 		var weapon_priorities: Array[float] = [110.0, 140.0, 84.0, 60.0, 90.0, 75.0, 85.0, 150.0]
 		var weapon_score: float = weapon_priorities[behavior] + float(level) * 3.0
+		if growing_starter and content_id == _knowledge.starter_weapon_id:
+			return 400.0 + float(level) * 4.0
+		if growing_starter and level == 0 and observation.weapons.size() >= 3:
+			return 20.0
 		if level == 0:
 			weapon_score += 16.0
 		if level > 0 and level + 1 == int(definition["max_level"]):
@@ -385,6 +462,8 @@ func _upgrade_score(option: Dictionary, observation: BotObservation) -> float:
 	if stat == &"luck_pct" and level == 0 and observation.weapons.size() == 1 and int(observation.weapons[0]["level"]) < 4:
 		score = maxf(score, 90.0)
 	var starter_partner: StringName = _knowledge.evolutions[_knowledge.starter_weapon_id]["passive"]
+	if content_id == starter_partner and level == 0 and starter_level >= 6:
+		return 460.0
 	var has_starter_partner: bool = false
 	for owned: Dictionary in observation.passives:
 		if owned["id"] == starter_partner:

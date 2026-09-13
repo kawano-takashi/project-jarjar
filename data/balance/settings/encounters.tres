@@ -7,8 +7,8 @@
 script = ExtResource("1")
 unit_definition = ExtResource("2")
 member_count = 50
-elite_radius_x = 14.0
-elite_radius_y = 10.0
+elite_radius_x = 20.0
+elite_radius_y = 14.0
 elite_lifetime_ticks = 1800
 opponent_distance = 6.0
 boss_initial_radius = 12.0

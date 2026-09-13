@@ -4,18 +4,18 @@
 
 [resource]
 script = ExtResource("1")
-xp_early_coefficient = 10
+xp_early_coefficient = 8
 xp_early_max_level = 19
-xp_early_offset = -5
+xp_early_offset = -4
 xp_growth_compensation_levels = PackedInt32Array(20, 40)
 xp_growth_compensation_multiplier = 2.0
-xp_late_coefficient = 16
-xp_late_offset = -185
-xp_first_transition_requirement = 795
-xp_second_transition_requirement = 2855
-xp_middle_coefficient = 13
+xp_late_coefficient = 6
+xp_late_offset = -69
+xp_first_transition_requirement = 360
+xp_second_transition_requirement = 1080
+xp_middle_coefficient = 4
 xp_middle_max_level = 39
-xp_middle_offset = -65
+xp_middle_offset = -20
 xp_pickup_attract_radius = 2.25
 xp_pickup_collect_radius = 0.7
 xp_pickup_speed = 14.0

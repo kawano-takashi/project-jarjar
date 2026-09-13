@@ -50,6 +50,7 @@ func _init(catalog: DefinitionCatalog) -> void:
 			"behavior": definition.behavior, "max_level": definition.max_level,
 			"damage": definition.damage_by_level.duplicate(),
 			"cooldown": definition.cooldown_ticks_by_level.duplicate(),
+			"shot_interval": definition.shot_interval_ticks_by_level.duplicate(),
 			"amount": definition.amount_by_level.duplicate(),
 			"range": definition.range_by_level.duplicate(),
 			"effect_radius": definition.effect_radius_by_level.duplicate(),

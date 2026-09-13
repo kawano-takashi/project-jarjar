@@ -22,6 +22,8 @@ func test_bot_cli_validates_execution_modes_and_reproducible_view(a: Variant, _c
 	a.expect_equal(Vector2i(1920, 1080), defaults["bot_view"], "default view matches the normal project")
 	var watch: Dictionary = BotArguments.parse(PackedStringArray(["--bot=watch", "--run-seed=-123", "--bot-speed=16", "--bot-view=1024x768"]))
 	a.expect_true(watch["valid"], "watch accepts a seed, speed and observation viewport")
+	var delayed: Dictionary = BotArguments.parse(PackedStringArray(["--bot=fast", "--bot-evolution-after-tick=28800"]))
+	a.expect_equal(28800, delayed.bot_evolution_after_tick, "comparison launch carries an integer combat tick")
 	for arguments: PackedStringArray in [
 		PackedStringArray(),
 		PackedStringArray(["--bot=fast", "--bot=watch"]),
@@ -32,6 +34,7 @@ func test_bot_cli_validates_execution_modes_and_reproducible_view(a: Variant, _c
 		PackedStringArray(["--bot=fast", "--bot-view=0x1080"]),
 		PackedStringArray(["--bot=fast", "--run-seed=9223372036854775807", "--runs=2"]),
 		PackedStringArray(["--bot=fast", "--qa-scenario=result"]),
+		PackedStringArray(["--bot=fast", "--bot-evolution-after-tick=-1"]),
 	]:
 		a.expect_false(BotArguments.parse(arguments)["valid"], "invalid or conflicting bot arguments are rejected")
 
@@ -187,10 +190,13 @@ func test_bot_reports_accepted_damage_without_changing_combat(a: Variant, _conte
 	a.expect_float(7.0, session.summary()["damage_taken"], "report includes damage before recovery and excludes blocked hits")
 	for sim: CombatSimulation in [ordinary, session.simulation]:
 		sim.state.level_up_invulnerable_until_tick = 0
-		sim._apply_player_damage_candidates([{"raw_damage": 20.0}])
+		var enemy: EnemyEntity = sim.spawn_fixture_enemy(GameTypes.EnemyType.BULWARK, Vector2.ONE, -1)
+		sim._apply_player_damage_candidates([{"raw_damage": 20.0, "source_entity_id": enemy.entity_id}])
 	a.expect_float(0.0, session.simulation.state.current_hp, "a lethal hit still removes the remaining HP")
 	a.expect_float(ordinary.state.current_hp, session.simulation.state.current_hp, "recording preserves the lethal outcome")
 	a.expect_float(12.0, session.summary()["damage_taken"], "report counts only the remaining HP on a lethal hit")
+	a.expect_equal(&"bulwark", session.summary().fatal_hit.source, "the fatal hit is attributed to the actual source enemy")
+	a.expect_float(7.0, session.summary().damage_by_source[&"unknown"], "unattributed and blocked hits are kept separate from the fatal source")
 
 
 func test_bot_mesh_visibility_excludes_empty_corners_and_ring_holes(a: Variant, _context: Dictionary) -> void:
@@ -376,6 +382,83 @@ func test_bot_reacts_to_observed_projectile_motion_and_keeps_legal_input(a: Vari
 	a.expect_true(dodging.move_input.length() > 0.25, "an imminent projectile takes priority over the small aiming step")
 
 
+func test_bot_aims_at_later_shots_and_restarts_only_its_own_weapon(a: Variant, _context: Dictionary) -> void:
+	var catalog := DefinitionCatalog.new()
+	a.expect_true(catalog.validate_manifest(BalanceTestFixtures.manifest()), "detached aiming fixture loads")
+	var needle: WeaponDefinition = catalog.weapon(&"directional_needle")
+	needle.amount_by_level[1] = 3
+	needle.shot_interval_ticks_by_level[1] = 6
+	needle.cooldown_ticks_by_level[1] = 30
+	var controller := BotController.new(BotKnowledge.new(catalog))
+	var observation := BotObservation.new()
+	var view := ArenaView.new()
+	observation.hp = 100.0
+	observation.max_hp = 100.0
+	observation.camera_transform = view.camera_transform
+	observation.camera_projection = view.projection
+	observation.weapons.append({"id": &"directional_needle", "level": 2, "evolved": false})
+	var target := BotObservation.Body.new()
+	target.position = Vector2(-5.5, 0.0)
+	target.radius = 0.38
+	observation.enemies.append(target)
+	observation.needles.append(Vector2.ZERO)
+	controller.decide(observation)
+	for tick: int in [5, 11, 29]:
+		observation.tick = tick
+		observation.needles[0] = Vector2(2, 0)
+		if tick == 11:
+			observation.passives.append({"id": &"cycle_crystal", "level": 1})
+		var aimed: BotAction = controller.decide(observation)
+		a.expect_true(view.screen_to_world_input(aimed.move_input).x < 0.0, "later shots and the started cooldown retain their schedule across a passive upgrade")
+	observation.tick = 30
+	observation.weapons[0]["level"] = 3
+	var upgraded: BotAction = controller.decide(observation)
+	a.expect_true(view.screen_to_world_input(upgraded.move_input).x < 0.0, "its own upgrade immediately prepares a new aimed sequence")
+
+
+func test_bot_concentrates_growth_and_secures_the_starter_evolution(a: Variant, _context: Dictionary) -> void:
+	var controller := BotController.new(BotKnowledge.new(BalanceTestFixtures.catalog()))
+	var observation := BotObservation.new()
+	observation.phase = GameTypes.RunPhase.LEVEL_UP
+	observation.hp = 100.0
+	observation.max_hp = 100.0
+	observation.weapons.assign([
+		{"id": &"homing_core", "level": 4, "evolved": false},
+		{"id": &"zero_field", "level": 3, "evolved": false},
+		{"id": &"arc_crystal", "level": 1, "evolved": false}])
+	observation.options.assign([
+		{"id": &"homing_core", "kind": GameTypes.UpgradeKind.WEAPON, "level": 4, "next": 5},
+		{"id": &"zero_field", "kind": GameTypes.UpgradeKind.WEAPON, "level": 3, "next": 4},
+		{"id": &"mass_projectile", "kind": GameTypes.UpgradeKind.WEAPON, "level": 0, "next": 1}])
+	a.expect_equal(0, controller.decide(observation).choice_index, "three weapons are enough to prioritize the main weapon over a fourth slot")
+	observation.weapons[0]["level"] = 7
+	observation.options[0]["level"] = 7
+	observation.options[0]["next"] = 8
+	observation.options[1] = {"id": &"cycle_crystal", "kind": GameTypes.UpgradeKind.PASSIVE, "level": 0, "next": 1}
+	a.expect_equal(1, controller.decide(observation).choice_index, "the missing evolution partner is secured before the main weapon finishes")
+
+
+func test_bot_delays_then_collects_an_evolution_chest_without_changing_combat(a: Variant, _context: Dictionary) -> void:
+	var catalog: DefinitionCatalog = BalanceTestFixtures.catalog()
+	var session := BotSession.new()
+	a.expect_true(session.initialize(catalog, 9201, Vector2i(1920, 1080), false, 180), "delayed comparison starts")
+	var sim: CombatSimulation = session.simulation
+	sim.state.weapons[0].level = 8
+	sim.state.passives.append(RunPassive.create(&"cycle_crystal"))
+	for node: ArenaNodeState in sim.arena_object_system.nodes:
+		node.deactivate()
+	var serial: int = catalog.elite_chest_kinds.find(GameTypes.ChestKind.EVOLUTION_CAPABLE)
+	sim.arena_object_system.spawn_chest(Vector2(2, 0), serial)
+	while sim.state.combat_tick < 180 and session.result.is_empty():
+		session.advance()
+	a.expect_equal(0, sim.state.evolution_count, "the visible chest remains uncollected before the chosen tick")
+	while sim.state.combat_tick < 1200 and sim.state.evolution_count == 0 and session.result.is_empty():
+		session.advance()
+	a.expect_equal(1, sim.state.evolution_count, "normal movement collects the chest after the delay")
+	a.expect_true(session.first_evolution_tick >= 180, "the report records the real evolution time")
+	a.expect_true(session.chest_collection_ticks[serial] >= 180, "collection time comes from the actual chest queue")
+
+
 func _body_values(bodies: Array[BotObservation.Body]) -> Array:
 	var result: Array = []
 	for body: BotObservation.Body in bodies:
@@ -433,3 +516,9 @@ func test_bot_observes_only_public_chest_directions(a: Variant, _context: Dictio
 		a.expect_equal(&"chest_direction", action.reason, "the bot explores toward a public chest cue")
 		a.expect_true(action.is_valid_for(observation), "chest guidance produces a valid move input")
 		a.expect_true(sim.view.screen_to_world_input(action.move_input).dot(chest_position - sim.player_position) > 0.0, "the cue leads toward the unseen chest")
+		observation.weapons.assign([{"id": &"homing_core", "level": 8, "evolved": false}])
+		observation.passives.assign([{"id": &"cycle_crystal", "level": 1}])
+		observation.chest_guidance[0]["kind"] = GameTypes.ChestKind.EVOLUTION_CAPABLE
+		observation.loot.append(Vector4(BotObservation.LootKind.XP, -3, -3, 3))
+		var ready_controller := BotController.new(BotKnowledge.new(catalog))
+		a.expect_equal(&"chest_direction", ready_controller.decide(observation).reason, "nearby XP cannot indefinitely postpone a ready evolution")
