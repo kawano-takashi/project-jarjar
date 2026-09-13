@@ -55,7 +55,7 @@ func test_bot_wall_routes_keep_reachable_loot_and_bound_memory(a: Variant, _cont
 	a.expect_true(route.distance_to(Vector2(3.6, 0)) > 0.001, "rounding does not leave the bot stuck on its current cell")
 	var view: ArenaView = session.view
 	nav.remember_loot(PackedVector4Array([Vector4(1, 10, 0, 1)]), view.camera_transform.affine_inverse(), view.viewport_size, 10, view.projection, 0)
-	var frame: Dictionary = {"player": Vector2.ZERO, "last_move": Vector2.RIGHT, "maxed": false, "evolution_ready": false, "hp": 100.0, "max_hp": 100.0, "pickup_radius": 2.0, "object_collect_radius": 1.0, "player_radius": 0.45, "loot_kinds": PackedInt32Array([0, 1, 2, 3, 4])}
+	var frame: Dictionary = {"player": Vector2.ZERO, "last_move": Vector2.RIGHT, "maxed": false, "evolution_ready": false, "hold_evolution_chests": false, "hp": 100.0, "max_hp": 100.0, "pickup_radius": 2.0, "object_collect_radius": 1.0, "player_radius": 0.45, "loot_kinds": PackedInt32Array([0, 1, 2, 3, 4])}
 	a.expect_equal(0.0, nav.choose_loot_goal(frame).z, "inaccessible outer chest is excluded")
 	nav.remember_loot(PackedVector4Array([Vector4(1, 4.2, 0, 1)]), view.camera_transform.affine_inverse(), view.viewport_size, 10, view.projection, 0)
 	var goal: Vector3 = nav.choose_loot_goal(frame)

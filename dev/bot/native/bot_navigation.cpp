@@ -20,6 +20,7 @@ void JarjarBotNavigation::_bind_methods() {
     ClassDB::bind_method(D_METHOD("match_tracks", "predicted", "old_kinds", "observed", "kinds", "track_cell"), &JarjarBotNavigation::match_tracks);
     ClassDB::bind_method(D_METHOD("remember_loot", "loot", "inverse", "viewport", "tick", "projection", "xp_kind"), &JarjarBotNavigation::remember_loot);
     ClassDB::bind_method(D_METHOD("choose_loot_goal", "frame"), &JarjarBotNavigation::choose_loot_goal);
+    ClassDB::bind_method(D_METHOD("nearest_remembered_loot", "kind", "player"), &JarjarBotNavigation::nearest_remembered_loot);
     ClassDB::bind_method(D_METHOD("configure_tracking", "data"), &JarjarBotNavigation::configure_tracking);
     ClassDB::bind_method(D_METHOD("observe_tracks", "frame"), &JarjarBotNavigation::observe_tracks);
     ClassDB::bind_method(D_METHOD("first_boss_position"), &JarjarBotNavigation::first_boss_position);
@@ -82,34 +83,58 @@ void JarjarBotNavigation::remember_loot(const PackedVector4Array &loot, const Tr
     }
 }
 
+std::vector<Vector2> JarjarBotNavigation::remembered_loot_positions(int kind) const {
+    std::vector<Vector2> result;
+    Array keys = loot_memory.keys();
+    for (int64_t i = 0; i < keys.size(); ++i) {
+        Vector3i key = keys[i];
+        if (key.z != kind) continue;
+        Vector4 entry = loot_memory[key];
+        result.emplace_back(entry.x, entry.y);
+    }
+    return result;
+}
+
+Vector3 JarjarBotNavigation::nearest_remembered_loot(int kind, const Vector2 &player) const {
+    double nearest = std::numeric_limits<double>::infinity();
+    Vector3 result;
+    for (Vector2 position : remembered_loot_positions(kind)) {
+        double distance = position.distance_squared_to(player);
+        if (distance < nearest) { nearest = distance; result = Vector3(position.x, position.y, 1.0f); }
+    }
+    return result;
+}
+
 Vector3 JarjarBotNavigation::choose_loot_goal(const Dictionary &frame) const {
-    Vector2 player = frame["player"], last_move = frame["last_move"];
-    PackedVector2Array enemy_positions;
-    enemy_positions.resize(int64_t(enemies.size()));
-    for (size_t i = 0; i < enemies.size(); ++i) enemy_positions[int64_t(i)] = enemies[i].position;
+    Vector2 player = frame["player"];
     PackedInt32Array kinds = frame["loot_kinds"];
     ERR_FAIL_COND_V(kinds.size() != 5, Vector3());
     bool maxed = frame["maxed"], evolution_ready = frame["evolution_ready"];
+    bool hold_evolution_chests = frame["hold_evolution_chests"];
     double hp = frame["hp"], max_hp = frame["max_hp"], pickup_radius = frame["pickup_radius"];
     double player_radius = frame.get("player_radius", 0.0), collect_radius = frame.get("object_collect_radius", 0.0);
     const auto walls = predicted_boundaries();
     using Cell = std::pair<int, int>;
     auto cell_key = [](Vector2 p) -> Cell { return {int(std::floor(double(p.x) / 2.0)), int(std::floor(double(p.y) / 2.0))}; };
-    std::map<Cell, std::vector<Vector2>> danger_cells;
-    bool avoid_reverse = false;
-    for (int64_t i = 0; i < enemy_positions.size(); ++i) {
-        Vector2 enemy = enemy_positions[i];
-        danger_cells[cell_key(enemy)].push_back(enemy);
-        if (enemy.distance_squared_to(player) < 25.0) avoid_reverse = true;
+    std::map<Cell, std::vector<const Track *>> danger_cells;
+    double largest_radius = 0.0;
+    for (const Track &enemy : enemies) {
+        danger_cells[cell_key(enemy.position)].push_back(&enemy);
+        largest_radius = std::max(largest_radius, enemy.radius);
     }
+    int cell_range = int(std::ceil((player_radius + largest_radius + 0.02) / 2.0));
     auto open = [&](Vector2 position) {
-        if (avoid_reverse && (position - player).normalized().dot(last_move.normalized()) < -0.75) return false;
         auto [x, y] = cell_key(position);
-        for (int dx = -1; dx <= 1; ++dx) {
-            for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -cell_range; dx <= cell_range; ++dx) {
+            for (int dy = -cell_range; dy <= cell_range; ++dy) {
                 auto found = danger_cells.find({x + dx, y + dy});
                 if (found == danger_cells.end()) continue;
-                for (Vector2 enemy : found->second) if (enemy.distance_squared_to(position) < 4.0) return false;
+                // Reject actual body overlap, not every gap within two meters.
+                // Routing and movement prediction assess the approach itself.
+                for (const Track *enemy : found->second) {
+                    double reach = player_radius + enemy->radius + 0.02;
+                    if (enemy->position.distance_squared_to(position) < reach * reach) return false;
+                }
             }
         }
         return true;
@@ -119,6 +144,8 @@ Vector3 JarjarBotNavigation::choose_loot_goal(const Dictionary &frame) const {
     std::map<Cell, size_t> cluster_indices;
     double best = -std::numeric_limits<double>::infinity();
     Vector2 best_position;
+    bool best_is_node = false;
+    bool best_is_xp = false;
     Array keys = loot_memory.keys();
     for (int64_t i = 0; i < keys.size(); ++i) {
         Vector3i key = keys[i];
@@ -148,12 +175,12 @@ Vector3 JarjarBotNavigation::choose_loot_goal(const Dictionary &frame) const {
             continue;
         } else if (kind == kinds[1]) value = 28.0;
         else if (kind == kinds[2]) {
-            if (!evolution_ready && !maxed) continue;
-            value = 70.0;
+            if (hold_evolution_chests) continue;
+            value = evolution_ready ? 70.0 : 28.0;
         } else if (kind == kinds[3]) value = 14.0 + 25.0 * (1.0 - hp / max_hp);
         else if (kind == kinds[4]) value = 2.0;
         double score = value / (distance + 2.0);
-        if (score > best) { best = score; best_position = position; }
+        if (score > best) { best = score; best_position = position; best_is_node = kind == kinds[4]; }
     }
     // The vector retains first-seen cell order, like GDScript's Dictionary.
     for (const Cluster &cluster : clusters) {
@@ -164,9 +191,9 @@ Vector3 JarjarBotNavigation::choose_loot_goal(const Dictionary &frame) const {
         if (approach.distance_to(position) > pickup_radius || !bot_inside(approach, player_radius, walls)) continue;
         if (!open(approach)) continue;
         double score = (5.0 + std::sqrt(weight) * 4.0) / (double(player.distance_to(position)) + 2.0);
-        if (score > best) { best = score; best_position = approach; }
+        if (score > best) { best = score; best_position = approach; best_is_node = false; best_is_xp = true; }
     }
-    return Vector3(best_position.x, best_position.y, best > 0.0 ? 1.0f : 0.0f);
+    return Vector3(best_position.x, best_position.y, best > 0.0 ? (best_is_xp ? 3.0f : (best_is_node ? 2.0f : 1.0f)) : 0.0f);
 }
 
 Vector2i JarjarBotNavigation::cell(const Vector2 &position) const {

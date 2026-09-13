@@ -47,17 +47,23 @@ struct Body {
 struct Bullet { V2 relative, velocity; double radius; };
 struct Swarm { V2 axis, position, travel; double width, age, spawn_min, spawn_max; };
 struct Boss { V2 position; PackedVector2Array spokes; };
+struct LocalAttack { double reach, arc_cos; bool rear; };
 struct Frame {
     V2 player, goal, last_move;
     double move_speed, radius, engagement, swarm_speed, swarm_depth, horizon;
-    bool boss_active, slow_safe, escape_active;
+    bool boss_active, slow_safe, escape_active, prioritize_goal, collecting_xp;
     int boss_kind, elite_kind, bulwark_kind, encircler_kind;
     std::vector<BotBoundary> boundaries;
     std::vector<Body> enemies;
     std::vector<Bullet> bullets;
     std::vector<Swarm> swarms;
     std::vector<Boss> bosses;
+    std::vector<LocalAttack> local_attacks;
+    std::vector<V2> held_chests;
+    double collect_radius = 0.0, attack_reach = 0.0;
 };
+struct MoveEvaluation { double score; bool safe, avoids_chests; int attack_samples; };
+struct ContactPrediction { double exposure = 0.0; int attack_samples = 0; };
 double minimum(double a, double b) { return a < b ? a : b; }
 double maximum(double a, double b) { return a > b ? a : b; }
 double clamp(double v, double lo, double hi) { return v < lo ? lo : (v > hi ? hi : v); }
@@ -75,10 +81,12 @@ Trajectory predict_player(V2 direction, const Frame &f) {
     return path;
 }
 
-double contact_exposure(const Trajectory &path, const Frame &f) {
+ContactPrediction predict_contacts(const Trajectory &path, const Frame &f, V2 direction, bool include_attacks = false) {
+    ContactPrediction result;
     std::array<double, 60> damage{};
+    std::array<bool, 4> attacking{};
     for (const Body &enemy : f.enemies) {
-        if (enemy.materializing || enemy.contact_damage <= 0.0) continue;
+        if (enemy.materializing || (!include_attacks && enemy.contact_damage <= 0.0)) continue;
         if (f.boundaries.empty()) {
             // A pursuing body cannot cover more than speed * time. Minimize
             // squared distance to the player's straight path minus that expanding
@@ -87,6 +95,7 @@ double contact_exposure(const Trajectory &path, const Frame &f) {
             // contact tolerance and single-precision trajectory accumulation.
             V2 velocity = (path.back() - f.player) / f.horizon;
             double reach = enemy.radius + f.radius + 0.01;
+            if (include_attacks) reach = maximum(reach, f.attack_reach + enemy.radius);
             double speed = enemy.fixed ? enemy.velocity.length() : enemy.speed;
             double quadratic = velocity.length_squared() - speed * speed;
             double linear = -2.0 * (enemy.relative.dot(velocity) + reach * speed);
@@ -114,14 +123,24 @@ double contact_exposure(const Trajectory &path, const Frame &f) {
             }
             double clearance = position.distance_to(player) - radius;
             if (clearance < 0.005) damage[size_t(step - 1)] = maximum(damage[size_t(step - 1)], enemy.contact_damage);
+            // Favor sustained reach across the trajectory. Checking only its
+            // endpoint lets each new decision postpone attacking for another second.
+            if (include_attacks && step % 15 == 0 && !attacking[size_t(step / 15 - 1)]) {
+                V2 target = position - player;
+                double distance = target.length() - enemy.radius;
+                double facing = target.normalized().dot(direction.normalized());
+                for (const LocalAttack &attack : f.local_attacks) {
+                    if (distance <= attack.reach && (attack.rear ? std::abs(facing) : facing) >= attack.arc_cos) attacking[size_t(step / 15 - 1)] = true;
+                }
+            }
         }
     }
-    double total = 0.0;
-    for (int step = 0; step < 60; ++step) total += damage[size_t(step)] * (1.0 + double(60 - step) / 60.0) * f.horizon;
-    return total;
+    for (int step = 0; step < 60; ++step) result.exposure += damage[size_t(step)] * (1.0 + double(60 - step) / 60.0) * f.horizon;
+    for (bool in_range : attacking) result.attack_samples += int(in_range);
+    return result;
 }
 
-double warning_risk(V2 near_destination, V2 destination, const Frame &f) {
+double warning_risk(V2 near_destination, V2 destination, const Frame &f, bool *safe = nullptr) {
     double risk = 0.0;
     for (const Swarm &warning : f.swarms) {
         V2 tangent(-warning.axis.y, warning.axis.x);
@@ -132,7 +151,10 @@ double warning_risk(V2 near_destination, V2 destination, const Frame &f) {
         double front = -warning.spawn_min + f.swarm_speed * (warning.age + f.horizon) + f.radius;
         double back = -warning.spawn_max - f.swarm_depth + f.swarm_speed * maximum(0.0, warning.age - f.horizon) - f.radius;
         double along = relative.dot(warning.travel.zero() ? warning.axis : warning.travel);
-        if ((along >= back && along <= front) || (warning.travel.zero() && -along >= back && -along <= front)) risk += (width - side_distance) * 5000.0;
+        if ((along >= back && along <= front) || (warning.travel.zero() && -along >= back && -along <= front)) {
+            risk += (width - side_distance) * 5000.0;
+            if (safe) *safe = false;
+        }
     }
     for (const Boss &warning : f.bosses) {
         V2 relative = destination - warning.position;
@@ -143,24 +165,46 @@ double warning_risk(V2 near_destination, V2 destination, const Frame &f) {
             lane_clearance = minimum(lane_clearance, clearance);
         }
         risk += 12.0 / (0.2 + lane_clearance);
+        if (safe && lane_clearance < f.radius + 0.15) *safe = false;
     }
     return risk;
 }
 
-double movement_score(V2 direction, const Frame &f) {
+bool avoids_held_chests(const Trajectory &path, const Frame &f) {
+    for (V2 chest : f.held_chests) {
+        // Inside the buffer, allow departure without first demanding a teleport.
+        double clearance = minimum(f.collect_radius + 0.25, path[0].distance_to(chest));
+        clearance = maximum(clearance, f.collect_radius + 0.001);
+        for (size_t step = 1; step < path.size(); ++step) {
+            if (path[step].distance_to(chest) < clearance - 0.00001) return false;
+        }
+    }
+    return true;
+}
+
+MoveEvaluation evaluate_move(V2 direction, const Frame &f) {
+    bool safe = true;
     V2 player = f.player;
     V2 velocity = direction * f.move_speed;
     double travel_time = f.horizon;
     const Trajectory path = predict_player(direction, f);
     V2 destination = path.back();
     if (!f.boundaries.empty()) velocity = (destination - player) / travel_time;
-    double score = direction.dot((f.goal - player).normalized()) * 1000.0;
-    score += direction.normalized().dot(f.last_move.normalized()) * 1002.0;
+    // A post-hit escape must not turn back toward loot or the combat range.
+    double score = f.escape_active ? 0.0 : direction.dot((f.goal - player).normalized()) * 1000.0;
+    // Otherwise the 1002-point course preference defeats a 1000-point goal
+    // directly behind the bot, even when returning to a ready chest is safe.
+    if (f.escape_active) score += direction.dot(f.last_move.normalized()) * 1002.0;
+    else if (!f.prioritize_goal) score += direction.normalized().dot(f.last_move.normalized()) * 1002.0;
     double immediate_clearance = INF, body_clearance = INF, engagement_distance = INF;
     for (const Body &enemy : f.enemies) {
         V2 relative = enemy.relative;
         V2 relative_velocity = enemy.avoidance - velocity;
-        engagement_distance = minimum(engagement_distance, (relative + relative_velocity * f.horizon).length());
+        if (!enemy.materializing) {
+            V2 target = relative + relative_velocity * f.horizon;
+            double distance = target.length() - enemy.radius;
+            engagement_distance = minimum(engagement_distance, distance);
+        }
         double speed_squared = relative_velocity.length_squared();
         double closest_time = speed_squared < 0.00001 ? 1.0 / 60.0 : clamp(-relative.dot(relative_velocity) / speed_squared, 1.0 / 60.0, travel_time);
         double clearance = (relative + relative_velocity * closest_time).length() - enemy.radius - f.radius;
@@ -169,14 +213,14 @@ double movement_score(V2 direction, const Frame &f) {
             immediate_clearance = minimum(immediate_clearance, next_clearance);
             body_clearance = minimum(body_clearance, next_clearance);
         }
-        if (enemy.kind == f.boss_kind && next_clearance < 0.4) score -= 1.0e7 + (0.4 - next_clearance) * 1.0e8;
+        if (!f.escape_active && enemy.kind == f.boss_kind && next_clearance < 0.4) score -= 1.0e7 + (0.4 - next_clearance) * 1.0e8;
         if (enemy.kind == f.encircler_kind) continue;
         if (clearance < 0.5) {
             double urgency = (1.1 - closest_time) * (1.1 - closest_time);
             score -= (80.0 + (0.5 - clearance) * 200.0) * urgency / (0.2 + closest_time);
         } else score -= 1.5 / ((clearance + 0.25) * (clearance + 0.25));
     }
-    if (!f.boss_active && !f.enemies.empty()) score -= 300.0 * std::pow(maximum(0.0, engagement_distance - f.engagement), 2.0);
+    if (!f.boss_active && !f.escape_active && !f.prioritize_goal && engagement_distance < INF) score -= 300.0 * std::pow(maximum(0.0, engagement_distance - f.engagement), 2.0);
     for (const Bullet &bullet : f.bullets) {
         V2 relative = bullet.relative;
         V2 relative_velocity = bullet.velocity - velocity;
@@ -192,33 +236,42 @@ double movement_score(V2 direction, const Frame &f) {
             }
         }
         immediate_clearance = minimum(immediate_clearance, (relative + relative_velocity / 60.0).length() - bullet.radius - f.radius);
-        if (clearance < 0.12) score -= 7000.0 / (0.15 + closest_time);
+        if (clearance < 0.12) {
+            score -= 7000.0 / (0.15 + closest_time);
+            safe = false;
+        }
         else if (clearance < 1.0) score -= 4.0 / (clearance + 0.1);
     }
-    score -= warning_risk(path[15], destination, f);
+    score -= warning_risk(path[15], destination, f, &safe);
     if (direction.zero() && !f.enemies.empty()) score -= 1.0e11;
-    if (body_clearance < 0.1) score -= 1.0e7 + (0.1 - body_clearance) * 1.0e8;
+    // Once hit, minimizing a single instant's overlap can keep selecting half
+    // speed below pursuit speed. Let predicted damage over the whole escape
+    // decide between crossing contact briefly and remaining in it indefinitely.
+    if (!f.escape_active && body_clearance < 0.1) score -= 1.0e7 + (0.1 - body_clearance) * 1.0e8;
     if (immediate_clearance < 0.1) score -= 2000.0 + (0.1 - immediate_clearance) * 20000.0;
     if (direction.length_squared() < 0.5 && !f.slow_safe) score -= 10000.0;
     for (const Body &enemy : f.enemies) {
-        if (enemy.kind != f.elite_kind) continue;
+        if (f.escape_active || enemy.kind != f.elite_kind) continue;
         double clearance = (enemy.relative + (enemy.avoidance - velocity) / 60.0).length() - enemy.radius - f.radius;
         if (clearance < 0.8) score -= 1.0e7 + (0.8 - clearance) * 1.0e8;
     }
     for (const Body &enemy : f.enemies) {
-        if (enemy.kind != f.bulwark_kind) continue;
+        if (f.escape_active || enemy.kind != f.bulwark_kind) continue;
         double clearance = (enemy.relative + (enemy.avoidance - velocity) / 60.0).length() - enemy.radius - f.radius;
         if (clearance < 0.4) score -= 1.0e7 + (0.4 - clearance) * 1.0e8;
     }
     // The same physical prediction applies to normal moves and post-hit escape.
     // Public contact damage times exposure distinguishes a brief ring crossing.
-    score -= contact_exposure(path, f) * (f.escape_active ? 2000.0 : 1000.0);
+    bool assess_attacks = !f.local_attacks.empty() && !f.boss_active && !f.escape_active && (!f.prioritize_goal || f.collecting_xp);
+    ContactPrediction contacts = predict_contacts(path, f, direction, assess_attacks);
+    score -= contacts.exposure * (f.escape_active ? 2000.0 : 1000.0);
+    safe = safe && contacts.exposure == 0.0;
     if (!f.boundaries.empty()) {
         V2 requested_next = player + direction * (f.move_speed * travel_time / 60.0);
         score -= requested_next.distance_to(path[1]) * 1.0e7;
         score -= (player + direction * (f.move_speed * travel_time)).distance_to(destination) * 4000.0;
     }
-    return score;
+    return {score, safe, avoids_held_chests(path, f), contacts.attack_samples};
 }
 }
 
@@ -226,6 +279,7 @@ class JarjarBotKernel : public JarjarBotNavigation {
     GDCLASS(JarjarBotKernel, JarjarBotNavigation)
     Frame last_frame;
     bool frame_ready = false;
+    bool preserving_chests = false;
 protected:
     static void _bind_methods() {
         ClassDB::bind_method(D_METHOD("score_moves", "frame", "directions"), &JarjarBotKernel::score_moves);
@@ -234,7 +288,7 @@ protected:
         ClassDB::bind_method(D_METHOD("api_version"), &JarjarBotKernel::api_version);
     }
 public:
-    int api_version() const { return 8; }
+    int api_version() const { return 10; }
     Vector2 choose_move(const Dictionary &data, const PackedVector2Array &directions) {
         PackedFloat64Array scores = score_moves(data, directions);
         ERR_FAIL_COND_V(scores.size() != directions.size(), Vector2(float(INF), float(INF)));
@@ -253,6 +307,20 @@ public:
         f.player = Vector2(data["player"]); f.goal = Vector2(data["goal"]); f.last_move = Vector2(data["last_move"]);
         f.move_speed = data["move_speed"]; f.radius = data["player_radius"]; f.engagement = data["engagement"];
         f.horizon = data["horizon"];
+        Array local_attacks = data["local_attacks"];
+        for (int64_t i = 0; i < local_attacks.size(); ++i) {
+            Vector3 attack = local_attacks[i];
+            f.local_attacks.push_back({attack.x, attack.y, attack.z != 0.0f});
+            f.attack_reach = maximum(f.attack_reach, attack.x);
+        }
+        f.prioritize_goal = data["prioritize_goal"];
+        f.collecting_xp = data.get("collecting_xp", false);
+        f.collect_radius = data["object_collect_radius"];
+        if (bool(data["hold_evolution_chests"])) {
+            for (Vector2 chest : remembered_loot_positions(int(data["evolution_chest_kind"]))) {
+                if (f.player.distance_to(chest) <= f.move_speed * f.horizon + f.collect_radius + 0.25) f.held_chests.emplace_back(chest);
+            }
+        }
         f.swarm_speed = data["swarm_speed"]; f.swarm_depth = data["swarm_depth"];
         f.boss_active = data["boss_active"]; f.slow_safe = true; f.escape_active = data["escape_active"];
         f.boss_kind = data["boss_kind"]; f.elite_kind = data["elite_kind"]; f.bulwark_kind = data["bulwark_kind"];
@@ -289,7 +357,51 @@ public:
         scores.resize(directions.size());
         double *output = scores.ptrw();
         const Vector2 *input = directions.ptr();
-        for (int64_t i = 0; i < directions.size(); ++i) output[i] = movement_score(input[i], f);
+        std::vector<bool> permitted(size_t(directions.size()), false);
+        std::vector<MoveEvaluation> evaluations;
+        evaluations.reserve(size_t(directions.size()));
+        preserving_chests = false;
+        for (int64_t i = 0; i < directions.size(); ++i) {
+            MoveEvaluation evaluated = evaluate_move(input[i], f);
+            evaluations.push_back(evaluated);
+            output[i] = evaluated.score;
+            permitted[size_t(i)] = evaluated.safe && evaluated.avoids_chests;
+            preserving_chests = preserving_chests || (!f.held_chests.empty() && permitted[size_t(i)]);
+        }
+        // Preserve boxes only when a safe preserving move exists. Otherwise the
+        // unchanged danger score chooses the escape, even across a held chest.
+        if (preserving_chests) {
+            for (int64_t i = 0; i < directions.size(); ++i) if (!permitted[size_t(i)]) output[i] = -INF;
+        }
+        // A distant travel goal and heading preference must not perpetually
+        // outweigh getting a short-range weapon into use. Restrict only to
+        // safe, reachable attack positions, after protecting held chests.
+        bool engage = !f.local_attacks.empty() && !f.boss_active && !f.escape_active && (!f.prioritize_goal || f.collecting_xp);
+        bool safe_option = false;
+        int best_attack_samples = 0;
+        V2 toward_goal = (f.goal - f.player).normalized();
+        for (int64_t i = 0; i < directions.size(); ++i) {
+            if (output[i] == -INF) continue;
+            safe_option = safe_option || evaluations[size_t(i)].safe;
+        }
+        auto attacking = [&](int64_t i) {
+            const auto &evaluated = evaluations[size_t(i)];
+            // XP is continuous during combat. Keep attacking when we can still
+            // advance toward it; the goal score favors the fastest such route.
+            // Chests retain direct priority; a blocked XP approach retains travel.
+            double progress = V2(input[i]).dot(toward_goal);
+            return evaluated.safe && evaluated.attack_samples > 0 &&
+                (!f.collecting_xp || progress > 0.0);
+        };
+        for (int64_t i = 0; i < directions.size(); ++i) {
+            if (output[i] != -INF && attacking(i)) best_attack_samples = std::max(best_attack_samples, evaluations[size_t(i)].attack_samples);
+        }
+        for (int64_t i = 0; i < directions.size(); ++i) {
+            const auto &evaluated = evaluations[size_t(i)];
+            // Do not wait for HP loss before respecting a safe prediction.
+            if ((safe_option && !evaluated.safe) ||
+                (engage && best_attack_samples > 0 && (!attacking(i) || evaluated.attack_samples < best_attack_samples))) output[i] = -INF;
+        }
         last_frame = std::move(f);
         frame_ready = true;
         return scores;
@@ -320,10 +432,14 @@ public:
         }
         if (aim.zero()) return navigation_move;
         V2 adjusted = aim * 0.02;
+        if (preserving_chests) {
+            MoveEvaluation evaluated = evaluate_move(adjusted, f);
+            if (!evaluated.safe || !evaluated.avoids_chests) return navigation_move;
+        }
         V2 next = f.player + adjusted * (f.move_speed / 60.0);
         if (!bot_inside(next.value(), f.radius, f.boundaries, 1.0 / 60.0)) return navigation_move;
         const Trajectory adjusted_path = predict_player(adjusted, f), navigation_path = predict_player(navigation_move, f);
-        if (contact_exposure(adjusted_path, f) > contact_exposure(navigation_path, f) + 0.0001) return navigation_move;
+        if (predict_contacts(adjusted_path, f, adjusted).exposure > predict_contacts(navigation_path, f, navigation_move).exposure + 0.0001) return navigation_move;
         if (warning_risk(adjusted_path[15], adjusted_path.back(), f) > warning_risk(navigation_path[15], navigation_path.back(), f) + 0.0001) return navigation_move;
         for (const Bullet &bullet : f.bullets) {
             for (int step = 1; step <= 60; ++step) {

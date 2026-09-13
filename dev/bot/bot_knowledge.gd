@@ -1,7 +1,5 @@
 extends RefCounted
 
-const BotObservation = preload("res://dev/bot/bot_observation.gd")
-
 ## Public game rules copied from the validated catalog, without run state.
 var move_speed: float
 var player_radius: float
@@ -13,7 +11,9 @@ var _normal_damage_scale: float
 var _boss_damage_scale: float
 var weapon_slots: int
 var passive_slots: int
+var max_evolutions: int
 var starter_weapon_id: StringName
+var weapon_lineages: Dictionary[StringName, StringName] = {}
 var weapons: Dictionary[StringName, Dictionary] = {}
 var passives: Dictionary[StringName, Dictionary] = {}
 var evolutions: Dictionary[StringName, Dictionary] = {}
@@ -23,6 +23,8 @@ var swarm_radius: float
 var spawn_band_width: float
 var swarm_depth: float
 var minimum_cooldown_multiplier: float
+var minimum_area_multiplier: float
+var melee_arc_degrees: float
 
 
 func _init(catalog: DefinitionCatalog) -> void:
@@ -39,27 +41,35 @@ func _init(catalog: DefinitionCatalog) -> void:
 		_segment_damage.append(Vector2(end_tick, segment.damage_multiplier))
 	weapon_slots = content.progression.weapon_slot_count
 	passive_slots = content.progression.passive_slot_count
+	max_evolutions = content.progression.max_evolutions_per_run
 	starter_weapon_id = content.progression.starter_weapon_id
 	swarm_speed = content.swarm_event.unit_definition.move_speed
 	swarm_radius = content.swarm_event.unit_definition.body_radius
 	spawn_band_width = content.spawn.offscreen_band_width
 	swarm_depth = float(content.swarm_event.depth_count - 1) * content.swarm_event.depth_pitch
 	minimum_cooldown_multiplier = content.combat.min_cooldown_multiplier
+	minimum_area_multiplier = content.combat.min_area_multiplier
+	melee_arc_degrees = content.combat.melee_arc_degrees
 	for definition: WeaponDefinition in content.weapons:
+		weapon_lineages[definition.weapon_id] = catalog.lineage_for_weapon(definition.weapon_id)
 		weapons[definition.weapon_id] = {
 			"behavior": definition.behavior, "max_level": definition.max_level,
+			"selectable": definition.selection_weight > 0.0,
 			"damage": definition.damage_by_level.duplicate(),
 			"cooldown": definition.cooldown_ticks_by_level.duplicate(),
 			"shot_interval": definition.shot_interval_ticks_by_level.duplicate(),
 			"amount": definition.amount_by_level.duplicate(),
 			"range": definition.range_by_level.duplicate(),
 			"effect_radius": definition.effect_radius_by_level.duplicate(),
+			"range_scales_with_area": definition.range_scales_with_area,
+			"effect_radius_scales_with_area": definition.effect_radius_scales_with_area,
 			"life_steal": definition.life_steal_ratio,
 		}
 	for definition: PassiveDefinition in content.passives:
 		passives[definition.passive_id] = {
 			"stat": definition.stat_id, "amount": definition.amount_per_level,
 			"max_level": definition.max_level,
+			"selectable": definition.selection_weight > 0.0,
 		}
 	for definition: EvolutionDefinition in content.evolutions:
 		evolutions[definition.base_weapon_id] = {
@@ -89,16 +99,3 @@ func contact_damage_for_tick(tick: int) -> Dictionary[int, float]:
 			scale *= _normal_damage_scale
 		result[kind] = enemy_contact_damage[kind] * scale
 	return result
-
-
-func evolution_ready(observation: BotObservation) -> bool:
-	for weapon: Dictionary in observation.weapons:
-		var weapon_id: StringName = weapon["id"]
-		if not evolutions.has(weapon_id):
-			continue
-		if int(weapon["level"]) < int(weapons[weapon_id]["max_level"]):
-			continue
-		for passive: Dictionary in observation.passives:
-			if passive["id"] == evolutions[weapon_id]["passive"]:
-				return true
-	return false

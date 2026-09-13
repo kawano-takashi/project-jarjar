@@ -32,6 +32,7 @@ protected:
     std::vector<BotBoundary> boundaries;
     int64_t boundary_tick = 0;
     std::vector<BotBoundary> predicted_boundaries() const;
+    std::vector<godot::Vector2> remembered_loot_positions(int kind) const;
     std::map<int, double> enemy_speeds;
     std::map<int, double> contact_damage;
     std::vector<double> route_risk;
@@ -49,7 +50,9 @@ public:
     godot::Vector2 route(const godot::Vector2 &player, const godot::Vector2 &goal, const godot::PackedVector2Array &positions, const godot::PackedFloat64Array &radii, double player_radius);
     godot::PackedInt32Array match_tracks(const godot::PackedVector2Array &predicted, const godot::PackedInt32Array &old_kinds, const godot::PackedVector2Array &observed, const godot::PackedInt32Array &kinds, double track_cell) const;
     void remember_loot(const godot::PackedVector4Array &loot, const godot::Transform3D &inverse, const godot::Vector2i &viewport, int64_t tick, const godot::Projection &projection, int xp_kind);
+    // x/y: target position; z: 0 absent, 1 pickup, 2 breakable target, 3 XP.
     godot::Vector3 choose_loot_goal(const godot::Dictionary &frame) const;
+    godot::Vector3 nearest_remembered_loot(int kind, const godot::Vector2 &player) const;
     void configure_tracking(const godot::Dictionary &data);
     void observe_tracks(const godot::Dictionary &frame);
     godot::Vector3 first_boss_position() const;

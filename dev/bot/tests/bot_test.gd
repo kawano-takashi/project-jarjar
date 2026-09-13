@@ -244,7 +244,7 @@ func test_bot_memory_uses_perspective_visibility_and_clip_planes(a: Variant, _co
 	var empty: Dictionary = BotObservation.pack_bodies([])
 	var goal_frame: Dictionary = {
 		"player": Vector2.ZERO, "last_move": Vector2.DOWN,
-		"maxed": false, "evolution_ready": false, "hp": 100.0, "max_hp": 100.0,
+		"maxed": false, "evolution_ready": false, "hold_evolution_chests": false, "hp": 100.0, "max_hp": 100.0,
 		"pickup_radius": 1.0, "loot_kinds": PackedInt32Array([0, 1, 2, 3, 4]),
 	}
 	# Camera translations put the remembered point at a known screen location.
@@ -318,6 +318,80 @@ func test_bot_handles_modal_chain_and_terminal_limits(a: Variant, _context: Dict
 	a.expect_false(invalid.advance(), "an illegal bot input stops execution")
 	a.expect_equal(&"error", invalid.result, "illegal input is an execution error")
 	a.expect_equal(0, invalid.simulation.state.combat_tick, "illegal input does not reach combat")
+
+
+func test_bot_uses_close_range_weapons_after_starter_growth(a: Variant, _context: Dictionary) -> void:
+	var catalog: DefinitionCatalog = BalanceTestFixtures.catalog()
+	for weapon_id: StringName in [&"resonance_wave", &"zero_field", &"orbital_array"]:
+		for collect_xp: bool in [false, true]:
+			var session := BotSession.new()
+			a.expect_true(session.initialize(catalog, 9202, Vector2i(1920, 1080)), "close-range scenario starts")
+			var sim: CombatSimulation = session.simulation
+			sim.state.weapons[0].level = 6
+			var weapon: RunWeapon = RunWeapon.create(weapon_id, weapon_id, false, sim.state.rng_streams.create_weapon_rng(weapon_id, 0))
+			weapon.level = 3
+			sim.state.weapons.append(weapon)
+			var enemy_position := Vector2(0, 3) if collect_xp else Vector2(-3, 0)
+			var enemy: EnemyEntity = sim.spawn_fixture_enemy(GameTypes.EnemyType.PURSUER, enemy_position, -1, true)
+			enemy.hp = 1000.0
+			for node: ArenaNodeState in sim.arena_object_system.nodes:
+				node.deactivate()
+			# Node travel and an ongoing XP trail must both leave room for attacks.
+			sim.arena_object_system.nodes[0].activate(0, Vector2(10, 0), 1000.0)
+			if collect_xp:
+				for index: int in 6:
+					sim.xp_pickup_pool.acquire(Vector2(2 + index * 2, 0), 1, 0, Vector2.ZERO)
+			for step: int in 240:
+				if not session.advance():
+					break
+			a.expect_true(sim.state.weapon_damage_by_lineage.get(weapon_id, 0.0) > 0.0, "%s hits while collecting_xp=%s" % [weapon_id, collect_xp])
+			a.expect_float(0.0, session.simulation.total_damage_taken, "bringing an area into reach retains room to avoid contact")
+			if collect_xp:
+				a.expect_true(sim.state.xp > 0 or sim.state.level > 1, "attacking still permits actual XP collection")
+
+
+func test_bot_avoids_predicted_contact_before_the_first_hit(a: Variant, _context: Dictionary) -> void:
+	var session := BotSession.new()
+	a.expect_true(session.initialize(BalanceTestFixtures.catalog(), 9204, Vector2i(1920, 1080)), "predictive avoidance scenario starts")
+	var sim: CombatSimulation = session.simulation
+	sim.state.weapons.clear()
+	for node: ArenaNodeState in sim.arena_object_system.nodes:
+		node.deactivate()
+	sim.spawn_fixture_enemy(GameTypes.EnemyType.BULWARK, Vector2(1.2, 0), -1, true)
+	sim.spawn_fixture_enemy(GameTypes.EnemyType.PURSUER, Vector2(-2, 0), -1, true)
+	sim.xp_pickup_pool.acquire(Vector2(-4, 0), 1, 0, Vector2.ZERO)
+	# Left increases the closest body's immediate clearance but runs into the
+	# pursuing enemy. Up is safe throughout the prediction, before any HP loss.
+	session.controller._directions = PackedVector2Array([Vector2.LEFT, Vector2.UP])
+	a.expect_true(session.advance(), "the bot moves before receiving any contact damage")
+	a.expect_true(sim.view.screen_to_world_input(session.last_action.move_input).is_equal_approx(Vector2.UP), "a safe predicted route outranks a larger next-tick gap followed by contact")
+
+
+func test_bot_breaks_contact_instead_of_retreating_below_pursuit_speed(a: Variant, _context: Dictionary) -> void:
+	var session := BotSession.new()
+	a.expect_true(session.initialize(BalanceTestFixtures.catalog(), 9203, Vector2i(1920, 1080)), "contact escape scenario starts")
+	var sim: CombatSimulation = session.simulation
+	sim.state.weapons.clear()
+	for position: Vector2 in [Vector2(-0.8, 0), Vector2(0.5, 0.65), Vector2(0.5, -0.65)]:
+		sim.spawn_fixture_enemy(GameTypes.EnemyType.SHOOTER, position, -1, true)
+	for ring: int in [1, 2]:
+		for index: int in 6 * ring:
+			var position: Vector2 = Vector2.from_angle(TAU * float(index) / float(6 * ring) + 0.15) * (0.8 + 0.8 * ring)
+			sim.spawn_fixture_enemy(GameTypes.EnemyType.SHOOTER, position, -1, true)
+	for index: int in 3:
+		sim.spawn_fixture_enemy(GameTypes.EnemyType.BULWARK, Vector2.from_angle(TAU * float(index) / 3.0) * 1.3, -1, true)
+	session.controller.decide(session.observer.capture(sim, sim.view))
+	sim.advance_tick(Vector2.ZERO)
+	a.expect_true(sim.total_damage_taken > 0.0, "real enemy contact triggers the escape")
+	var damage_after_escape: float = 0.0
+	for step: int in 120:
+		if not session.advance():
+			break
+		if step == 89:
+			damage_after_escape = sim.total_damage_taken
+	a.expect_true(session.result.is_empty(), "the bot survives the local encirclement without relying on a weapon kill")
+	a.expect_true(sim.player_position.length() > 2.0, "the escape makes progress out of the surrounding bodies")
+	a.expect_float(damage_after_escape, sim.total_damage_taken, "the escape ends contact instead of letting faster pursuers stay attached")
 
 
 func test_bot_reacts_to_observed_projectile_motion_and_keeps_legal_input(a: Variant, _context: Dictionary) -> void:
@@ -416,47 +490,134 @@ func test_bot_aims_at_later_shots_and_restarts_only_its_own_weapon(a: Variant, _
 	a.expect_true(view.screen_to_world_input(upgraded.move_input).x < 0.0, "its own upgrade immediately prepares a new aimed sequence")
 
 
-func test_bot_concentrates_growth_and_secures_the_starter_evolution(a: Variant, _context: Dictionary) -> void:
-	var controller := BotController.new(BotKnowledge.new(BalanceTestFixtures.catalog()))
-	var observation := BotObservation.new()
-	observation.phase = GameTypes.RunPhase.LEVEL_UP
-	observation.hp = 100.0
-	observation.max_hp = 100.0
-	observation.weapons.assign([
-		{"id": &"homing_core", "level": 4, "evolved": false},
-		{"id": &"zero_field", "level": 3, "evolved": false},
-		{"id": &"arc_crystal", "level": 1, "evolved": false}])
-	observation.options.assign([
-		{"id": &"homing_core", "kind": GameTypes.UpgradeKind.WEAPON, "level": 4, "next": 5},
-		{"id": &"zero_field", "kind": GameTypes.UpgradeKind.WEAPON, "level": 3, "next": 4},
-		{"id": &"mass_projectile", "kind": GameTypes.UpgradeKind.WEAPON, "level": 0, "next": 1}])
-	a.expect_equal(0, controller.decide(observation).choice_index, "three weapons are enough to prioritize the main weapon over a fourth slot")
-	observation.weapons[0]["level"] = 7
-	observation.options[0]["level"] = 7
-	observation.options[0]["next"] = 8
-	observation.options[1] = {"id": &"cycle_crystal", "kind": GameTypes.UpgradeKind.PASSIVE, "level": 0, "next": 1}
-	a.expect_equal(1, controller.decide(observation).choice_index, "the missing evolution partner is secured before the main weapon finishes")
-
-
 func test_bot_delays_then_collects_an_evolution_chest_without_changing_combat(a: Variant, _context: Dictionary) -> void:
 	var catalog: DefinitionCatalog = BalanceTestFixtures.catalog()
-	var session := BotSession.new()
-	a.expect_true(session.initialize(catalog, 9201, Vector2i(1920, 1080), false, 180), "delayed comparison starts")
-	var sim: CombatSimulation = session.simulation
-	sim.state.weapons[0].level = 8
-	sim.state.passives.append(RunPassive.create(&"cycle_crystal"))
-	for node: ArenaNodeState in sim.arena_object_system.nodes:
-		node.deactivate()
-	var serial: int = catalog.elite_chest_kinds.find(GameTypes.ChestKind.EVOLUTION_CAPABLE)
-	sim.arena_object_system.spawn_chest(Vector2(2, 0), serial)
-	while sim.state.combat_tick < 180 and session.result.is_empty():
-		session.advance()
-	a.expect_equal(0, sim.state.evolution_count, "the visible chest remains uncollected before the chosen tick")
-	while sim.state.combat_tick < 1200 and sim.state.evolution_count == 0 and session.result.is_empty():
-		session.advance()
-	a.expect_equal(1, sim.state.evolution_count, "normal movement collects the chest after the delay")
-	a.expect_true(session.first_evolution_tick >= 180, "the report records the real evolution time")
-	a.expect_true(session.chest_collection_ticks[serial] >= 180, "collection time comes from the actual chest queue")
+	for delay: int in [0, 180]:
+		var session := BotSession.new()
+		a.expect_true(session.initialize(catalog, 9201, Vector2i(1920, 1080), false, delay), "chest scenario starts")
+		var sim: CombatSimulation = session.simulation
+		var maximum: int = catalog.weapon(sim.state.weapons[0].weapon_id).max_level
+		sim.state.weapons[0].level = maximum - 2 if delay == 0 else maximum
+		sim.state.passives.append(RunPassive.create(&"cycle_crystal"))
+		for node: ArenaNodeState in sim.arena_object_system.nodes:
+			node.deactivate()
+		var serial: int = catalog.elite_chest_kinds.find(GameTypes.ChestKind.EVOLUTION_CAPABLE)
+		var normal_serial: int = catalog.elite_chest_kinds.find(GameTypes.ChestKind.NORMAL)
+		sim.arena_object_system.spawn_chest(Vector2(2, 0), serial)
+		if delay == 0:
+			sim.arena_object_system.spawn_chest(Vector2.ZERO, normal_serial)
+		while sim.state.combat_tick < 180 and session.result.is_empty():
+			session.advance()
+		a.expect_equal(-1, session.chest_collection_ticks[serial], "an unready or time-delayed evolution chest is not collected in passing")
+		a.expect_equal(0, sim.state.evolution_count, "the evolution has not occurred before release")
+		if delay == 0:
+			a.expect_true(session.chest_collection_ticks[normal_serial] >= 0, "normal chests still provide upgrades while an evolution chest is held")
+		sim.state.weapons[0].level = maximum
+		while sim.state.combat_tick < 1200 and sim.state.evolution_count == 0 and session.result.is_empty():
+			session.advance()
+		a.expect_equal(1, sim.state.evolution_count, "normal movement collects and evolves after readiness and the time gate are satisfied")
+		a.expect_true(session.first_evolution_tick >= 180, "the report records the actual evolution time")
+		a.expect_true(session.chest_collection_ticks[serial] >= 180, "collection time comes from the actual chest queue")
+
+
+func test_bot_chest_avoidance_uses_memory_safety_and_the_aimed_move(a: Variant, _context: Dictionary) -> void:
+	var knowledge := BotKnowledge.new(BalanceTestFixtures.catalog())
+	var controller := BotController.new(knowledge)
+	var observation := BotObservation.new()
+	observation.hp = 100.0
+	observation.max_hp = 100.0
+	observation.weapons.assign([{"id": &"homing_core", "level": 1, "evolved": false}])
+	var view := ArenaView.new()
+	view.reset(Vector2.ZERO)
+	observation.camera_transform = view.camera_transform
+	observation.camera_projection = view.projection
+	var chest := Vector2(knowledge.object_collect_radius + 0.0005, 0)
+	observation.loot.append(Vector4(BotObservation.LootKind.EVOLUTION_CHEST, chest.x, chest.y, 1))
+	# Two candidate routes isolate the decision: right crosses the box, up avoids it.
+	var aim_directions: PackedVector2Array = controller._directions.duplicate()
+	controller._directions = PackedVector2Array([Vector2.RIGHT, Vector2.UP])
+	var action: BotAction = controller.decide(observation)
+	a.expect_true(view.screen_to_world_input(action.move_input).is_equal_approx(Vector2.UP), "a safe route preserves the box instead of crossing it")
+	observation.tick += 1
+	observation.world_origin = Vector2i(1, 0)
+	observation.player_position = Vector2(-1024, 0)
+	observation.loot.clear()
+	observation.camera_transform.origin.x += 5000.0
+	controller._last_move = Vector2.RIGHT
+	controller._explore_direction = Vector2.RIGHT
+	controller._next_goal_tick = 0
+	action = controller.decide(observation)
+	a.expect_true(view.screen_to_world_input(action.move_input).is_equal_approx(Vector2.UP), "unseen chest memory survives an origin change and still prevents collection")
+	# A far enemy attracts a needle aim without threatening the safe upward route.
+	observation.tick += 1
+	var target := BotObservation.Body.new()
+	target.kind = CombatSnapshot.EnemyVisualKind.PURSUER
+	target.radius = 0.3
+	target.position = observation.player_position + Vector2(4, 0)
+	observation.enemies.append(target)
+	controller._last_move = Vector2.RIGHT
+	action = controller.decide(observation)
+	var navigation_move: Vector2 = view.screen_to_world_input(action.move_input)
+	var aimed: Vector2 = controller._kernel.aim_needles(aim_directions, BotController.DIRECTION_COUNT, navigation_move, 6.0)
+	a.expect_true(aimed.is_equal_approx(navigation_move), "the tiny aiming step cannot collect a box that the navigation move preserves")
+	# Now up is the threatened route. The only safe escape goes through the box.
+	observation.tick += 1
+	target.position = observation.player_position + Vector2(0, -1.3)
+	controller._last_move = Vector2.RIGHT
+	action = controller.decide(observation)
+	var escape: Vector2 = view.screen_to_world_input(action.move_input)
+	a.expect_true(escape.is_equal_approx(Vector2.RIGHT), "when no safe preserving route exists, escaping takes precedence")
+	var next_position: Vector2 = observation.player_position + escape * knowledge.move_speed / 60.0
+	a.expect_true(next_position.distance_to(chest - Vector2(1024, 0)) <= knowledge.object_collect_radius, "the emergency escape explicitly permits an early pickup")
+	# Readiness must also target the remembered box, even without a current cue.
+	observation.tick += 1
+	observation.enemies.clear()
+	controller._navigation.clear_combat_memory()
+	observation.weapons[0]["level"] = 8
+	observation.passives.assign([{"id": &"cycle_crystal", "level": 1}])
+	action = controller.decide(observation)
+	a.expect_equal(&"collect", action.reason, "an offscreen box becomes the collection goal as soon as evolution is ready")
+	a.expect_true(view.screen_to_world_input(action.move_input).x > 0.0, "the ready goal uses the chest's remembered position after the origin shift")
+
+
+func test_bot_ready_chest_reverses_course_when_safe(a: Variant, _context: Dictionary) -> void:
+	var controller := BotController.new(BotKnowledge.new(BalanceTestFixtures.catalog()))
+	var observation := BotObservation.new()
+	observation.hp = 100.0
+	observation.max_hp = 100.0
+	observation.weapons.assign([{"id": &"homing_core", "level": 8, "evolved": false}])
+	observation.passives.assign([{"id": &"cycle_crystal", "level": 1}])
+	var view := ArenaView.new()
+	view.reset(Vector2.ZERO)
+	observation.camera_transform = view.camera_transform
+	observation.camera_projection = view.projection
+	observation.loot.append(Vector4(BotObservation.LootKind.EVOLUTION_CHEST, -2, 0, 1))
+	var action: BotAction = controller.decide(observation)
+	a.expect_true(view.screen_to_world_input(action.move_input).x < 0.0, "with no danger, a ready chest behind the bot takes precedence over maintaining its old course")
+	controller = BotController.new(BotKnowledge.new(BalanceTestFixtures.catalog()))
+	observation.loot.clear()
+	observation.chest_guidance.assign([{"kind": GameTypes.ChestKind.EVOLUTION_CAPABLE, "direction": view.world_to_screen_input(Vector2.LEFT)}])
+	action = controller.decide(observation)
+	a.expect_true(view.screen_to_world_input(action.move_input).x < 0.0, "the same priority applies to a ready chest indicated by the public compass")
+	# Nearby enemies must not blanket-ban returning to loot on an open side.
+	var enemy := BotObservation.Body.new()
+	enemy.position = Vector2(0, 4)
+	enemy.radius = 0.38
+	observation.enemies.append(enemy)
+	observation.chest_guidance.clear()
+	observation.weapons.append({"id": &"zero_field", "level": 3, "evolved": false})
+	for kind: int in [BotObservation.LootKind.XP, BotObservation.LootKind.CHEST]:
+		controller = BotController.new(BotKnowledge.new(BalanceTestFixtures.catalog()))
+		observation.loot = PackedVector4Array([Vector4(kind, -3, 0, 1)])
+		action = controller.decide(observation)
+		a.expect_equal(&"collect", action.reason, "ordinary loot behind the bot remains a goal when its approach is open")
+		var world_move: Vector2 = view.screen_to_world_input(action.move_input)
+		a.expect_true(world_move.x < 0.0, "returning to loot makes progress despite the old heading")
+		if kind == BotObservation.LootKind.CHEST:
+			a.expect_true(world_move.x < -0.9, "a safe chest return takes precedence over staying in attack range")
+	enemy.position = Vector2(-3, 1.3)
+	controller = BotController.new(BotKnowledge.new(BalanceTestFixtures.catalog()))
+	a.expect_equal(&"collect", controller.decide(observation).reason, "a chest outside actual enemy contact remains reachable through an open gap")
 
 
 func _body_values(bodies: Array[BotObservation.Body]) -> Array:
@@ -492,7 +653,7 @@ func test_bot_keeps_memory_across_local_grid_and_origin_changes(a: Variant, _con
 	a.expect_true(Vector2(shifted.x, shifted.y).distance_to(Vector2(remembered.x - 1024, remembered.y)) < 0.001, "origin changes translate remembered enemies")
 	var loot: Vector3 = controller._navigation.choose_loot_goal({
 		"player": Vector2(-24, 0), "last_move": Vector2.DOWN,
-		"maxed": false, "evolution_ready": false, "hp": 100.0, "max_hp": 100.0,
+		"maxed": false, "evolution_ready": false, "hold_evolution_chests": false, "hp": 100.0, "max_hp": 100.0,
 		"pickup_radius": 1.0, "loot_kinds": PackedInt32Array([0, 1, 2, 3, 4]),
 	})
 	a.expect_equal(Vector3(-24, 3, 1), loot, "origin changes retain the original observed chest")
